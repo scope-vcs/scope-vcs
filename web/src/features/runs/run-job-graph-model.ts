@@ -59,14 +59,18 @@ export function buildRunJobGraph(
     return layer
   }
 
-  for (const job of jobs) layerFor(job.job.key)
-  const needsOf = (key: string) => byKey.get(key)!.job.needs
-  const layerCount = Math.max(0, ...layers.values()) + 1
-  const keysByLayer = Array.from({ length: layerCount }, () => [] as string[])
-  for (const [key, layer] of layers) keysByLayer[layer].push(key)
-  for (const keys of keysByLayer) keys.sort()
+  const layered = [...byKey.values()].map(({ job }) => ({
+    key: job.key,
+    layer: layerFor(job.key),
+    needs: job.needs,
+  }))
+  const layerCount = Math.max(0, ...layered.map((job) => job.layer)) + 1
+  const keysByLayer = Array.from({ length: layerCount }, (_, layer) =>
+    layered
+      .filter((job) => job.layer === layer)
+      .sort((left, right) => compareKeys(left.key, right.key)))
   const dependencies = keysByLayer.flatMap((keys, layer) =>
-    keys.flatMap((to) => needsOf(to).map((from) => ({
+    keys.flatMap(({ key: to, needs }) => needs.map((from) => ({
       endLayer: layer,
       from,
       key: edgeKey(from, to),
@@ -97,18 +101,23 @@ export function buildRunJobGraph(
       Math.max(0, keys.length - 1) * ROW_GAP
     const top = GRAPH_PADDING + edgeCorridorHeight +
       (contentHeight - layerHeight) / 2
-    return keys.map((key, row) => ({
+    return keys.map(({ key, needs }, row) => ({
       key,
       layer,
-      needs: needsOf(key),
+      needs,
       x: GRAPH_PADDING + layer * (JOB_GRAPH_NODE_WIDTH + LAYER_GAP),
       y: top + row * (JOB_GRAPH_NODE_HEIGHT + ROW_GAP),
     }))
   })
   const positions = new Map(nodes.map((node) => [node.key, node]))
+  const positionOf = (key: string) => {
+    const position = positions.get(key)
+    if (!position) throw new Error(`Run graph dependency ${key} is missing`)
+    return position
+  }
   const edges = dependencies.map((edge) => {
-    const source = positions.get(edge.from)!
-    const target = positions.get(edge.to)!
+    const source = positionOf(edge.from)
+    const target = positionOf(edge.to)
     const startX = source.x + JOB_GRAPH_NODE_WIDTH
     const startY = source.y + JOB_GRAPH_NODE_HEIGHT / 2
     const endX = target.x
@@ -176,6 +185,10 @@ function longEdgePath(
   laneY: number,
 ) {
   return `M ${startX} ${startY} C ${startX + 12} ${startY}, ${startX + 16} ${laneY}, ${startX + 24} ${laneY} L ${endX - 24} ${laneY} C ${endX - 16} ${laneY}, ${endX - 12} ${endY}, ${endX} ${endY}`
+}
+
+function compareKeys(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function edgeKey(from: string, to: string) {

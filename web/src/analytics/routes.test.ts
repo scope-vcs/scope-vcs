@@ -24,7 +24,7 @@ test('pre-runtime error routes use registered aliases without retaining path val
     ['/private-owner/private-repo/requests/private-id/changes', 'request_changes'],
     ['/private-owner/private-repo/runs/private-id', 'repository_run'],
     ['/sign-in/private-flow', 'sign_in'],
-  ]) {
+  ] satisfies Array<[string, string]>) {
     assert.equal(analyticsRouteForPathname(pathname)?.name, name)
   }
   assert.equal(analyticsRouteForPathname('/private-owner/private-repo/private-unknown'), null)
@@ -58,7 +58,11 @@ test('every generated page or layout route has an analytics decision', () => {
   const generatedIds = [...fileRoutesById.matchAll(
     /^\s+(?:'([^']+)'|(__root__)):/gm,
   )]
-    .map((match) => match[1] ?? match[2])
+    .map((match) => {
+      const id = match[1] ?? match[2]
+      assert.ok(id)
+      return id
+    })
     .sort()
   assert.deepEqual(analyticsRouteIds().sort(), generatedIds)
 })

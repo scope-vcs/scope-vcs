@@ -26,13 +26,15 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
 
     let CachePrepareResult::Upload(_) = caches
         .prepare_upload(
-            &repository_id,
-            &identity,
-            &compatibility_group,
-            &first_digest,
-            100,
-            "test-local",
-            "upload-1",
+            RequestedCacheUpload {
+                repository_id: &repository_id,
+                identity_digest: &identity,
+                compatibility_group_digest: &compatibility_group,
+                checksum_sha256: &first_digest,
+                size_bytes: 100,
+                storage_backend: "test-local",
+                upload_id: "upload-1",
+            },
             now,
         )
         .await
@@ -58,13 +60,15 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
 
     let group_mismatch = caches
         .prepare_upload(
-            &repository_id,
-            &identity,
-            &"d".repeat(64),
-            &first_digest,
-            100,
-            "test-local",
-            "mismatched-group-upload",
+            RequestedCacheUpload {
+                repository_id: &repository_id,
+                identity_digest: &identity,
+                compatibility_group_digest: &"d".repeat(64),
+                checksum_sha256: &first_digest,
+                size_bytes: 100,
+                storage_backend: "test-local",
+                upload_id: "mismatched-group-upload",
+            },
             now + 3,
         )
         .await
@@ -125,14 +129,16 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
     assert!(matches!(
         caches
             .prepare_upload(
-                &repository_id,
-                &compatible_identity,
-                &compatibility_group,
-                &first_digest,
-                100,
-                "test-local",
-                "unused-upload",
-                now + 5,
+                RequestedCacheUpload {
+                    repository_id: &repository_id,
+                    identity_digest: &compatible_identity,
+                    compatibility_group_digest: &compatibility_group,
+                    checksum_sha256: &first_digest,
+                    size_bytes: 100,
+                    storage_backend: "test-local",
+                    upload_id: "unused-upload"
+                },
+                now + 5
             )
             .await
             .unwrap(),
@@ -153,16 +159,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
 
     assert!(matches!(
         caches
-            .prepare_upload(
-                &repository_id,
-                &identity,
-                &compatibility_group,
-                &second_digest,
-                200,
-                "test-local",
-                "upload-2",
-                now + 7,
-            )
+            .prepare_upload(RequestedCacheUpload { repository_id: &repository_id, identity_digest: &identity, compatibility_group_digest: &compatibility_group, checksum_sha256: &second_digest, size_bytes: 200, storage_backend: "test-local", upload_id: "upload-2" }, now + 7)
             .await
             .unwrap(),
         CachePrepareResult::UseObject { ref object, .. }
@@ -173,13 +170,15 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
     let expired_digest = "c".repeat(64);
     caches
         .prepare_upload(
-            &repository_id,
-            &expired_identity,
-            &"e".repeat(64),
-            &expired_digest,
-            300,
-            "test-local",
-            "expired-upload",
+            RequestedCacheUpload {
+                repository_id: &repository_id,
+                identity_digest: &expired_identity,
+                compatibility_group_digest: &"e".repeat(64),
+                checksum_sha256: &expired_digest,
+                size_bytes: 300,
+                storage_backend: "test-local",
+                upload_id: "expired-upload",
+            },
             now + 10,
         )
         .await
@@ -221,7 +220,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
             move |_, _| {
                 let release = release.clone();
                 Box::pin(async move {
-                    let _ = release.acquire().await;
+                    release.acquire().await.ok();
                     Ok(false)
                 })
             }
@@ -278,13 +277,15 @@ async fn failed_deletions_store_bounded_errors_and_stay_retryable() {
     let digest = "e".repeat(64);
     caches
         .prepare_upload(
-            &repository_id,
-            &identity,
-            &compatibility_group,
-            &digest,
-            100,
-            "test-local",
-            "retry-upload",
+            RequestedCacheUpload {
+                repository_id: &repository_id,
+                identity_digest: &identity,
+                compatibility_group_digest: &compatibility_group,
+                checksum_sha256: &digest,
+                size_bytes: 100,
+                storage_backend: "test-local",
+                upload_id: "retry-upload",
+            },
             now,
         )
         .await

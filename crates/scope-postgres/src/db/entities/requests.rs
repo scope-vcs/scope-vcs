@@ -13,14 +13,14 @@ use scope_domain::requests::{
 };
 use scope_domain::views::ViewId;
 
-pub mod request;
+pub(crate) mod request;
 
-pub mod request_claim {
+pub(crate) mod request_claim {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_claims")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub request_id: String,
         pub claimer_user_id: String,
@@ -29,11 +29,11 @@ pub mod request_claim {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(value: &RequestClaim) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(value: &RequestClaim) -> Result<Self, PostgresError> {
             Ok(Self {
                 request_id: value.request_id.clone(),
                 claimer_user_id: value.claimer_user_id.clone(),
@@ -42,7 +42,7 @@ pub mod request_claim {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RequestClaim, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RequestClaim, PostgresError> {
             Ok(RequestClaim {
                 request_id: self.request_id,
                 claimer_user_id: self.claimer_user_id,
@@ -53,12 +53,12 @@ pub mod request_claim {
     }
 }
 
-pub mod request_attention_state {
+pub(crate) mod request_attention_state {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_attention_states")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub request_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -72,11 +72,11 @@ pub mod request_attention_state {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(value: &RequestAttention) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(value: &RequestAttention) -> Result<Self, PostgresError> {
             Ok(Self {
                 request_id: value.request_id.clone(),
                 user_id: value.user_id.clone(),
@@ -95,7 +95,7 @@ pub mod request_attention_state {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RequestAttention, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RequestAttention, PostgresError> {
             Ok(RequestAttention {
                 request_id: self.request_id,
                 user_id: self.user_id,
@@ -116,12 +116,12 @@ pub mod request_attention_state {
     }
 }
 
-pub mod request_rating {
+pub(crate) mod request_rating {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_ratings")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub request_id: String,
@@ -133,12 +133,12 @@ pub mod request_rating {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(rating: &RequestRating) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(rating: &RequestRating) -> Result<Self, PostgresError> {
             Ok(Self {
                 id: rating.id.clone(),
                 request_id: rating.request_id.clone(),
@@ -153,7 +153,7 @@ pub mod request_rating {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RequestRating, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RequestRating, PostgresError> {
             Ok(RequestRating {
                 id: self.id,
                 request_id: self.request_id,
@@ -167,12 +167,12 @@ pub mod request_rating {
     }
 }
 
-pub mod request_invitee {
+pub(crate) mod request_invitee {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_invitees")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub request_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -182,12 +182,12 @@ pub mod request_invitee {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(invitee: &RequestInvitee) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(invitee: &RequestInvitee) -> Result<Self, PostgresError> {
             Ok(Self {
                 request_id: invitee.request_id.clone(),
                 user_id: invitee.user_id.clone(),
@@ -199,7 +199,7 @@ pub mod request_invitee {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RequestInvitee, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RequestInvitee, PostgresError> {
             Ok(RequestInvitee {
                 request_id: self.request_id,
                 user_id: self.user_id,
@@ -210,14 +210,14 @@ pub mod request_invitee {
     }
 }
 
-pub mod request_revision;
+pub(crate) mod request_revision;
 
-pub mod request_event {
+pub(crate) mod request_event {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_events")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub request_id: String,
@@ -229,12 +229,12 @@ pub mod request_event {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(event: &RequestEvent) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(event: &RequestEvent) -> Result<Self, PostgresError> {
             Ok(Self {
                 id: event.id.clone(),
                 request_id: event.request_id.clone(),
@@ -246,7 +246,7 @@ pub mod request_event {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RequestEvent, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RequestEvent, PostgresError> {
             Ok(RequestEvent {
                 id: self.id,
                 request_id: self.request_id,
@@ -260,12 +260,12 @@ pub mod request_event {
     }
 }
 
-pub mod request_discussion {
+pub(crate) mod request_discussion {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_discussions")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub request_id: String,
@@ -290,12 +290,12 @@ pub mod request_discussion {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(value: &RequestDiscussion) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(value: &RequestDiscussion) -> Result<Self, PostgresError> {
             let lines = value.anchor.as_ref().and_then(|anchor| anchor.lines);
             let author = author_columns(&value.author)?;
             let (resolved_by_user_id, resolved_by_github_user_id) =
@@ -344,7 +344,7 @@ pub mod request_discussion {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RequestDiscussion, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RequestDiscussion, PostgresError> {
             let anchor = self
                 .revision_id
                 .map(|revision_id| -> Result<_, PostgresError> {
@@ -412,12 +412,12 @@ pub mod request_discussion {
     }
 }
 
-pub mod request_discussion_reply {
+pub(crate) mod request_discussion_reply {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_discussion_replies")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub discussion_id: String,
@@ -432,12 +432,12 @@ pub mod request_discussion_reply {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(value: &RequestDiscussionReply) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(value: &RequestDiscussionReply) -> Result<Self, PostgresError> {
             let author = author_columns(&value.author)?;
             Ok(Self {
                 id: value.id.clone(),
@@ -456,7 +456,7 @@ pub mod request_discussion_reply {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RequestDiscussionReply, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RequestDiscussionReply, PostgresError> {
             Ok(RequestDiscussionReply {
                 id: self.id,
                 discussion_id: self.discussion_id,
@@ -478,12 +478,12 @@ pub mod request_discussion_reply {
     }
 }
 
-pub mod request_discussion_read_state {
+pub(crate) mod request_discussion_read_state {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_discussion_read_states")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub discussion_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -493,12 +493,14 @@ pub mod request_discussion_read_state {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(value: &RequestDiscussionReadState) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(
+            value: &RequestDiscussionReadState,
+        ) -> Result<Self, PostgresError> {
             Ok(Self {
                 discussion_id: value.discussion_id.clone(),
                 user_id: value.user_id.clone(),
@@ -510,7 +512,7 @@ pub mod request_discussion_read_state {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RequestDiscussionReadState, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RequestDiscussionReadState, PostgresError> {
             Ok(RequestDiscussionReadState {
                 discussion_id: self.discussion_id,
                 user_id: self.user_id,
@@ -524,7 +526,7 @@ pub mod request_discussion_read_state {
     }
 }
 
-pub mod request_check_evaluation;
+pub(crate) mod request_check_evaluation;
 
 pub(crate) mod base;
-pub mod revision_context_receipt;
+pub(crate) mod revision_context_receipt;

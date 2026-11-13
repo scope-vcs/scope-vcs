@@ -407,7 +407,7 @@ mod tests {
         let json = serde_json::json!({
             "id": "checks",
             "needs": ["build"],
-            "container": {"image": image.clone()},
+            "container": {"image": image},
             "timeout_seconds": 1200,
             "caches": [{
                 "name": "cargo",

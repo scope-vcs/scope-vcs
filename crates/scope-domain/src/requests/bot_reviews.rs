@@ -6,7 +6,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 mod codex_state;
-pub use codex_state::{CODEX_REVIEW_BOT_LOGIN, CodexReviewState};
+use codex_state::CODEX_REVIEW_BOT_LOGIN;
+pub use codex_state::CodexReviewState;
 
 #[cfg(test)]
 mod tests;
@@ -138,7 +139,9 @@ pub fn github_reviews_awaiting_import(
             {
                 Some(*review_id)
             }
-            _ => None,
+            GitHubReviewBotSignal::Reviewed { .. }
+            | GitHubReviewBotSignal::Reacted { .. }
+            | GitHubReviewBotSignal::Commented { .. } => None,
         })
         .collect()
 }
@@ -181,7 +184,7 @@ fn bot_state(
         .iter()
         .filter_map(|signal| match signal {
             GitHubReviewBotSignal::Commented { body, .. } => CodexReviewState::parse(body),
-            _ => None,
+            GitHubReviewBotSignal::Reviewed { .. } | GitHubReviewBotSignal::Reacted { .. } => None,
         })
         .collect::<Vec<_>>();
     let head_reviews = signals
@@ -192,7 +195,9 @@ fn bot_state(
                 commit_oid,
                 ..
             } if commit_oid == head_oid => Some(*review_id),
-            _ => None,
+            GitHubReviewBotSignal::Reviewed { .. }
+            | GitHubReviewBotSignal::Reacted { .. }
+            | GitHubReviewBotSignal::Commented { .. } => None,
         })
         .collect::<Vec<_>>();
     let unimported_review = head_reviews

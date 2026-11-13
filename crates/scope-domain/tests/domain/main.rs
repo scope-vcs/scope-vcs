@@ -1,3 +1,5 @@
+#![expect(clippy::unwrap_used)]
+
 mod github_connection;
 mod github_run_import;
 mod github_setup_check;

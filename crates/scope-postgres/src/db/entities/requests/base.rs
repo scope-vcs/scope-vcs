@@ -9,7 +9,7 @@ pub(crate) struct BaseColumns {
 }
 
 impl BaseColumns {
-    pub fn from_domain(base: &RequestBase) -> Self {
+    pub(crate) fn from_domain(base: &RequestBase) -> Self {
         match base {
             RequestBase::Main { review_base_oid } => Self {
                 kind: "Main".into(),
@@ -32,7 +32,7 @@ impl BaseColumns {
         }
     }
 
-    pub fn try_into_domain(self) -> Result<RequestBase, PostgresError> {
+    pub(crate) fn try_into_domain(self) -> Result<RequestBase, PostgresError> {
         match (
             self.kind.as_str(),
             self.parent_request_id,

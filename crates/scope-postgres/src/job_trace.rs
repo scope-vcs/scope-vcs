@@ -7,8 +7,10 @@ pub struct JobTracing {
 
 static JOB_TRACING: OnceLock<JobTracing> = OnceLock::new();
 
-pub fn install(tracing: JobTracing) {
-    let _ = JOB_TRACING.set(tracing);
+pub fn install(job_tracing: JobTracing) {
+    if JOB_TRACING.set(job_tracing).is_err() {
+        tracing::warn!("job tracing was already installed");
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -51,7 +53,7 @@ pub fn link_all<'a>(span: &tracing::Span, traces: impl IntoIterator<Item = &'a Q
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    use super::{JobTracing, install};
+    use super::{JOB_TRACING, JobTracing};
     use std::{future::Future, sync::Mutex};
 
     tokio::task_local! {
@@ -61,7 +63,7 @@ pub(crate) mod test_support {
     static LINKED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     fn install_recording() {
-        install(JobTracing {
+        JOB_TRACING.get_or_init(|| JobTracing {
             current_traceparent: || QUEUING_TRACE.try_with(Clone::clone).ok(),
             link_queued_traces: |_, traceparents| {
                 LINKED.lock().unwrap().extend(

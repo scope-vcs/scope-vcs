@@ -143,7 +143,7 @@ test('stream output received while the first page loads is merged by position', 
   assert.equal(await request, true)
   const state = readRunLogCache(key)[stepKey(selection)]
   assert.deepEqual(state?.logs.map(({ position }) => position), [1, 2])
-  assert.equal(state?.nextAfter, 1)
+  assert.equal(state.nextAfter, 1)
 })
 
 test('streamed output never moves the page cursor past rows still to fetch', () => {
@@ -151,7 +151,7 @@ test('streamed output never moves the page cursor past rows still to fetch', () 
   appendStreamRunLog(key, streamed(9))
   const state = readRunLogCache(key)[stepKey(selection)]
   assert.deepEqual(state?.logs.map(({ position }) => position), [1, 9])
-  assert.equal(state?.nextAfter, 1)
+  assert.equal(state.nextAfter, 1)
 })
 
 test('completed run output is reused unless its revision changed or its page is incomplete or failed', () => {

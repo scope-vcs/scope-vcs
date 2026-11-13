@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { Plus } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 function sameNames(left: string[], right: string[]) {
   return left.length === right.length && left.every((name) => right.includes(name))
@@ -30,17 +30,14 @@ export function RepoRequiredChecks({
   const name = draft.trim()
   const canAdd = name.length > 0 && !selection.names.includes(name) && !pending
 
-  useEffect(() => {
-    setSelection((current) => {
-      if (sameNames(current.source, names)) return current
-      const edited = !sameNames(current.source, current.names)
-      return {
-        source: names,
-        names: edited ? current.names : names,
-        conflict: edited && !sameNames(current.names, names),
-      }
+  if (!sameNames(selection.source, names)) {
+    const edited = !sameNames(selection.source, selection.names)
+    setSelection({
+      source: names,
+      names: edited ? selection.names : names,
+      conflict: edited && !sameNames(selection.names, names),
     })
-  }, [names])
+  }
 
   function select(next: string[]) {
     setSelection((current) => ({ ...current, names: next }))

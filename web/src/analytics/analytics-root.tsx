@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useRouterState } from '@tanstack/react-router'
 import type { AnalyticsClient } from './client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef } from 'react'
 import { useAccountSession } from '@/features/account/use-account-session'
 import { useCachedResource, useRetryOnReconnect } from '@/lib/use-cached-resource'
 import { useHydrated } from '@/lib/use-hydrated'
@@ -74,12 +74,17 @@ function AnalyticsRuntime({
   const capturedPage = useRef<string | null>(null)
   const documentRouteName = useRef(routeName)
   const appliedKey = useRef<string | null>(null)
-  const expectedKey = useRef<string | null>(null)
-  const currentPage = useRef({ pathname, routeId })
   const diagnostics = useRef<ReturnType<typeof installBrowserDiagnostics> | null>(null)
-
-  currentPage.current = { pathname, routeId }
-  expectedKey.current = expectedIdentityKey(viewer)
+  const captureLatestPage = useEffectEvent(() => {
+    captureCurrentPage(client, { pathname, routeId }, capturedPage)
+  })
+  const appliedIdentityIsCurrent = useEffectEvent(() => (
+    appliedKey.current === expectedIdentityKey(viewer)
+  ))
+  const identifiedViewerIsCurrent = useEffectEvent(() => {
+    const expectedKey = expectedIdentityKey(viewer)
+    return expectedKey !== null && appliedKey.current === expectedKey
+  })
 
   const resolvedIdentityKey = identity?.identityKey ?? null
   const resolvedScopeUserId = identity?.scopeUserId ?? null
@@ -88,31 +93,22 @@ function AnalyticsRuntime({
     if (resolvedIdentityKey === null) return
 
     capturedPage.current = null
-    safely(() => applyAnalyticsIdentityTransition(
-      client,
-      resolvedScopeUserId,
-      eventContext,
-    ))
+    safely(() => applyAnalyticsIdentityTransition(client, resolvedScopeUserId, eventContext))
     appliedKey.current = resolvedIdentityKey
-    captureCurrentPage(client, currentPage.current, capturedPage)
+    captureLatestPage()
     diagnostics.current?.flushPending()
     diagnostics.current?.flushVitals()
   }, [client, eventContext, resolvedIdentityKey, resolvedScopeUserId])
 
   useEffect(() => {
-    if (!isLoaded || appliedKey.current !== expectedKey.current) return
+    if (!isLoaded || !appliedIdentityIsCurrent()) return
     captureCurrentPage(client, { pathname, routeId }, capturedPage)
   }, [client, isLoaded, pathname, routeId])
 
   useEffect(() => {
     const installed = installBrowserDiagnostics({
       capture: (event, properties, occurredAt) => {
-        if (
-          expectedKey.current === null
-          || appliedKey.current !== expectedKey.current
-        ) {
-          return false
-        }
+        if (!identifiedViewerIsCurrent()) return false
         safely(() => client.capture(event, properties, occurredAt))
         return true
       },

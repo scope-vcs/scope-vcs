@@ -9,33 +9,39 @@ export async function hashAttachmentFile(blob: Blob, signal: AbortSignal) {
 
 export function runAttachmentHashWorker(blob: Blob, signal: AbortSignal, worker: HashWorker) {
   return new Promise<string>((resolve, reject) => {
-    function finish(error: Error | null, sha256?: string) {
+    function release() {
       signal.removeEventListener('abort', abort)
       worker.onmessage = null
       worker.onerror = null
       worker.terminate()
-      if (error) reject(error)
-      else resolve(sha256!)
+    }
+    function succeed(sha256: string) {
+      release()
+      resolve(sha256)
+    }
+    function fail(error: Error) {
+      release()
+      reject(error)
     }
     function abort() {
-      finish(new DOMException('Upload cancelled', 'AbortError'))
+      fail(new DOMException('Upload cancelled', 'AbortError'))
     }
     worker.onmessage = (event: MessageEvent<{ sha256?: string; error?: string }>) => {
       if (event.data.sha256 && /^[a-f0-9]{64}$/.test(event.data.sha256)) {
-        finish(null, event.data.sha256)
+        succeed(event.data.sha256)
       } else {
-        finish(new Error(event.data.error ?? 'The file could not be hashed. Try again.'))
+        fail(new Error(event.data.error ?? 'The file could not be hashed. Try again.'))
       }
     }
     worker.onerror = (event) => {
       event.preventDefault()
-      finish(new Error('The file could not be hashed. Try again.'))
+      fail(new Error('The file could not be hashed. Try again.'))
     }
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
     else {
       try { worker.postMessage(blob) }
-      catch (error) { finish(error instanceof Error ? error : new Error('The file could not be read.')) }
+      catch (error) { fail(error instanceof Error ? error : new Error('The file could not be read.')) }
     }
   })
 }

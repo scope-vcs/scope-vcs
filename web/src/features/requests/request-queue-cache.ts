@@ -27,8 +27,8 @@ export function invalidateRequestQueues(scope: string) {
   requestQueueResource.invalidateMatching((identity) => requestQueueScope(identity) === scope)
 }
 
-export async function refreshRequestQueue(key: string, load: LoadRequestQueuePage, signal: AbortSignal): Promise<RequestQueueViewState> {
-  const previous = requestQueueResource.peek(key)
+export async function refreshRequestQueue(key: string | null, load: LoadRequestQueuePage, signal: AbortSignal): Promise<RequestQueueViewState> {
+  const previous = key === null ? null : requestQueueResource.peek(key)
   const entries = await Promise.all(REQUEST_QUEUE_SECTION_ORDER.map(async (section) => {
     let page = await load(section, null, signal)
     const depth = previous?.pages[section].requests.length ?? 0

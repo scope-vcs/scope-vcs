@@ -3,7 +3,7 @@ use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "scope_requests")]
-pub struct Model {
+pub(crate) struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub repo_id: String,
@@ -38,12 +38,12 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub(crate) enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
-    pub fn from_domain(request: &Request) -> Result<Self, PostgresError> {
+    pub(crate) fn from_domain(request: &Request) -> Result<Self, PostgresError> {
         request.validate_facts()?;
         let base = base::BaseColumns::from_domain(&request.base);
         Ok(Self {
@@ -86,7 +86,7 @@ impl Model {
         })
     }
 
-    pub fn try_into_domain(self) -> Result<Request, PostgresError> {
+    pub(crate) fn try_into_domain(self) -> Result<Request, PostgresError> {
         let request = Request {
             id: self.id,
             repo_id: self.repo_id,

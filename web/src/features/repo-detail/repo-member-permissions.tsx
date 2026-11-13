@@ -22,7 +22,7 @@ export function MemberAccessSummary({
 }
 
 export function PermissionEditor({
-  disabled,
+  disabled = false,
   onChange,
   permissions,
   views,

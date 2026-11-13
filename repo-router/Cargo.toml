@@ -1,5 +1,6 @@
 [package]
 name = "scope-repo-router"
+publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -18,3 +19,6 @@ scope_service_runtime = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = "0.1.17"
 tower = { workspace = true, features = ["util"] }
+
+[lints]
+workspace = true

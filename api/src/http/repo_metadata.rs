@@ -44,5 +44,5 @@ pub(crate) async fn update_repo_metadata(
         .repo_summary(&owner, &repo_name, Some(&user.id))
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
-    Ok(Json(super::repos::repo_summary_response(&state, summary)?))
+    Ok(Json(super::repos::repo_summary_response(&state, summary)))
 }

@@ -1,12 +1,12 @@
 use super::*;
 
-pub mod projection_read_model {
+pub(crate) mod projection_read_model {
     use super::*;
     use scope_domain::{history::HistoryCursor, projection::ProjectionCursor};
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_projection_read_models")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -30,12 +30,12 @@ pub mod projection_read_model {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     #[derive(Clone, Debug, Default, PartialEq, Eq)]
-    pub struct FoldPosition {
+    pub(crate) struct FoldPosition {
         pub commits: usize,
         pub change_sets: usize,
         pub last_commit_id: Option<String>,
@@ -43,12 +43,12 @@ pub mod projection_read_model {
     }
 
     impl Model {
-        pub fn current(&self) -> bool {
+        pub(crate) fn current(&self) -> bool {
             self.identity_version == scope_git::PROJECTION_IDENTITY_VERSION
                 && self.history_version == scope_domain::history::HISTORY_GENERATION_VERSION
         }
 
-        pub fn position(&self) -> Result<FoldPosition, PostgresError> {
+        pub(crate) fn position(&self) -> Result<FoldPosition, PostgresError> {
             Ok(FoldPosition {
                 commits: i64_to_usize(self.folded_commits, "folded commit count")?,
                 change_sets: i64_to_usize(self.folded_change_sets, "folded change set count")?,
@@ -57,7 +57,7 @@ pub mod projection_read_model {
             })
         }
 
-        pub fn projection_cursor(&self) -> Result<ProjectionCursor, PostgresError> {
+        pub(crate) fn projection_cursor(&self) -> Result<ProjectionCursor, PostgresError> {
             Ok(ProjectionCursor {
                 commit_count: i64_to_usize(self.projected_commits, "projected commit count")?,
                 last_projected_id: self.last_projected_id.clone(),
@@ -65,14 +65,14 @@ pub mod projection_read_model {
             })
         }
 
-        pub fn history_cursor(&self) -> HistoryCursor {
+        pub(crate) fn history_cursor(&self) -> HistoryCursor {
             HistoryCursor {
                 last_entry_id: self.last_history_entry_id.clone(),
                 generation: self.history_generation.clone(),
             }
         }
 
-        pub fn history_entries(&self) -> Result<usize, PostgresError> {
+        pub(crate) fn history_entries(&self) -> Result<usize, PostgresError> {
             i64_to_usize(self.history_entries, "history entry count")
         }
     }
@@ -83,14 +83,14 @@ pub mod projection_read_model {
     }
 }
 
-pub mod projection_file {
+pub(crate) mod projection_file {
     use super::*;
     use crate::db::object_references::{decode_content_ref, encode_content_ref};
     use sha2::{Digest as _, Sha256};
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_projection_files")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -112,12 +112,12 @@ pub mod projection_file {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn live(
+        pub(crate) fn live(
             repo_id: &str,
             content: ProjectionViewFileContent,
         ) -> Result<Self, PostgresError> {
@@ -150,7 +150,7 @@ pub mod projection_file {
             })
         }
 
-        pub fn try_into_content(self) -> Result<ProjectionViewFileContent, PostgresError> {
+        pub(crate) fn try_into_content(self) -> Result<ProjectionViewFileContent, PostgresError> {
             if !is_supported_git_file_mode(&self.git_file_mode) {
                 return Err(PostgresError::internal_message(
                     "projection file has unsupported Git mode",
@@ -173,7 +173,7 @@ pub mod projection_file {
             })
         }
 
-        pub fn try_into_view(self) -> Result<ProjectionViewFile, PostgresError> {
+        pub(crate) fn try_into_view(self) -> Result<ProjectionViewFile, PostgresError> {
             Ok(self.try_into_content()?.file)
         }
     }

@@ -12,6 +12,7 @@ type ResourceSnapshot<T> = {
 type ResourceAttempt<T> = {
   controller: AbortController
   promise: Promise<T | null>
+  settled: Promise<T>
   version: string
   invalidated: boolean
 }
@@ -80,10 +81,11 @@ export function createCachedResource<T extends object>({ retainAcrossViewers = f
     if (!snapshot.stale && snapshot.version === version) return Promise.resolve(snapshot.value)
     cancel(identity)
     const controller = new AbortController()
-    const attempt: ResourceAttempt<T> = { controller, promise: Promise.resolve(null), version, invalidated: false }
+    const settled = Promise.resolve().then(() => load(controller.signal))
+    const attempt: ResourceAttempt<T> = { controller, promise: Promise.resolve(null), settled, version, invalidated: false }
     attempts.set(identity, attempt)
     publish(identity, { ...snapshot, error: null, version, stale: false, pending: true })
-    attempt.promise = Promise.resolve().then(() => load(controller.signal)).then(
+    attempt.promise = settled.then(
       (value) => {
         if (attempts.get(identity) !== attempt) return null
         attempts.delete(identity)
@@ -114,10 +116,12 @@ export function createCachedResource<T extends object>({ retainAcrossViewers = f
     ensure,
     async load(identity: string, version: string, load: (signal: AbortSignal) => Promise<T>): Promise<T> {
       if (getSnapshot(identity).error !== null) invalidate(identity)
-      const value = await ensure(identity, version, load)
+      const pending = ensure(identity, version, load)
+      const attempt = attempts.get(identity)
+      const value = await pending
       if (value !== null) return value
-      const snapshot = getSnapshot(identity)
-      throw snapshot.error ?? new Error('Resource is no longer available.')
+      if (attempt?.promise === pending && getSnapshot(identity).error !== null) await attempt.settled
+      throw new Error('Resource is no longer available.')
     },
     getSnapshot,
     getServerSnapshot: (): ResourceSnapshot<T> => emptySnapshot,
@@ -157,6 +161,6 @@ export function createCachedResource<T extends object>({ retainAcrossViewers = f
       }
     },
     clear,
-    stats: entries.stats,
+    stats: () => entries.stats(),
   }
 }

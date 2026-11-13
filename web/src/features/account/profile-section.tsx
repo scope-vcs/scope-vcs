@@ -15,7 +15,7 @@ export function ProfileSection() {
   const user = session.value?.account?.user ?? null
   const clerkEmail = clerkUser?.primaryEmailAddress
   useRefreshWhenChanged(
-    clerkEmail ? `${clerkEmail.emailAddress}\0${clerkEmail.verification?.status}` : null,
+    clerkEmail ? `${clerkEmail.emailAddress}\0${clerkEmail.verification.status}` : null,
     session.retry,
   )
 

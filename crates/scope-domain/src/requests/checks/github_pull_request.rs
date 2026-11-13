@@ -335,7 +335,10 @@ impl GitHubPullRequest {
             GitHubPullRequestState::Merged(merge) if merge.head_oid == request.head_oid => {
                 Some(merge)
             }
-            _ => None,
+            GitHubPullRequestState::Open
+            | GitHubPullRequestState::Closed
+            | GitHubPullRequestState::ClosedOnGitHub
+            | GitHubPullRequestState::Merged(_) => None,
         }
     }
 

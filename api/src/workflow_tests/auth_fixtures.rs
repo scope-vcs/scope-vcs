@@ -119,6 +119,8 @@ pub(super) fn api_token(user_id: &str, email: &str) -> String {
 pub(super) fn scripted_clerk(state: &AppState) -> Arc<ScriptedClerkBackend> {
     match &state.clerk_backend {
         ClerkBackend::Scripted(clerk) => clerk.clone(),
-        _ => unreachable!("test state scripts Clerk"),
+        ClerkBackend::Api(_) | ClerkBackend::Unconfigured => {
+            unreachable!("test state scripts Clerk")
+        }
     }
 }

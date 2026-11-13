@@ -253,7 +253,9 @@ pub fn history_entries_after(
                     commits: commits.clone(),
                 })
             }
-            _ => None,
+            LogicalCommitOrigin::CanonicalPush { .. }
+            | LogicalCommitOrigin::PrivateRequestMerge { .. }
+            | LogicalCommitOrigin::RequestMerge { .. } => None,
         };
         if !files.is_empty() || !visibility_changes.is_empty() || native_commits.is_some() {
             let (author, message, occurred_at_unix) = action_metadata(logical, source, views, view);

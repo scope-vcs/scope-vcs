@@ -142,7 +142,10 @@ impl GitHubSetupCheck {
             {
                 self.finish(GitHubSetupCheckState::Finished, None, now_unix)
             }
-            _ => return false,
+            GitHubSetupCheckState::Pushing
+            | GitHubSetupCheckState::Waiting
+            | GitHubSetupCheckState::Finished
+            | GitHubSetupCheckState::Failed => return false,
         }
         true
     }
@@ -153,7 +156,9 @@ impl GitHubSetupCheck {
             GitHubSetupCheckState::Finished if !workflows_started => {
                 Some(NO_GITHUB_WORKFLOWS_STARTED.to_string())
             }
-            _ => None,
+            GitHubSetupCheckState::Pushing
+            | GitHubSetupCheckState::Waiting
+            | GitHubSetupCheckState::Finished => None,
         }
     }
 

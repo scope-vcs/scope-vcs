@@ -197,18 +197,18 @@ fn terminal_run_stop_uses_evidence_fallback_and_monotonic_aggregate_time() {
 
 fn run(state: RunState, updated_at_unix: u64) -> Run {
     let digest = "d".repeat(64);
-    Run::restore(
-        format!("run-{}", state.as_str()),
-        format!("request-check:run-{}", state.as_str()),
-        WorkflowIdentity::new(
+    Run::restore(Run {
+        id: format!("run-{}", state.as_str()),
+        idempotency_key: format!("request-check:run-{}", state.as_str()),
+        workflow: WorkflowIdentity::new(
             "owner/repo",
             WorkflowPath::parse("/.scope/runs/check.yml").unwrap(),
         )
         .unwrap(),
-        "e".repeat(64),
-        RunTrigger::Request,
-        None,
-        RunSource::ephemeral_git_bundle(SourceBlob {
+        workflow_revision_digest: "e".repeat(64),
+        trigger: RunTrigger::Request,
+        requested_by_user_id: None,
+        source: RunSource::ephemeral_git_bundle(SourceBlob {
             content_ref: ContentRef::git_bundle_sha256(digest.clone()),
             sha256: digest,
             git_oid: HEAD.into(),
@@ -217,10 +217,10 @@ fn run(state: RunState, updated_at_unix: u64) -> Run {
         })
         .unwrap(),
         state,
-        state == RunState::Canceled,
-        4,
+        cancellation_requested: state == RunState::Canceled,
+        created_at_unix: 4,
         updated_at_unix,
-        state.is_terminal().then_some(updated_at_unix),
-    )
+        completed_at_unix: state.is_terminal().then_some(updated_at_unix),
+    })
     .unwrap()
 }

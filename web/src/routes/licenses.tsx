@@ -13,7 +13,7 @@ const licenseLinkClass =
 
 function LicensesRoute() {
   return (
-    <AppShell header={() => <ApplicationTopbar />}>
+    <AppShell header={<ApplicationTopbar />}>
       <PageContent>
         <div className="max-w-[68ch]">
           <PageHeader

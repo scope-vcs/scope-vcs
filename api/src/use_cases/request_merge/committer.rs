@@ -71,7 +71,7 @@ struct QueuedMerge {
 
 impl QueuedMerge {
     fn answer(self, result: Result<LandedMerge, RequestMergeFailure>) {
-        let _ = self.reply.send(result);
+        self.reply.send(result).ok();
     }
 
     fn author(&self) -> MergeAuthor<'_> {
@@ -161,12 +161,8 @@ impl MergeCommitter {
         };
         let mut batch = Vec::new();
         while batch.len() < MAX_MERGES_PER_COMMIT
-            && let Some(next) = queue.front()
+            && let Some(next) = queue.pop_front_if(|next| !next.alone || batch.is_empty())
         {
-            if next.alone && !batch.is_empty() {
-                break;
-            }
-            let next = queue.pop_front().expect("front checked");
             let alone = next.alone;
             batch.push(next);
             if alone {

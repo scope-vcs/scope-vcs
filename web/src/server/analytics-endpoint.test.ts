@@ -59,8 +59,9 @@ test('GeoIP uses only the Railway client address after explicit activation', asy
       })
       assert.equal(response?.status, 200)
       assert.equal(deliveries.length, 1)
-      const delivered = deliveries[0]
-      const capture = await delivered.json()
+      const [delivered] = deliveries
+      assert.ok(delivered)
+      const capture = deliveredCapture(await delivered.json())
       assert.equal(delivered.headers.get('x-forwarded-for'), fixture.expected)
       assert.equal(delivered.headers.get('x-real-ip'), null)
       assert.equal(capture.properties.$geoip_disable, !fixture.expected)
@@ -140,3 +141,12 @@ test('does not contact PostHog when the runtime gate is inactive', async () => {
   assert.equal(response.status, 404)
   assert.equal(contacted, false)
 })
+
+function deliveredCapture(body: unknown) {
+  assert.ok(isRecord(body) && isRecord(body.properties))
+  return { ip: body.ip, properties: body.properties }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}

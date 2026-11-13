@@ -499,7 +499,7 @@ mod tests {
                 .operator_diagnostic()
                 .starts_with("checking ancestry:")
         );
-        let _ = fs::remove_dir_all(repo);
+        crate::git::storage::remove_dir_if_exists(&repo).unwrap();
     }
 
     #[test]
@@ -509,11 +509,11 @@ mod tests {
         run_git(Some(&repo), &["tag", "v1"], "tag").unwrap();
 
         let heads = git_ref_listing(&repo, &["refs/heads"], "listing heads").unwrap();
-        assert_eq!(heads, vec![("refs/heads/main".to_string(), head.clone())]);
+        assert_eq!(heads, vec![("refs/heads/main".to_string(), head)]);
         let all = git_ref_listing(&repo, &[], "listing refs").unwrap();
         assert_eq!(all.len(), 2);
         assert_eq!(all[1].0, "refs/tags/v1");
-        let _ = fs::remove_dir_all(repo);
+        crate::git::storage::remove_dir_if_exists(&repo).unwrap();
     }
 
     #[test]
@@ -536,7 +536,7 @@ mod tests {
         .unwrap();
         let error = git_main_oid(&repo, "reading main").unwrap_err();
         assert!(error.operator_diagnostic().starts_with("reading main"));
-        let _ = fs::remove_dir_all(repo);
+        crate::git::storage::remove_dir_if_exists(&repo).unwrap();
     }
 
     fn temp_repo(label: &str) -> PathBuf {

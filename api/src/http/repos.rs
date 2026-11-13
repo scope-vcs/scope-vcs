@@ -53,7 +53,7 @@ pub(crate) async fn get_owner_repositories(
         .ok_or_else(|| ApiError::not_found(format!("user {handle} not found")))?;
     let mut repositories = Vec::new();
     for summary in profile.repositories {
-        repositories.push(repo_summary_response(&state, summary)?);
+        repositories.push(repo_summary_response(&state, summary));
     }
     repositories.sort_by(|left, right| left.id.cmp(&right.id));
 
@@ -129,7 +129,7 @@ pub(crate) async fn get_repo(
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
 
-    Ok(Json(repo_summary_response(&state, summary)?))
+    Ok(Json(repo_summary_response(&state, summary)))
 }
 
 pub(crate) async fn delete_repo(
@@ -621,8 +621,8 @@ pub(crate) async fn get_file_content(
 pub(super) fn repo_summary_response(
     state: &AppState,
     summary: RepoSummaryRead,
-) -> Result<RepoSummaryResponse, ApiError> {
-    Ok(RepoSummaryResponse {
+) -> RepoSummaryResponse {
+    RepoSummaryResponse {
         id: summary.id,
         git_remote_url: repository_git_remote_url(
             &state.git_public_url,
@@ -640,5 +640,5 @@ pub(super) fn repo_summary_response(
         access: repository_access_response(summary.access),
         views: scope_api_contract::view_definitions(&summary.views),
         open_request_count: summary.open_request_count,
-    })
+    }
 }

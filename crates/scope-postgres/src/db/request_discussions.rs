@@ -68,8 +68,8 @@ pub struct RequestDiscussionsPageQuery<'a> {
     pub limit: u64,
 }
 
-pub type DiscussionWithActors = (RequestDiscussionReadModel, RequestDiscussionActors);
-pub type ReplyWithActors = (RequestDiscussionReplyReadModel, RequestDiscussionActors);
+pub(super) type DiscussionWithActors = (RequestDiscussionReadModel, RequestDiscussionActors);
+pub(super) type ReplyWithActors = (RequestDiscussionReplyReadModel, RequestDiscussionActors);
 
 impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_revision_window"))]

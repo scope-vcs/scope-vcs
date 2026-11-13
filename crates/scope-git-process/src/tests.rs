@@ -264,17 +264,16 @@ fn cancellation_kills_and_reaps_child_and_descendant_holding_pipes() {
 #[cfg(unix)]
 fn assert_process_reaped(pid: u32) {
     let pid = pid as libc::pid_t;
-    assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
     assert_eq!(
-        std::io::Error::last_os_error().raw_os_error(),
+        crate::posix::send_signal(pid, 0)
+            .unwrap_err()
+            .raw_os_error(),
         Some(libc::ESRCH)
     );
     assert_eq!(
-        unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) },
-        -1
-    );
-    assert_eq!(
-        std::io::Error::last_os_error().raw_os_error(),
+        crate::posix::try_wait_child(pid)
+            .unwrap_err()
+            .raw_os_error(),
         Some(libc::ECHILD)
     );
 }

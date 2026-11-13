@@ -65,8 +65,12 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
     .map(requestCheckRow)
     .sort(byNamePath)
   const attention = all
-    .filter((check) => check.tone in ATTENTION_ORDER)
-    .sort((a, b) => ATTENTION_ORDER[a.tone]! - ATTENTION_ORDER[b.tone]!)
+    .flatMap((check) => {
+      const rank = ATTENTION_ORDER[check.tone]
+      return rank === undefined ? [] : [{ check, rank }]
+    })
+    .sort((a, b) => a.rank - b.rank)
+    .map(({ check }) => check)
   const count = (tone: RunTone) => all.filter((check) => check.tone === tone).length
   const failed = count('danger')
   const left = count('running') + count('waiting')
@@ -176,8 +180,9 @@ export function requestCheckGroups(rows: RequestCheckRow[]): RequestCheckGroup[]
 function byNamePath(a: RequestCheckRow, b: RequestCheckRow) {
   const left = [...a.parents, a.leaf]
   const right = [...b.parents, b.leaf]
-  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
-    const [x, y] = [left[index]!, right[index]!]
+  for (const [index, x] of left.entries()) {
+    const y = right[index]
+    if (y === undefined) break
     if (x !== y) return x.localeCompare(y) || (x < y ? -1 : 1)
   }
   return left.length - right.length
@@ -193,7 +198,7 @@ function row(
   run: RequestCheckRow['run'],
 ): RequestCheckRow {
   const parts = name.split(' / ')
-  const leaf = parts.pop()!
+  const leaf = parts.pop() ?? name
   const tone = runStatus(state).tone
   const reason = tone === 'danger' && label !== 'failed' ? label : null
   return { key, provider, workflow, name, leaf, parents: parts, state, tone, reason, run }

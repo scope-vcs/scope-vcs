@@ -1,4 +1,4 @@
-pub fn repository_key(path: &str) -> Option<String> {
+pub(crate) fn repository_key(path: &str) -> Option<String> {
     let mut segments = path.strip_prefix("/git/")?.split('/');
     if !is_view_id(segments.next()?) {
         return None;

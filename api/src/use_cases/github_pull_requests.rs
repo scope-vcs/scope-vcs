@@ -233,7 +233,7 @@ async fn advance(
         GitHubPullRequestIntent::Open { .. } if review_bots.open_pull_requests => {
             Some(pull_request_text(state, carrier).await?)
         }
-        _ => None,
+        GitHubPullRequestIntent::Open { .. } | GitHubPullRequestIntent::Close => None,
     };
     let mut checked_visibility = false;
     for _ in 0..MAX_STEPS {

@@ -12,15 +12,16 @@ use scope_domain::{
 use std::collections::BTreeSet;
 
 mod dependencies;
+mod filter;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReviewMode {
+pub(super) enum ReviewMode {
     Standalone,
     Push,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum ChangeListKind {
+pub(super) enum ChangeListKind {
     Added,
     Deleted,
 }
@@ -37,7 +38,7 @@ enum ReviewItem {
 }
 
 #[derive(Clone, Debug)]
-pub struct ReviewState {
+pub(super) struct ReviewState {
     tree: ReviewTree,
     config: RepoConfig,
     visibilities: Vec<ReviewLabel>,
@@ -58,13 +59,13 @@ pub struct ReviewState {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DependencyPathSide {
+pub(super) enum DependencyPathSide {
     PublicSource,
     PrivateTarget,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ReviewRow {
+pub(super) enum ReviewRow {
     DependencySummary(DependencySummary),
     DependencyFinding {
         source_path: String,
@@ -99,7 +100,7 @@ pub enum ReviewRow {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReviewInput {
+pub(super) enum ReviewInput {
     Up,
     Down,
     Left,
@@ -118,7 +119,7 @@ pub enum ReviewInput {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReviewStateAction {
+pub(super) enum ReviewStateAction {
     None,
     Save,
     ContinuePush,
@@ -127,11 +128,11 @@ pub enum ReviewStateAction {
 }
 
 impl ReviewState {
-    pub fn new(tree: ReviewTree, config: RepoConfig, mode: ReviewMode) -> Self {
+    pub(super) fn new(tree: ReviewTree, config: RepoConfig, mode: ReviewMode) -> Self {
         Self::build(tree, config, mode, &[], DependencyReview::hidden())
     }
 
-    pub fn new_push(
+    pub(super) fn new_push(
         tree: ReviewTree,
         config: RepoConfig,
         changed_paths: &[GitChangedPath],
@@ -154,7 +155,7 @@ impl ReviewState {
         dependencies: DependencyReview,
     ) -> Self {
         let mut expanded_tree_nodes = BTreeSet::new();
-        expanded_tree_nodes.insert(tree.root_id());
+        expanded_tree_nodes.insert(ReviewTree::ROOT_ID);
         let message = if config.history.rewrites.is_empty() {
             "Space toggles visibility. Right expands folders and change lists.".to_string()
         } else {
@@ -185,44 +186,44 @@ impl ReviewState {
             dependency_path_side: DependencyPathSide::PublicSource,
         };
         state.rebuild_visible_items();
-        state.move_cursor_to_item(ReviewItem::TreeNode(state.tree.root_id()));
+        state.move_cursor_to_item(ReviewItem::TreeNode(ReviewTree::ROOT_ID));
         state
     }
 
-    pub fn config(&self) -> &RepoConfig {
+    pub(super) fn config(&self) -> &RepoConfig {
         &self.config
     }
 
-    pub fn is_dirty(&self) -> bool {
+    pub(super) fn is_dirty(&self) -> bool {
         self.config != self.original_config
     }
 
-    pub fn mark_saved(&mut self) {
+    pub(super) fn mark_saved(&mut self) {
         self.original_config = self.config.clone();
         self.message = "Saved Scope repo config".to_string();
     }
 
-    pub fn message(&self) -> &str {
+    pub(super) fn message(&self) -> &str {
         &self.message
     }
 
-    pub fn filter(&self) -> &str {
+    pub(super) fn filter(&self) -> &str {
         &self.filter
     }
 
-    pub fn editing_filter(&self) -> bool {
+    pub(super) fn editing_filter(&self) -> bool {
         self.editing_filter
     }
 
-    pub fn mode(&self) -> ReviewMode {
+    pub(super) fn mode(&self) -> ReviewMode {
         self.mode
     }
 
-    pub fn history_rewrite_count(&self) -> usize {
+    pub(super) fn history_rewrite_count(&self) -> usize {
         self.config.history.rewrites.len()
     }
 
-    pub fn history_rewrite_summaries(&self) -> Vec<String> {
+    pub(super) fn history_rewrite_summaries(&self) -> Vec<String> {
         self.config
             .history
             .rewrites
@@ -237,19 +238,19 @@ impl ReviewState {
             .collect()
     }
 
-    pub fn cursor(&self) -> usize {
+    pub(super) fn cursor(&self) -> usize {
         self.cursor
     }
 
-    pub fn scroll(&self) -> usize {
+    pub(super) fn scroll(&self) -> usize {
         self.scroll
     }
 
-    pub fn visible_row_count(&self) -> usize {
+    pub(super) fn visible_row_count(&self) -> usize {
         self.visible_items.len()
     }
 
-    pub fn visible_rows(&self, offset: usize, limit: usize) -> Vec<ReviewRow> {
+    pub(super) fn visible_rows(&self, offset: usize, limit: usize) -> Vec<ReviewRow> {
         self.visible_items
             .iter()
             .skip(offset)
@@ -259,7 +260,7 @@ impl ReviewState {
             .collect()
     }
 
-    pub fn adjust_scroll(&mut self, viewport_height: usize) {
+    pub(super) fn adjust_scroll(&mut self, viewport_height: usize) {
         if self.cursor < self.scroll {
             self.scroll = self.cursor;
         }
@@ -268,7 +269,7 @@ impl ReviewState {
         }
     }
 
-    pub fn handle_input(&mut self, input: ReviewInput) -> ReviewStateAction {
+    pub(super) fn handle_input(&mut self, input: ReviewInput) -> ReviewStateAction {
         if input == ReviewInput::Cancel {
             return ReviewStateAction::Cancel;
         }
@@ -324,29 +325,6 @@ impl ReviewState {
         ReviewStateAction::None
     }
 
-    fn handle_filter_input(&mut self, input: ReviewInput) -> ReviewStateAction {
-        match input {
-            ReviewInput::Escape => {
-                self.editing_filter = false;
-                self.message = "Filter closed".to_string();
-            }
-            ReviewInput::Backspace => {
-                self.filter.pop();
-                self.rebuild_visible_items();
-            }
-            ReviewInput::Char(value) => {
-                self.filter.push(value);
-                self.rebuild_visible_items();
-            }
-            ReviewInput::Quit => {
-                self.filter.push('q');
-                self.rebuild_visible_items();
-            }
-            _ => {}
-        }
-        ReviewStateAction::None
-    }
-
     fn move_cursor_up(&mut self) {
         self.cursor = self.cursor.saturating_sub(1);
     }
@@ -394,7 +372,7 @@ impl ReviewState {
         let kind = node.kind;
         let parent = node.parent;
         if kind != ReviewNodeKind::File
-            && id != self.tree.root_id()
+            && id != ReviewTree::ROOT_ID
             && self.expanded_tree_nodes.remove(&id)
         {
             self.rebuild_visible_items();
@@ -428,9 +406,10 @@ impl ReviewState {
             ReviewItem::DependencyFinding(_) => {
                 self.dependency_path_side = DependencyPathSide::PrivateTarget;
             }
-            ReviewItem::DependencyGap(_) | ReviewItem::DependencyCoverage => {}
+            ReviewItem::DependencyGap(_)
+            | ReviewItem::DependencyCoverage
+            | ReviewItem::ChangePath(_, _) => {}
             ReviewItem::ChangeSection(kind) => self.expand_change_list_or_move_to_first_path(kind),
-            ReviewItem::ChangePath(_, _) => {}
             ReviewItem::TreeNode(id) => self.expand_tree_node_or_move_to_first_child(id),
         }
     }
@@ -447,18 +426,17 @@ impl ReviewState {
 
     fn expand_tree_node_or_move_to_first_child(&mut self, id: usize) {
         let node = self.tree.node(id);
-        let kind = node.kind;
-        let first_child = node.children.first().copied();
-        if kind == ReviewNodeKind::File || first_child.is_none() {
+        if node.kind == ReviewNodeKind::File {
             return;
         }
+        let Some(&first_child) = node.children.first() else {
+            return;
+        };
         if self.expanded_tree_nodes.insert(id) {
             self.rebuild_visible_items();
             return;
         }
-        self.move_cursor_to_item(ReviewItem::TreeNode(
-            first_child.expect("first child is checked above"),
-        ));
+        self.move_cursor_to_item(ReviewItem::TreeNode(first_child));
     }
 
     fn toggle_selected(&mut self) {
@@ -546,7 +524,7 @@ impl ReviewState {
         self.collect_dependency_items(&mut items);
         self.collect_change_items(ChangeListKind::Added, &mut items);
         self.collect_change_items(ChangeListKind::Deleted, &mut items);
-        self.collect_visible_tree_items(self.tree.root_id(), &mut items);
+        self.collect_visible_tree_items(ReviewTree::ROOT_ID, &mut items);
         self.visible_items = items;
         self.clamp_cursor();
     }
@@ -576,7 +554,7 @@ impl ReviewState {
     fn collect_visible_tree_items(&self, node_id: usize, items: &mut Vec<ReviewItem>) {
         let node = self.tree.node(node_id);
         if self.filter.is_empty()
-            || node_id == self.tree.root_id()
+            || node_id == ReviewTree::ROOT_ID
             || node.path.contains(&self.filter)
             || node.name.contains(&self.filter)
         {
@@ -591,16 +569,18 @@ impl ReviewState {
 
     fn row_for_item(&self, item: ReviewItem) -> ReviewRow {
         match item {
-            ReviewItem::DependencySummary => ReviewRow::DependencySummary(
-                self.dependencies
-                    .summary()
-                    .expect("dependency summary exists for a visible dependency item"),
-            ),
+            #[expect(clippy::expect_used)]
+            ReviewItem::DependencySummary => {
+                ReviewRow::DependencySummary(self.dependencies.summary().expect(
+                    "visible dependency items are rebuilt whenever dependency status changes",
+                ))
+            }
+            #[expect(clippy::expect_used)]
             ReviewItem::DependencyFinding(index) => {
                 let finding = &self
                     .dependencies
                     .report()
-                    .expect("findings only exist for a dependency report")
+                    .expect("visible dependency findings come from the current dependency report")
                     .findings[index];
                 ReviewRow::DependencyFinding {
                     source_path: finding.source_path.clone(),
@@ -608,18 +588,20 @@ impl ReviewState {
                     selected_side: self.dependency_path_side,
                 }
             }
+            #[expect(clippy::expect_used)]
             ReviewItem::DependencyGap(index) => ReviewRow::DependencyGap(
                 self.dependencies
                     .report()
-                    .expect("gaps only exist for a dependency report")
+                    .expect("visible dependency gaps come from the current dependency report")
                     .gaps[index]
                     .clone(),
             ),
+            #[expect(clippy::expect_used)]
             ReviewItem::DependencyCoverage => {
                 let report = self
                     .dependencies
                     .report()
-                    .expect("coverage only exists for a dependency report");
+                    .expect("visible dependency coverage comes from the current dependency report");
                 ReviewRow::DependencyCoverage {
                     analyzed_file_count: report.analyzed_file_count,
                     unsupported_file_count: report.unsupported_files.len(),

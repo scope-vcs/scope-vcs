@@ -1,11 +1,11 @@
 use super::*;
 
-pub mod workflow_revision {
+pub(crate) mod workflow_revision {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_workflow_revisions")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub digest: String,
         pub definition: Json,
@@ -13,12 +13,12 @@ pub mod workflow_revision {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(
+        pub(crate) fn from_domain(
             revision: &WorkflowRevision,
             created_at_unix: u64,
         ) -> Result<Self, PostgresError> {
@@ -29,7 +29,7 @@ pub mod workflow_revision {
             })
         }
 
-        pub fn try_into_domain(
+        pub(crate) fn try_into_domain(
             self,
             identity: WorkflowIdentity,
         ) -> Result<WorkflowRevision, PostgresError> {
@@ -47,12 +47,12 @@ pub mod workflow_revision {
     }
 }
 
-pub mod push_trigger_evaluation {
+pub(crate) mod push_trigger_evaluation {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_push_trigger_evaluations")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -66,12 +66,14 @@ pub mod push_trigger_evaluation {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(evaluation: &PushTriggerEvaluation) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(
+            evaluation: &PushTriggerEvaluation,
+        ) -> Result<Self, PostgresError> {
             Ok(Self {
                 repo_id: evaluation.repository_id.clone(),
                 change_version: u64_to_i64(
@@ -93,7 +95,7 @@ pub mod push_trigger_evaluation {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<PushTriggerEvaluation, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<PushTriggerEvaluation, PostgresError> {
             Ok(PushTriggerEvaluation {
                 repository_id: self.repo_id,
                 change_version: i64_to_u64(self.change_version, "push trigger change version")?,
@@ -111,13 +113,13 @@ pub mod push_trigger_evaluation {
     }
 }
 
-pub mod run {
+pub(crate) mod run {
     use super::*;
     use sea_orm::ActiveValue::{NotSet, Set};
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_runs")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub idempotency_key: String,
@@ -136,12 +138,12 @@ pub mod run {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl ActiveModel {
-        pub fn from_domain(run: &Run) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(run: &Run) -> Result<Self, PostgresError> {
             Ok(Self {
                 id: Set(run.id.clone()),
                 idempotency_key: Set(run.idempotency_key.clone()),
@@ -165,37 +167,40 @@ pub mod run {
     }
 
     impl Model {
-        pub fn try_into_domain(self) -> Result<Run, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<Run, PostgresError> {
             let workflow = WorkflowIdentity::new(
                 self.repo_id,
                 WorkflowPath::parse(self.workflow_path).map_err(PostgresError::invalid_input)?,
             )
             .map_err(PostgresError::invalid_input)?;
-            Run::restore(
-                self.id,
-                self.idempotency_key,
+            Run::restore(Run {
+                id: self.id,
+                idempotency_key: self.idempotency_key,
                 workflow,
-                self.workflow_revision_digest,
-                decode_enum::<RunTrigger>(self.trigger)?,
-                self.requested_by_user_id,
-                decode_json::<RunSource>(self.source)?,
-                decode_enum::<RunState>(self.state)?,
-                self.cancellation_requested,
-                i64_to_u64(self.created_at_unix, "run creation time")?,
-                i64_to_u64(self.updated_at_unix, "run update time")?,
-                optional_i64_to_u64(self.completed_at_unix, "run completion time")?,
-            )
+                workflow_revision_digest: self.workflow_revision_digest,
+                trigger: decode_enum::<RunTrigger>(self.trigger)?,
+                requested_by_user_id: self.requested_by_user_id,
+                source: decode_json::<RunSource>(self.source)?,
+                state: decode_enum::<RunState>(self.state)?,
+                cancellation_requested: self.cancellation_requested,
+                created_at_unix: i64_to_u64(self.created_at_unix, "run creation time")?,
+                updated_at_unix: i64_to_u64(self.updated_at_unix, "run update time")?,
+                completed_at_unix: optional_i64_to_u64(
+                    self.completed_at_unix,
+                    "run completion time",
+                )?,
+            })
             .map_err(PostgresError::invalid_input)
         }
     }
 }
 
-pub mod run_job {
+pub(crate) mod run_job {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_run_jobs")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub run_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -213,12 +218,12 @@ pub mod run_job {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(job: &RunJob) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(job: &RunJob) -> Result<Self, PostgresError> {
             Ok(Self {
                 run_id: job.run_id.clone(),
                 job_key: job.key.as_str().to_string(),
@@ -256,19 +261,26 @@ pub mod run_job {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RunJob, PostgresError> {
-            RunJob::restore(
-                self.run_id,
-                WorkflowJobId::parse(self.job_key).map_err(PostgresError::invalid_input)?,
-                PinnedContainerImage::parse(self.pinned_container_image)
+        pub(crate) fn try_into_domain(self) -> Result<RunJob, PostgresError> {
+            RunJob::restore(RunJob {
+                run_id: self.run_id,
+                key: WorkflowJobId::parse(self.job_key).map_err(PostgresError::invalid_input)?,
+                pinned_container_image: PinnedContainerImage::parse(self.pinned_container_image)
                     .map_err(PostgresError::invalid_input)?,
-                decode_enum::<RunJobState>(self.state)?,
-                i32_to_u32(self.last_attempt_number, "run job last attempt number")?,
-                self.current_attempt_id,
-                i64_to_u64(self.created_at_unix, "run job creation time")?,
-                i64_to_u64(self.updated_at_unix, "run job update time")?,
-                optional_i64_to_u64(self.completed_at_unix, "run job completion time")?,
-                self.capacity_retry_first_rejected_at_unix
+                state: decode_enum::<RunJobState>(self.state)?,
+                last_attempt_number: i32_to_u32(
+                    self.last_attempt_number,
+                    "run job last attempt number",
+                )?,
+                current_attempt_id: self.current_attempt_id,
+                created_at_unix: i64_to_u64(self.created_at_unix, "run job creation time")?,
+                updated_at_unix: i64_to_u64(self.updated_at_unix, "run job update time")?,
+                completed_at_unix: optional_i64_to_u64(
+                    self.completed_at_unix,
+                    "run job completion time",
+                )?,
+                capacity_retry: self
+                    .capacity_retry_first_rejected_at_unix
                     .map(|first_rejected_at_unix| -> Result<_, PostgresError> {
                         Ok(scope_domain::runs::job::CapacityRetry {
                             first_rejected_at_unix: i64_to_u64(
@@ -286,18 +298,18 @@ pub mod run_job {
                         })
                     })
                     .transpose()?,
-            )
+            })
             .map_err(PostgresError::invalid_input)
         }
     }
 }
 
-pub mod run_attempt {
+pub(crate) mod run_attempt {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_run_attempts")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub run_id: String,
@@ -319,12 +331,12 @@ pub mod run_attempt {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(attempt: &RunAttempt) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(attempt: &RunAttempt) -> Result<Self, PostgresError> {
             Ok(Self {
                 id: attempt.id.clone(),
                 run_id: attempt.run_id.clone(),
@@ -364,41 +376,52 @@ pub mod run_attempt {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RunAttempt, PostgresError> {
-            RunAttempt::restore(
-                self.id,
-                self.run_id,
-                WorkflowJobId::parse(self.job_key).map_err(PostgresError::invalid_input)?,
-                i32_to_u32(self.number, "run attempt number")?,
-                self.external_run_id,
-                self.runtime_version,
-                self.token_hash,
-                decode_enum::<AttemptState>(self.state)?,
-                i64_to_u64(self.lease_expires_at_unix, "attempt lease expiry time")?,
-                i64_to_u64(self.last_heartbeat_at_unix, "attempt heartbeat time")?,
-                i64_to_u64(self.created_at_unix, "attempt creation time")?,
-                optional_i64_to_u64(self.started_at_unix, "attempt start time")?,
-                optional_i64_to_u64(self.completed_at_unix, "attempt completion time")?,
-                self.terminal_reason
+        pub(crate) fn try_into_domain(self) -> Result<RunAttempt, PostgresError> {
+            RunAttempt::restore(RunAttempt {
+                id: self.id,
+                run_id: self.run_id,
+                job_key: WorkflowJobId::parse(self.job_key)
+                    .map_err(PostgresError::invalid_input)?,
+                number: i32_to_u32(self.number, "run attempt number")?,
+                external_run_id: self.external_run_id,
+                runtime_version: self.runtime_version,
+                token_hash: self.token_hash,
+                state: decode_enum::<AttemptState>(self.state)?,
+                lease_expires_at_unix: i64_to_u64(
+                    self.lease_expires_at_unix,
+                    "attempt lease expiry time",
+                )?,
+                last_heartbeat_at_unix: i64_to_u64(
+                    self.last_heartbeat_at_unix,
+                    "attempt heartbeat time",
+                )?,
+                created_at_unix: i64_to_u64(self.created_at_unix, "attempt creation time")?,
+                started_at_unix: optional_i64_to_u64(self.started_at_unix, "attempt start time")?,
+                completed_at_unix: optional_i64_to_u64(
+                    self.completed_at_unix,
+                    "attempt completion time",
+                )?,
+                terminal_reason: self
+                    .terminal_reason
                     .map(decode_json::<AttemptTerminalReason>)
                     .transpose()?,
-                i64_to_u64(self.log_bytes, "attempt log byte count")?,
-                optional_i32_to_u32(
+                log_bytes: i64_to_u64(self.log_bytes, "attempt log byte count")?,
+                first_truncated_step_index: optional_i32_to_u32(
                     self.first_truncated_step_index,
                     "first truncated step index",
                 )?,
-            )
+            })
             .map_err(PostgresError::invalid_input)
         }
     }
 }
 
-pub mod run_attempt_step {
+pub(crate) mod run_attempt_step {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_run_attempt_steps")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub attempt_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -410,12 +433,12 @@ pub mod run_attempt_step {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(step: &RunAttemptStep) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(step: &RunAttemptStep) -> Result<Self, PostgresError> {
             Ok(Self {
                 attempt_id: step.attempt_id.clone(),
                 step_index: u32_to_i32(step.step_index, "run attempt step index")?,
@@ -432,7 +455,7 @@ pub mod run_attempt_step {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RunAttemptStep, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RunAttemptStep, PostgresError> {
             RunAttemptStep::restore(
                 self.attempt_id,
                 i32_to_u32(self.step_index, "run attempt step index")?,
@@ -446,12 +469,12 @@ pub mod run_attempt_step {
     }
 }
 
-pub mod run_attempt_cache {
+pub(crate) mod run_attempt_cache {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_run_attempt_caches")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub attempt_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -473,12 +496,14 @@ pub mod run_attempt_cache {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(observation: &AttemptCacheObservation) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(
+            observation: &AttemptCacheObservation,
+        ) -> Result<Self, PostgresError> {
             let (preparation, cold_reason) = match observation.preparation {
                 CachePreparation::Exact => ("exact".to_string(), None),
                 CachePreparation::Compatible => ("compatible".to_string(), None),
@@ -521,7 +546,7 @@ pub mod run_attempt_cache {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<AttemptCacheObservation, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<AttemptCacheObservation, PostgresError> {
             let preparation = match (self.preparation.as_str(), self.cold_reason) {
                 ("exact", None) => CachePreparation::Exact,
                 ("compatible", None) => CachePreparation::Compatible,
@@ -534,14 +559,16 @@ pub mod run_attempt_cache {
                     ));
                 }
             };
-            AttemptCacheObservation::restore(
-                self.attempt_id,
-                WorkflowPath::parse(self.workflow_path).map_err(PostgresError::invalid_input)?,
-                WorkflowJobId::parse(self.job_key).map_err(PostgresError::invalid_input)?,
-                self.cache_name,
-                self.identity_digest,
+            AttemptCacheObservation::restore(AttemptCacheObservation {
+                attempt_id: self.attempt_id,
+                workflow_path: WorkflowPath::parse(self.workflow_path)
+                    .map_err(PostgresError::invalid_input)?,
+                job_key: WorkflowJobId::parse(self.job_key)
+                    .map_err(PostgresError::invalid_input)?,
+                cache_name: self.cache_name,
+                identity_digest: self.identity_digest,
                 preparation,
-                AttemptCachePreparationTiming::new(
+                timing: AttemptCachePreparationTiming::new(
                     i64_to_u64(self.key_ms, "cache key duration")?,
                     i64_to_u64(self.metadata_ms, "cache metadata duration")?,
                     i64_to_u64(self.size_bytes, "cache compressed size")?,
@@ -554,20 +581,20 @@ pub mod run_attempt_cache {
                     i64_to_u64(self.prepare_ms, "cache preparation duration")?,
                 )
                 .map_err(PostgresError::invalid_input)?,
-                decode_enum::<CacheFinalState>(self.final_state)?,
-                optional_i64_to_u64(self.finalize_ms, "cache finalization duration")?,
-            )
+                final_state: decode_enum::<CacheFinalState>(self.final_state)?,
+                finalize_ms: optional_i64_to_u64(self.finalize_ms, "cache finalization duration")?,
+            })
             .map_err(PostgresError::invalid_input)
         }
     }
 }
 
-pub mod run_attempt_cache_setup {
+pub(crate) mod run_attempt_cache_setup {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_run_attempt_cache_setups")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub attempt_id: String,
         pub authorization_ms: i64,
@@ -575,12 +602,12 @@ pub mod run_attempt_cache_setup {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(
+        pub(crate) fn from_domain(
             observation: &AttemptCacheSetupObservation,
         ) -> Result<Self, PostgresError> {
             Ok(Self {
@@ -593,7 +620,7 @@ pub mod run_attempt_cache_setup {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<AttemptCacheSetupObservation, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<AttemptCacheSetupObservation, PostgresError> {
             AttemptCacheSetupObservation::new(
                 self.attempt_id,
                 i64_to_u64(self.authorization_ms, "cache authorization duration")?,
@@ -604,12 +631,12 @@ pub mod run_attempt_cache_setup {
     }
 }
 
-pub mod run_log {
+pub(crate) mod run_log {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_run_logs")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key)]
         pub position: i64,
         pub run_id: String,
@@ -621,12 +648,15 @@ pub mod run_log {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(run_id: &str, chunk: &RunLogChunk) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(
+            run_id: &str,
+            chunk: &RunLogChunk,
+        ) -> Result<Self, PostgresError> {
             Ok(Self {
                 position: 0,
                 run_id: run_id.to_string(),
@@ -638,7 +668,7 @@ pub mod run_log {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RunLogChunk, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RunLogChunk, PostgresError> {
             RunLogChunk::new(
                 self.attempt_id,
                 i32_to_u32(self.step_index, "run log step index")?,

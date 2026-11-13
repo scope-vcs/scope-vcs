@@ -30,7 +30,7 @@ export function sessionReady() {
 
 export function markSessionReady() {
   currentSessionReady = true
-  for (const wake of [...sessionReadyWaiters]) wake()
+  for (const wake of sessionReadyWaiters) wake()
 }
 
 export function whenSessionReady(boundMs: number) {

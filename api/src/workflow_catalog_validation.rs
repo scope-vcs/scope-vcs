@@ -13,7 +13,7 @@ fn validate_repository_workflow_catalogs(
 ) -> anyhow::Result<usize> {
     let mut validated = 0;
     for catalog in catalogs {
-        if catalog.configuration_error().is_some() {
+        if catalog.contents().is_err() {
             continue;
         }
         scope_run_config::parse_repository_workflow_catalog(&catalog).map_err(|error| {

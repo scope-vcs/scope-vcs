@@ -118,7 +118,7 @@ async fn independent_authorizations_wait_then_land_three_layers_with_a_parent_ex
             RequestState::Open
         );
     }
-    let extended_parent = fixture.extend_parent().await;
+    let extended_parent = fixture.extend_parent();
     let extended_child = stack_request(&fixture.state, &fixture.child_id).await;
     assert_eq!(
         extended_child.stack_status,

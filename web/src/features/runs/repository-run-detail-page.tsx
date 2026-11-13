@@ -15,7 +15,7 @@ import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { loadRunDetailSnapshot, runDetailResource, type RunDetailSnapshot } from './run-detail-resource'
 import { useRunResource } from './run-resource'
 import { RunDetailPagePending } from './run-detail-pending'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { runLogCacheKey } from './run-log-cache'
 import { useRunLogAbsence, useRunLogTimingPage } from './run-log-timing'
 
@@ -44,9 +44,10 @@ export function RepositoryRunDetailPage(props: RunDetailPageProps) {
 }
 
 function RunDetailResourceView({ cacheKey, scope, ...props }: RunDetailPageProps & { cacheKey: string | null; scope: string | null }) {
+  const [mountedAt] = useState(() => Date.now())
   const initialValue = useMemo<RunDetailSnapshot | null>(() => props.initialDetail && props.initialScope === scope ? {
-    detail: props.initialDetail, generation: 0, updatedAt: Date.now(),
-  } : null, [props.initialDetail, props.initialScope, scope])
+    detail: props.initialDetail, generation: 0, updatedAt: mountedAt,
+  } : null, [mountedAt, props.initialDetail, props.initialScope, scope])
   const { loadDetail } = props
   const load = useCallback(async (signal: AbortSignal): Promise<RunDetailSnapshot> => {
     if (!cacheKey) throw new Error('Run detail scope is unavailable.')
@@ -98,7 +99,7 @@ function RunDetailView({
         detail={detail}
         metadataError={metadataError}
         onCancel={() => void performAction('cancel', cancelRun)}
-        onRefresh={() => void refreshDetail()}
+        onRefresh={refreshDetail}
         onRetry={() => void performAction('retry', retryRun)}
         params={params}
         pendingAction={pendingAction}

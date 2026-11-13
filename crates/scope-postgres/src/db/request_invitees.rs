@@ -273,23 +273,21 @@ pub(super) async fn user_by_exact_handle<C>(
 where
     C: ConnectionTrait,
 {
-    entities::user::Entity::find()
+    Ok(entities::user::Entity::find()
         .filter(entities::user::Column::Handle.eq(handle.to_string()))
         .one(conn)
         .await?
-        .map(entities::user::Model::try_into_domain)
-        .transpose()
+        .map(entities::user::Model::into_domain))
 }
 
 async fn user_by_id<C>(conn: &C, user_id: &str) -> Result<Option<UserAccount>, PostgresError>
 where
     C: ConnectionTrait,
 {
-    entities::user::Entity::find_by_id(user_id.to_string())
+    Ok(entities::user::Entity::find_by_id(user_id.to_string())
         .one(conn)
         .await?
-        .map(entities::user::Model::try_into_domain)
-        .transpose()
+        .map(entities::user::Model::into_domain))
 }
 
 pub(super) async fn request_invitee_reads<C>(

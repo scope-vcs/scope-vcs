@@ -1,3 +1,5 @@
+#![expect(clippy::unwrap_used)]
+
 mod support;
 
 use scope_domain::requests::attachments::RequestMediaObject;
@@ -43,7 +45,6 @@ async fn metadata_encrypted_chunks_and_key_restore_into_an_independent_store() {
             &restored_manifest,
             MAX_CHUNK_BYTES as u64 - 4..=restored_manifest.plaintext_bytes - 1,
         )
-        .await
         .unwrap();
     let mut actual = Vec::new();
     while let Some(chunk) = stream.next().await {
@@ -52,10 +53,7 @@ async fn metadata_encrypted_chunks_and_key_restore_into_an_independent_store() {
     assert_eq!(actual, expected_tail);
 
     let wrong_key = MediaStorage::encrypted(restored_bucket, [84; 32], 1).unwrap();
-    let mut stream = wrong_key
-        .read_range(&restored_manifest, 0..=3)
-        .await
-        .unwrap();
+    let mut stream = wrong_key.read_range(&restored_manifest, 0..=3).unwrap();
     assert_eq!(
         stream.next().await.unwrap().unwrap_err().kind,
         MediaStorageErrorKind::Integrity

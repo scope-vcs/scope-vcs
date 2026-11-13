@@ -255,7 +255,6 @@ impl MediaStore {
         Ok(MediaLeaseMutation::LeaseLost)
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "fail_cleanup_job"))]
     pub async fn fail_cleanup_job(
         &self,

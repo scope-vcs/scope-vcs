@@ -44,6 +44,34 @@ pub(super) enum Call {
     Abandon,
 }
 
+pub(super) struct AppendCall {
+    pub(super) step: u32,
+    pub(super) sequence: u64,
+    pub(super) text: String,
+}
+
+impl Call {
+    pub(super) fn into_append(self) -> Option<AppendCall> {
+        match self {
+            Call::Append {
+                step,
+                sequence,
+                text,
+            } => Some(AppendCall {
+                step,
+                sequence,
+                text,
+            }),
+            Call::Start(_)
+            | Call::Heartbeat
+            | Call::CompleteStep { .. }
+            | Call::CompleteTimeout(_)
+            | Call::CompleteCanceled(_)
+            | Call::Abandon => None,
+        }
+    }
+}
+
 pub(super) enum AppendAction {
     Accepted,
     Truncated,
@@ -134,10 +162,8 @@ impl FakeSink {
     fn texts(&self) -> Vec<String> {
         self.calls()
             .into_iter()
-            .filter_map(|call| match call {
-                Call::Append { text, .. } => Some(text),
-                _ => None,
-            })
+            .filter_map(Call::into_append)
+            .map(|append| append.text)
             .collect()
     }
 
@@ -216,7 +242,7 @@ impl ExecutionSink for FakeSink {
         if cancellation_requested
             && let Some(observed) = self.state.heartbeat_observed.lock().unwrap().as_ref()
         {
-            let _ = observed.send(());
+            observed.send(()).ok();
         }
         Ok(cancellation_requested)
     }
@@ -260,14 +286,9 @@ fn successful_steps_upload_bounded_chunks_with_global_sequences() {
     let calls = sink.calls();
     let appends = calls
         .iter()
-        .filter_map(|call| match call {
-            Call::Append {
-                step,
-                sequence,
-                text,
-            } => Some((*step, *sequence, text.len())),
-            _ => None,
-        })
+        .cloned()
+        .filter_map(Call::into_append)
+        .map(|append| (append.step, append.sequence, append.text.len()))
         .collect::<Vec<_>>();
     assert!(appends.iter().any(|(step, _, _)| *step == 0));
     assert!(appends.iter().any(|(step, _, _)| *step == 1));
@@ -369,9 +390,13 @@ fn escaped_descendant_cannot_hold_output_capture_open() {
         .trim()
         .parse::<i32>()
         .unwrap();
-    unsafe {
-        libc::kill(escaped_pid, libc::SIGKILL);
-    }
+    assert!(
+        std::process::Command::new("kill")
+            .args(["-KILL", &escaped_pid.to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
 
     assert!(started.elapsed() < Duration::from_secs(1));
     assert_eq!(outcome, SUCCEEDED);
@@ -467,7 +492,12 @@ fn a_stalled_heartbeat_cannot_delay_process_timeout() {
         .trim()
         .parse()
         .unwrap();
-    let child_still_exists = unsafe { libc::kill(pid, 0) } == 0;
+    let child_still_exists = std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success();
     release.send(()).unwrap();
     assert_eq!(run.join().unwrap().unwrap(), ExecutionOutcome::Terminal);
     assert!(completed_while_blocked, "heartbeat blocked the job timeout");

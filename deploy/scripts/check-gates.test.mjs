@@ -29,6 +29,8 @@ function commands(gate, ...args) {
 test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
   const backend = commands('backend');
   assert.ok(backend.includes('cargo deny --locked check advisories'));
+  assert.ok(backend.includes('cargo deny --locked check bans sources'));
+  assert.ok(backend.includes('cargo shear --locked --deny-warnings'));
   assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --exclude api --locked'));
   const [apiFilter] = backend.find((command) => command.startsWith('cargo test -p api --locked --lib -- ')).split(' ').slice(-1);
   assert.ok(backend.includes(`cargo test -p api --locked -- --skip ${apiFilter}`));
@@ -40,12 +42,12 @@ test('the daily main advisory job runs both PR advisory commands with only JSON 
   const workflow = read('.github/workflows/main-advisories.yml');
   assert.match(workflow, /schedule:\n    - cron: '[^']+ \* \* \*'/);
   assert.match(workflow, /if: github.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /run: \.\/dev\/install-cargo-deny.sh/);
+  assert.match(workflow, /run: \.\/dev\/install-cargo-tools\.sh/);
   assert.match(workflow, /run: node \.github\/scripts\/main-advisories.mjs "\$RUNNER_TEMP\/main-advisories.json"/);
   const scheduled = checkMainAdvisories((file, args) => ({
     status: 0, stdout: commands(basename(file), ...args).join('\n'),
   }));
-  const gated = ['backend', 'cli'].flatMap(gate => commands(gate).filter(line => line.startsWith('cargo deny ')));
+  const gated = ['backend', 'cli'].flatMap(gate => commands(gate).filter(line => line.startsWith('cargo deny ') && line.endsWith(' check advisories')));
   assert.deepEqual(scheduled.map(check => check.output.trim().replace(' --format json', '')), gated);
   const selected = classifyChanges(manifest, ['dev/checks/advisories']);
   for (const gate of ['backend', 'cli']) {
@@ -92,11 +94,13 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
     'pnpm test', 'pnpm check', 'pnpm build',
   ]);
   const webChecks = JSON.parse(read('web/package.json')).scripts.check;
-  assert.equal(webChecks, 'pnpm typecheck && pnpm check:resource-boundary && pnpm check:hooks && pnpm check:conventions && pnpm check:advisories');
+  assert.equal(webChecks, 'pnpm typecheck && pnpm check:resource-boundary && pnpm check:lint && pnpm check:conventions && pnpm check:advisories');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   const cliCommands = commands('cli');
   assert.ok(cliCommands.includes('cargo fmt --manifest-path cli/Cargo.toml -- --check'));
   assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check advisories'));
+  assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check bans sources'));
+  assert.ok(cliCommands.includes('cargo shear --locked --deny-warnings cli'));
   assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
   assert.ok(cliCommands.includes('cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings'));
   assert.ok(cliCommands.includes('cargo test -p scope-cli-downloads --locked'));

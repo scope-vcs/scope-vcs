@@ -31,15 +31,8 @@ impl StepProcess {
             .env_remove("SCOPE_BOOTSTRAP_TOKEN")
             .env_remove("SCOPE_ATTEMPT_DEADLINE_UNIX")
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        unsafe {
-            command.pre_exec(|| {
-                if libc::setpgid(0, 0) == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
+            .stderr(Stdio::piped())
+            .process_group(0);
         let child = command.spawn().context("spawn step process")?;
         let process_group = i32::try_from(child.id()).context("step process ID overflow")?;
         Ok(Self {
@@ -107,6 +100,7 @@ impl StepProcess {
         Ok(status)
     }
 
+    #[expect(unsafe_code)]
     fn signal_group(&self, signal: i32) -> anyhow::Result<()> {
         let result = unsafe { libc::kill(-self.process_group, signal) };
         if result == 0 {
@@ -125,9 +119,13 @@ impl Drop for StepProcess {
         if self.cleaned_up {
             return;
         }
-        let _ = self.signal_group(libc::SIGKILL);
-        if self.status.is_none() {
-            let _ = self.child.wait();
+        if let Err(error) = self.signal_group(libc::SIGKILL) {
+            eprintln!("could not kill abandoned step process group: {error:#}");
+        }
+        if self.status.is_none()
+            && let Err(error) = self.child.wait()
+        {
+            eprintln!("could not reap abandoned step process: {error}");
         }
     }
 }

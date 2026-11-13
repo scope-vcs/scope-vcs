@@ -7,7 +7,7 @@ use scope_domain::{
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repository::{RepoLifecycleState, Repository},
     runs::{
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
         workflow::revision::WorkflowRevision,
     },
@@ -16,7 +16,7 @@ use scope_domain::{
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement};
 use std::time::Duration;
 
-pub fn user(id: &str, handle: &str) -> UserAccount {
+pub(crate) fn user(id: &str, handle: &str) -> UserAccount {
     UserAccount {
         id: id.into(),
         handle: handle.into(),
@@ -25,7 +25,7 @@ pub fn user(id: &str, handle: &str) -> UserAccount {
     }
 }
 
-pub fn repository(owner: &UserAccount, name: &str, visibility: ViewId) -> Repository {
+pub(crate) fn repository(owner: &UserAccount, name: &str, visibility: ViewId) -> Repository {
     let mut repository = Repository::new(
         owner,
         name,
@@ -37,7 +37,7 @@ pub fn repository(owner: &UserAccount, name: &str, visibility: ViewId) -> Reposi
     repository
 }
 
-pub fn store_with_repositories(
+pub(crate) fn store_with_repositories(
     repositories: impl IntoIterator<Item = Repository>,
 ) -> MetadataStore {
     seeded_store(CatalogFixture {
@@ -49,7 +49,7 @@ pub fn store_with_repositories(
     })
 }
 
-pub fn store_with_native_run_repositories(
+pub(crate) fn store_with_native_run_repositories(
     repositories: impl IntoIterator<Item = Repository>,
 ) -> MetadataStore {
     let repositories = repositories
@@ -66,14 +66,14 @@ pub fn store_with_native_run_repositories(
     })
 }
 
-pub fn seeded_store(catalog: CatalogFixture) -> MetadataStore {
+pub(crate) fn seeded_store(catalog: CatalogFixture) -> MetadataStore {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     store.admin().seed_catalog_for_tests(catalog).unwrap();
     store
 }
 
-pub async fn blocked_by(held: &DatabaseTransaction) {
+pub(crate) async fn blocked_by(held: &DatabaseTransaction) {
     let waiting_on_holder = Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted \
@@ -91,7 +91,7 @@ pub async fn blocked_by(held: &DatabaseTransaction) {
     }
 }
 
-pub fn source_blob(git_oid: &str, sha256: &str, size_bytes: u64) -> SourceBlob {
+pub(crate) fn source_blob(git_oid: &str, sha256: &str, size_bytes: u64) -> SourceBlob {
     SourceBlob {
         content_ref: ContentRef::git_bundle_sha256(sha256),
         sha256: sha256.into(),
@@ -101,7 +101,7 @@ pub fn source_blob(git_oid: &str, sha256: &str, size_bytes: u64) -> SourceBlob {
     }
 }
 
-pub fn manual_workflow(repository_id: &str) -> WorkflowRevision {
+pub(crate) fn manual_workflow(repository_id: &str) -> WorkflowRevision {
     let image = format!("rust@sha256:{}", "a".repeat(64));
     let yaml = format!(
         "name: Test\non: {{ manual: true }}\ncontainer: {{ image: {image} }}\ntimeout: 10m\njobs:\n  checks:\n    steps:\n      - {{ name: Test, run: cargo test }}\n"
@@ -112,21 +112,33 @@ pub fn manual_workflow(repository_id: &str) -> WorkflowRevision {
         .unwrap()
 }
 
-pub fn manual_run(revision: &WorkflowRevision, id: &str, requester: &str) -> Run {
+pub(crate) fn manual_run(revision: &WorkflowRevision, id: &str, requester: &str) -> Run {
     Run::new(
-        id,
-        id,
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some(requester.into()),
-        RunSource::ephemeral_git_bundle(source_blob(&"d".repeat(40), &"c".repeat(64), 42)).unwrap(),
+        RunRequest {
+            id: id.into(),
+            idempotency_key: id.into(),
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger: RunTrigger::Manual,
+            requested_by_user_id: Some(requester.into()),
+            source: RunSource::ephemeral_git_bundle(source_blob(
+                &"d".repeat(40),
+                &"c".repeat(64),
+                42,
+            ))
+            .unwrap(),
+        },
         10,
     )
     .unwrap()
 }
 
-pub fn canonical_commit(author_id: &str, index: usize, path: &str, label: ViewId) -> LogicalCommit {
+pub(crate) fn canonical_commit(
+    author_id: &str,
+    index: usize,
+    path: &str,
+    label: ViewId,
+) -> LogicalCommit {
     let oid = format!("{:040x}", index + 1);
     LogicalCommit {
         occurred_at_unix: None,

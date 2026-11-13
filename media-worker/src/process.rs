@@ -8,7 +8,7 @@ use std::{
 use tokio::{io::AsyncReadExt, process::Command};
 
 #[derive(Clone, Debug)]
-pub struct CodecProcessLimits {
+pub(crate) struct CodecProcessLimits {
     pub timeout: Duration,
     pub memory_bytes: u64,
     pub output_file_bytes: u64,
@@ -18,13 +18,13 @@ pub struct CodecProcessLimits {
 }
 
 #[derive(Debug)]
-pub struct ProcessOutput {
+pub(crate) struct ProcessOutput {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum ProcessFailure {
+pub(crate) enum ProcessFailure {
     #[error("could not start {program}: {source}")]
     Start { program: String, source: io::Error },
     #[error("{program} exceeded its {seconds}-second time limit")]
@@ -39,7 +39,7 @@ pub enum ProcessFailure {
     Output { program: String, source: io::Error },
 }
 
-pub async fn run_bounded(
+pub(crate) async fn run_bounded(
     program: &Path,
     args: &[OsString],
     cwd: &Path,
@@ -69,8 +69,16 @@ pub async fn run_bounded(
         program: program_label.clone(),
         source,
     })?;
-    let stdout = child.stdout.take().expect("piped stdout");
-    let stderr = child.stderr.take().expect("piped stderr");
+    #[expect(clippy::expect_used)]
+    let stdout = child
+        .stdout
+        .take()
+        .expect("the codec command configures stdout as piped");
+    #[expect(clippy::expect_used)]
+    let stderr = child
+        .stderr
+        .take()
+        .expect("the codec command configures stderr as piped");
     let capture_limit = limits.captured_output_bytes;
     let stdout_task = tokio::spawn(read_capped(stdout, capture_limit));
     let stderr_task = tokio::spawn(read_capped(stderr, capture_limit));
@@ -81,10 +89,12 @@ pub async fn run_bounded(
             source,
         })?,
         Err(_) => {
-            let _ = child.start_kill();
-            let _ = child.wait().await;
-            let _ = stdout_task.await;
-            let _ = stderr_task.await;
+            child.start_kill().ok();
+            if let Err(error) = child.wait().await {
+                tracing::warn!(%error, program = %program_label, "failed to reap timed-out codec process");
+            }
+            stdout_task.await.ok();
+            stderr_task.await.ok();
             return Err(ProcessFailure::Timeout {
                 program: program_label,
                 seconds: limits.timeout.as_secs(),
@@ -136,7 +146,20 @@ async fn join_output(
     }
 }
 
+#[expect(unsafe_code)]
 fn install_process_limits(command: &mut Command, limits: CodecProcessLimits) {
+    fn set_limit(resource: libc::__rlimit_resource_t, value: u64) -> io::Result<()> {
+        let limit = libc::rlimit {
+            rlim_cur: value,
+            rlim_max: value,
+        };
+        if unsafe { libc::setrlimit(resource, &limit) } == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
     unsafe {
         command.pre_exec(move || {
             set_limit(libc::RLIMIT_CORE, 0)?;
@@ -149,22 +172,10 @@ fn install_process_limits(command: &mut Command, limits: CodecProcessLimits) {
     }
 }
 
-fn set_limit(resource: libc::__rlimit_resource_t, value: u64) -> io::Result<()> {
-    let limit = libc::rlimit {
-        rlim_cur: value,
-        rlim_max: value,
-    };
-    if unsafe { libc::setrlimit(resource, &limit) } == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
-}
-
-pub fn os_args<const N: usize>(args: [&str; N]) -> Vec<OsString> {
+pub(crate) fn os_args<const N: usize>(args: [&str; N]) -> Vec<OsString> {
     args.into_iter().map(OsString::from).collect()
 }
 
-pub fn path_arg(path: impl Into<PathBuf>) -> OsString {
+pub(crate) fn path_arg(path: impl Into<PathBuf>) -> OsString {
     path.into().into_os_string()
 }

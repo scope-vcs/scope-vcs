@@ -98,10 +98,11 @@ impl ServiceError {
         error
             .headers
             .push((ACCEPT_RANGES, HeaderValue::from_static("bytes")));
+        #[expect(clippy::expect_used)]
         error.headers.push((
             CONTENT_RANGE,
             HeaderValue::from_str(&format!("bytes */{size_bytes}"))
-                .expect("byte counts are printable"),
+                .expect("a decimal byte count is a valid header value"),
         ));
         error
     }
@@ -185,7 +186,16 @@ impl From<scope_postgres::error::PostgresError> for ServiceError {
         let expired = error.kind == PostgresErrorKind::AttachmentUploadExpired;
         let error = match postgres_error_kind(error.kind) {
             ErrorKind::Internal => Self::internal(error.message),
-            kind => Self::new(kind, error.message),
+            kind @ ErrorKind::BadRequest
+            | kind @ ErrorKind::Conflict
+            | kind @ ErrorKind::Forbidden
+            | kind @ ErrorKind::NotFound
+            | kind @ ErrorKind::PayloadTooLarge
+            | kind @ ErrorKind::RangeNotSatisfiable
+            | kind @ ErrorKind::RequestTimeout
+            | kind @ ErrorKind::ServiceUnavailable
+            | kind @ ErrorKind::TooManyRequests
+            | kind @ ErrorKind::Unauthorized => Self::new(kind, error.message),
         };
         if expired {
             error.with_code(ErrorCode::AttachmentUploadExpired)

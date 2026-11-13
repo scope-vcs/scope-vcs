@@ -40,10 +40,10 @@ export function RequestChangesMenu({ activity, params }: { activity: ActivitySou
       align="auto"
       className="w-[min(30rem,calc(100vw-2rem))] p-0"
       label="Request changes"
-      panel={(close) => (
+      renderPanel={(close) => (
         <RequestChangesMenuPanel activity={activity} onNavigate={close} params={params} />
       )}
-      trigger={(props) => (
+      renderTrigger={(props) => (
         <Button size="sm" type="button" variant="secondary" {...props}>
           <GitCommit />
           Changes

@@ -130,7 +130,7 @@ impl RequestListModel {
     }
 }
 
-pub async fn request_list_page<C>(
+pub(super) async fn request_list_page<C>(
     conn: &C,
     input: RequestListPageQuery<'_>,
 ) -> Result<Vec<RequestListRow>, PostgresError>
@@ -252,7 +252,10 @@ pub(super) fn request_list_projection() -> sea_orm::Select<entities::request::En
         )
 }
 
-pub async fn request_by_id<C>(conn: &C, request_id: &str) -> Result<Option<Request>, PostgresError>
+pub(super) async fn request_by_id<C>(
+    conn: &C,
+    request_id: &str,
+) -> Result<Option<Request>, PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -263,7 +266,7 @@ where
         .transpose()
 }
 
-pub async fn request_by_name<C>(
+pub(super) async fn request_by_name<C>(
     conn: &C,
     repo_id: &str,
     request_name: &str,
@@ -280,7 +283,10 @@ where
         .transpose()
 }
 
-pub async fn requests_by_repo_id<C>(conn: &C, repo_id: &str) -> Result<Vec<Request>, PostgresError>
+pub(super) async fn requests_by_repo_id<C>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<Vec<Request>, PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -339,7 +345,7 @@ pub(super) async fn open_request_counts_by_view<C: ConnectionTrait>(
         .collect()
 }
 
-pub async fn request_events_by_request_id<C>(
+pub(super) async fn request_events_by_request_id<C>(
     conn: &C,
     request_id: &str,
 ) -> Result<Vec<RequestEvent>, PostgresError>
@@ -357,7 +363,7 @@ where
         .collect()
 }
 
-pub async fn request_events_after_position<C>(
+pub(super) async fn request_events_after_position<C>(
     conn: &C,
     request_id: &str,
     after_position: u64,
@@ -381,7 +387,7 @@ where
         .collect()
 }
 
-pub async fn latest_request_events<C>(
+pub(super) async fn latest_request_events<C>(
     conn: &C,
     request_id: &str,
     limit: u64,
@@ -402,7 +408,7 @@ where
     Ok(events)
 }
 
-pub async fn request_event_by_id<C>(
+pub(super) async fn request_event_by_id<C>(
     conn: &C,
     event_id: &str,
 ) -> Result<Option<RequestEvent>, PostgresError>
@@ -416,7 +422,7 @@ where
         .transpose()
 }
 
-pub async fn insert_request_row<C>(conn: &C, request: &Request) -> Result<(), PostgresError>
+pub(super) async fn insert_request_row<C>(conn: &C, request: &Request) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -427,7 +433,7 @@ where
     Ok(())
 }
 
-pub async fn delete_request_rows<C>(conn: &C, request_id: &str) -> Result<(), PostgresError>
+pub(super) async fn delete_request_rows<C>(conn: &C, request_id: &str) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -445,7 +451,7 @@ where
     Ok(())
 }
 
-pub async fn save_request_row<C>(conn: &C, request: &Request) -> Result<(), PostgresError>
+pub(super) async fn save_request_row<C>(conn: &C, request: &Request) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -547,7 +553,7 @@ where
     Ok(())
 }
 
-pub async fn insert_request_event_row<C>(
+pub(super) async fn insert_request_event_row<C>(
     conn: &C,
     event: &RequestEvent,
 ) -> Result<(), PostgresError>

@@ -379,10 +379,9 @@ pub(crate) async fn get_github_workflow_runs(
         .github_connection(&context.record.id)
         .await?
         .filter(|_| state.github.is_some());
-    let (RequestCheckProvider::GitHub, Some(connection)) = (
-        RequestCheckProvider::for_repository(connection.as_ref()),
-        connection,
-    ) else {
+    let RequestCheckProvider::GitHub(connection) =
+        RequestCheckProvider::for_repository(connection.as_ref())
+    else {
         return Ok(Json(GitHubWorkflowRunsResponse {
             configured: state.github.is_some(),
             github: None,

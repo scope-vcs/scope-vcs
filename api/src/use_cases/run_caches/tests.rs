@@ -22,7 +22,7 @@ use scope_domain::{
     content_ref::ContentRef,
     repository::{RepoLifecycleState, Repository},
     runs::{
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
     },
     views::ViewId,
@@ -108,13 +108,15 @@ impl Fixture {
         let caches = self.state.metadata.caches();
         caches
             .prepare_upload(
-                &self.repository_id,
-                &digest,
-                &"f".repeat(64),
-                &digest,
-                1,
-                "test-local",
-                &upload_id,
+                scope_postgres::db::RequestedCacheUpload {
+                    repository_id: &self.repository_id,
+                    identity_digest: &digest,
+                    compatibility_group_digest: &"f".repeat(64),
+                    checksum_sha256: &digest,
+                    size_bytes: 1,
+                    storage_backend: "test-local",
+                    upload_id: &upload_id,
+                },
                 created_at,
             )
             .await
@@ -253,13 +255,15 @@ async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger, attempt_id: &s
     let runs = fixture.state.metadata.runs();
     runs.enqueue_run(
         Run::new(
-            run_id.clone(),
-            run_id.clone(),
-            revision.workflow().clone(),
-            revision.digest(),
-            trigger,
-            Some("user_run_cache".to_string()),
-            source,
+            RunRequest {
+                id: run_id.clone(),
+                idempotency_key: run_id.clone(),
+                workflow: revision.workflow().clone(),
+                workflow_revision_digest: revision.digest().to_string(),
+                trigger,
+                requested_by_user_id: Some("user_run_cache".to_string()),
+                source,
+            },
             fixture.now,
         )
         .unwrap(),
@@ -270,11 +274,13 @@ async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger, attempt_id: &s
     runs.dispatch_job(
         &run_id,
         "checks",
-        attempt_id,
-        &machine_token_hash(token),
-        "test-runtime",
+        scope_domain::runs::job::AttemptDispatch {
+            attempt_id: attempt_id.to_string(),
+            token_hash: machine_token_hash(token),
+            runtime_version: "test-runtime".to_string(),
+            lease_expires_at_unix: fixture.now + 3_600,
+        },
         fixture.now,
-        fixture.now + 3_600,
     )
     .await
     .unwrap();

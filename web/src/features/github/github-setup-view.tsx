@@ -41,7 +41,7 @@ type SetupActions = {
 
 export function GitHubSetupView({ search, ...actions }: SetupActions & { search: GitHubSetupSearch }) {
   return (
-    <AppShell header={() => <ApplicationTopbar contextLabel="GitHub" />}>
+    <AppShell header={<ApplicationTopbar contextLabel="GitHub" />}>
       <PageContent>
         <GitHubSetup actions={actions} search={search} />
       </PageContent>
@@ -81,29 +81,7 @@ function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHu
   useEffect(() => {
     if (!isLoaded || !isSignedIn || started.current) return
     started.current = true
-    const step = githubSetupStep(search, actions.takePendingTarget())
-    if (step.kind === 'declined' || step.kind === 'incomplete') {
-      setState({ kind: step.kind })
-    } else if (step.kind === 'resume') {
-      setState({ kind: 'pending', setup: null })
-      startAuthorization(actions, step.target).catch((error: unknown) => {
-        setState({ kind: 'error', message: resourceErrorMessage(error, 'GitHub could not be opened.'), setup: null })
-      })
-    } else {
-      setState({ kind: 'pending', setup: null })
-      actions.completeSetup({ code: step.code, state: step.state }).then(
-        (setup) => setState({
-          kind: 'choosing',
-          setup,
-          selected: setup.repositories.length === 1 ? setup.repositories[0].id : null,
-        }),
-        (error: unknown) => setState({
-          kind: 'error',
-          message: resourceErrorMessage(error, 'GitHub setup failed.'),
-          setup: null,
-        }),
-      )
-    }
+    void setupStateForStep(actions, githubSetupStep(search, actions.takePendingTarget())).then(setState)
   }, [actions, isLoaded, isSignedIn, search])
 
   if (state.kind === 'declined') {
@@ -186,6 +164,29 @@ function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHu
       </div>
     </>
   )
+}
+
+async function setupStateForStep(
+  actions: SetupActions,
+  step: ReturnType<typeof githubSetupStep>,
+): Promise<SetupState> {
+  if (step.kind === 'declined' || step.kind === 'incomplete') return { kind: step.kind }
+  if (step.kind === 'resume') {
+    try {
+      await startAuthorization(actions, step.target)
+      return { kind: 'pending', setup: null }
+    } catch (error) {
+      return { kind: 'error', message: resourceErrorMessage(error, 'GitHub could not be opened.'), setup: null }
+    }
+  }
+  try {
+    const setup = await actions.completeSetup({ code: step.code, state: step.state })
+    const [onlyRepository, ...otherRepositories] = setup.repositories
+    const selected = onlyRepository && otherRepositories.length === 0 ? onlyRepository.id : null
+    return { kind: 'choosing', setup, selected }
+  } catch (error) {
+    return { kind: 'error', message: resourceErrorMessage(error, 'GitHub setup failed.'), setup: null }
+  }
 }
 
 async function startAuthorization(actions: SetupActions, target: RepoParams) {

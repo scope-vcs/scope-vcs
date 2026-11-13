@@ -15,10 +15,7 @@ const REVIEWED_PUSH_ID = /^rv_push_([0-9a-f]{40})$/
 
 export function historyRowLabels(commit: HistoryRowCommit) {
   const title = historyCommitTitle(commit)
-  const reviewedPush = REVIEWED_PUSH_ID.exec(commit.logical_commit_id)
-  const compactId = reviewedPush
-    ? reviewedPush[1].slice(0, 12)
-    : commit.logical_commit_id
+  const compactId = compactHistorySourceId(commit.logical_commit_id)
   const fileCount = `${commit.change_count} ${commit.change_count === 1 ? 'file' : 'files'}`
 
   return {
@@ -29,7 +26,9 @@ export function historyRowLabels(commit: HistoryRowCommit) {
 }
 
 export function historyCommitTitle(commit: Pick<CommitSummary, 'message'>) {
-  return commit.message.split(/\r?\n/, 1)[0]?.trim() || '(no message)'
+  const [firstLine = ''] = commit.message.split(/\r?\n/, 1)
+  const title = firstLine.trim()
+  return title === '' ? '(no message)' : title
 }
 
 export function historyEntryLabels(entry: HistoryEntrySummaryResponse, view: ViewId, views: RepoViews) {
@@ -54,8 +53,8 @@ export function historyEntryKindLabel(kind: HistoryEntryKind) {
 }
 
 export function compactHistorySourceId(sourceId: string) {
-  const reviewedPush = REVIEWED_PUSH_ID.exec(sourceId)
-  return reviewedPush ? reviewedPush[1].slice(0, 12) : sourceId
+  const sha = REVIEWED_PUSH_ID.exec(sourceId)?.[1]
+  return sha === undefined ? sourceId : sha.slice(0, 12)
 }
 
 export function historyEntryCountLabel(

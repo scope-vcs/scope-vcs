@@ -285,8 +285,8 @@ fn access(actor: RepositoryActor, view: &str) -> crate::api::RepositoryAccessRes
     }
 }
 
-fn requested(view: &str) -> Option<ViewId> {
-    Some(ViewId::parse(view).unwrap())
+fn requested(view: &str) -> ViewId {
+    ViewId::parse(view).unwrap()
 }
 
 #[test]
@@ -316,13 +316,13 @@ fn requests_start_in_any_view_their_author_can_read() {
         (&owner, "public"),
     ] {
         assert_eq!(
-            start_view(author, &views, requested(view)).unwrap(),
+            start_view(author, &views, Some(requested(view))).unwrap(),
             ViewId::parse(view).unwrap()
         );
     }
 
     let refusal = |author, view| {
-        let error = start_view(author, &views, requested(view)).unwrap_err();
+        let error = start_view(author, &views, Some(requested(view))).unwrap_err();
         assert_eq!(crate::error::exit_code(&error), 2);
         error.to_string()
     };

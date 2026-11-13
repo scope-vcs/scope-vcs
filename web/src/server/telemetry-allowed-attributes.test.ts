@@ -41,7 +41,9 @@ function exported(input: ReadableSpan) {
   }).export([input], resultCallback)
   assert.equal(downstream.mock.callCount(), 1)
   assert.equal(resultCallback.mock.callCount(), 1)
-  return downstream.mock.calls[0].arguments[0][0]
+  const exportedSpan = downstream.mock.calls.at(0)?.arguments[0].at(0)
+  assert.ok(exportedSpan)
+  return exportedSpan
 }
 
 test('exports only reviewed request attributes', () => {

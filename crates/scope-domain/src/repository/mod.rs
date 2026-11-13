@@ -126,7 +126,7 @@ impl Repository {
             git_push_token: None,
             policy: Policy::new(default_visibility),
             graph: SourceGraph {
-                repo_id: id.clone(),
+                repo_id: id,
                 commits: Vec::new(),
             },
             visibility_change_sets: Vec::new(),

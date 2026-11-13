@@ -228,14 +228,17 @@ fn preview(repo: &GitRepo, config: &RepoConfig, candidate_path: PathBuf) -> Resu
     let tree = worktree_review_tree(repo)?;
     let before = path_visibilities(config, &tree);
     let after = path_visibilities(&candidate, &tree);
+    #[expect(clippy::expect_used)]
     let changes = before
         .into_iter()
         .zip(after)
         .filter(|(before, after)| before.kind == "file" && before.view != after.view)
         .map(|(before, after)| VisibilityChange {
             path: after.path,
-            before_view: before.view.expect("file has a view"),
-            after_view: after.view.expect("file has a view"),
+            before_view: before
+                .view
+                .expect("file visibility is always a single view"),
+            after_view: after.view.expect("file visibility is always a single view"),
             rule: after.rule,
         })
         .collect::<Vec<_>>();

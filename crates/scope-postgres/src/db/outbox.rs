@@ -176,7 +176,7 @@ impl JobStore {
     }
 }
 
-pub async fn enqueue_projection_read_model_rebuild<C>(
+pub(super) async fn enqueue_projection_read_model_rebuild<C>(
     conn: &C,
     repo_id: &str,
     repo_version: u64,

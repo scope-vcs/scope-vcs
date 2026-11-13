@@ -56,7 +56,7 @@ impl CleanupStore {
     }
 }
 
-pub async fn complete_claimed_repo_storage_cleanup<C>(
+pub(crate) async fn complete_claimed_repo_storage_cleanup<C>(
     conn: &C,
     cleanup_repo_id: &str,
     claim: &RepoStorageCleanupClaim,

@@ -20,7 +20,7 @@ use sea_orm::{
 use std::collections::BTreeMap;
 use {crate::error::PostgresError, scope_domain::repository::Repository};
 
-pub async fn insert_repository<C>(
+pub(super) async fn insert_repository<C>(
     conn: &C,
     repo: &Repository,
     now_unix: u64,
@@ -47,7 +47,7 @@ where
     Ok(())
 }
 
-pub async fn save_repository_delta<C>(
+pub(super) async fn save_repository_delta<C>(
     conn: &C,
     before: &Repository,
     after: &Repository,
@@ -242,7 +242,7 @@ where
     Ok(())
 }
 
-pub async fn load_repository_facts<C>(
+pub(super) async fn load_repository_facts<C>(
     conn: &C,
     repo_ids: &[String],
 ) -> Result<BTreeMap<String, entities::RepositoryFacts>, PostgresError>

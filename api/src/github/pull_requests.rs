@@ -503,7 +503,11 @@ mod tests {
     fn retry_at(error: PullRequestCallError) -> Option<u64> {
         match error {
             PullRequestCallError::RateLimited { retry_at_unix } => Some(retry_at_unix),
-            _ => None,
+            PullRequestCallError::Unreachable
+            | PullRequestCallError::PermissionMissing
+            | PullRequestCallError::Forbidden
+            | PullRequestCallError::Rejected(_)
+            | PullRequestCallError::Failed(_) => None,
         }
     }
 

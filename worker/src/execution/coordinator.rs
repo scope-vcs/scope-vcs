@@ -89,7 +89,7 @@ impl CloudExecutionCoordinator {
                     &claim.run,
                     &claim.attempt,
                 );
-                self.publish_status_change(&claim).await;
+                self.publish_status_change(&claim);
                 let execution = self.clone();
                 starts.spawn(async move {
                     execution
@@ -121,7 +121,7 @@ impl CloudExecutionCoordinator {
                     .runs()
                     .record_external_run_id(attempt_id, &external_run_id)
                     .await?;
-                self.publish_status_change(&claim).await;
+                self.publish_status_change(&claim);
                 tracing::info!(attempt_id = %attempt_id, external_run_id, run_id = %claim.run.id, job = %claim.job.key.as_str(), "dispatched cloud run");
             }
             Err(StartError::Rejected { reason, error }) => {
@@ -141,7 +141,9 @@ impl CloudExecutionCoordinator {
                             )
                             .await
                     }
-                    _ => {
+                    RejectionReason::Quota
+                    | RejectionReason::Permanent
+                    | RejectionReason::Authorization => {
                         self.metadata
                             .runs()
                             .complete_attempt(
@@ -175,7 +177,7 @@ impl CloudExecutionCoordinator {
                     .runs()
                     .complete_cloud_task_absence(attempt_id, now_unix)
                     .await?;
-                self.publish_status_change(&mutation.claim).await;
+                self.publish_status_change(&mutation.claim);
             }
             Err(StartError::Ambiguous(error)) => {
                 tracing::warn!(attempt_id = %attempt_id, error = %error, "ECS dispatch outcome is ambiguous; lease recovery and task cleanup own resolution");
@@ -198,7 +200,7 @@ impl CloudExecutionCoordinator {
         let mut aborted = 0;
         while let Some(result) = tasks.join_next().await {
             if let Some(claim) = result.context("cloud cancellation task panicked")?? {
-                self.publish_status_change(&claim).await;
+                self.publish_status_change(&claim);
                 aborted += 1;
             }
         }
@@ -284,15 +286,14 @@ impl CloudExecutionCoordinator {
         Ok(false)
     }
 
-    async fn publish_status_change(&self, claim: &DispatchClaim) {
+    fn publish_status_change(&self, claim: &DispatchClaim) {
         crate::run_events::publish_run_change_for(
             &self.metadata,
             &self.origin_id,
             &claim.repository,
             &claim.run.id,
             scope_api_contract::RunChangeKind::StatusChanged,
-        )
-        .await;
+        );
     }
 }
 

@@ -66,7 +66,7 @@ pub(crate) async fn protected_resource_metadata(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, ApiError> {
     let resource = public_mcp_resource()?;
-    let issuer = state.clerk.issuer.clone().ok_or_else(|| {
+    let issuer = state.clerk.issuer.ok_or_else(|| {
         ApiError::infrastructure_unavailable("CLERK_ISSUER is required to serve agents")
     })?;
     Ok(Json(json!({

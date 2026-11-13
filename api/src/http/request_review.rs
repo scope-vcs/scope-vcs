@@ -105,7 +105,7 @@ pub(crate) async fn list_request_revisions(
                 .filter_map(|revision| revision.actor_user_id.clone()),
         )
         .await?;
-    let mut responses = vec![None; revisions.len()];
+    let mut responses = Vec::with_capacity(revisions.len());
     let selected_revision_index = review_revision_id.as_deref().and_then(|revision_id| {
         revisions
             .iter()
@@ -240,22 +240,26 @@ pub(crate) async fn list_request_revisions(
                     .then(|| revision.new_head_oid.clone()),
             )
         };
-        responses[index] = Some(RequestRevisionResponse {
-            id: revision.id.clone(),
-            position: revision.position,
-            base: crate::http::responses::request_base_response(revision.base.clone())?,
-            base_version: revision.base_version,
-            actor: recorded_actor_response(revision.actor_user_id.as_deref(), &users)?,
-            old_head_oid,
-            new_head_oid,
-            commits,
-            inspection,
-            created_at_unix: revision.created_at_unix,
-        });
+        responses.push((
+            index,
+            RequestRevisionResponse {
+                id: revision.id.clone(),
+                position: revision.position,
+                base: crate::http::responses::request_base_response(revision.base.clone())?,
+                base_version: revision.base_version,
+                actor: recorded_actor_response(revision.actor_user_id.as_deref(), &users)?,
+                old_head_oid,
+                new_head_oid,
+                commits,
+                inspection,
+                created_at_unix: revision.created_at_unix,
+            },
+        ));
     }
+    responses.sort_unstable_by_key(|(index, _)| *index);
     let revisions = responses
         .into_iter()
-        .map(|response| response.expect("every request revision is processed once"))
+        .map(|(_, response)| response)
         .collect();
     Ok(Json(RequestRevisionListResponse {
         comparison: comparison_response,
@@ -454,7 +458,7 @@ fn request_revision_commits(
             raw_repo,
             &repo.policy,
             &repo.context.views,
-            access.clone(),
+            access,
             &identity_only_oids,
         )?;
         for (index, commit) in identity_only_indexes.into_iter().zip(identity_only) {

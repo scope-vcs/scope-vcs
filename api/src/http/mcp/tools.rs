@@ -127,7 +127,7 @@ impl Operation {
                 json!([]),
             ),
             Self::RequestList => {
-                let mut properties = page.clone();
+                let mut properties = page;
                 properties["repo"] = repo;
                 properties["name"] =
                     json!({ "type": "string", "description": "Only the request with this name" });
@@ -147,7 +147,7 @@ impl Operation {
                 json!(["repo", "request"]),
             ),
             Self::DiscussionList => {
-                let mut properties = page.clone();
+                let mut properties = page;
                 properties["repo"] = repo;
                 properties["request"] = request;
                 (properties, json!(["repo", "request"]))

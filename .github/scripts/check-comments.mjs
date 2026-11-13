@@ -11,9 +11,6 @@ const legalNotice = /\b(copyright|licen[cs]e)\b/i
 const generatedSuffixes = ['.gen.ts', '.generated.ts']
 
 const slashDirectives = [
-  /^\/\/\s*@ts-/,
-  /^\/\/\s*(eslint|oxlint)-/,
-  /^\/\*\s*(eslint|oxlint)[-\s]/,
   /^\/\*\s*globals?\s/,
   /^\/\/\/\s*<reference /,
 ]

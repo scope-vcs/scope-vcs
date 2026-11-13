@@ -171,7 +171,10 @@ pub(crate) fn install_verified_git_pack(
         temporary
             .persist(&index)
             .map_err(|error| ApiError::internal(error.error))?;
-        fs::File::open(index.parent().expect("index shares the pack directory"))
+        let pack_directory = index.parent().ok_or_else(|| {
+            ApiError::internal_message("verified Git pack index has no parent directory")
+        })?;
+        fs::File::open(pack_directory)
             .and_then(|directory| directory.sync_all())
             .map_err(ApiError::internal)?;
     }

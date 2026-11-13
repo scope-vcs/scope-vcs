@@ -426,8 +426,8 @@ pub(crate) fn history_page_response(
     next_cursor: Option<String>,
     head_oid: Option<String>,
     users: &BTreeMap<String, UserAccount>,
-) -> Result<HistoryPageResponse, ApiError> {
-    Ok(HistoryPageResponse {
+) -> HistoryPageResponse {
+    HistoryPageResponse {
         feed,
         view: history.view.clone().into(),
         repo_id: history.repo_id.clone(),
@@ -436,9 +436,9 @@ pub(crate) fn history_page_response(
         entries: entries
             .iter()
             .map(|entry| history_entry_summary_response(history, entry, views, users))
-            .collect::<Result<_, _>>()?,
+            .collect(),
         next_cursor,
-    })
+    }
 }
 
 pub(crate) fn history_entry_detail_response(
@@ -535,8 +535,8 @@ fn history_entry_summary_response(
     entry: &HistoryEntry,
     views: &Views,
     users: &BTreeMap<String, UserAccount>,
-) -> Result<HistoryEntrySummaryResponse, ApiError> {
-    Ok(HistoryEntrySummaryResponse {
+) -> HistoryEntrySummaryResponse {
+    HistoryEntrySummaryResponse {
         occurred_at_unix: entry.occurred_at_unix,
         id: entry.id.clone(),
         source_id: entry.source_id.clone(),
@@ -547,7 +547,7 @@ fn history_entry_summary_response(
         file_change_count: entry.files.len(),
         visibility_summary: history_visibility_summary_response(entry, views, &history.view),
         views: entry.views.as_ref().map(ViewsTransition::from),
-    })
+    }
 }
 
 fn history_author_handle(

@@ -36,13 +36,22 @@ test('reports line, block, and JSX comments in code', () => {
 
 test('allows machine-read comments', () => {
   const source = [
+    '/* global window */',
+    '/// <reference types="vite/client" />',
+  ].join('\n')
+  assert.deepEqual(findComments('src/lib.ts', source), [])
+})
+
+test('reports lint and type-check suppressions outside generated files', () => {
+  const source = [
     '// @ts-nocheck',
+    '// @ts-expect-error',
     '// eslint-disable-next-line no-console',
     '/* oxlint-disable */',
     '/* eslint eqeqeq: "off" */',
-    '/* global window */',
   ].join('\n')
-  assert.deepEqual(findComments('src/lib.rs', source), [])
+  assert.deepEqual(lines(findComments('src/view.ts', source)), [1, 2, 3, 4, 5])
+  assert.deepEqual(findComments('src/routeTree.gen.ts', source), [])
 })
 
 test('reports safety notes and doc comments, including on API contract items', () => {

@@ -81,7 +81,7 @@ impl FoldInput {
     }
 }
 
-pub async fn fold_live_projection_read_models<C>(
+pub(crate) async fn fold_live_projection_read_models<C>(
     conn: &C,
     repo_id: &str,
     content_version: u64,

@@ -1,3 +1,4 @@
+use crate::posix;
 use std::{
     collections::BTreeSet,
     fs,
@@ -33,22 +34,13 @@ pub fn install_pid1_reaper_if_needed() -> std::io::Result<()> {
     reap_service_process(child.id())
 }
 
-fn install_reaper_signal_handlers() -> std::io::Result<()> {
-    unsafe extern "C" fn remember_signal(signal: libc::c_int) {
-        PENDING_REAPER_SIGNAL.store(signal, Ordering::SeqCst);
-    }
+extern "C" fn remember_reaper_signal(signal: libc::c_int) {
+    PENDING_REAPER_SIGNAL.store(signal, Ordering::SeqCst);
+}
 
+fn install_reaper_signal_handlers() -> std::io::Result<()> {
     for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
-        let result = unsafe {
-            let mut action: libc::sigaction = std::mem::zeroed();
-            action.sa_sigaction = remember_signal as *const () as usize;
-            action.sa_flags = 0;
-            libc::sigemptyset(&mut action.sa_mask);
-            libc::sigaction(signal, &action, std::ptr::null_mut())
-        };
-        if result == -1 {
-            return Err(std::io::Error::last_os_error());
-        }
+        posix::install_signal_handler(signal, remember_reaper_signal)?;
     }
     Ok(())
 }
@@ -66,9 +58,7 @@ fn reap_service_process(service_pid: u32) -> std::io::Result<()> {
             continue;
         }
 
-        unsafe {
-            libc::kill(-service_pid, libc::SIGKILL);
-        }
+        posix::send_group_signal(service_pid, libc::SIGKILL).ok();
         drain_adopted_descendants();
         std::process::exit(wait_status_exit_code(status));
     }
@@ -77,9 +67,7 @@ fn reap_service_process(service_pid: u32) -> std::io::Result<()> {
 fn forward_pending_signal(service_pid: i32) {
     let signal = PENDING_REAPER_SIGNAL.swap(0, Ordering::SeqCst);
     if signal != 0 {
-        unsafe {
-            libc::kill(-service_pid, signal);
-        }
+        posix::send_group_signal(service_pid, signal).ok();
     }
 }
 
@@ -96,10 +84,8 @@ fn drain_adopted_descendants() {
             let Ok(process_id) = i32::try_from(process_id) else {
                 continue;
             };
-            unsafe {
-                libc::kill(-process_id, libc::SIGKILL);
-                libc::kill(process_id, libc::SIGKILL);
-            }
+            posix::send_group_signal(process_id, libc::SIGKILL).ok();
+            posix::send_signal(process_id, libc::SIGKILL).ok();
         }
         if Instant::now() >= deadline {
             return;
@@ -115,20 +101,15 @@ fn reap_exited_descendants() {
 #[cfg(unix)]
 fn reap_exited_child() -> std::io::Result<Option<(i32, i32)>> {
     loop {
-        let mut status = 0;
-        let reaped = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
-        if reaped == -1 {
-            let error = std::io::Error::last_os_error();
-            if error.kind() == ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(error);
+        match posix::try_wait_child(-1) {
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            result => return result,
         }
-        return Ok((reaped != 0).then_some((reaped, status)));
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod reaper_tests;
 
 #[cfg(unix)]
@@ -172,16 +153,14 @@ pub fn configure_process_group(command: &mut Command) {
 
 pub fn kill_process_group(process_id: u32) {
     if let Ok(process_group) = i32::try_from(process_id) {
-        unsafe {
-            libc::kill(-process_group, libc::SIGKILL);
-        }
+        posix::send_group_signal(process_group, libc::SIGKILL).ok();
     }
 }
 
 pub(crate) fn terminate_and_reap(child: &mut Child) {
     kill_process_group(child.id());
-    let _ = child.kill();
-    let _ = child.wait();
+    child.kill().ok();
+    child.wait().ok();
 }
 
 pub(crate) struct ChildGuard {

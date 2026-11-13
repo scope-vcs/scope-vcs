@@ -42,10 +42,11 @@ impl From<ObjectStoreError> for MediaStorageError {
     fn from(error: ObjectStoreError) -> Self {
         let kind = match error.kind {
             ObjectStoreErrorKind::CapacityExhausted => MediaStorageErrorKind::CapacityExhausted,
-            ObjectStoreErrorKind::Integrity => MediaStorageErrorKind::Integrity,
+            ObjectStoreErrorKind::Integrity | ObjectStoreErrorKind::PayloadTooLarge => {
+                MediaStorageErrorKind::Integrity
+            }
             ObjectStoreErrorKind::Internal => MediaStorageErrorKind::Internal,
             ObjectStoreErrorKind::NotFound => MediaStorageErrorKind::NotFound,
-            ObjectStoreErrorKind::PayloadTooLarge => MediaStorageErrorKind::Integrity,
             ObjectStoreErrorKind::ServiceUnavailable => MediaStorageErrorKind::ServiceUnavailable,
         };
         Self::new(kind, error.message)

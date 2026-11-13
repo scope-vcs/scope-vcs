@@ -14,7 +14,7 @@ export function ApplicationPendingShell({
   label: string
 }) {
   return (
-    <AppShell header={() => <ApplicationTopbar contextLabel={contextLabel} />}>
+    <AppShell header={<ApplicationTopbar contextLabel={contextLabel} />}>
       <PageRail className="min-h-full">
         <PendingSurface label={label}>{children}</PendingSurface>
       </PageRail>

@@ -51,13 +51,12 @@ pub mod test_keys {
     pub const PUBLIC_KEY_PEM: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA2+Jj2UvNCvQiUPNYRgSi0cJSPiJI6Rs6D0UTeEpQVj8=\n-----END PUBLIC KEY-----\n";
     const PRIVATE_KEY_PEM: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIGrD/e7uKYqSY4twDEsRfMMuLSrODf14dpTiTK6K1YI0\n-----END PRIVATE KEY-----\n";
 
-    pub fn sign<T: serde::Serialize>(claims: &T) -> String {
+    pub fn sign<T: serde::Serialize>(claims: &T) -> jsonwebtoken::errors::Result<String> {
         jsonwebtoken::encode(
             &Header::new(Algorithm::EdDSA),
             claims,
-            &EncodingKey::from_ed_pem(PRIVATE_KEY_PEM.as_bytes()).unwrap(),
+            &EncodingKey::from_ed_pem(PRIVATE_KEY_PEM.as_bytes())?,
         )
-        .unwrap()
     }
 }
 
@@ -78,7 +77,7 @@ mod tests {
             subject: "upload_1".into(),
         };
         assert_eq!(
-            decoder.decode::<Claims>(&test_keys::sign(&claims)),
+            decoder.decode::<Claims>(&test_keys::sign(&claims).unwrap()),
             Some(claims)
         );
         assert_eq!(decoder.decode::<Claims>("not-a-grant"), None);

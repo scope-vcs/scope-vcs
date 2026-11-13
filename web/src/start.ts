@@ -27,10 +27,16 @@ const serverFunctionFailureMiddleware = createMiddleware({ type: 'function' }).s
   try {
     return await next()
   } catch (error) {
-    if (!getGlobalStartContext()?.serverFunctionRequest) throw error
+    if (!isServerFunctionRequest()) throw error
     throw serverFunctionFailureResponse(error) ?? error
   }
 })
+
+function isServerFunctionRequest() {
+  const context: unknown = getGlobalStartContext()
+  return typeof context === 'object' && context !== null
+    && 'serverFunctionRequest' in context && context.serverFunctionRequest === true
+}
 
 export const startInstance = createStart(() => {
   return {

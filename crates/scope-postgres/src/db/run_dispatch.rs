@@ -6,7 +6,7 @@ use super::{
     runs::{unique_conflict, workflow_revision_for_run},
 };
 use crate::error::PostgresError;
-use scope_domain::runs::job::reconcile_run;
+use scope_domain::runs::job::{AttemptDispatch, reconcile_run};
 #[cfg(any(test, feature = "seeding"))]
 use sea_orm::TransactionTrait;
 use sea_orm::{
@@ -186,47 +186,30 @@ impl RunStore {
     }
 
     #[cfg(any(test, feature = "seeding"))]
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "dispatch_job"))]
     pub async fn dispatch_job(
         &self,
         run_id: &str,
         job_key: &str,
-        attempt_id: &str,
-        token_hash: &str,
-        runtime_version: &str,
+        dispatch: AttemptDispatch,
         now_unix: u64,
-        lease_expires_at_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
         let tx = self.db.begin().await?;
         super::run_admission::lock_admission(&tx).await?;
         let claim = self
-            .dispatch_in_transaction(
-                &tx,
-                run_id,
-                job_key,
-                attempt_id,
-                token_hash,
-                runtime_version,
-                now_unix,
-                lease_expires_at_unix,
-            )
+            .dispatch_in_transaction(&tx, run_id, job_key, dispatch, now_unix)
             .await?;
         tx.commit().await?;
         Ok(claim)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn dispatch_in_transaction(
         &self,
         tx: &DatabaseTransaction,
         run_id: &str,
         job_key: &str,
-        attempt_id: &str,
-        token_hash: &str,
-        runtime_version: &str,
+        dispatch: AttemptDispatch,
         now_unix: u64,
-        lease_expires_at_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
         let run_snapshot = entities::run::Entity::find_by_id(run_id.to_string())
             .one(tx)
@@ -240,15 +223,7 @@ impl RunStore {
             .job(&job.key)
             .ok_or_else(|| PostgresError::internal_message("run job definition is missing"))?;
         let (attempt, steps) = job
-            .dispatch(
-                &run_snapshot,
-                definition,
-                attempt_id,
-                token_hash,
-                runtime_version,
-                now_unix,
-                lease_expires_at_unix,
-            )
+            .dispatch(&run_snapshot, definition, dispatch, now_unix)
             .map_err(PostgresError::from)?;
 
         entities::run_attempt::Entity::insert(

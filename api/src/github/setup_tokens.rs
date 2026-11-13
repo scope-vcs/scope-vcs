@@ -52,6 +52,7 @@ pub(crate) struct SetupTokenSigner {
 
 impl SetupTokenSigner {
     pub(crate) fn from_client_secret(client_secret: &str) -> Self {
+        #[expect(clippy::expect_used)]
         let mut mac = HmacSha256::new_from_slice(client_secret.as_bytes())
             .expect("HMAC accepts keys of any length");
         mac.update(KEY_DERIVATION_CONTEXT);
@@ -103,8 +104,11 @@ impl SetupTokenSigner {
     }
 
     fn sign<T: Serialize>(&self, claims: &T) -> String {
-        let payload = URL_SAFE_NO_PAD
-            .encode(serde_json::to_vec(claims).expect("setup claims serialize as JSON"));
+        #[expect(clippy::expect_used)]
+        let payload = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(claims)
+                .expect("setup claims are plain structs that serialize as JSON"),
+        );
         let signature =
             URL_SAFE_NO_PAD.encode(self.mac(payload.as_bytes()).finalize().into_bytes());
         format!("{payload}.{signature}")
@@ -118,6 +122,7 @@ impl SetupTokenSigner {
     }
 
     fn mac(&self, payload: &[u8]) -> HmacSha256 {
+        #[expect(clippy::expect_used)]
         let mut mac =
             HmacSha256::new_from_slice(&self.key).expect("HMAC accepts keys of any length");
         mac.update(payload);

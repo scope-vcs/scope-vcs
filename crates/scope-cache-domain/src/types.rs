@@ -235,6 +235,18 @@ impl CacheReference {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoredUploadLease {
+    pub id: UploadLeaseId,
+    pub repository_id: RepositoryId,
+    pub identity_digest: CacheDigest,
+    pub compatibility_group_digest: CacheDigest,
+    pub object_digest: CacheDigest,
+    pub size_bytes: u64,
+    pub issued_at_unix: u64,
+    pub expires_at_unix: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UploadLease {
     id: UploadLeaseId,
@@ -267,30 +279,20 @@ impl UploadLease {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        id: UploadLeaseId,
-        repository_id: RepositoryId,
-        identity_digest: CacheDigest,
-        compatibility_group_digest: CacheDigest,
-        object_digest: CacheDigest,
-        size_bytes: u64,
-        issued_at_unix: u64,
-        expires_at_unix: u64,
-    ) -> Result<Self, CacheDomainError> {
-        validate_object_size(size_bytes)?;
-        if upload_expiry(issued_at_unix)? != expires_at_unix {
+    pub fn restore(stored: StoredUploadLease) -> Result<Self, CacheDomainError> {
+        validate_object_size(stored.size_bytes)?;
+        if upload_expiry(stored.issued_at_unix)? != stored.expires_at_unix {
             return Err(CacheDomainError::InvalidUploadLeaseExpiry);
         }
         Ok(Self {
-            id,
-            repository_id,
-            identity_digest,
-            compatibility_group_digest,
-            object_digest,
-            size_bytes,
-            issued_at_unix,
-            expires_at_unix,
+            id: stored.id,
+            repository_id: stored.repository_id,
+            identity_digest: stored.identity_digest,
+            compatibility_group_digest: stored.compatibility_group_digest,
+            object_digest: stored.object_digest,
+            size_bytes: stored.size_bytes,
+            issued_at_unix: stored.issued_at_unix,
+            expires_at_unix: stored.expires_at_unix,
         })
     }
 

@@ -5,7 +5,7 @@ use crate::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
     runs::{
         availability::NATIVE_RUNS_UNAVAILABLE,
-        run::{Run, RunState},
+        run::{Run, RunRequest, RunState},
         source::{RunSource, RunTrigger},
         validation::{validate_git_oid, validate_sha256_hash},
         workflow::revision::WorkflowRevision,
@@ -52,17 +52,16 @@ pub use tested_commit::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RequestCheckProvider {
+pub enum RequestCheckProvider<'a> {
     Native,
-    GitHub,
+    GitHub(&'a GitHubConnection),
 }
 
-impl RequestCheckProvider {
-    pub fn for_repository(github_connection: Option<&GitHubConnection>) -> Self {
-        if github_connection.is_some() {
-            Self::GitHub
-        } else {
-            Self::Native
+impl<'a> RequestCheckProvider<'a> {
+    pub fn for_repository(github_connection: Option<&'a GitHubConnection>) -> Self {
+        match github_connection {
+            Some(connection) => Self::GitHub(connection),
+            None => Self::Native,
         }
     }
 }
@@ -153,13 +152,15 @@ impl NativeRequestCheck {
             format!("{}\0{idempotency_key}", revision.workflow().repository_id()).as_bytes(),
         );
         Run::new(
-            format!("run_request_{}", hex::encode(digest)),
-            idempotency_key,
-            revision.workflow().clone(),
-            revision.digest(),
-            RunTrigger::Request,
-            Some(requested_by_user_id.to_string()),
-            RunSource::ephemeral_git_bundle(source.clone())?,
+            RunRequest {
+                id: format!("run_request_{}", hex::encode(digest)),
+                idempotency_key,
+                workflow: revision.workflow().clone(),
+                workflow_revision_digest: revision.digest().to_string(),
+                trigger: RunTrigger::Request,
+                requested_by_user_id: Some(requested_by_user_id.to_string()),
+                source: RunSource::ephemeral_git_bundle(source.clone())?,
+            },
             now_unix,
         )
     }

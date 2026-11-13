@@ -16,13 +16,13 @@ use inspection::{
     Probe, dimensions_from_heif_info, media_type, reject_webp_metadata, single_video_stream,
     sniff_format, validate_pixels,
 };
-pub use video::PlaybackConversion;
+pub(crate) use video::PlaybackConversion;
 
 const IMAGE_MAX_EDGE: u32 = 2_048;
 const PROCESS_COUNT_BACKSTOP: u64 = 4_096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InputFormat {
+pub(crate) enum InputFormat {
     Png,
     Jpeg,
     Webp,
@@ -45,7 +45,7 @@ impl InputFormat {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ValidatedSource {
+pub(crate) struct ValidatedSource {
     pub kind: RequestAttachmentKind,
     pub media_type: &'static str,
     pub size_bytes: u64,
@@ -55,7 +55,7 @@ pub struct ValidatedSource {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CodecDerivative {
+pub(crate) struct CodecDerivative {
     pub kind: RequestAttachmentDerivativeKind,
     pub path: PathBuf,
     pub media_type: &'static str,
@@ -66,14 +66,14 @@ pub struct CodecDerivative {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CodecOutput {
+pub(crate) struct CodecOutput {
     pub source: ValidatedSource,
     pub derivatives: Vec<CodecDerivative>,
     pub playback: Option<PlaybackConversion>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CodecFailureKind {
+pub(crate) enum CodecFailureKind {
     InvalidMedia,
     CorruptMedia,
     UnsupportedMedia,
@@ -86,7 +86,7 @@ pub enum CodecFailureKind {
 
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
-pub struct CodecFailure {
+pub(crate) struct CodecFailure {
     pub kind: CodecFailureKind,
     pub message: String,
     pub validated_source: Option<ValidatedSource>,
@@ -106,7 +106,7 @@ impl CodecFailure {
         self
     }
 
-    pub fn retryable(&self) -> bool {
+    pub(crate) fn retryable(&self) -> bool {
         matches!(
             self.kind,
             CodecFailureKind::CodecFailed | CodecFailureKind::Internal
@@ -115,17 +115,20 @@ impl CodecFailure {
 }
 
 #[derive(Clone)]
-pub struct CodecPipeline {
+pub(crate) struct CodecPipeline {
     programs: CodecPrograms,
     limits: CodecLimits,
 }
 
 impl CodecPipeline {
-    pub fn new(programs: CodecPrograms, limits: CodecLimits) -> Self {
+    pub(crate) fn new(programs: CodecPrograms, limits: CodecLimits) -> Self {
         Self { programs, limits }
     }
 
-    pub async fn verify_capabilities(&self, cwd: &Path) -> anyhow::Result<CodecCapabilities> {
+    pub(crate) async fn verify_capabilities(
+        &self,
+        cwd: &Path,
+    ) -> anyhow::Result<CodecCapabilities> {
         let probe_version = self
             .tool_output(&self.programs.ffprobe, &os_args(["-version"]), cwd)
             .await?;
@@ -190,7 +193,7 @@ impl CodecPipeline {
         })
     }
 
-    pub async fn process(
+    pub(crate) async fn process(
         &self,
         source: &Path,
         work_dir: &Path,
@@ -581,7 +584,7 @@ impl CodecPipeline {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct CodecCapabilities {
+pub(crate) struct CodecCapabilities {
     pub ffmpeg: String,
     pub ffprobe: String,
     pub heif: String,

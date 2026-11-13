@@ -331,6 +331,7 @@ pub fn path_segment(value: &str) -> String {
             encoded.push(char::from(byte));
         } else {
             use std::fmt::Write as _;
+            #[expect(clippy::expect_used)]
             write!(encoded, "%{byte:02X}").expect("writing to a String cannot fail");
         }
     }

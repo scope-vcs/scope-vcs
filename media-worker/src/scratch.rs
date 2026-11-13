@@ -7,12 +7,12 @@ const SCRATCH_PREFIX: &str = "job-";
 const MAX_STARTUP_ENTRIES: usize = 1_024;
 
 #[derive(Clone)]
-pub struct ScratchSpace {
+pub(crate) struct ScratchSpace {
     root: PathBuf,
 }
 
 impl ScratchSpace {
-    pub fn prepare(root: PathBuf) -> anyhow::Result<Self> {
+    pub(crate) fn prepare(root: PathBuf) -> anyhow::Result<Self> {
         reject_unsafe_root(&root)?;
         fs::create_dir_all(&root)?;
         let metadata = fs::symlink_metadata(&root)?;
@@ -27,7 +27,7 @@ impl ScratchSpace {
         Ok(space)
     }
 
-    pub fn job(&self) -> anyhow::Result<tempfile::TempDir> {
+    pub(crate) fn job(&self) -> anyhow::Result<tempfile::TempDir> {
         Ok(tempfile::Builder::new()
             .prefix(SCRATCH_PREFIX)
             .tempdir_in(&self.root)?)

@@ -41,6 +41,7 @@ pub(super) fn sweep_process_servers(
     parent: &std::path::Path,
     bin: &std::path::Path,
 ) -> anyhow::Result<()> {
+    use super::process_os::{effective_user_id, process_is_alive};
     use std::{fs, os::unix::fs::MetadataExt as _};
 
     for entry in fs::read_dir(parent)? {
@@ -57,10 +58,7 @@ pub(super) fn sweep_process_servers(
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error.into()),
         };
-        if !metadata.is_dir()
-            || metadata.uid() != unsafe { libc::geteuid() }
-            || process_is_alive(pid)
-        {
+        if !metadata.is_dir() || metadata.uid() != effective_user_id() || process_is_alive(pid) {
             continue;
         }
         let directory = match fs::File::open(entry.path()) {
@@ -95,14 +93,6 @@ fn server_owner_pid(name: &str) -> Option<libc::pid_t> {
         return None;
     }
     pid.parse::<libc::pid_t>().ok().filter(|pid| *pid > 0)
-}
-
-#[cfg(unix)]
-fn process_is_alive(pid: libc::pid_t) -> bool {
-    unsafe {
-        libc::kill(pid, 0) == 0
-            || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
-    }
 }
 
 async fn abandoned(

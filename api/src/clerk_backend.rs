@@ -63,13 +63,12 @@ impl ClerkBackend {
             );
             return Self::Unconfigured;
         };
-        Self::Api(Arc::new(ClerkBackendApi {
-            client: reqwest::Client::builder()
-                .timeout(CLERK_REQUEST_TIMEOUT)
-                .build()
-                .expect("Clerk HTTP client config must be valid"),
-            secret_key,
-        }))
+        #[expect(clippy::expect_used)]
+        let client = reqwest::Client::builder()
+            .timeout(CLERK_REQUEST_TIMEOUT)
+            .build()
+            .expect("the Clerk HTTP client uses a static, valid configuration");
+        Self::Api(Arc::new(ClerkBackendApi { client, secret_key }))
     }
 
     pub(crate) async fn delete_user(&self, clerk_user_id: &str) -> ClerkUserDeletion {
@@ -97,9 +96,12 @@ impl ClerkBackend {
 
 impl ClerkBackendApi {
     async fn delete_user(&self, clerk_user_id: &str) -> ClerkUserDeletion {
-        let mut url = reqwest::Url::parse(CLERK_USERS_URL).expect("Clerk users URL must be valid");
+        #[expect(clippy::expect_used)]
+        let mut url = reqwest::Url::parse(CLERK_USERS_URL)
+            .expect("the constant Clerk users URL is a valid absolute URL");
+        #[expect(clippy::expect_used)]
         url.path_segments_mut()
-            .expect("Clerk users URL has a path")
+            .expect("the constant Clerk users URL is a base with a path")
             .push(clerk_user_id);
         match scope_service_runtime::outbound_http::send_traced(
             self.client.delete(url).bearer_auth(&self.secret_key),

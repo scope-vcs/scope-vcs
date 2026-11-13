@@ -49,7 +49,7 @@ async fn run() -> anyhow::Result<()> {
                 .context("set SCOPE_CLI_PUBLIC_URL to the public CLI service origin")?,
         )?
         .into(),
-        analytics: ProductAnalytics::from_env(EventSource::CliDownloads).await?,
+        analytics: ProductAnalytics::from_env(EventSource::CliDownloads)?,
     };
     let analytics = state.analytics.clone();
     let app = Router::new()

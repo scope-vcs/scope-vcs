@@ -6,7 +6,7 @@ import { SafeMarkdown } from '@/components/safe-markdown'
 
 export function LegalDocumentPage({ source }: { source: string }) {
   return (
-    <AppShell header={() => <ApplicationTopbar />}>
+    <AppShell header={<ApplicationTopbar />}>
       <PageContent>
         <article className="max-w-[72ch] text-[15px] leading-7 text-foreground">
           <SafeMarkdown components={markdownComponents('document')}>{source}</SafeMarkdown>

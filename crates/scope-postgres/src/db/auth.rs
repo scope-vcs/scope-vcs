@@ -218,7 +218,10 @@ impl AuthStore {
     }
 }
 
-pub async fn cleanup_expired_cli_rows<C>(conn: &C, now_unix: u64) -> Result<(), PostgresError>
+pub(super) async fn cleanup_expired_cli_rows<C>(
+    conn: &C,
+    now_unix: u64,
+) -> Result<(), PostgresError>
 where
     C: sea_orm::ConnectionTrait,
 {
@@ -278,7 +281,7 @@ where
     Ok((pending_count, window_count))
 }
 
-pub async fn load_users_by_ids<C>(
+pub(super) async fn load_users_by_ids<C>(
     conn: &C,
     user_ids: impl IntoIterator<Item = String>,
 ) -> Result<BTreeMap<String, UserAccount>, PostgresError>
@@ -289,25 +292,28 @@ where
     if user_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    entities::user::Entity::find()
+    Ok(entities::user::Entity::find()
         .filter(entities::user::Column::Id.is_in(user_ids))
         .all(conn)
         .await?
         .into_iter()
         .map(|row| {
-            let user = row.try_into_domain()?;
-            Ok((user.id.clone(), user))
+            let user = row.into_domain();
+            (user.id.clone(), user)
         })
-        .collect()
+        .collect())
 }
 
-pub async fn load_user_by_id<C>(conn: &C, user_id: &str) -> Result<UserAccount, PostgresError>
+pub(super) async fn load_user_by_id<C>(
+    conn: &C,
+    user_id: &str,
+) -> Result<UserAccount, PostgresError>
 where
     C: sea_orm::ConnectionTrait,
 {
-    entities::user::Entity::find_by_id(user_id.to_string())
+    Ok(entities::user::Entity::find_by_id(user_id.to_string())
         .one(conn)
         .await?
         .ok_or_else(|| PostgresError::internal_message("signed-in user was not persisted"))?
-        .try_into_domain()
+        .into_domain())
 }

@@ -6,23 +6,23 @@ import type {
   ReviewFileDiffWorkerResult,
 } from './review-file-diff-render-contract'
 
-const REVIEW_DIFF_LANGUAGE_BY_EXTENSION = Object.freeze({
-  css: 'css',
-  go: 'go',
-  html: 'html',
-  java: 'java',
-  js: 'javascript',
-  json: 'json',
-  jsx: 'jsx',
-  md: 'markdown',
-  py: 'python',
-  rs: 'rust',
-  sh: 'shellscript',
-  ts: 'typescript',
-  tsx: 'tsx',
-  yaml: 'yaml',
-  yml: 'yaml',
-} as const)
+const REVIEW_DIFF_LANGUAGE_BY_EXTENSION: ReadonlyMap<string, SupportedLanguages> = new Map([
+  ['css', 'css'],
+  ['go', 'go'],
+  ['html', 'html'],
+  ['java', 'java'],
+  ['js', 'javascript'],
+  ['json', 'json'],
+  ['jsx', 'jsx'],
+  ['md', 'markdown'],
+  ['py', 'python'],
+  ['rs', 'rust'],
+  ['sh', 'shellscript'],
+  ['ts', 'typescript'],
+  ['tsx', 'tsx'],
+  ['yaml', 'yaml'],
+  ['yml', 'yaml'],
+])
 
 const REVIEW_FILE_DIFF_OPTIONS = {
   diffStyle: 'unified',
@@ -69,9 +69,7 @@ async function renderReviewFileDiff(
 
 function reviewDiffLanguage(path: string): SupportedLanguages {
   const extension = path.split('.').at(-1)?.toLowerCase() ?? ''
-  return REVIEW_DIFF_LANGUAGE_BY_EXTENSION[
-    extension as keyof typeof REVIEW_DIFF_LANGUAGE_BY_EXTENSION
-  ] ?? 'text'
+  return REVIEW_DIFF_LANGUAGE_BY_EXTENSION.get(extension) ?? 'text'
 }
 
 const port = parentPort

@@ -83,7 +83,7 @@ mod tests {
             upload_id: "upload_1".to_string(),
             expires_at_unix: 100,
         };
-        let upload_token = sign(&upload);
+        let upload_token = sign(&upload).unwrap();
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
@@ -102,7 +102,7 @@ mod tests {
             target: target.clone(),
             expires_at_unix: 100,
         };
-        let media_token = sign(&media);
+        let media_token = sign(&media).unwrap();
         assert!(
             verifier
                 .verify_media(&media_token, "att_1", &target, 99)

@@ -212,22 +212,20 @@ impl EnvelopeReader {
         if fixed[..MAGIC.len()] != MAGIC {
             return Err(GitStorageError::InvalidEnvelope("wrong magic".into()));
         }
-        let version = u32::from_be_bytes(fixed[8..12].try_into().expect("fixed slice"));
+        let version = u32::from_be_bytes(header_field(&fixed, 8));
         if version != ENCODING_VERSION {
             return Err(GitStorageError::InvalidEnvelope(format!(
                 "unsupported encoding version {version}"
             )));
         }
-        let key_id_len =
-            u16::from_be_bytes(fixed[12..14].try_into().expect("fixed slice")) as usize;
+        let key_id_len = u16::from_be_bytes(header_field(&fixed, 12)) as usize;
         if key_id_len == 0 || key_id_len > MAX_KEY_ID_BYTES {
             return Err(GitStorageError::InvalidEnvelope(
                 "invalid encryption key id length".into(),
             ));
         }
-        let nonce_prefix = fixed[14..22].try_into().expect("fixed slice");
-        let frame_bytes =
-            u32::from_be_bytes(fixed[22..26].try_into().expect("fixed slice")) as usize;
+        let nonce_prefix = header_field(&fixed, 14);
+        let frame_bytes = u32::from_be_bytes(header_field(&fixed, 22)) as usize;
         if frame_bytes == 0 || frame_bytes > MAX_FRAME_BYTES {
             return Err(GitStorageError::InvalidEnvelope(
                 "invalid encryption frame size".into(),
@@ -264,9 +262,8 @@ impl EnvelopeReader {
         }
         let mut frame_header_bytes = [0_u8; FRAME_HEADER_BYTES];
         read_exact_envelope(source, &mut frame_header_bytes).await?;
-        let counter = u32::from_be_bytes(frame_header_bytes[..4].try_into().expect("fixed slice"));
-        let plaintext_len =
-            u32::from_be_bytes(frame_header_bytes[4..8].try_into().expect("fixed slice")) as usize;
+        let counter = u32::from_be_bytes(header_field(&frame_header_bytes, 0));
+        let plaintext_len = u32::from_be_bytes(header_field(&frame_header_bytes, 4)) as usize;
         let flags = frame_header_bytes[8];
         if counter != self.next_counter {
             return Err(GitStorageError::InvalidEnvelope(format!(
@@ -326,15 +323,20 @@ fn frame_header(counter: u32, plaintext_len: u32, flags: u8) -> [u8; FRAME_HEADE
 }
 
 fn scope_cipher(key: &EncryptionKey, scope: &EnvelopeScope) -> ChaCha20Poly1305 {
+    #[expect(clippy::expect_used)]
     let mut mac = <Hmac<Sha256> as hmac::KeyInit>::new_from_slice(&key.key)
-        .expect("HMAC accepts a 32-byte key");
+        .expect("HMAC accepts keys of any length");
     mac.update(scope.label);
     for part in &scope.parts {
         mac.update(&(part.len() as u64).to_be_bytes());
         mac.update(part.as_bytes());
     }
     let derived_key = mac.finalize().into_bytes();
-    ChaCha20Poly1305::new_from_slice(&derived_key).expect("HMAC derives a 32-byte key")
+    ChaCha20Poly1305::new(&derived_key)
+}
+
+fn header_field<const N: usize>(bytes: &[u8], start: usize) -> [u8; N] {
+    std::array::from_fn(|index| bytes[start + index])
 }
 
 fn nonce(prefix: [u8; 8], counter: u32) -> [u8; 12] {

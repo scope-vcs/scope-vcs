@@ -83,7 +83,7 @@ export function pruneWorkspaceTabs(
 }
 
 export function workspaceTabVisibleLabels(tabs: readonly WorkspaceTabItem[]) {
-  const collisions = new Map<string, WorkspaceTabItem[]>()
+  const collisions = new Map<string, [WorkspaceTabItem, ...WorkspaceTabItem[]]>()
   for (const tab of tabs) {
     const group = collisions.get(tab.label)
     if (group) group.push(tab)

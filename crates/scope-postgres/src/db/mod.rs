@@ -131,10 +131,10 @@ pub use account_deletion::{AccountDeletionChange, AccountDeletionError, DeletedA
 pub use cache_service::{
     CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
     CacheUploadCleanupClaim, CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
+    RequestedCacheUpload,
 };
 #[cfg(any(test, feature = "seeding"))]
 pub use catalog_fixture::CatalogFixture;
-#[cfg(any(test, feature = "test-support"))]
 pub use clerk_users::scope_user_id_for_auth_identity;
 pub use cli_auth_results::{
     BrowserLoginCompletion, CliSessionSummary, CreateCliExchangeGrantCommand, DeviceLoginPoll,
@@ -228,10 +228,10 @@ pub use request_lifecycle_commands::{
     MergeRequestContentCommand, SubmitRequestCommand,
 };
 pub use request_media::{
-    CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
-    FailRequestAttachmentProcessingCommand, FinishRequestAttachmentUploadCommand,
-    MediaLeaseMutation, PrepareRequestAttachmentCommand, PreparedRequestAttachment,
-    RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+    AttachmentUploadSession, CompleteRequestAttachmentProcessingCommand,
+    CompletedRequestAttachmentDerivative, FailRequestAttachmentProcessingCommand,
+    FinishRequestAttachmentUploadCommand, MediaLeaseMutation, PrepareRequestAttachmentCommand,
+    PreparedRequestAttachment, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
     ValidateRequestAttachmentSourceCommand,
 };
 pub use request_merge::{

@@ -125,7 +125,9 @@ test('failed refresh retries once and stop cancels pending retry', async () => {
   coordinator.onEvent(event(1))
   await tick()
   assert.equal(retries.length, 1)
-  retries[0]()
+  const [retry] = retries
+  assert.ok(retry)
+  retry()
   await tick()
   assert.equal(attempts, 2)
 

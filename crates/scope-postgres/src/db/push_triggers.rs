@@ -7,7 +7,7 @@ use crate::error::PostgresError;
 use scope_domain::{
     repository::git::GitHead,
     runs::{
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
         trigger::{
             PushTriggerCheck, PushTriggerEvaluation, PushTriggerEvaluationState, PushTriggerInput,
@@ -31,7 +31,7 @@ struct PushMainTriggerJobPayload {
     input: PushTriggerInput,
 }
 
-pub async fn enqueue_push_main_trigger_evaluation<C>(
+pub(super) async fn enqueue_push_main_trigger_evaluation<C>(
     conn: &C,
     repo_id: &str,
     head: &GitHead,
@@ -229,13 +229,15 @@ fn push_main_run(
     let digest = Sha256::digest(format!("{repo_id}\0{idempotency_key}").as_bytes());
     let source = RunSource::accepted_git_head(repo_id, payload.head.clone())?;
     Ok(Run::new(
-        format!("run_push_{}", hex::encode(digest)),
-        idempotency_key,
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::PushMain,
-        None,
-        source,
+        RunRequest {
+            id: format!("run_push_{}", hex::encode(digest)),
+            idempotency_key,
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger: RunTrigger::PushMain,
+            requested_by_user_id: None,
+            source,
+        },
         now_unix,
     )?)
 }
@@ -282,7 +284,7 @@ mod tests {
     async fn evaluation_uses_each_pinned_head_and_enqueues_once() {
         let target = crate::db::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        let repo_id = seed_repo(&store).await;
+        let repo_id = seed_repo(&store);
         let head_oid = "1111111111111111111111111111111111111111";
         let jobs = "  backend:\n    steps: [{ name: Backend, run: \"true\" }]\n  web:\n    needs: [backend]\n    steps: [{ name: Web, run: \"true\" }]\n";
         let workflows = vec![workflow_file("test", jobs)];
@@ -343,7 +345,7 @@ mod tests {
     async fn idempotent_trigger_enqueue_emits_no_created_run_ids() {
         let target = crate::db::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        let repo_id = seed_repo(&store).await;
+        let repo_id = seed_repo(&store);
         let head_oid = "7777777777777777777777777777777777777777";
         enqueue(
             &store,
@@ -395,7 +397,7 @@ mod tests {
     async fn invalid_workflow_is_a_configuration_error() {
         let target = crate::db::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        let repo_id = seed_repo(&store).await;
+        let repo_id = seed_repo(&store);
         let head_oid = "2222222222222222222222222222222222222222";
         let broken = PushWorkflowFile::new(
             "/.scope/runs/broken.yml",
@@ -445,7 +447,7 @@ mod tests {
     async fn malformed_payload_terminal_failure_stops_retries() {
         let target = crate::db::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        let repo_id = seed_repo(&store).await;
+        let repo_id = seed_repo(&store);
         let head_oid = "5555555555555555555555555555555555555555";
         let workflows = vec![workflow_file("malformed", CHECKS)];
         enqueue(&store, &repo_id, head_oid, 5, workflows).await;
@@ -496,7 +498,7 @@ mod tests {
     async fn returning_to_an_earlier_head_creates_a_new_evaluation_and_run() {
         let target = crate::db::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        let repo_id = seed_repo(&store).await;
+        let repo_id = seed_repo(&store);
         let head_oid = "4444444444444444444444444444444444444444";
         for change_version in [2, 4] {
             let workflows = vec![workflow_file("repeat", CHECKS)];
@@ -554,7 +556,7 @@ mod tests {
         .unwrap();
     }
 
-    async fn seed_repo(store: &MetadataStore) -> String {
+    fn seed_repo(store: &MetadataStore) -> String {
         let owner = UserAccount {
             id: "user_owner".to_string(),
             handle: "owner".to_string(),

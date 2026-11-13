@@ -1,5 +1,6 @@
 [package]
 name = "api"
+publish = false
 version.workspace = true
 edition.workspace = true
 default-run = "api"
@@ -41,7 +42,6 @@ hmac.workspace = true
 http = "1.4.0"
 jsonwebtoken.workspace = true
 getrandom.workspace = true
-libc.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
@@ -74,3 +74,6 @@ scope_postgres = { workspace = true, features = ["test-support"] }
 scope_service_runtime = { workspace = true, features = ["postgres", "test-support"] }
 tower = { workspace = true, features = ["util"] }
 tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

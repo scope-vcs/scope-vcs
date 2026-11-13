@@ -14,7 +14,7 @@ use scope_domain::{
         attempt::{AttemptState, RunAttempt},
         job::{RunJob, create_run_jobs, request_run_cancellation, retry_run},
         run::Run,
-        step::{AttemptConclusion, RunAttemptStep},
+        step::{AttemptCompletion, AttemptConclusion, RunAttemptStep},
         workflow::revision::WorkflowRevision,
     },
 };
@@ -95,8 +95,10 @@ impl RunStore {
                 job,
                 steps,
                 token_hash,
-                conclusion,
-                logs_truncated,
+                AttemptCompletion {
+                    conclusion,
+                    logs_truncated,
+                },
                 now_unix,
             )
         })

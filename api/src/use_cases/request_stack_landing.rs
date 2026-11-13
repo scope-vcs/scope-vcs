@@ -55,7 +55,7 @@ pub(crate) async fn prepare_github_merge_stack_landing(
         prepare_stack_landing(state, incarnation, parent, &staging, &main, view_main).await
     }
     .await;
-    let _ = std::fs::remove_dir_all(staging);
+    crate::git::storage::discard_dir(&staging);
     facts
 }
 

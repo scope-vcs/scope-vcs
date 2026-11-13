@@ -179,13 +179,15 @@ async fn upload_attachment_as(
             .store
             .media()
             .reserve_upload_part(
-                attachment_id,
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id,
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 stored_part.clone(),
                 &format!("write_{attachment_id}"),
                 now_unix + 1,
-                now_unix + 10,
+                now_unix + 10
             )
             .await
             .unwrap(),
@@ -196,13 +198,15 @@ async fn upload_attachment_as(
             .store
             .media()
             .mark_upload_part_stored(
-                attachment_id,
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id,
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 1,
                 &stored_part.object_key,
                 &format!("write_{attachment_id}"),
-                now_unix + 2,
+                now_unix + 2
             )
             .await
             .unwrap(),
@@ -240,13 +244,15 @@ async fn upload_part_reservation_is_idempotent_and_fences_expired_writers() {
             .store
             .media()
             .reserve_upload_part(
-                "lease_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "lease_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 first.clone(),
                 "first-token",
                 11,
-                20,
+                20
             )
             .await
             .unwrap(),
@@ -257,13 +263,15 @@ async fn upload_part_reservation_is_idempotent_and_fences_expired_writers() {
             .store
             .media()
             .reserve_upload_part(
-                "lease_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "lease_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 replacement.clone(),
                 "competing-token",
                 12,
-                21,
+                21
             )
             .await
             .unwrap(),
@@ -274,13 +282,15 @@ async fn upload_part_reservation_is_idempotent_and_fences_expired_writers() {
             .store
             .media()
             .reserve_upload_part(
-                "lease_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "lease_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 replacement.clone(),
                 "replacement-token",
                 20,
-                30,
+                30
             )
             .await
             .unwrap(),
@@ -291,13 +301,15 @@ async fn upload_part_reservation_is_idempotent_and_fences_expired_writers() {
             .store
             .media()
             .mark_upload_part_stored(
-                "lease_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "lease_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 1,
                 &first.object_key,
                 "first-token",
-                21,
+                21
             )
             .await
             .unwrap(),
@@ -308,13 +320,15 @@ async fn upload_part_reservation_is_idempotent_and_fences_expired_writers() {
             .store
             .media()
             .mark_upload_part_stored(
-                "lease_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "lease_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 1,
                 &replacement.object_key,
                 "replacement-token",
-                21,
+                21
             )
             .await
             .unwrap(),
@@ -325,13 +339,15 @@ async fn upload_part_reservation_is_idempotent_and_fences_expired_writers() {
             .store
             .media()
             .mark_upload_part_stored(
-                "lease_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "lease_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 1,
                 &replacement.object_key,
                 "replacement-token",
-                22,
+                22
             )
             .await
             .unwrap(),
@@ -342,13 +358,15 @@ async fn upload_part_reservation_is_idempotent_and_fences_expired_writers() {
             .store
             .media()
             .reserve_upload_part(
-                "lease_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "lease_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 part("lease_attachment", "ignored-after-store"),
                 "ignored-token",
                 22,
-                31,
+                31
             )
             .await
             .unwrap(),

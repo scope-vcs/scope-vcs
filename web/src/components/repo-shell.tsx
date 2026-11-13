@@ -78,22 +78,20 @@ export function RepoShell({
   return (
     <RepositorySearchProvider>
     <AppShell
-      header={() => (
+      header={
         <ApplicationTopbar
-          facts={[
-            ...(!repo || repo.lifecycle_state === 'Ready'
-              ? []
-              : [{
-                  id: 'lifecycle',
-                  label: 'Awaiting first push',
-                  semantic: 'warning' as const,
-                }]),
-          ]}
+          facts={!repo || repo.lifecycle_state === 'Ready'
+            ? []
+            : [{
+                id: 'lifecycle',
+                label: 'Awaiting first push',
+                semantic: 'warning' as const,
+              }]}
           items={items}
           repository={params}
           search={repo ? <RepositorySearch params={params} repo={repo} /> : <BlockSkeleton className="h-8 w-full" />}
         />
-      )}
+      }
     >
       {children}
     </AppShell>

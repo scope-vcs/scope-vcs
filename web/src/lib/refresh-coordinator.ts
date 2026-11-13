@@ -37,6 +37,23 @@ export function createRefreshCoordinator<Request>({
     activeController = null
   }
 
+  const enqueue = (request: Request) => {
+    if (stopped) return
+    pending = pending === null ? request : merge(pending, request)
+  }
+
+  const scheduleNextFlush = (failed: boolean) => {
+    if (stopped || pending === null) return
+    if (failed) {
+      cancelRetry = schedule(() => {
+        cancelRetry = null
+        void flush()
+      }, REFRESH_RETRY_DELAY_MS)
+    } else {
+      void flush()
+    }
+  }
+
   const flush = async () => {
     if (stopped || refreshInFlight || pending === null) return
     cancelRetry?.()
@@ -58,27 +75,19 @@ export function createRefreshCoordinator<Request>({
     } catch (error) {
       if (error instanceof StaleBuildError) stop()
       failed = true
-      if (!stopped) pending = pending === null ? request : merge(pending, request)
+      enqueue(request)
     } finally {
       cancelTimeout()
       if (activeController === controller) activeController = null
       refreshInFlight = false
     }
-    if (stopped || pending === null) return
-    if (failed) {
-      cancelRetry = schedule(() => {
-        cancelRetry = null
-        void flush()
-      }, REFRESH_RETRY_DELAY_MS)
-    } else {
-      void flush()
-    }
+    scheduleNextFlush(failed)
   }
 
   return {
     request(request) {
       if (stopped) return
-      pending = pending === null ? request : merge(pending, request)
+      enqueue(request)
       cancelRetry?.()
       cancelRetry = null
       void flush()

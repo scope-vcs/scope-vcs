@@ -35,11 +35,11 @@ export function PendingSurface({
   onRetry?: () => void
 }) {
   const nested = use(NestedSurface)
-  const router = useRouter({ warn: false })
-  const [routeFallback] = useState(() => router?.state.status === 'pending')
-  const [since] = useState(() => routeFallback && router ? navigationSince(router) : Date.now())
+  const router = useRouter()
+  const [routeFallback] = useState(() => router.state.status === 'pending')
+  const [since] = useState(() => routeFallback ? navigationSince(router) : Date.now())
   const [slow, restartSlow] = useSlow(!nested, since)
-  const retryLoad = onRetry ?? (routeFallback && router ? () => void router.invalidate() : undefined)
+  const retryLoad = onRetry ?? (routeFallback ? () => void router.invalidate() : undefined)
   const retry = retryLoad && (() => {
     restartSlow()
     retryLoad()

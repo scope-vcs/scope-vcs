@@ -1,6 +1,6 @@
 use crate::distribution::{DistributionManifest, DistributionTarget};
 
-pub fn posix_install_script(base_url: &str, manifest: &DistributionManifest) -> String {
+pub(crate) fn posix_install_script(base_url: &str, manifest: &DistributionManifest) -> String {
     let base_url = format!(
         "'{}'",
         base_url.trim_end_matches('/').replace('\'', "'\"'\"'")
@@ -174,7 +174,7 @@ echo "scope installed to $install_dir/scope"
     )
 }
 
-pub fn windows_install_script(base_url: &str, manifest: &DistributionManifest) -> String {
+pub(crate) fn windows_install_script(base_url: &str, manifest: &DistributionManifest) -> String {
     let base_url = format!("'{}'", base_url.trim_end_matches('/').replace('\'', "''"));
     let cases = manifest
         .targets()

@@ -16,7 +16,7 @@ use tracing::Instrument as _;
 const EXPIRY_DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
 const _: () = assert!(MEDIA_PUT_TIMEOUT.as_secs() <= REQUEST_MEDIA_LATE_WRITE_GRACE_SECONDS);
 
-pub async fn run(
+pub(crate) async fn run(
     metadata: MetadataStore,
     storage: MediaStorage,
     settings: WorkerSettings,

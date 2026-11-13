@@ -1,11 +1,11 @@
 use sea_orm::{ConnectionTrait, DatabaseBackend, DbErr, Statement};
 use sea_orm_migration::{MigrationName, MigrationTrait, SchemaManager};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 pub(super) const NAME: &str = "m0084_current_schema_baseline";
 const SCHEMA: &str = include_str!("m0084_current_schema_baseline.sql");
 
-pub struct Migration;
+pub(super) struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
@@ -25,12 +25,10 @@ impl MigrationTrait for Migration {
 
 pub(super) async fn assert_empty_schema<C: ConnectionTrait>(db: &C) -> Result<(), DbErr> {
     let state = schema_inventory(db).await?;
-    if state.as_object().is_none_or(|state| {
-        state.values().any(|objects| match objects {
-            Value::Array(objects) => !objects.is_empty(),
-            Value::Object(objects) => !objects.is_empty(),
-            _ => true,
-        })
+    if state.values().any(|objects| match objects {
+        Value::Array(objects) => !objects.is_empty(),
+        Value::Object(objects) => !objects.is_empty(),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => true,
     }) {
         return Err(DbErr::Custom(
             "the current-schema baseline requires an empty schema; initialize it in a database with no existing objects".into(),
@@ -77,7 +75,9 @@ async fn set_search_path<C: ConnectionTrait>(db: &C, search_path: &str) -> Resul
     Ok(())
 }
 
-pub(crate) async fn schema_inventory<C: ConnectionTrait>(db: &C) -> Result<Value, DbErr> {
+pub(crate) async fn schema_inventory<C: ConnectionTrait>(
+    db: &C,
+) -> Result<Map<String, Value>, DbErr> {
     let schema = db
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -166,10 +166,10 @@ fn quote_identifier(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
 
-fn schema_differences(actual: &Value, expected: &Value) -> Vec<String> {
+fn schema_differences(actual: &Map<String, Value>, expected: &Map<String, Value>) -> Vec<String> {
     let mut differences = Vec::new();
-    for (category, expected) in expected.as_object().unwrap() {
-        let actual = &actual[category];
+    for (category, expected) in expected {
+        let actual = actual.get(category).unwrap_or(&Value::Null);
         if actual == expected {
             continue;
         }

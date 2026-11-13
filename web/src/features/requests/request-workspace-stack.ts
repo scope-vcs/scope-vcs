@@ -31,11 +31,11 @@ type StackNode<T> = {
 }
 
 export function stackRequestRows<T extends StackRow>(rows: T[]): StackedRequestRow<T>[] {
-  const nodes = new Map<string, StackNode<T>>()
-  rows.forEach((row, index) => nodes.set(row.item.request.id, { row, first: index, children: [] }))
+  const rowNodes = rows.map((row, index) => ({ row, first: index, children: [] as StackNode<T>[] }))
+  const nodes = new Map<string, StackNode<T>>(rowNodes.map((node) => [node.row.item.request.id, node]))
   const roots: StackNode<T>[] = []
-  for (const row of rows) {
-    const node = nodes.get(row.item.request.id)!
+  for (const node of rowNodes) {
+    const { row } = node
     const parent = row.item.request.stack_parent
     if (!parent) {
       roots.push(node)
@@ -84,11 +84,15 @@ export function foldStackedRequestRows<T extends StackRow>(
   foldedIds: ReadonlySet<string>,
 ): VisibleStackedRequestRow<T>[] {
   const visible: VisibleStackedRequestRow<T>[] = []
-  for (let index = 0; index < rows.length; index++) {
-    const entry = rows[index]
+  let hidden = 0
+  for (const entry of rows) {
+    if (hidden > 0) {
+      hidden--
+      continue
+    }
     const folded = foldedIds.has(entry.row.item.request.id) ? entry.descendants : []
     visible.push({ ...entry, folded })
-    index += folded.length
+    hidden = folded.length
   }
   return visible
 }
@@ -103,17 +107,22 @@ export function requestRailRows<T extends StackRow>(
   )
   return rows.map((entry) => {
     const index = shown.indexOf(entry)
-    return index < 0 ? { shown: false } : { shown: true, edge: stackEdge(shown, index, rows) }
+    return index < 0 ? { shown: false } : { shown: true, edge: stackEdge(entry, shown, index, rows) }
   })
 }
 
-function stackEdge<T>(rows: VisibleStackedRequestRow<T>[], index: number, allRows: VisibleStackedRequestRow<T>[]): RequestStackEdge | undefined {
-  const { stack, folded } = rows[index]
+function stackEdge<T>(
+  current: VisibleStackedRequestRow<T>,
+  rows: VisibleStackedRequestRow<T>[],
+  index: number,
+  allRows: VisibleStackedRequestRow<T>[],
+): RequestStackEdge | undefined {
+  const { stack, folded } = current
   const before = rows[index - 1]?.stack === stack
   const after = rows[index + 1]?.stack === stack
   if (before) return after ? 'middle' : 'end'
   if (after) return 'start'
-  const stacked = folded.length > 0 || allRows.some((entry) => entry !== rows[index] && entry.stack === stack)
+  const stacked = folded.length > 0 || allRows.some((entry) => entry !== current && entry.stack === stack)
   return stacked ? 'single' : undefined
 }
 

@@ -10,7 +10,7 @@ function requestChangesIdentity(scope: string, requestId: string) {
 
 export function requestChangesSelectionIdentity(scope: string, requestId: string, revision?: string, commit?: string, comparison?: RequestComparisonMode) {
   const query = requestChangesQuery({ comparison, commit, revision })
-  return `${requestChangesIdentity(scope, requestId)}\0${query.revision_id ?? ''}\0${query.comparison ?? 'default'}\0${query.commit_oid ?? ''}`
+  return `${requestChangesIdentity(scope, requestId)}\0${query.revision_id ?? ''}\0${query.comparison}\0${query.commit_oid ?? ''}`
 }
 
 export function retainPinnedRequestChanges(

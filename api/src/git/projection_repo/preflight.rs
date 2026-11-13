@@ -64,7 +64,7 @@ impl VerifiedProjections {
         let extends_latest = self
             .latest
             .get(&proposed.view_key)
-            .is_some_and(|latest| keys.contains(&latest.key));
+            .is_some_and(|latest| keys.by_commit_count.contains(&latest.key));
         let committed_repo = if extends_latest {
             None
         } else {
@@ -85,10 +85,7 @@ impl VerifiedProjections {
                 .await?,
             )
         };
-        let key = keys
-            .last()
-            .cloned()
-            .expect("empty projection has a cache key");
+        let key = keys.latest;
         let view = proposed.view_key.clone();
         let verified = {
             let state = state.clone();

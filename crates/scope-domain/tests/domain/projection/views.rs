@@ -417,7 +417,7 @@ fn a_relabel_hidden_from_its_push_still_enters_when_the_view_starts_including_it
         }],
         Some(ViewsTransition {
             before: before.clone(),
-            after: after.clone(),
+            after,
         }),
     )
     .unwrap();
@@ -468,7 +468,7 @@ fn a_views_transition_survives_a_public_history_redaction() {
             .is_some_and(|set| set.changes.is_empty() && set.views.is_some())
     );
 
-    let mut redacting = config_with(joined.clone(), &[]);
+    let mut redacting = config_with(joined, &[]);
     redacting.history.rewrites = vec![scope_domain::repo_config::HistoryRewriteRequest {
         path: "/README.md".to_string(),
         action: scope_domain::repo_config::HistoryRewriteAction::RedactPublicHistory,

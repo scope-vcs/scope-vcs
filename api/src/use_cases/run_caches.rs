@@ -11,6 +11,7 @@ use scope_api_contract::{
 use scope_domain::runs::cache::identity::CacheIdentity;
 use scope_postgres::db::{
     CacheAttemptAccess, CacheCommitResult, CachePrepareResult, CacheRestoreKind, CacheUploadRecord,
+    RequestedCacheUpload,
 };
 use scope_storage::{S3Backend, S3Presigner, S3Settings};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
@@ -59,6 +60,7 @@ impl RunCacheStorage {
     }
 
     #[cfg(any(test, feature = "local-dev"))]
+    #[expect(clippy::expect_used)]
     pub(crate) fn unreachable() -> Self {
         let mut settings = S3Settings::new(
             "http://127.0.0.1:1".to_string(),
@@ -128,8 +130,9 @@ fn ensure_may_save(authorized: &AuthorizedCache) -> Result<(), ApiError> {
 }
 
 fn signed_url_ttl(remaining_lease_seconds: u64) -> u32 {
-    u32::try_from(remaining_lease_seconds.min(u64::from(SIGNED_URL_TTL_SECONDS)))
-        .expect("signed URL TTL is capped to a u32 constant")
+    u32::try_from(remaining_lease_seconds).map_or(SIGNED_URL_TTL_SECONDS, |remaining| {
+        remaining.min(SIGNED_URL_TTL_SECONDS)
+    })
 }
 
 pub(crate) async fn restore(
@@ -193,13 +196,15 @@ pub(crate) async fn prepare_upload(
         .metadata
         .caches()
         .prepare_upload(
-            &authorized.repository_id,
-            &authorized.exact_digest,
-            &authorized.compatibility_group_digest,
-            &request.object_digest,
-            request.size_bytes,
-            &storage.backend,
-            &random_upload_id()?,
+            RequestedCacheUpload {
+                repository_id: &authorized.repository_id,
+                identity_digest: &authorized.exact_digest,
+                compatibility_group_digest: &authorized.compatibility_group_digest,
+                checksum_sha256: &request.object_digest,
+                size_bytes: request.size_bytes,
+                storage_backend: &storage.backend,
+                upload_id: &random_upload_id()?,
+            },
             now,
         )
         .await?;

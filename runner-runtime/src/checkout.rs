@@ -7,7 +7,11 @@ use std::{
 const MAX_CHECKOUT_FILES: u64 = 100_000;
 const MAX_CHECKOUT_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 
-pub fn checkout_exact_commit(bundle: &Path, workspace: &Path, git_oid: &str) -> anyhow::Result<()> {
+pub(crate) fn checkout_exact_commit(
+    bundle: &Path,
+    workspace: &Path,
+    git_oid: &str,
+) -> anyhow::Result<()> {
     command(
         Command::new("git")
             .args(["clone", "--no-local", "--no-checkout"])

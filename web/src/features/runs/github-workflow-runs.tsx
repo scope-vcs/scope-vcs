@@ -67,10 +67,10 @@ export function GitHubWorkflowRunsPage({
     if (!github) throw new Error('This repository no longer uses GitHub for CI. Reload to see its runs.')
     return github
   }, [loadRuns, owner, repoName, workflow])
-  const load = useCallback((signal: AbortSignal) => reloadGitHubWorkflowRunPages(
+  const load = (signal: AbortSignal) => reloadGitHubWorkflowRunPages(
     (identity ? githubWorkflowRunsResource.peek(identity)?.pages : undefined) ?? 1,
     (after) => loadPage(signal, after),
-  ), [identity, loadPage])
+  )
   const initialValue = useMemo(
     () => (workflow === null ? { list: initialRuns, pages: 1 } : null),
     [initialRuns, workflow],

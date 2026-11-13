@@ -166,8 +166,10 @@ pub(crate) async fn git_upload_pack_response(
             Ok(Err(error)) => Some(error.to_string()),
             Err(error) => Some(format!("Git upload-pack task failed: {error}")),
         };
-        if let Some(message) = stream_error {
-            let _ = error_sender.try_send(Err(std::io::Error::other(message)));
+        if let Some(message) = stream_error
+            && let Err(error) = error_sender.try_send(Err(std::io::Error::other(message)))
+        {
+            tracing::debug!(%error, "Git upload-pack stream closed before its error was delivered");
         }
     };
     tokio::spawn(work.in_current_span());

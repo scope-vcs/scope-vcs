@@ -8,7 +8,7 @@ export function ChildRoutesPending({ below, fallback = null }: { below: string; 
   const routeIds = useMatches({ select: (matches) => matches.map((match) => match.routeId) })
   const start = routeIds.indexOf(below as (typeof routeIds)[number])
   const pending = start < 0 ? [] : routeIds.slice(start + 1).flatMap((routeId) => {
-    const component = router.routesById[routeId]?.options.pendingComponent
+    const component = router.routesById[routeId].options.pendingComponent
     return component ? [component as PendingComponent] : []
   })
   if (!pending.length) return fallback

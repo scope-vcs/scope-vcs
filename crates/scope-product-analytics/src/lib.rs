@@ -9,7 +9,7 @@ mod workflow;
 pub use transport::ProductAnalytics;
 #[cfg(any(test, feature = "test-support"))]
 pub use transport::RecordingProductAnalytics;
-pub use workflow::{WorkflowAttemptResult, WorkflowRunResult, WorkflowRunTrigger};
+pub use workflow::{WorkflowAttempt, WorkflowAttemptResult, WorkflowRunResult, WorkflowRunTrigger};
 
 const SCOPE_USER_ID_PREFIX: &str = "scope_usr_";
 const SCOPE_SYSTEM_DISTINCT_ID: &str = "scope_system";
@@ -551,21 +551,20 @@ mod tests {
     fn workflow_events_keep_the_emitting_service_source() {
         for source in [EventSource::Api, EventSource::Worker] {
             let (analytics, recording) = ProductAnalytics::recording_for_source(source);
+            let attempt = WorkflowAttempt {
+                repository_id: "repoi_test",
+                run_id: "run_test",
+                attempt_id: "attempt_test",
+                attempt_number: 2,
+                trigger: WorkflowRunTrigger::PushMain,
+            };
             analytics.capture(ProductEvent::workflow_attempt_started(
                 ProductActor::System,
-                "repoi_test",
-                "run_test",
-                "attempt_test",
-                2,
-                WorkflowRunTrigger::PushMain,
+                attempt,
             ));
             analytics.capture(ProductEvent::workflow_attempt_completed(
                 ProductActor::System,
-                "repoi_test",
-                "run_test",
-                "attempt_test",
-                2,
-                WorkflowRunTrigger::PushMain,
+                attempt,
                 WorkflowAttemptResult::Succeeded,
                 Some(WorkflowRunResult::Succeeded),
                 1000,

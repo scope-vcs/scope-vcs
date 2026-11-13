@@ -1,4 +1,3 @@
-#![warn(unreachable_pub)]
 mod backend;
 mod cache;
 pub mod config;

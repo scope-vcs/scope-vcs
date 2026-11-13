@@ -32,7 +32,7 @@ export function InvitePage({
 
   return (
     <AppShell
-      header={() => <ApplicationTopbar contextLabel="Repository invite" />}
+      header={<ApplicationTopbar contextLabel="Repository invite" />}
     >
       <PageContent>
         <InviteLanding acceptInvite={acceptInvite} invite={invite} token={token} />

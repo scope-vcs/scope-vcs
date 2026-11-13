@@ -63,7 +63,7 @@ fn signal_between_pending_check_and_wait_remains_responsive() {
             let mut service = service_waiting_for_term();
             let service_pid = service.id() as i32;
             forward_pending_signal(service_pid);
-            assert_eq!(unsafe { libc::raise(libc::SIGTERM) }, 0);
+            posix::raise_signal(libc::SIGTERM).unwrap();
             assert_eq!(reap_exited_child().unwrap(), None);
             forward_pending_signal(service_pid);
             assert_eq!(service.wait().unwrap().code(), Some(23));
@@ -82,10 +82,7 @@ fn reaper_forwards_a_signal_while_the_service_is_idle() {
             let service = service_waiting_for_term();
             thread::spawn(|| {
                 thread::sleep(Duration::from_millis(75));
-                assert_eq!(
-                    unsafe { libc::kill(std::process::id() as i32, libc::SIGTERM) },
-                    0
-                );
+                posix::send_signal(std::process::id() as i32, libc::SIGTERM).unwrap();
             });
             reap_service_process(service.id()).unwrap();
             unreachable!("the reaper exits with its service's status");

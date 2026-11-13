@@ -18,11 +18,11 @@ test('settings reuse one scoped snapshot and write results fence older reads wit
   await Promise.resolve()
   const saved = { ...member, permissions: { ...member.permissions, can_push: true } }
   retainCollaborationResult('owner-scope', { type: 'memberUpdated', member: saved })
-  assert.equal(repoSettingsResource.peek('owner-scope')?.collaboration?.members[0].permissions.can_push, true)
+  assert.equal(repoSettingsResource.peek('owner-scope')?.collaboration?.members[0]?.permissions.can_push, true)
   assert.equal(repoSettingsResource.getSnapshot('owner-scope').stale, true)
   release({ collaboration: { members: [member], invites: [] }, github: null })
   await oldRead
-  assert.equal(repoSettingsResource.peek('owner-scope')?.collaboration?.members[0].permissions.can_push, true)
+  assert.equal(repoSettingsResource.peek('owner-scope')?.collaboration?.members[0]?.permissions.can_push, true)
   assert.equal(repoSettingsResource.peek('other-viewer'), null)
   retainCollaborationResult('owner-scope', { type: 'memberRemoved', member: saved })
   assert.deepEqual(repoSettingsResource.peek('owner-scope')?.collaboration?.members, [])

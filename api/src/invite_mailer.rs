@@ -41,11 +41,13 @@ impl InviteMailer {
             tracing::warn!("{SCOPE_RESEND_API_KEY_ENV} is not set; invite emails will fail");
             return Self::Unconfigured;
         };
+        #[expect(clippy::expect_used)]
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .expect("the invite mailer HTTP client uses a static, valid configuration");
         Self::Resend(Arc::new(ResendMailer {
-            client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(15))
-                .build()
-                .expect("invite mailer HTTP client config must be valid"),
+            client,
             api_key,
             from: non_empty_env(SCOPE_INVITE_EMAIL_FROM_ENV)
                 .unwrap_or_else(|| DEFAULT_FROM.to_string()),

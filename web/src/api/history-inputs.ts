@@ -65,7 +65,7 @@ function parseOptionalBefore(input: unknown) {
 export function parseHistoryFeed(value: unknown): HistoryFeed {
   if (value === undefined || value === null || value === '') return 'updates'
   if (value === 'updates' || value === 'all' || value === 'visibility') return value
-  throw new Error(`Unsupported history feed: ${String(value)}`)
+  throw new Error(`Unsupported history feed: ${typeof value === 'string' ? value : typeof value}`)
 }
 
 export function parseVisibilityChange(value: unknown): string | null {

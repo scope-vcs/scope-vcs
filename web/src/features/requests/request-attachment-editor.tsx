@@ -6,7 +6,7 @@ import { FileImage, FileVideo, Paperclip, RotateCcw, X } from 'lucide-react'
 import {
   type ClipboardEvent,
   type DragEvent,
-  type FormEvent,
+  type SubmitEvent,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -154,12 +154,10 @@ export function RequestAttachmentEditor({
   const alert = validationError ?? error ?? (staleDescription ? staleDescriptionMessage : null)
   const draftChanged = staleDescription || draft.text !== initialText || draft.attachments.length > 0
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!canSubmit) return
-    const submitter = (event.nativeEvent as SubmitEvent)
-      .submitter as HTMLButtonElement | null
-    const action = submitter?.dataset.submitAction === 'secondary'
+    const action = event.nativeEvent.submitter?.dataset.submitAction === 'secondary'
       ? 'secondary'
       : 'primary'
     const submitAction = action === 'secondary'
@@ -286,7 +284,7 @@ export function RequestAttachmentEditor({
   )
 
   return (
-    <form id={formId} onSubmit={submit}>
+    <form id={formId} onSubmit={(event) => void submit(event)}>
       <label className="sr-only" htmlFor={editorId}>{label}</label>
       {quote ? <QuotedReply disabled={pending} onCancel={onCancelQuote} quote={quote} /> : null}
       <div

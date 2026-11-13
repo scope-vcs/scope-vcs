@@ -565,7 +565,17 @@ fn transition(
             None,
             RequestEventKind::AutoMergeFulfilled,
         ),
-        _ => unreachable!("auto-merge transition creates only auto-merge events"),
+        RequestEventPayload::Started { .. }
+        | RequestEventPayload::Submitted { .. }
+        | RequestEventPayload::RevisionPushed { .. }
+        | RequestEventPayload::BaseRetargeted { .. }
+        | RequestEventPayload::Merged { .. }
+        | RequestEventPayload::Closed { .. }
+        | RequestEventPayload::IdentityEdited { .. }
+        | RequestEventPayload::DiscussionResolved { .. }
+        | RequestEventPayload::DiscussionReopened { .. } => {
+            unreachable!("auto-merge transition creates only auto-merge events")
+        }
     };
     intent.status = status;
     intent.reason = reason;

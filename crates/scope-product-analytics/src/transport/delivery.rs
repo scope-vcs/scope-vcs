@@ -101,7 +101,7 @@ impl ProductAnalyticsSink for PostHogSink {
             if timeout(SHUTDOWN_TIMEOUT, drain).await.is_err() {
                 handle.abort();
             }
-            let _ = handle.await;
+            handle.await.ok();
         })
     }
 }
@@ -115,7 +115,7 @@ async fn run(
         match message {
             Message::Event(payload) => deliver(&client, &endpoint, payload).await,
             Message::Shutdown(finished) => {
-                let _ = finished.send(());
+                finished.send(()).ok();
                 return;
             }
         }

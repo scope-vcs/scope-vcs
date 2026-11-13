@@ -82,10 +82,13 @@ test('keeps revision and commit selection consistent', () => {
 })
 
 test('keeps a valid commit selectable when its file list is truncated', () => {
-  const oversized = [revision('revision-large', 1, ['commit-large'])]
-  oversized[0].commits[0].files = []
-  oversized[0].commits[0].change_count = 10_001
-  oversized[0].commits[0].files_truncated = true
+  const large = revision('revision-large', 1, ['commit-large'])
+  const [largeCommit] = large.commits
+  assert.ok(largeCommit)
+  largeCommit.files = []
+  largeCommit.change_count = 10_001
+  largeCommit.files_truncated = true
+  const oversized = [large]
 
   const selection = requestChangeSelection(
     oversized,
@@ -95,7 +98,7 @@ test('keeps a valid commit selectable when its file list is truncated', () => {
   assert.equal(selection.commit, 'commit-large')
   assert.equal(selection.error, null)
   assert.match(
-    missingRequestCommitFileError(oversized[0].commits[0]),
+    missingRequestCommitFileError(largeCommit),
     /outside the bounded file list/,
   )
 })
@@ -133,12 +136,12 @@ test('orders matching commit and revision discussions chronologically', () => {
     discussion('other', 6, { anchor: anchor({ commit_oid: 'commit-a' }) }),
   ]
   assert.deepEqual(
-    discussionsForRequestComparison(discussions, revisions[0], 'commit', 'commit-b')
+    discussionsForRequestComparison(discussions, revisions[0]!, 'commit', 'commit-b')
       .map(({ id }) => id),
     ['revision', 'later'],
   )
   assert.deepEqual(
-    discussionsForRequestComparison(discussions, revisions[0], 'request', null).map(({ id }) => id),
+    discussionsForRequestComparison(discussions, revisions[0]!, 'request', null).map(({ id }) => id),
     ['revision'],
   )
 })
@@ -151,10 +154,10 @@ test('the latest request layer includes line discussions carried forward from ol
     discussion('older-only', 4, { anchor: anchor({ path: '/a.txt', lines }) }),
   ]
   assert.deepEqual(
-    discussionsForRequestComparison(discussions, revisions[1], 'request', null).map(({ id }) => id),
+    discussionsForRequestComparison(discussions, revisions[1]!, 'request', null).map(({ id }) => id),
     ['mapped', 'outdated'],
   )
-  assert.deepEqual(discussionsForRequestComparison(discussions, revisions[1], 'push', null), [])
+  assert.deepEqual(discussionsForRequestComparison(discussions, revisions[1]!, 'push', null), [])
 })
 
 function anchor(overrides: Partial<NonNullable<RequestDiscussion['anchor']>>): NonNullable<RequestDiscussion['anchor']> {
@@ -181,7 +184,7 @@ for (const view of ['public', 'restricted']) {
           base_oid: 'parent-commit',
           head_oid: 'child-commit',
           inspection: 'Complete',
-          files: child.commits[1].files,
+          files: child.commits[1]!.files,
         },
         has_earlier_revisions: false,
         review_revision_id: child.id,
@@ -192,7 +195,7 @@ for (const view of ['public', 'restricted']) {
       assert.equal(model.mode, mode)
       assert.equal(model.selectedCommitOid, null)
       assert.equal(model.selectedCommit?.logical_commit_id, 'child-commit')
-      assert.deepEqual(model.selectedCommit?.files.map(({ path }) => path), ['/child-commit.txt'])
+      assert.deepEqual(model.selectedCommit.files.map(({ path }) => path), ['/child-commit.txt'])
       const unavailable = requestChangesPresentation({ ...response, comparison: null }, { comparison: mode }, view, 'repo')
       assert.equal(unavailable.selectedCommit, null)
       assert.match(unavailable.error ?? '', /could not be inspected/)
@@ -202,7 +205,8 @@ for (const view of ['public', 'restricted']) {
 
 test('private commit comparison uses inspected files while retaining the bounded commit metadata', () => {
   const bounded = revision('revision-budget', 1, ['commit-selected'])
-  const commit = bounded.commits[0]
+  const [commit] = bounded.commits
+  assert.ok(commit)
   const inspectedFiles = commit.files
   commit.files = []
   commit.change_count = 501
@@ -224,11 +228,11 @@ test('private commit comparison uses inspected files while retaining the bounded
   assert.equal(model.error, null)
   assert.deepEqual(model.selectedCommit?.files.map(({ path }) => path), ['/commit-selected.txt'])
   assert.deepEqual(model.selectedCommitSummary?.files.map(({ path }) => path), ['commit-selected.txt'])
-  assert.equal(model.selectedCommit?.change_count, 501)
-  assert.equal(model.selectedCommit?.files_truncated, true)
-  assert.equal(model.selectedCommit?.author, commit.author)
-  assert.equal(model.selectedCommit?.message, commit.message)
-  assert.equal(model.selectedCommit?.logical_commit_id, commit.oid)
+  assert.equal(model.selectedCommit.change_count, 501)
+  assert.equal(model.selectedCommit.files_truncated, true)
+  assert.equal(model.selectedCommit.author, commit.author)
+  assert.equal(model.selectedCommit.message, commit.message)
+  assert.equal(model.selectedCommit.logical_commit_id, commit.oid)
 })
 
 function revision(

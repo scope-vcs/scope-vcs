@@ -287,7 +287,7 @@ async fn pushed_delta_does_not_cap_total_changed_bytes() {
             .sum::<u64>(),
         LARGE_REPOSITORY_FILE_BYTES * LARGE_REPOSITORY_FILE_COUNT as u64
     );
-    let _ = fs::remove_dir_all(staging_repo);
+    crate::git::storage::remove_dir_if_exists(&staging_repo).unwrap();
 }
 
 #[test]

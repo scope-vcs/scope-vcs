@@ -160,12 +160,9 @@ pub fn parse_workflow_set<'a>(
 pub fn parse_repository_workflow_catalog(
     catalog: &RepositoryWorkflowCatalog,
 ) -> Result<Vec<WorkflowRevision>, RunConfigError> {
-    if let Some(error) = catalog.configuration_error() {
-        return Err(RunConfigError::CatalogRejected(error.to_string()));
-    }
     let files = catalog
-        .files()
-        .expect("a workflow catalog without an error always contains a captured file set")
+        .contents()
+        .map_err(|error| RunConfigError::CatalogRejected(error.to_string()))?
         .iter()
         .map(|file| (file.path().as_str(), file.content_bytes()));
     parse_workflow_set(catalog.repository_id(), files)

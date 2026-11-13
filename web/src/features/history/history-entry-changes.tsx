@@ -127,7 +127,7 @@ export function HistoryEntryChanges({
       )}
       navigation={navigation}
       navigationLabel="Update file navigator"
-      navigator={paths.length > 0 && (
+      navigator={paths.length > 0 ? (
         <ChangedPathsList
           countVisibility={filter !== 'visibility'}
           onSelect={select}
@@ -142,7 +142,7 @@ export function HistoryEntryChanges({
           selectedPath={selected?.path ?? null}
           view={detail.view}
         />
-      )}
+      ) : null}
       toolbar={paths.length > 0 && (
         <ChangedPathsToolbar
           allOpen={allOpen}

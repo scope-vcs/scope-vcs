@@ -34,8 +34,8 @@ jobs:
         with:
           node-version: 26
 
-      - name: Install cargo-deny
-        run: ./dev/install-cargo-deny.sh
+      - name: Install cargo tools
+        run: ./dev/install-cargo-tools.sh
 
       - name: Check main dependency advisories
         run: node .github/scripts/main-advisories.mjs "$RUNNER_TEMP/main-advisories.json"

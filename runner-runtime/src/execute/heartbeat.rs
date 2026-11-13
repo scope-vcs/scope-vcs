@@ -34,14 +34,14 @@ impl Heartbeat {
                     match sink.heartbeat() {
                         Ok(false) => last_success = Instant::now(),
                         Ok(true) => {
-                            let _ = send.send(Ok(true));
+                            send.send(Ok(true)).ok();
                             break;
                         }
                         Err(error) if last_success.elapsed() < failure_tolerance => {
                             eprintln!("runtime heartbeat failed; retrying: {error:#}");
                         }
                         Err(error) => {
-                            let _ = send.send(Err(error));
+                            send.send(Err(error)).ok();
                             break;
                         }
                     }
@@ -71,7 +71,7 @@ impl Heartbeat {
     }
 
     fn join(&mut self) -> anyhow::Result<()> {
-        let _ = self.stop.send(());
+        self.stop.send(()).ok();
         if let Some(thread) = self.thread.take() {
             thread
                 .join()

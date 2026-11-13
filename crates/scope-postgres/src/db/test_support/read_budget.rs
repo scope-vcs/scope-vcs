@@ -33,9 +33,11 @@ impl Subscriber for ReadSubscriber {
     }
 
     fn new_span(&self, attributes: &Attributes<'_>) -> Id {
-        let _ = STATEMENTS.try_with(|statements| {
-            statements.borrow_mut().push(attributes.metadata().name());
-        });
+        STATEMENTS
+            .try_with(|statements| {
+                statements.borrow_mut().push(attributes.metadata().name());
+            })
+            .ok();
         Id::from_u64(self.0.fetch_add(1, Ordering::Relaxed) + 1)
     }
 
@@ -46,7 +48,7 @@ impl Subscriber for ReadSubscriber {
     fn exit(&self, _: &Id) {}
 }
 
-pub async fn assert_round_trips<T>(
+pub(crate) async fn assert_round_trips<T>(
     expected: usize,
     read: impl Future<Output = Result<T, PostgresError>>,
 ) -> Result<T, PostgresError> {

@@ -60,6 +60,7 @@ export function RunLogView({
     if (!end) return
     const observer = new IntersectionObserver(
       ([entry]) => {
+        if (!entry) return
         setFollowing(entry.isIntersecting)
         setPausedAt(entry.isIntersecting ? null : lastPositionRef.current)
       },

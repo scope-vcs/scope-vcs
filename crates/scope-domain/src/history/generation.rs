@@ -84,7 +84,9 @@ pub(super) fn history_generation_after(generation: &str, entry: &HistoryEntry) -
             (b"views_before".as_slice(), &transition.before),
             (b"views_after".as_slice(), &transition.after),
         ] {
-            let json = serde_json::to_vec(views).expect("views serialize to JSON");
+            #[expect(clippy::expect_used)]
+            let json = serde_json::to_vec(views)
+                .expect("view definitions have string keys and always serialize to JSON");
             hash_field(&mut hasher, label, &json);
         }
     }

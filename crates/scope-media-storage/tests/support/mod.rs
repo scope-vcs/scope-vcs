@@ -2,7 +2,7 @@ use scope_domain::requests::attachments::RequestMediaObject;
 use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, WriteAttempt, seal_parts};
 use sha2::{Digest, Sha256};
 
-pub async fn store_bytes(
+pub(crate) async fn store_bytes(
     storage: &MediaStorage,
     attempt: &WriteAttempt,
     bytes: &[u8],

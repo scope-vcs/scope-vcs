@@ -107,7 +107,7 @@ where
             "signed-in user was not persisted",
         ));
     }
-    let mut user = entities::user::Model::from_query_result(&row, "u_")?.try_into_domain()?;
+    let mut user = entities::user::Model::from_query_result(&row, "u_")?.into_domain();
     if let Some(email_owner_id) = row.try_get::<Option<String>>("", "email_owner_id")?
         && email_owner_id != user.id
     {
@@ -149,8 +149,7 @@ where
         None => entities::user::Entity::find_by_id(user_id.clone())
             .one(conn)
             .await?
-            .map(entities::user::Model::try_into_domain)
-            .transpose()?,
+            .map(entities::user::Model::into_domain),
     };
     let is_existing = existing_user.is_some();
     let mut user = match existing_user {
@@ -207,12 +206,11 @@ async fn load_user_by_email<C>(conn: &C, email: &str) -> Result<Option<UserAccou
 where
     C: sea_orm::ConnectionTrait,
 {
-    entities::user::Entity::find()
+    Ok(entities::user::Entity::find()
         .filter(entities::user::Column::Email.eq(email.to_string()))
         .one(conn)
         .await?
-        .map(|user| user.try_into_domain())
-        .transpose()
+        .map(entities::user::Model::into_domain))
 }
 
 fn update_user_snapshot(user: &mut UserAccount, identity: &ExternalIdentity) {

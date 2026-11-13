@@ -95,7 +95,11 @@ pub async fn write_source_blob_to(
             ObjectStoreErrorKind::PayloadTooLarge => {
                 ObjectStoreError::integrity(format!("object {key} exceeds its recorded size"))
             }
-            _ => error,
+            ObjectStoreErrorKind::CapacityExhausted
+            | ObjectStoreErrorKind::Integrity
+            | ObjectStoreErrorKind::Internal
+            | ObjectStoreErrorKind::NotFound
+            | ObjectStoreErrorKind::ServiceUnavailable => error,
         })?;
     if written != blob.size_bytes || hex::encode(verifying.digest.finalize()) != blob.sha256 {
         return Err(ObjectStoreError::integrity(format!(

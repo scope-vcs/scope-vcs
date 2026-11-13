@@ -60,7 +60,8 @@ fn link_token(body: &serde_json::Value) -> String {
 fn mailer(state: &AppState) -> std::sync::Arc<crate::invite_mailer::RecordingMailer> {
     match &state.invite_mailer {
         crate::invite_mailer::InviteMailer::Recording(mailer) => mailer.clone(),
-        _ => panic!("tests record invite emails"),
+        crate::invite_mailer::InviteMailer::Resend(_)
+        | crate::invite_mailer::InviteMailer::Unconfigured => panic!("tests record invite emails"),
     }
 }
 

@@ -48,15 +48,16 @@ pub(crate) async fn repo_events(
         }
     };
     let incarnation = repo.incarnation();
-    let initial = event_for_access(
-        &repo,
-        repository_change_event(
-            &incarnation,
-            repo.record.change_version,
-            RepoChangeReason::Connected,
-        ),
-    )
-    .expect("connected event is always visible");
+    let connected = repository_change_event(
+        &incarnation,
+        repo.record.change_version,
+        RepoChangeReason::Connected,
+    );
+    let initial = if repo.reads_full_view() {
+        connected
+    } else {
+        redacted_event(connected)
+    };
     let updates = stream::unfold(
         RepoEventStreamState {
             finished: false,
@@ -79,7 +80,7 @@ pub(crate) async fn repo_events(
                     _ = stream_state.reconciliation.tick() => {
                         if let Err(error) = stream_state.revalidate_authentication().await {
                             stream_state.finished = true;
-                            return Some((sse_error_event(error), stream_state));
+                            return Some((Ok(sse_error_event(error)), stream_state));
                         }
                         stream_state.resync_event()
                     }
@@ -99,11 +100,11 @@ pub(crate) async fn repo_events(
                 )
                 .await
                 {
-                    Ok(Some(event)) => return Some((sse_event(event), stream_state)),
+                    Ok(Some(event)) => return Some((Ok(sse_event(event)), stream_state)),
                     Ok(None) => continue,
                     Err(error) => {
                         stream_state.finished = true;
-                        return Some((sse_error_event(error), stream_state));
+                        return Some((Ok(sse_error_event(error)), stream_state));
                     }
                 }
             }
@@ -111,7 +112,7 @@ pub(crate) async fn repo_events(
     );
 
     Ok(
-        Sse::new(once(sse_event(initial)).chain(updates)).keep_alive(
+        Sse::new(once(Ok::<_, Infallible>(sse_event(initial))).chain(updates)).keep_alive(
             KeepAlive::new()
                 .interval(Duration::from_secs(20))
                 .text("keep-alive"),
@@ -196,7 +197,15 @@ async fn stream_event_for_user(
         let policy = request_policy(&request, viewer, &repo.views);
         let visible = match &event.kind {
             RepoChangeKind::RequestStateChanged { .. } => policy.exact_visible,
-            _ => policy.activity_stream_visible,
+            RepoChangeKind::Connected
+            | RepoChangeKind::Lagged
+            | RepoChangeKind::DependenciesChanged
+            | RepoChangeKind::GitHubWorkflowRunsChanged
+            | RepoChangeKind::GitHubWorkflowRunChanged { .. }
+            | RepoChangeKind::RepositoryChanged { .. }
+            | RepoChangeKind::RequestTimelineChanged { .. }
+            | RepoChangeKind::RequestAttachmentChanged { .. }
+            | RepoChangeKind::RunChanged { .. } => policy.activity_stream_visible,
         };
         if !visible {
             return Ok(None);
@@ -254,27 +263,42 @@ fn event_for_access(
         return None;
     }
 
-    Some(RepoChangeEvent {
+    Some(redacted_event(event))
+}
+
+fn redacted_event(event: RepoChangeEvent) -> RepoChangeEvent {
+    RepoChangeEvent {
         kind: match event.kind {
             RepoChangeKind::Connected => RepoChangeKind::Connected,
             RepoChangeKind::Lagged => RepoChangeKind::Lagged,
-            _ => RepoChangeKind::RepositoryChanged {
+            RepoChangeKind::DependenciesChanged
+            | RepoChangeKind::GitHubWorkflowRunsChanged
+            | RepoChangeKind::GitHubWorkflowRunChanged { .. }
+            | RepoChangeKind::RepositoryChanged { .. }
+            | RepoChangeKind::RequestStateChanged { .. }
+            | RepoChangeKind::RequestTimelineChanged { .. }
+            | RepoChangeKind::RequestAttachmentChanged { .. }
+            | RepoChangeKind::RunChanged { .. } => RepoChangeKind::RepositoryChanged {
                 reason: RepoChangeReason::Redacted.as_str().to_string(),
             },
         },
         repo_id: event.repo_id,
         incarnation_id: event.incarnation_id,
         version: 0,
-    })
+    }
 }
 
-fn sse_event(event: RepoChangeEvent) -> Result<Event, Infallible> {
-    let data = serde_json::to_string(&event).expect("repo change events must serialize");
-    Ok(Event::default().event("repo-change").data(data))
+fn sse_event(event: RepoChangeEvent) -> Event {
+    #[expect(clippy::expect_used)]
+    let data = serde_json::to_string(&event)
+        .expect("repo change events are plain structs that serialize as JSON");
+    Event::default().event("repo-change").data(data)
 }
 
-fn sse_error_event(error: ApiError) -> Result<Event, Infallible> {
+fn sse_error_event(error: ApiError) -> Event {
     let (_, body) = error.into_public_parts();
-    let data = serde_json::to_string(&body).expect("public API errors must serialize");
-    Ok(Event::default().event("error").data(data))
+    #[expect(clippy::expect_used)]
+    let data = serde_json::to_string(&body)
+        .expect("public API error bodies are plain structs that serialize as JSON");
+    Event::default().event("error").data(data)
 }

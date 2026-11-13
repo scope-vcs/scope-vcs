@@ -20,7 +20,7 @@ enum SourceDownloadError {
 }
 
 impl RuntimeClient {
-    pub fn download_source(
+    pub(crate) fn download_source(
         &self,
         expected_identity: &str,
         destination: &Path,
