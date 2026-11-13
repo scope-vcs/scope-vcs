@@ -7,7 +7,11 @@ const WORKFLOW_PATH_PREFIX: &str = "/.scope/runs/";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
-pub struct WorkflowPath(String);
+pub struct WorkflowPath {
+    path: String,
+    #[serde(skip)]
+    name_end: usize,
+}
 
 impl WorkflowPath {
     pub fn parse(path: impl Into<String>) -> Result<Self, WorkflowError> {
@@ -25,22 +29,16 @@ impl WorkflowPath {
         if !is_kebab_name(stem, MAX_WORKFLOW_PATH_NAME_BYTES) {
             return Err(WorkflowError::InvalidPath);
         }
-        Ok(Self(path))
+        let name_end = WORKFLOW_PATH_PREFIX.len() + stem.len();
+        Ok(Self { path, name_end })
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.path
     }
 
     pub fn name(&self) -> &str {
-        self.0
-            .strip_prefix(WORKFLOW_PATH_PREFIX)
-            .and_then(|file_name| {
-                file_name
-                    .strip_suffix(".yaml")
-                    .or_else(|| file_name.strip_suffix(".yml"))
-            })
-            .expect("validated workflow paths always have a supported extension")
+        &self.path[WORKFLOW_PATH_PREFIX.len()..self.name_end]
     }
 }
 

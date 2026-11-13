@@ -426,18 +426,17 @@ impl ReviewState {
 
     fn expand_tree_node_or_move_to_first_child(&mut self, id: usize) {
         let node = self.tree.node(id);
-        let kind = node.kind;
-        let first_child = node.children.first().copied();
-        if kind == ReviewNodeKind::File || first_child.is_none() {
+        if node.kind == ReviewNodeKind::File {
             return;
         }
+        let Some(&first_child) = node.children.first() else {
+            return;
+        };
         if self.expanded_tree_nodes.insert(id) {
             self.rebuild_visible_items();
             return;
         }
-        self.move_cursor_to_item(ReviewItem::TreeNode(
-            first_child.expect("first child is checked above"),
-        ));
+        self.move_cursor_to_item(ReviewItem::TreeNode(first_child));
     }
 
     fn toggle_selected(&mut self) {
@@ -570,16 +569,18 @@ impl ReviewState {
 
     fn row_for_item(&self, item: ReviewItem) -> ReviewRow {
         match item {
-            ReviewItem::DependencySummary => ReviewRow::DependencySummary(
-                self.dependencies
-                    .summary()
-                    .expect("dependency summary exists for a visible dependency item"),
-            ),
+            #[expect(clippy::expect_used)]
+            ReviewItem::DependencySummary => {
+                ReviewRow::DependencySummary(self.dependencies.summary().expect(
+                    "visible dependency items are rebuilt whenever dependency status changes",
+                ))
+            }
+            #[expect(clippy::expect_used)]
             ReviewItem::DependencyFinding(index) => {
                 let finding = &self
                     .dependencies
                     .report()
-                    .expect("findings only exist for a dependency report")
+                    .expect("visible dependency findings come from the current dependency report")
                     .findings[index];
                 ReviewRow::DependencyFinding {
                     source_path: finding.source_path.clone(),
@@ -587,18 +588,20 @@ impl ReviewState {
                     selected_side: self.dependency_path_side,
                 }
             }
+            #[expect(clippy::expect_used)]
             ReviewItem::DependencyGap(index) => ReviewRow::DependencyGap(
                 self.dependencies
                     .report()
-                    .expect("gaps only exist for a dependency report")
+                    .expect("visible dependency gaps come from the current dependency report")
                     .gaps[index]
                     .clone(),
             ),
+            #[expect(clippy::expect_used)]
             ReviewItem::DependencyCoverage => {
                 let report = self
                     .dependencies
                     .report()
-                    .expect("coverage only exists for a dependency report");
+                    .expect("visible dependency coverage comes from the current dependency report");
                 ReviewRow::DependencyCoverage {
                     analyzed_file_count: report.analyzed_file_count,
                     unsupported_file_count: report.unsupported_files.len(),

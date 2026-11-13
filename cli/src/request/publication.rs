@@ -122,7 +122,7 @@ pub(super) fn publish_selected(
             &format!("refs/heads/{}", request.name),
             &expected_head,
             api.token,
-            &stack::publication_headers(request, selected),
+            &stack::publication_headers(request, selected)?,
         )
         .map_err(|error| local::request_push_error(error, &request.id));
         let expected_version = stack::publication_base_version(request, &selected.base)?;

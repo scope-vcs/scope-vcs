@@ -466,7 +466,7 @@ fn a_repository_linked_to_github_uses_github_checks_even_once_disconnected() {
     );
     assert_eq!(
         RequestCheckProvider::for_repository(Some(&connection)),
-        RequestCheckProvider::GitHub
+        RequestCheckProvider::GitHub(&connection)
     );
     connection.status = GitHubConnectionStatus::Disconnected {
         reason: GitHubDisconnectReason::AppUninstalled,
@@ -474,7 +474,7 @@ fn a_repository_linked_to_github_uses_github_checks_even_once_disconnected() {
     };
     assert_eq!(
         RequestCheckProvider::for_repository(Some(&connection)),
-        RequestCheckProvider::GitHub
+        RequestCheckProvider::GitHub(&connection)
     );
 }
 

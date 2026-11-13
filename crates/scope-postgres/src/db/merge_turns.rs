@@ -87,26 +87,15 @@ impl RepositoryStore {
             ));
         }
         let schema = content_fences::current_schema(self.db.as_ref()).await?;
-        let key = sea_orm::sqlx::postgres::PgAdvisoryLock::new(format!(
-            "scope:merge-turn:{schema}:{repo_id}"
-        ))
-        .key()
-        .as_bigint()
-        .expect("string-derived advisory locks use one bigint key");
+        let key = content_fences::advisory_lock_key(format!("scope:merge-turn:{schema}:{repo_id}"));
         let session = self
             .merge_turn_sessions
             .pool()?
             .acquire()
             .await
             .map_err(PostgresError::internal)?;
-        let mut turn = RepositoryMergeTurn {
-            session: Some(session),
-            key,
-        };
-        let session = turn
-            .session
-            .as_mut()
-            .expect("a new repository merge turn holds its session");
+        let mut turn = RepositoryMergeTurn { session: None, key };
+        let session = turn.session.insert(session);
         sqlx::query("SELECT pg_advisory_lock($1)")
             .bind(key)
             .execute(&mut **session)

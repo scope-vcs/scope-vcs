@@ -60,6 +60,7 @@ impl RunCacheStorage {
     }
 
     #[cfg(any(test, feature = "local-dev"))]
+    #[expect(clippy::expect_used)]
     pub(crate) fn unreachable() -> Self {
         let mut settings = S3Settings::new(
             "http://127.0.0.1:1".to_string(),
@@ -129,8 +130,9 @@ fn ensure_may_save(authorized: &AuthorizedCache) -> Result<(), ApiError> {
 }
 
 fn signed_url_ttl(remaining_lease_seconds: u64) -> u32 {
-    u32::try_from(remaining_lease_seconds.min(u64::from(SIGNED_URL_TTL_SECONDS)))
-        .expect("signed URL TTL is capped to a u32 constant")
+    u32::try_from(remaining_lease_seconds).map_or(SIGNED_URL_TTL_SECONDS, |remaining| {
+        remaining.min(SIGNED_URL_TTL_SECONDS)
+    })
 }
 
 pub(crate) async fn restore(

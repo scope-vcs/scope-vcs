@@ -56,8 +56,10 @@ impl CatalogFixture {
                 scope_domain::repository::repo_id(&owner.handle, name)
             ),
         )?;
-        let id = repository.record.id.clone();
-        self.repositories.insert(id.clone(), repository);
-        Ok(self.repositories.get(&id).expect("repository was inserted"))
+        Ok(self
+            .repositories
+            .entry(repository.record.id.clone())
+            .insert_entry(repository)
+            .into_mut())
     }
 }

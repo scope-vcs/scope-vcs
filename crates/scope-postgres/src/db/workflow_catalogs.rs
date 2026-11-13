@@ -48,7 +48,7 @@ where
         .exec(conn)
         .await?;
 
-    for file in catalog.files().unwrap_or_default() {
+    for file in catalog.contents().unwrap_or_default() {
         workflow_file_from_domain(&repo_id, file)?
             .into_active_model()
             .insert(conn)
@@ -184,7 +184,7 @@ fn catalog_header_from_domain(
                 "repository workflow catalog change version exceeds PostgreSQL bigint range",
             )
         })?,
-        configuration_error: catalog.configuration_error().map(str::to_string),
+        configuration_error: catalog.contents().err().map(str::to_string),
     })
 }
 

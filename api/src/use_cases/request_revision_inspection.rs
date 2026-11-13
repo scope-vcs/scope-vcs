@@ -234,13 +234,13 @@ pub(crate) fn request_comparison_base_oid(
     if identity.mode != scope_domain::requests::RequestComparisonMode::Request {
         return Ok(identity.base_oid.clone());
     }
+    let base_oid = identity
+        .base_oid
+        .as_deref()
+        .ok_or_else(|| ApiError::internal_message("request comparison has no recorded base"))?;
     let output = crate::git::command::run_git_output_bounded(
         Some(raw_repo),
-        &[
-            "merge-base",
-            identity.base_oid.as_deref().expect("request base exists"),
-            &identity.head_oid,
-        ],
+        &["merge-base", base_oid, &identity.head_oid],
         "resolving request comparison base",
         130,
     )?;

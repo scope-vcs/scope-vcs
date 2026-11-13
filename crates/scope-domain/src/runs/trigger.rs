@@ -51,19 +51,23 @@ impl PushTriggerInput {
 
 impl From<&RepositoryWorkflowCatalog> for PushTriggerInput {
     fn from(catalog: &RepositoryWorkflowCatalog) -> Self {
-        let workflows = catalog
-            .files()
-            .unwrap_or_default()
-            .iter()
-            .map(|file| PushWorkflowFile {
-                path: file.path().as_str().to_string(),
-                bytes: file.content_bytes().to_vec(),
-            })
-            .collect();
+        let (workflows, configuration_error) = match catalog.contents() {
+            Ok(files) => (
+                files
+                    .iter()
+                    .map(|file| PushWorkflowFile {
+                        path: file.path().as_str().to_string(),
+                        bytes: file.content_bytes().to_vec(),
+                    })
+                    .collect(),
+                None,
+            ),
+            Err(error) => (Vec::new(), Some(error.to_string())),
+        };
         Self {
             head_oid: catalog.source_head_oid().to_string(),
             workflows,
-            configuration_error: catalog.configuration_error().map(str::to_string),
+            configuration_error,
         }
     }
 }

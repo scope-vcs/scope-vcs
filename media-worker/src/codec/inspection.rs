@@ -320,7 +320,8 @@ pub(super) fn reject_webp_metadata(path: &Path) -> Result<(), CodecFailure> {
                 "image derivative retained source metadata",
             ));
         }
-        let size = u32::from_le_bytes(chunk_header[4..].try_into().expect("four-byte chunk size"));
+        let [_, _, _, _, size_bytes @ ..] = chunk_header;
+        let size = u32::from_le_bytes(size_bytes);
         let padded = u64::from(size) + u64::from(size % 2);
         file.seek(SeekFrom::Current(i64::try_from(padded).map_err(|_| {
             CodecFailure::new(CodecFailureKind::CodecFailed, "invalid WebP chunk size")
@@ -364,7 +365,8 @@ pub(super) fn verify_faststart(path: &Path) -> Result<(), CodecFailure> {
                 ))
             };
         }
-        let short_size = u32::from_be_bytes(header[..4].try_into().expect("four-byte box size"));
+        let [size_bytes @ .., _, _, _, _] = header;
+        let short_size = u32::from_be_bytes(size_bytes);
         let (box_size, header_size) = match short_size {
             0 => (file_len.saturating_sub(offset), 8_u64),
             1 => {

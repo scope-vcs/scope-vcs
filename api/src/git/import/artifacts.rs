@@ -238,13 +238,12 @@ async fn reviewed_update_on_base(
 async fn single_pushed_branch(staging_repo: &FsPath) -> Result<(String, String), ApiError> {
     let path = staging_repo.to_path_buf();
     let refs = crate::git::blocking::run(move || git_refs(&path)).await?;
-    if refs.len() != 1 {
-        return Err(ApiError::bad_request(format!(
+    let [(branch, head_oid)] = <[_; 1]>::try_from(refs).map_err(|refs: Vec<_>| {
+        ApiError::bad_request(format!(
             "push must update exactly one branch and no tags; found {}",
             describe_refs(&refs)
-        )));
-    }
-    let (branch, head_oid) = refs.into_iter().next().expect("length checked");
+        ))
+    })?;
     ensure_default_branch(&branch)?;
     Ok((branch, head_oid))
 }

@@ -14,8 +14,7 @@ fn main() -> anyhow::Result<()> {
     scope_git_process::install_pid1_reaper_if_needed()?;
     let settings = RuntimeSettings::from_env()?;
     deadline::arm(settings.attempt_deadline_unix)?;
-    let client = api::RuntimeClient::new(&settings)?;
-    let claim = client.claim(&settings.bootstrap_token)?;
+    let (client, claim) = api::RuntimeClient::claim(&settings)?;
     let job_definition =
         scope_domain::runs::workflow::definition::WorkflowJob::try_from(&claim.job.definition)?;
     let setup_heartbeat = Heartbeat::start(

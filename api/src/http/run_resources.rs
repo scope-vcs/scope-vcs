@@ -114,12 +114,10 @@ pub(crate) async fn get_repository_run_history(
         .await?;
     let has_more = entries.len() > limit;
     entries.truncate(limit);
-    let next_cursor = has_more.then(|| {
-        let last = entries
-            .last()
-            .expect("a run history page with more results is non-empty");
-        encode_history_cursor(last.creation_sequence, workflow, git_oid.as_deref())
-    });
+    let next_cursor = entries
+        .last()
+        .filter(|_| has_more)
+        .map(|last| encode_history_cursor(last.creation_sequence, workflow, git_oid.as_deref()));
     let runs = entries
         .iter()
         .map(|entry| repository_run_list_item(&entry.run))

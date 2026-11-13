@@ -57,12 +57,22 @@ struct CachedDiscovery {
     refresh: Option<AbortHandle>,
 }
 
+impl DiscoveryState {
+    #[expect(clippy::expect_used)]
+    fn cached(&self) -> std::sync::MutexGuard<'_, CachedDiscovery> {
+        self.cached
+            .lock()
+            .expect("discovery cache holders do not panic, so the lock is never poisoned")
+    }
+}
+
 impl Drop for DiscoveryState {
+    #[expect(clippy::expect_used)]
     fn drop(&mut self) {
         if let Some(task) = self
             .cached
             .get_mut()
-            .expect("discovery lock")
+            .expect("discovery cache holders do not panic, so the lock is never poisoned")
             .refresh
             .take()
         {
@@ -107,7 +117,7 @@ impl BackendDiscovery {
             tokio::pin!(refreshed);
             refreshed.as_mut().enable();
             {
-                let mut cached = self.state.cached.lock().expect("discovery lock");
+                let mut cached = self.state.cached();
                 let now = Instant::now();
                 let due = cached.last_attempt_at.is_none_or(|attempt| {
                     now.saturating_duration_since(attempt) >= self.refresh_after
@@ -162,7 +172,7 @@ impl BackendDiscovery {
             };
             let Some(state) = state.upgrade() else { return; };
             {
-                let mut cached = state.cached.lock().expect("discovery lock");
+                let mut cached = state.cached();
                 cached.refresh = None;
                 cached.last_attempt_at = Some(Instant::now());
                 match result {

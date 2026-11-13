@@ -11,7 +11,7 @@ use std::{
     fs,
     io::{Read, Write},
     net::TcpListener,
-    sync::{Arc, Mutex, mpsc},
+    sync::mpsc,
     thread,
     time::Duration,
 };
@@ -178,7 +178,7 @@ fn raw_test_client(
             .unwrap(),
         api_url: format!("http://{address}"),
         attempt_id: "test".to_string(),
-        attempt_token: Arc::new(Mutex::new(Some("token".to_string()))),
+        attempt_token: "token".to_string(),
     };
     (client, requests, server)
 }

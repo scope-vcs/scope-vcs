@@ -88,9 +88,9 @@ pub(crate) fn request_ref_update_from_refs(
     let mut changed = Vec::new();
 
     for refname in before.keys().chain(after.keys()).collect::<BTreeSet<_>>() {
-        if !is_request_ref_candidate(refname) {
+        let Some(request_name) = request_name_from_ref(refname) else {
             continue;
-        }
+        };
         let old = before.get(refname);
         let new = after.get(refname);
         if old == new {
@@ -99,8 +99,6 @@ pub(crate) fn request_ref_update_from_refs(
         let Some(new_head_oid) = new else {
             return Err(ApiError::bad_request(REQUEST_REF_DELETE_ERROR));
         };
-        let request_name =
-            request_name_from_ref(refname).expect("request ref was classified above");
         scope_domain::requests::validate_request_name(request_name).map_err(|error| {
             ApiError::bad_request(format!(
                 "invalid request branch '{request_name}': {}",

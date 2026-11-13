@@ -169,22 +169,24 @@ fn config_entries(listing: &str) -> Vec<ConfigEntry> {
 
 fn remote_urls(listing: &str) -> Vec<RemoteUrls> {
     let mut remotes: Vec<RemoteUrls> = Vec::new();
+    let mut current: Option<RemoteUrls> = None;
     for line in listing.lines() {
         let (name, url) = line.split_once('\t').unwrap_or((line, ""));
-        if remotes.last().is_none_or(|remote| remote.name != name) {
-            remotes.push(RemoteUrls {
-                name: name.to_string(),
-                fetch: None,
-                push: None,
-            });
+        if current.as_ref().is_some_and(|remote| remote.name != name) {
+            remotes.extend(current.take());
         }
-        let remote = remotes.last_mut().expect("remote was just pushed");
+        let remote = current.get_or_insert_with(|| RemoteUrls {
+            name: name.to_string(),
+            fetch: None,
+            push: None,
+        });
         if let Some(push) = url.strip_suffix(" (push)") {
             remote.push.get_or_insert_with(|| push.to_string());
         } else if let Some((fetch, _)) = url.rsplit_once(" (fetch)") {
             remote.fetch = Some(fetch.to_string());
         }
     }
+    remotes.extend(current);
     remotes
 }
 

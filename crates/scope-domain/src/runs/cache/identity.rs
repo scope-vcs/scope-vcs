@@ -163,6 +163,7 @@ impl CacheIdentity {
                 inputs,
             ]);
         for component in components {
+            #[expect(clippy::expect_used)]
             digest.update(
                 u64::try_from(component.len())
                     .expect("cache identity components fit in u64")

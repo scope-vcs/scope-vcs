@@ -52,17 +52,16 @@ pub use tested_commit::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RequestCheckProvider {
+pub enum RequestCheckProvider<'a> {
     Native,
-    GitHub,
+    GitHub(&'a GitHubConnection),
 }
 
-impl RequestCheckProvider {
-    pub fn for_repository(github_connection: Option<&GitHubConnection>) -> Self {
-        if github_connection.is_some() {
-            Self::GitHub
-        } else {
-            Self::Native
+impl<'a> RequestCheckProvider<'a> {
+    pub fn for_repository(github_connection: Option<&'a GitHubConnection>) -> Self {
+        match github_connection {
+            Some(connection) => Self::GitHub(connection),
+            None => Self::Native,
         }
     }
 }

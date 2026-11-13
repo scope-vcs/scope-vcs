@@ -210,11 +210,7 @@ pub fn http_client_builder() -> ClientBuilder {
 
 fn cli_identity_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        CLI_PROTOCOL_HEADER,
-        HeaderValue::from_str(&CLI_PROTOCOL_VERSION.to_string())
-            .expect("CLI protocol is a valid header value"),
-    );
+    headers.insert(CLI_PROTOCOL_HEADER, HeaderValue::from(CLI_PROTOCOL_VERSION));
     headers.insert(
         CLI_VERSION_HEADER,
         HeaderValue::from_static(crate::build::PACKAGE_VERSION),

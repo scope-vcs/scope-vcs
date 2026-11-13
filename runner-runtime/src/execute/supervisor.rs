@@ -134,15 +134,13 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
             }
         };
 
-        let mut capture = Some(capture);
-        let mut process = Some(process);
         let mut status = None;
         let mut output = None;
         let mut group_kill_at = None;
         let mut group_killed = false;
 
         loop {
-            while let Some(notice) = capture.as_ref().and_then(OutputCapture::try_notice) {
+            while let Some(notice) = capture.try_notice() {
                 match notice {
                     OutputNotice::Truncated => logs_truncated = true,
                     OutputNotice::Finished(summary) => {
@@ -152,8 +150,8 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
                     OutputNotice::Failed(error) => {
                         return cleanup_after_error(
                             sink.as_ref(),
-                            process.take().expect("step process exists"),
-                            capture.take(),
+                            process,
+                            Some(capture),
                             options.termination_grace,
                             error,
                         );
@@ -162,18 +160,14 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
             }
 
             if status.is_none() {
-                match process.as_mut().expect("step process exists").try_wait() {
+                match process.try_wait() {
                     Ok(Some(exit_status)) => {
                         status = Some(exit_status);
-                        if let Err(error) = process
-                            .as_ref()
-                            .expect("step process exists")
-                            .signal_terminate()
-                        {
+                        if let Err(error) = process.signal_terminate() {
                             return cleanup_after_error(
                                 sink.as_ref(),
-                                process.take().expect("step process exists"),
-                                capture.take(),
+                                process,
+                                Some(capture),
                                 options.termination_grace,
                                 error,
                             );
@@ -184,8 +178,8 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
                     Err(error) => {
                         return cleanup_after_error(
                             sink.as_ref(),
-                            process.take().expect("step process exists"),
-                            capture.take(),
+                            process,
+                            Some(capture),
                             options.termination_grace,
                             error,
                         );
@@ -194,39 +188,34 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
             }
 
             if !group_killed && group_kill_at.is_some_and(|kill_at| Instant::now() >= kill_at) {
-                if let Err(error) = process.as_ref().expect("step process exists").signal_kill() {
+                if let Err(error) = process.signal_kill() {
                     return cleanup_after_error(
                         sink.as_ref(),
-                        process.take().expect("step process exists"),
-                        capture.take(),
+                        process,
+                        Some(capture),
                         options.termination_grace,
                         error,
                     );
                 }
                 group_killed = true;
                 if output.is_none() {
-                    capture
-                        .as_ref()
-                        .expect("output capture exists")
-                        .finish_reading();
+                    capture.finish_reading();
                 }
             }
 
             if let Some(exit_status) = status
                 && let Some(summary) = output.take()
             {
-                let final_status = match process.take().expect("step process exists").finish() {
+                let final_status = match process.finish() {
                     Ok(final_status) => final_status,
                     Err(error) => {
-                        if let Err(capture_error) =
-                            capture.take().expect("output capture exists").join()
-                        {
+                        if let Err(capture_error) = capture.join() {
                             eprintln!("runtime failed to join output capture: {capture_error:#}");
                         }
                         return abandon_after_error(sink.as_ref(), error);
                     }
                 };
-                if let Err(error) = capture.take().expect("output capture exists").join() {
+                if let Err(error) = capture.join() {
                     return abandon_after_error(sink.as_ref(), error);
                 }
                 debug_assert_eq!(exit_status, final_status);
@@ -244,12 +233,8 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
 
             let now = Instant::now();
             if now >= deadline {
-                let logs_truncated = terminate_step(
-                    process.take().expect("step process exists"),
-                    capture.take().expect("output capture exists"),
-                    options.termination_grace,
-                    logs_truncated,
-                );
+                let logs_truncated =
+                    terminate_step(process, capture, options.termination_grace, logs_truncated);
                 if let Err(error) = sink.complete_timeout(logs_truncated) {
                     return abandon_after_error(sink.as_ref(), error);
                 }
@@ -259,8 +244,8 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
                 match result {
                     Ok(true) => {
                         let logs_truncated = terminate_step(
-                            process.take().expect("step process exists"),
-                            capture.take().expect("output capture exists"),
+                            process,
+                            capture,
                             options.termination_grace,
                             logs_truncated,
                         );
@@ -271,8 +256,8 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
                     Err(error) => {
                         return cleanup_after_error(
                             sink.as_ref(),
-                            process.take().expect("step process exists"),
-                            capture.take(),
+                            process,
+                            Some(capture),
                             options.termination_grace,
                             error,
                         );

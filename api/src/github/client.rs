@@ -374,10 +374,7 @@ impl GitHubApp {
                 Some(_) => InstallationStatus::Active,
             };
         if status != InstallationStatus::Active {
-            self.installation_tokens
-                .lock()
-                .expect("installation token cache lock must not be poisoned")
-                .remove(&installation_id);
+            self.installation_tokens().remove(&installation_id);
         }
         Ok(status)
     }
@@ -475,9 +472,7 @@ impl GitHubApp {
     ) -> Result<Option<String>, ApiError> {
         let now = unix_now()?;
         if let Some(cached) = self
-            .installation_tokens
-            .lock()
-            .expect("installation token cache lock must not be poisoned")
+            .installation_tokens()
             .get(&installation_id)
             .filter(|cached| now < cached.replace_after_unix)
         {
@@ -503,18 +498,23 @@ impl GitHubApp {
                 minted.expires_at
             ))
         })?;
+        self.installation_tokens().insert(
+            installation_id,
+            InstallationToken {
+                token: minted.token.clone(),
+                replace_after_unix: expires_at_unix.saturating_sub(INSTALLATION_TOKEN_MARGIN_SECS),
+            },
+        );
+        Ok(Some(minted.token))
+    }
+
+    #[expect(clippy::expect_used)]
+    fn installation_tokens(
+        &self,
+    ) -> std::sync::MutexGuard<'_, std::collections::HashMap<u64, InstallationToken>> {
         self.installation_tokens
             .lock()
-            .expect("installation token cache lock must not be poisoned")
-            .insert(
-                installation_id,
-                InstallationToken {
-                    token: minted.token.clone(),
-                    replace_after_unix: expires_at_unix
-                        .saturating_sub(INSTALLATION_TOKEN_MARGIN_SECS),
-                },
-            );
-        Ok(Some(minted.token))
+            .expect("installation token cache holders do not panic, so the lock is never poisoned")
     }
 
     fn app_jwt(&self, now: u64) -> Result<String, ApiError> {

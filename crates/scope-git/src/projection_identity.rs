@@ -63,10 +63,7 @@ impl ProjectionHead {
         let mut tree = Tree::default();
         for (path, blob) in files {
             let path = GitTreePath::from_scope_path(path)?;
-            tree.insert(
-                &path.as_str().split('/').collect::<Vec<_>>(),
-                tree_file(path.as_str(), blob)?,
-            )?;
+            tree.insert(path.as_str(), tree_file(path.as_str(), blob)?)?;
         }
         Ok(Self { tree, oid })
     }
@@ -86,13 +83,10 @@ impl ProjectionHead {
         let mut commit_oids = Vec::with_capacity(commits.len());
         let mut native_range: Option<NativeRange> = None;
         for commit in commits {
-            if native_range.as_ref().is_some_and(|range: &NativeRange| {
-                range.logical_commit_id != commit.logical_commit_id
-            }) {
-                validate_native_range(
-                    native_range.take().expect("native range checked"),
-                    &tree.oid()?,
-                )?;
+            if let Some(range) =
+                native_range.take_if(|range| range.logical_commit_id != commit.logical_commit_id)
+            {
+                validate_native_range(range, &tree.oid()?)?;
             }
 
             let mut delta = BTreeMap::<GitTreePath, Option<TreeFile>>::new();
@@ -110,12 +104,12 @@ impl ProjectionHead {
             }
             for (path, file) in &delta {
                 if file.is_none() {
-                    tree.remove(&path.as_str().split('/').collect::<Vec<_>>());
+                    tree.remove(path.as_str());
                 }
             }
             for (path, file) in delta {
                 if let Some(file) = file {
-                    tree.insert(&path.as_str().split('/').collect::<Vec<_>>(), file)?;
+                    tree.insert(path.as_str(), file)?;
                 }
             }
 
@@ -145,14 +139,13 @@ impl ProjectionHead {
                     let base_oid = parent_oid
                         .as_ref()
                         .ok_or(ProjectionIdentityError::MissingPreservedCommitBase)?;
-                    native_range.get_or_insert_with(|| NativeRange {
+                    let range = native_range.get_or_insert_with(|| NativeRange {
                         logical_commit_id: commit.logical_commit_id.clone(),
                         base_oid: base_oid.clone(),
                         expected_tree_oid,
                         descendants_of_base: BTreeSet::new(),
                         head_descends_from_base: false,
                     });
-                    let range = native_range.as_mut().expect("native range initialized");
                     let descends_from_base = parent_oids.iter().any(|parent| {
                         parent == &range.base_oid || range.descendants_of_base.contains(parent)
                     });
@@ -250,23 +243,21 @@ enum TreeEntry {
 }
 
 impl Tree {
-    fn insert(&mut self, path: &[&str], file: TreeFile) -> Result<(), ProjectionIdentityError> {
-        let (name, rest) = path.split_first().expect("projection path is non-empty");
-        if rest.is_empty() {
-            if matches!(self.entries.get(*name), Some(TreeEntry::Directory(_))) {
+    fn insert(&mut self, path: &str, file: TreeFile) -> Result<(), ProjectionIdentityError> {
+        let Some((name, rest)) = path.split_once('/') else {
+            if matches!(self.entries.get(path), Some(TreeEntry::Directory(_))) {
                 return Err(ProjectionIdentityError::PathConflict {
-                    path: path.join("/"),
+                    path: path.to_string(),
                 });
             }
-            self.entries
-                .insert((*name).to_string(), TreeEntry::File(file));
+            self.entries.insert(path.to_string(), TreeEntry::File(file));
             self.cached_oid = None;
             return Ok(());
-        }
+        };
 
         let entry = self
             .entries
-            .entry((*name).to_string())
+            .entry(name.to_string())
             .or_insert_with(|| TreeEntry::Directory(Tree::default()));
         match entry {
             TreeEntry::Directory(directory) => {
@@ -275,24 +266,14 @@ impl Tree {
                 Ok(())
             }
             TreeEntry::File(_) => Err(ProjectionIdentityError::PathConflict {
-                path: path.join("/"),
+                path: path.to_string(),
             }),
         }
     }
 
-    fn remove(&mut self, path: &[&str]) -> bool {
-        let Some((name, rest)) = path.split_first() else {
-            return false;
-        };
-        let changed = if rest.is_empty() {
-            if matches!(self.entries.get(*name), Some(TreeEntry::File(_))) {
-                self.entries.remove(*name);
-                true
-            } else {
-                false
-            }
-        } else {
-            let (changed, empty) = match self.entries.get_mut(*name) {
+    fn remove(&mut self, path: &str) -> bool {
+        let changed = if let Some((name, rest)) = path.split_once('/') {
+            let (changed, empty) = match self.entries.get_mut(name) {
                 Some(TreeEntry::Directory(directory)) => {
                     let changed = directory.remove(rest);
                     (changed, directory.entries.is_empty())
@@ -300,9 +281,14 @@ impl Tree {
                 Some(TreeEntry::File(_)) | None => (false, false),
             };
             if empty {
-                self.entries.remove(*name);
+                self.entries.remove(name);
             }
             changed
+        } else if matches!(self.entries.get(path), Some(TreeEntry::File(_))) {
+            self.entries.remove(path);
+            true
+        } else {
+            false
         };
         if changed {
             self.cached_oid = None;
@@ -314,20 +300,18 @@ impl Tree {
         if let Some(oid) = self.cached_oid {
             return Ok(oid);
         }
-        let mut entries = self
-            .entries
-            .iter()
-            .map(|(name, entry)| (name.clone(), entry.is_directory()))
-            .collect::<Vec<_>>();
-        entries.sort_by(
-            |(left_name, left_directory), (right_name, right_directory)| {
-                git_tree_name_cmp(left_name, *left_directory, right_name, *right_directory)
-            },
-        );
+        let mut entries = self.entries.iter_mut().collect::<Vec<_>>();
+        entries.sort_by(|(left_name, left_entry), (right_name, right_entry)| {
+            git_tree_name_cmp(
+                left_name,
+                left_entry.is_directory(),
+                right_name,
+                right_entry.is_directory(),
+            )
+        });
 
         let mut payload = Vec::new();
-        for (name, _) in entries {
-            let entry = self.entries.get_mut(&name).expect("tree entry was listed");
+        for (name, entry) in entries {
             let (mode, oid) = match entry {
                 TreeEntry::File(file) => (file.mode.as_str(), file.oid),
                 TreeEntry::Directory(directory) => ("40000", directory.oid()?),
@@ -763,7 +747,7 @@ mod tests {
         let mut tree = Tree::default();
         for (path, blob) in files {
             tree.insert(
-                &path.split('/').collect::<Vec<_>>(),
+                path,
                 TreeFile {
                     mode: blob.git_file_mode.clone(),
                     oid: parse_oid(&blob.git_oid, "test blob").unwrap(),

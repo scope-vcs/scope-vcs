@@ -61,7 +61,6 @@ impl GitDerivedCacheCoordinator {
     {
         let key = GitDerivedCacheKey { namespace, value };
         let is_ready = Arc::new(is_ready);
-        let mut build = Some(build);
         loop {
             if is_ready() {
                 return Ok(());
@@ -78,9 +77,6 @@ impl GitDerivedCacheCoordinator {
                 }
                 continue;
             }
-            let build = build
-                .take()
-                .expect("a cache request can become leader only once");
             let leader = AsyncBuildLeader {
                 coordinator: self.clone(),
                 key: key.clone(),
@@ -117,7 +113,6 @@ impl GitDerivedCacheCoordinator {
         build: impl FnOnce() -> Result<(), ApiError>,
     ) -> Result<(), ApiError> {
         let key = GitDerivedCacheKey { namespace, value };
-        let mut build = Some(build);
         loop {
             if is_ready() {
                 return Ok(());
@@ -131,9 +126,6 @@ impl GitDerivedCacheCoordinator {
                 wait_for_cache_build(&state)?;
                 continue;
             }
-            let build = build
-                .take()
-                .expect("a cache request can become leader only once");
             let built = catch_unwind(AssertUnwindSafe(
                 || {
                     if is_ready() { Ok(()) } else { build() }
@@ -240,16 +232,15 @@ fn wait_for_cache_build(state: &CacheBuildState) -> Result<(), ApiError> {
         .outcome
         .lock()
         .map_err(|_| ApiError::internal_message("Git cache build state is poisoned"))?;
-    while outcome.is_none() {
+    loop {
+        if let Some(completed) = outcome.as_ref() {
+            return completed.clone();
+        }
         outcome = state
             .completed
             .wait(outcome)
             .map_err(|_| ApiError::internal_message("Git cache build state is poisoned"))?;
     }
-    outcome
-        .as_ref()
-        .expect("cache build outcome checked")
-        .clone()
 }
 
 async fn wait_for_cache_build_async(state: &CacheBuildState) -> Result<(), ApiError> {

@@ -173,14 +173,13 @@ fn main() -> ExitCode {
             error.exit()
         }
         Err(error) if json_requested => {
-            eprintln!(
-                "{}",
-                serde_json::to_string(&scope_cli::api::ErrorResponse::new(
-                    scope_cli::api::ErrorCode::BadRequest,
-                    error.to_string()
-                ))
-                .expect("CLI error responses serialize to JSON")
-            );
+            #[expect(clippy::expect_used)]
+            let response = serde_json::to_string(&scope_cli::api::ErrorResponse::new(
+                scope_cli::api::ErrorCode::BadRequest,
+                error.to_string(),
+            ))
+            .expect("CLI error responses serialize to JSON");
+            eprintln!("{response}");
             return ExitCode::from(2);
         }
         Err(error) => error.exit(),
@@ -194,11 +193,10 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             if json {
-                eprintln!(
-                    "{}",
-                    serde_json::to_string(&scope_cli::error::json_response(&error))
-                        .expect("CLI error responses serialize to JSON")
-                );
+                #[expect(clippy::expect_used)]
+                let response = serde_json::to_string(&scope_cli::error::json_response(&error))
+                    .expect("CLI error responses serialize to JSON");
+                eprintln!("{response}");
             } else {
                 eprintln!("{error:#}");
             }

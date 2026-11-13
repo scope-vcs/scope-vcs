@@ -76,6 +76,7 @@ impl MediaGrantIssuer {
     }
 
     #[cfg(any(test, feature = "local-dev"))]
+    #[expect(clippy::expect_used)]
     pub(crate) fn test() -> Self {
         Self::new("http://127.0.0.1:8083".into(), TEST_PRIVATE_KEY.into())
             .expect("the bundled test media grant key is a valid Ed25519 key")

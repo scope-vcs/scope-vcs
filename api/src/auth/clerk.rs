@@ -46,16 +46,11 @@ struct JwksCacheState {
     last_failure: Option<RefreshFailure>,
 }
 
-impl JwksCacheState {
-    fn access(&self, source: JwksSource) -> JwksAccess {
+impl CachedJwks {
+    fn access(&self, generation: u64, source: JwksSource) -> JwksAccess {
         JwksAccess {
-            keys: self
-                .current
-                .as_ref()
-                .expect("cached JWKS access requires keys")
-                .keys
-                .clone(),
-            generation: self.generation,
+            keys: self.keys.clone(),
+            generation,
             source,
         }
     }
@@ -125,11 +120,13 @@ impl ClerkVerifier {
         stale_if_error_for: Duration,
         unknown_key_refresh_cooldown: Duration,
     ) -> Self {
+        #[expect(clippy::expect_used)]
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .expect("the Clerk verifier HTTP client uses a static, valid configuration");
         Self {
-            client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(5))
-                .build()
-                .expect("Clerk verifier HTTP client config must be valid"),
+            client,
             issuer,
             jwks_url,
             token_policy,
@@ -149,14 +146,10 @@ impl ClerkVerifier {
                 "Clerk auth requires {CLERK_ISSUER_ENV} to be configured"
             ))
         })?;
-        let header = validated_clerk_header(token)?;
-        let kid = header
-            .kid
-            .as_deref()
-            .expect("validated Clerk header must have a kid");
+        let (header, kid) = validated_clerk_header(token)?;
         let mut jwks = self.jwks().await?;
 
-        if signing_key(kid, &jwks.keys).is_none() {
+        if signing_key(&kid, &jwks.keys).is_none() {
             jwks = match jwks.source {
                 JwksSource::CachedFresh => {
                     self.refresh_jwks(jwks.generation, RefreshReason::UnknownKey)
@@ -173,7 +166,7 @@ impl ClerkVerifier {
             };
         }
 
-        let jwk = signing_key(kid, &jwks.keys)
+        let jwk = signing_key(&kid, &jwks.keys)
             .ok_or_else(|| ApiError::unauthorized("Clerk signing key not found"))?;
 
         verify_clerk_token_with_header(token, &header, jwk, issuer, &self.token_policy)
@@ -186,7 +179,7 @@ impl ClerkVerifier {
             if let Some(current) = state.current.as_ref()
                 && now.duration_since(current.fetched_at) < self.jwks_cache.fresh_for
             {
-                return Ok(state.access(JwksSource::CachedFresh));
+                return Ok(current.access(state.generation, JwksSource::CachedFresh));
             }
             state.generation
         };
@@ -204,21 +197,23 @@ impl ClerkVerifier {
 
         {
             let state = self.cache_state();
-            if state.generation > observed_generation {
-                return Ok(state.access(JwksSource::Current));
+            if state.generation > observed_generation
+                && let Some(current) = state.current.as_ref()
+            {
+                return Ok(current.access(state.generation, JwksSource::Current));
             }
             if matches!(reason, RefreshReason::Expired)
                 && let Some(current) = state.current.as_ref()
                 && now.duration_since(current.fetched_at) < self.jwks_cache.fresh_for
             {
-                return Ok(state.access(JwksSource::CachedFresh));
+                return Ok(current.access(state.generation, JwksSource::CachedFresh));
             }
             if matches!(reason, RefreshReason::UnknownKey)
                 && let Some(current) = state.current.as_ref()
                 && now.duration_since(current.fetched_at)
                     < self.jwks_cache.unknown_key_refresh_cooldown
             {
-                return Ok(state.access(JwksSource::Current));
+                return Ok(current.access(state.generation, JwksSource::Current));
             }
             if let Some(failure) = state.last_failure.as_ref()
                 && now.duration_since(failure.at) < JWKS_REFRESH_FAILURE_BACKOFF
@@ -232,13 +227,14 @@ impl ClerkVerifier {
         let mut state = self.cache_state();
         match fetched {
             Ok(keys) => {
-                state.generation = state.generation.saturating_add(1);
-                state.current = Some(CachedJwks {
+                let generation = state.generation.saturating_add(1);
+                state.generation = generation;
+                state.last_failure = None;
+                let current = state.current.insert(CachedJwks {
                     keys: Arc::new(keys),
                     fetched_at: now,
                 });
-                state.last_failure = None;
-                Ok(state.access(JwksSource::Current))
+                Ok(current.access(generation, JwksSource::Current))
             }
             Err(error) => {
                 let diagnostic = error.into_operator_diagnostic();
@@ -291,17 +287,18 @@ impl ClerkVerifier {
                     .fresh_for
                     .saturating_add(self.jwks_cache.stale_if_error_for)
         {
-            return Ok(state.access(JwksSource::LastKnownGood));
+            return Ok(current.access(state.generation, JwksSource::LastKnownGood));
         }
 
         Err(ApiError::infrastructure_unavailable(diagnostic))
     }
 
+    #[expect(clippy::expect_used)]
     fn cache_state(&self) -> std::sync::MutexGuard<'_, JwksCacheState> {
         self.jwks_cache
             .state
             .lock()
-            .expect("Clerk JWKS cache lock must not be poisoned")
+            .expect("Clerk JWKS cache holders do not panic, so the lock is never poisoned")
     }
 
     #[cfg(test)]
@@ -446,17 +443,17 @@ fn verify_clerk_token_with_header(
     })
 }
 
-fn validated_clerk_header(token: &str) -> Result<jsonwebtoken::Header, ApiError> {
+fn validated_clerk_header(token: &str) -> Result<(jsonwebtoken::Header, String), ApiError> {
     let header =
         decode_header(token).map_err(|_| ApiError::unauthorized("invalid bearer token"))?;
     if !matches!(header.alg, Algorithm::ES256 | Algorithm::RS256) {
         return Err(ApiError::unauthorized("unsupported Clerk token algorithm"));
     }
-    if header.kid.is_none() {
+    let Some(kid) = header.kid.clone() else {
         return Err(ApiError::unauthorized("Clerk token is missing kid"));
-    }
+    };
 
-    Ok(header)
+    Ok((header, kid))
 }
 
 fn signing_key<'a>(kid: &str, jwks: &'a JwkSet) -> Option<&'a Jwk> {

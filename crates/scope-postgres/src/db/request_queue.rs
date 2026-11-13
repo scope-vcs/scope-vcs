@@ -314,6 +314,7 @@ fn join_sql_predicates(
 fn queue_placement_sql() -> String {
     let mut sql = String::from("CASE");
     for rule in REQUEST_QUEUE_RULES {
+        #[expect(clippy::expect_used)]
         write!(
             sql,
             " WHEN {} THEN '{}'",

@@ -309,27 +309,37 @@ fn media_response(
     permit: Option<OwnedSemaphorePermit>,
     download_filename: Option<&str>,
 ) -> Result<Response, ServiceError> {
-    let (status, start, end) = match requested {
-        RequestedRange::Full if object.plaintext_bytes == 0 => (StatusCode::OK, 0, None),
-        RequestedRange::Full => (StatusCode::OK, 0, Some(object.plaintext_bytes - 1)),
+    let (status, range, content_range) = match requested {
+        RequestedRange::Full if object.plaintext_bytes == 0 => (StatusCode::OK, None, None),
+        RequestedRange::Full => (StatusCode::OK, Some(0..=object.plaintext_bytes - 1), None),
         RequestedRange::Partial(range) => (
             StatusCode::PARTIAL_CONTENT,
-            *range.start(),
-            Some(*range.end()),
+            Some(range.clone()),
+            Some(format!(
+                "bytes {}-{}/{}",
+                range.start(),
+                range.end(),
+                object.plaintext_bytes
+            )),
         ),
     };
-    let length = end.map_or(0, |end| end - start + 1);
-    let body = if method == Method::HEAD || length == 0 {
-        Body::empty()
-    } else {
-        let stream = storage
-            .read_range(object, start..=end.expect("nonempty media range"))
-            .map_err(media_storage_error)?;
-        let permit = permit.expect("GET read permit");
-        Body::from_stream(stream.map(move |bytes| {
-            let _held = &permit;
-            bytes
-        }))
+    let length = range
+        .as_ref()
+        .map_or(0, |range| range.end() - range.start() + 1);
+    let body = match range {
+        Some(range) if method != Method::HEAD => {
+            let stream = storage
+                .read_range(object, range)
+                .map_err(media_storage_error)?;
+            #[expect(clippy::expect_used)]
+            let permit =
+                permit.expect("GET reads of nonempty media are admitted with a read permit");
+            Body::from_stream(stream.map(move |bytes| {
+                let _held = &permit;
+                bytes
+            }))
+        }
+        Some(_) | None => Body::empty(),
     };
     let mut response = Response::new(body);
     *response.status_mut() = status;
@@ -351,15 +361,11 @@ fn media_response(
         HeaderValue::from_str(&format!("\"{}\"", object.sha256))
             .map_err(|_| ServiceError::internal("invalid media etag"))?,
     );
-    if status == StatusCode::PARTIAL_CONTENT {
+    if let Some(content_range) = content_range {
         response_headers.insert(
             CONTENT_RANGE,
-            HeaderValue::from_str(&format!(
-                "bytes {start}-{}/{}",
-                end.expect("partial range end"),
-                object.plaintext_bytes
-            ))
-            .map_err(|_| ServiceError::internal("invalid media content range"))?,
+            HeaderValue::from_str(&content_range)
+                .map_err(|_| ServiceError::internal("invalid media content range"))?,
         );
     }
     if let Some(filename) = download_filename {

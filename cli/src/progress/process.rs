@@ -51,18 +51,20 @@ pub fn run_cancellable(
     let stdout_reader = spawn_bounded_reader(stdout, max_stdout_bytes, &stdout_exceeded);
     let stderr_exceeded = Arc::new(AtomicBool::new(false));
     let stderr_reader = spawn_bounded_reader(stderr, MAX_STDERR_BYTES, &stderr_exceeded);
-    let stdin_writer = input.map(|input| {
-        let done = Arc::new(AtomicBool::new(false));
-        let worker_done = Arc::clone(&done);
-        let mut stdin = child.stdin.take().expect("piped stdin was requested");
-        let handle = thread::spawn(move || {
-            let result = stdin.write_all(&input);
-            drop(stdin);
-            worker_done.store(true, Ordering::Release);
-            result
-        });
-        WriteWorker { handle, done }
-    });
+    let stdin_writer = input
+        .map(|input| {
+            let done = Arc::new(AtomicBool::new(false));
+            let worker_done = Arc::clone(&done);
+            let mut stdin = child.stdin.take().context("capture child stdin")?;
+            let handle = thread::spawn(move || {
+                let result = stdin.write_all(&input);
+                drop(stdin);
+                worker_done.store(true, Ordering::Release);
+                result
+            });
+            anyhow::Ok(WriteWorker { handle, done })
+        })
+        .transpose()?;
 
     let started = Instant::now();
     let mut exit_status = None;

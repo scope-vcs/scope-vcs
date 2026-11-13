@@ -48,15 +48,16 @@ pub(crate) async fn repo_events(
         }
     };
     let incarnation = repo.incarnation();
-    let initial = event_for_access(
-        &repo,
-        repository_change_event(
-            &incarnation,
-            repo.record.change_version,
-            RepoChangeReason::Connected,
-        ),
-    )
-    .expect("connected event is always visible");
+    let connected = repository_change_event(
+        &incarnation,
+        repo.record.change_version,
+        RepoChangeReason::Connected,
+    );
+    let initial = if repo.reads_full_view() {
+        connected
+    } else {
+        redacted_event(connected)
+    };
     let updates = stream::unfold(
         RepoEventStreamState {
             finished: false,
@@ -262,7 +263,11 @@ fn event_for_access(
         return None;
     }
 
-    Some(RepoChangeEvent {
+    Some(redacted_event(event))
+}
+
+fn redacted_event(event: RepoChangeEvent) -> RepoChangeEvent {
+    RepoChangeEvent {
         kind: match event.kind {
             RepoChangeKind::Connected => RepoChangeKind::Connected,
             RepoChangeKind::Lagged => RepoChangeKind::Lagged,
@@ -280,16 +285,20 @@ fn event_for_access(
         repo_id: event.repo_id,
         incarnation_id: event.incarnation_id,
         version: 0,
-    })
+    }
 }
 
 fn sse_event(event: RepoChangeEvent) -> Event {
-    let data = serde_json::to_string(&event).expect("repo change events must serialize");
+    #[expect(clippy::expect_used)]
+    let data = serde_json::to_string(&event)
+        .expect("repo change events are plain structs that serialize as JSON");
     Event::default().event("repo-change").data(data)
 }
 
 fn sse_error_event(error: ApiError) -> Event {
     let (_, body) = error.into_public_parts();
-    let data = serde_json::to_string(&body).expect("public API errors must serialize");
+    #[expect(clippy::expect_used)]
+    let data = serde_json::to_string(&body)
+        .expect("public API error bodies are plain structs that serialize as JSON");
     Event::default().event("error").data(data)
 }
