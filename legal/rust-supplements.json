@@ -50,6 +50,10 @@
     "rust:crc-catalog@2.5.0": {
       "reason": "MIT branch selected from the declared alternatives. The checksum-verified published crate contains both license texts in its nested LICENSES directory; preserve those archive documents."
     },
+    "rust:defmt@0.3.101": {
+      "reason": "MIT branch selected. The published archive is the defmt-03 compatibility crate at knurling-rs/defmt revision 719491ca3529abd07205165b9b10e4d988552bc2 (path defmt-03 in .cargo_vcs_info.json) and omits license files. It only re-exports defmt 1.2.0 from the same repository under the same MIT OR Apache-2.0 declaration; preserve the license texts published in the checksum-verified defmt 1.2.0 archive.",
+      "from_package": "rust:defmt@1.2.0"
+    },
     "rust:dispatch2@0.3.1": {
       "reason_key": "apple-mit-with-authors",
       "documents": [

@@ -5,6 +5,7 @@ use crate::{
         import::validate_pushed_commit_range,
         pool_install::present_commits,
         pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
+        reader::GitReader,
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
         staging::write_receive_pack_hook,
@@ -423,6 +424,11 @@ pub(crate) fn request_ref_head(
 ) -> Result<Option<String>, ApiError> {
     if !store_repo.exists() {
         return Ok(None);
+    }
+    if let Some(head) =
+        GitReader::open(store_repo).and_then(|reader| reader.reference_target(request_ref))
+    {
+        return Ok(head);
     }
     let output = run_git_output(
         Some(store_repo),

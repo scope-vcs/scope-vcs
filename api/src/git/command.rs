@@ -1,4 +1,4 @@
-use crate::{error::ApiError, runtime_budgets::RuntimeBudgets};
+use crate::{error::ApiError, git::reader::GitReader, runtime_budgets::RuntimeBudgets};
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{
     ProcessLimits, STDERR_DIAGNOSTIC_BYTES, run as run_process, truncated_stderr,
@@ -272,13 +272,17 @@ pub(crate) fn git_stdout_text(
 }
 
 pub(crate) fn git_main_oid(repo: &FsPath, action: &str) -> Result<String, ApiError> {
+    let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
+    if let Some(oid) = GitReader::open(repo).and_then(|reader| reader.reference_commit(&main_ref)) {
+        return Ok(oid);
+    }
     Ok(git_stdout_text(
         repo,
         &[
             "rev-parse",
             "--verify",
             "--quiet",
-            &format!("refs/heads/{DEFAULT_GIT_BRANCH}^{{commit}}"),
+            &format!("{main_ref}^{{commit}}"),
         ],
         action,
     )?
@@ -292,6 +296,11 @@ pub(crate) fn git_is_ancestor(
     descendant: &str,
     action: &str,
 ) -> Result<bool, ApiError> {
+    if let Some(reader) = GitReader::open(repo)
+        && let Some(answer) = reader.is_ancestor(ancestor, descendant, action)?
+    {
+        return Ok(answer);
+    }
     let output = run_git_output(
         Some(repo),
         &["merge-base", "--is-ancestor", ancestor, descendant],
@@ -313,13 +322,16 @@ pub(crate) fn git_contains_commit(
     tip: &str,
     action: &str,
 ) -> Result<bool, ApiError> {
-    let present = run_git_output(
-        Some(repo),
-        &["cat-file", "-e", &format!("{commit}^{{commit}}")],
-        action,
-    )?
-    .status
-    .success();
+    let present = match GitReader::open(repo).and_then(|reader| reader.peels_to_commit(commit)) {
+        Some(present) => present,
+        None => run_git_output(
+            Some(repo),
+            &["cat-file", "-e", &format!("{commit}^{{commit}}")],
+            action,
+        )?
+        .status
+        .success(),
+    };
     Ok(present && git_is_ancestor(repo, commit, tip, action)?)
 }
 
@@ -328,6 +340,11 @@ pub(crate) fn git_ref_listing(
     prefixes: &[&str],
     action: &str,
 ) -> Result<Vec<(String, String)>, ApiError> {
+    if let Some(reader) = GitReader::open(repo)
+        && let Some(refs) = reader.references(prefixes, action)?
+    {
+        return Ok(refs);
+    }
     let mut args = vec!["for-each-ref", "--format=%(refname)%00%(objectname)"];
     args.extend(prefixes.iter().copied());
     let text = git_stdout_text(repo, &args, action)?;

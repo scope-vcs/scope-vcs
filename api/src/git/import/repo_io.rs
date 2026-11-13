@@ -10,6 +10,7 @@ use crate::{
             truncated_git_stderr,
         },
         pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
+        reader::GitReader,
     },
     state::AppState,
 };
@@ -216,6 +217,11 @@ pub(crate) async fn git_push_from_repo(
     let path = repo.to_path_buf();
     let head_oid = crate::git::blocking::run(move || {
         let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
+        if let Some(Some(head)) =
+            GitReader::open(&path).and_then(|reader| reader.reference_target(&refname))
+        {
+            return Ok(head);
+        }
         let head = git_stdout_text(&path, &["rev-parse", &refname], "reading pushed Git head")?;
         Ok(head.trim().to_string())
     })
