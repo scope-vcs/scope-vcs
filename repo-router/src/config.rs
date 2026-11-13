@@ -16,7 +16,7 @@ const UPLOAD_PACK_REPLAY_BUDGET_BYTES: usize = 4 * UPLOAD_PACK_REPLAY_MAX_BYTES;
 const INCOMING_BODY_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug)]
-pub struct RouterConfig {
+pub(crate) struct RouterConfig {
     pub backend_authority: String,
     pub dns_refresh: Duration,
     pub dns_max_stale: Duration,
@@ -30,7 +30,7 @@ pub struct RouterConfig {
 }
 
 impl RouterConfig {
-    pub fn from_env() -> anyhow::Result<Self> {
+    pub(crate) fn from_env() -> anyhow::Result<Self> {
         let backend_authority = std::env::var(BACKEND_ENV)
             .ok()
             .filter(|value| !value.trim().is_empty())

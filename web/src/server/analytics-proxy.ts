@@ -140,7 +140,7 @@ function prepareCapture(
     const event: CaptureResult = {
       event: capture.event,
       uuid: capture.uuid,
-      properties: capture.properties as CaptureResult['properties'],
+      properties: capture.properties,
       ...('timestamp' in capture && typeof capture.timestamp === 'string'
         ? { timestamp: capture.timestamp } : {}),
     }

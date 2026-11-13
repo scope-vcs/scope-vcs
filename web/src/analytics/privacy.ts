@@ -237,15 +237,15 @@ function sanitizeRunLogTiming(capture: CaptureResult) {
   })
 }
 
-function isMember(values: ReadonlySet<string>, value: Property | undefined): value is string {
+function isMember(values: ReadonlySet<string>, value: Property): value is string {
   return typeof value === 'string' && values.has(value)
 }
 
-function isCount(value: Property | undefined): value is number {
+function isCount(value: Property): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
-function safeRoute(routeName: Property | undefined) {
+function safeRoute(routeName: Property) {
   return typeof routeName === 'string'
     ? analyticsRouteForName(routeName)
     : null
@@ -286,6 +286,6 @@ function externalReferrer(referrer: string, siteOrigin: string) {
   }
 }
 
-function isPostHogProperty(value: Property | undefined): value is Property {
+function isPostHogProperty(value: Property): value is Property {
   return value !== undefined
 }

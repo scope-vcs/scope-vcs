@@ -14,16 +14,17 @@ export function runLogLineId(jobKey: string, attempt: string | null, step: numbe
 export function runJobLinkForHash(keys: Iterable<string>, hash: string): RunJobLink | null {
   const parsed = RUN_HASH.exec(hash)
   if (!parsed) return null
+  const [, panelId, encodedAttempt, step, line] = parsed
   for (const key of keys) {
-    if (runJobPanelId(key) !== parsed[1]) continue
-    if (parsed[3] === undefined) return { key, attempt: null, step: null, line: null }
+    if (runJobPanelId(key) !== panelId) continue
+    if (step === undefined || line === undefined) return { key, attempt: null, step: null, line: null }
     let attempt: string | null = null
     try {
-      attempt = parsed[2] === undefined ? null : decodeURIComponent(parsed[2])
+      attempt = encodedAttempt === undefined ? null : decodeURIComponent(encodedAttempt)
     } catch {
       return null
     }
-    return { key, attempt, step: Number(parsed[3]), line: parsed[4]! }
+    return { key, attempt, step: Number(step), line }
   }
   return null
 }

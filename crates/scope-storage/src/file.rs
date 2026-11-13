@@ -79,7 +79,7 @@ impl ObjectBackend for FileBackend {
         }
         .await;
         if result.is_err() {
-            let _ = fs::remove_file(&temp_path).await;
+            fs::remove_file(&temp_path).await.ok();
         }
         result
     }
@@ -144,7 +144,7 @@ impl ObjectBackend for FileBackend {
         }
         .await;
         if let Err(error) = result {
-            let _ = fs::remove_file(&temp_path).await;
+            fs::remove_file(&temp_path).await.ok();
             return Err(error);
         }
         Ok(UploadedPart {
@@ -201,12 +201,18 @@ impl ObjectBackend for FileBackend {
             sync_directory(parent.to_path_buf())
                 .await
                 .map_err(BackendError::from)?;
-            let _ = fs::remove_dir_all(&upload_directory).await;
+            if let Err(error) = fs::remove_dir_all(&upload_directory).await {
+                tracing::warn!(
+                    path = %upload_directory.display(),
+                    %error,
+                    "multipart upload staging cleanup failed"
+                );
+            }
             Ok(())
         }
         .await;
         if result.is_err() {
-            let _ = fs::remove_file(&temp_path).await;
+            fs::remove_file(&temp_path).await.ok();
         }
         result
     }

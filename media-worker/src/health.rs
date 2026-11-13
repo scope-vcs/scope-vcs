@@ -3,7 +3,7 @@ use scope_service_runtime::readiness::{ActivityGuard, ReadinessTracker};
 use std::time::Duration;
 
 #[derive(Clone, Copy, Debug)]
-pub enum MediaWorkerLoop {
+pub(crate) enum MediaWorkerLoop {
     PhotoProcessing,
     GeneralProcessing,
     Cleanup,
@@ -22,34 +22,34 @@ const CODECS_GATE: usize = 0;
 const DEPENDENCIES_GATE: usize = 1;
 
 #[derive(Clone)]
-pub struct WorkerHealth(ReadinessTracker<2, 3>);
+pub(crate) struct WorkerHealth(ReadinessTracker<2, 3>);
 
 impl WorkerHealth {
-    pub fn new(poll_interval: Duration) -> Self {
+    pub(crate) fn new(poll_interval: Duration) -> Self {
         Self(ReadinessTracker::new(poll_interval))
     }
 
-    pub fn mark_codecs_ready(&self) {
+    pub(crate) fn mark_codecs_ready(&self) {
         self.0.open_gate(CODECS_GATE);
     }
 
-    pub fn mark_dependencies_ready(&self) {
+    pub(crate) fn mark_dependencies_ready(&self) {
         self.0.open_gate(DEPENDENCIES_GATE);
     }
 
-    pub fn mark_dependencies_waiting(&self) {
+    pub(crate) fn mark_dependencies_waiting(&self) {
         self.0.close_gate(DEPENDENCIES_GATE);
     }
 
-    pub fn mark_poll(&self, worker_loop: MediaWorkerLoop, now_unix: u64) {
+    pub(crate) fn mark_poll(&self, worker_loop: MediaWorkerLoop, now_unix: u64) {
         self.0.mark_poll(worker_loop as usize, now_unix);
     }
 
-    pub fn activity(&self, worker_loop: MediaWorkerLoop) -> ActivityGuard<'_> {
+    pub(crate) fn activity(&self, worker_loop: MediaWorkerLoop) -> ActivityGuard<'_> {
         self.0.activity(worker_loop as usize)
     }
 
-    pub async fn serve(self, port: u16) -> anyhow::Result<()> {
+    pub(crate) async fn serve(self, port: u16) -> anyhow::Result<()> {
         self.0.serve(port, "media worker health server").await
     }
 

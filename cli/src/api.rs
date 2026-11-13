@@ -202,7 +202,9 @@ fn terminal_safe(value: &str) -> String {
 }
 
 pub fn http_client_builder() -> ClientBuilder {
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
     Client::builder().default_headers(cli_identity_headers())
 }
 

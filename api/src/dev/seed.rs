@@ -213,12 +213,8 @@ fn build_catalog(
     let mut catalog = scope_postgres::db::CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner.clone());
     catalog.native_runs_accounts.insert(owner.id.clone());
-    catalog
-        .users
-        .insert(contributor.id.clone(), contributor.clone());
-    catalog
-        .users
-        .insert(maintainer.id.clone(), maintainer.clone());
+    catalog.users.insert(contributor.id.clone(), contributor);
+    catalog.users.insert(maintainer.id.clone(), maintainer);
 
     let (mut update_demo, request_gallery, update_pack) =
         update_demo(object_store, git_segment_store, &owner)?;
@@ -304,11 +300,11 @@ fn published_demo(
     owner: &UserAccount,
 ) -> Result<(Repository, SeedPoolPack), ApiError> {
     let mut repo = repo(owner, "public-demo", ViewId::public())?;
-    let readme = blob(object_store, PUBLIC_DEMO_README_HTML)?;
-    let app = blob(object_store, PUBLIC_DEMO_APP)?;
-    let private_plan = blob(object_store, PUBLIC_DEMO_PLAN)?;
-    let checks_workflow = blob(object_store, PUBLIC_DEMO_CHECKS_WORKFLOW)?;
-    let lint_workflow = blob(object_store, PUBLIC_DEMO_LINT_WORKFLOW)?;
+    let readme = blob(object_store, PUBLIC_DEMO_README_HTML);
+    let app = blob(object_store, PUBLIC_DEMO_APP);
+    let private_plan = blob(object_store, PUBLIC_DEMO_PLAN);
+    let checks_workflow = blob(object_store, PUBLIC_DEMO_CHECKS_WORKFLOW);
+    let lint_workflow = blob(object_store, PUBLIC_DEMO_LINT_WORKFLOW);
     let private_path = ScopePath::parse("/internal/plan.md").map_err(ApiError::internal)?;
     repo.policy
         .add_rule(LabelRule::private(private_path.clone()))
@@ -352,8 +348,8 @@ fn update_demo(
     owner: &UserAccount,
 ) -> Result<(Repository, SeedRequestGallery, SeedPoolPack), ApiError> {
     let mut repo = repo(owner, "update-demo", ViewId::public())?;
-    let initial_readme = blob(object_store, UPDATE_DEMO_INITIAL_README)?;
-    let internal_notes = blob(object_store, UPDATE_DEMO_INTERNAL_NOTES)?;
+    let initial_readme = blob(object_store, UPDATE_DEMO_INITIAL_README);
+    let internal_notes = blob(object_store, UPDATE_DEMO_INTERNAL_NOTES);
     let internal_path = ScopePath::parse("/internal/notes.md").map_err(ApiError::internal)?;
     repo.policy
         .add_rule(LabelRule::private(
@@ -367,13 +363,13 @@ fn update_demo(
             path: "/internal/**".to_string(),
             view: ViewId::private(),
         });
-    let release_guide = blob(object_store, UPDATE_DEMO_RELEASE_GUIDE)?;
+    let release_guide = blob(object_store, UPDATE_DEMO_RELEASE_GUIDE);
     repo.graph.commits.push(commit(
         &repo,
         "dev-update-1",
         "Seed update demo",
         vec![
-            add_change("/README.md", initial_readme.clone(), ViewId::public())?,
+            add_change("/README.md", initial_readme, ViewId::public())?,
             add_change(internal_path.as_str(), internal_notes, ViewId::private())?,
         ],
     ));
@@ -492,7 +488,7 @@ fn seed_owner_request(
         },
         StartRequestInput {
             base: scope_domain::requests::RequestBase::Main {
-                review_base_oid: (base_oid.clone()).clone(),
+                review_base_oid: base_oid.clone(),
             },
             id: id.to_string(),
             repo_id: repo_id.to_string(),
@@ -502,7 +498,7 @@ fn seed_owner_request(
             author_role: RequestActorRole::Owner,
             author_view: ViewId::private(),
             view,
-            main_ancestor_oid: base_oid.clone(),
+            main_ancestor_oid: base_oid,
             event_id: format!("event_{id}_started"),
             now_unix,
         },
@@ -544,7 +540,7 @@ fn seed_owner_request(
             .request_events
             .insert(mutation.event.id.clone(), mutation.event);
     }
-    let mut current_head_oid = head_oid.clone();
+    let mut current_head_oid = head_oid;
     let mut lifecycle_at_unix = now_unix + 2;
     for (index, revision) in revisions.into_iter().enumerate() {
         revision.pack.add_to(catalog);
@@ -641,8 +637,8 @@ fn add_change(path: &str, new_content: SourceBlob, label: ViewId) -> Result<File
     })
 }
 
-fn blob(object_store: &SeedObjects, content: &str) -> Result<SourceBlob, ApiError> {
-    Ok(object_store.add(ContentObjectKind::Blob, content.as_bytes().to_vec()))
+fn blob(object_store: &SeedObjects, content: &str) -> SourceBlob {
+    object_store.add(ContentObjectKind::Blob, content.as_bytes().to_vec())
 }
 
 #[derive(Default)]

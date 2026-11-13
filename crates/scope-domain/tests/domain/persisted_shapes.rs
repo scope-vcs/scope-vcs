@@ -148,7 +148,13 @@ fn run_state_names_match_their_persisted_encoding() {
             .iter()
             .map(|variant| match serde_json::to_value(variant).unwrap() {
                 Value::String(value) => value,
-                other => panic!("run state must serialize to a string, found {other}"),
+                other @ Value::Null
+                | other @ Value::Bool(_)
+                | other @ Value::Number(_)
+                | other @ Value::Array(_)
+                | other @ Value::Object(_) => {
+                    panic!("run state must serialize to a string, found {other}")
+                }
             })
             .collect::<Vec<_>>();
         assert_eq!(encoded, names);

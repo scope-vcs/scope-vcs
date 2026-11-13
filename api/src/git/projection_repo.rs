@@ -40,8 +40,8 @@ struct ProjectionBuildArtifacts {
 
 impl Drop for ProjectionBuildArtifacts {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.repo);
-        let _ = fs::remove_file(&self.index);
+        crate::git::storage::discard_dir(&self.repo);
+        crate::git::storage::discard_file(&self.index);
     }
 }
 
@@ -243,7 +243,7 @@ pub(crate) fn projection_bare_repo_with_loader(
     match fs::rename(&temp_path, &repo_path) {
         Ok(()) => Ok(repo_path),
         Err(error) if repo_path.exists() => {
-            let _ = fs::remove_dir_all(&temp_path);
+            crate::git::storage::discard_dir(&temp_path);
             tracing::debug!(%error, path = %repo_path.display(), "using concurrently-created Git projection cache");
             Ok(repo_path)
         }

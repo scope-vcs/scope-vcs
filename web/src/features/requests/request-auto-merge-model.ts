@@ -21,4 +21,4 @@ const reasons: Record<RequestAutoMergeStopReason, string> = {
   NeedsMainUpdate: 'the request must contain the latest view main',
 }
 
-export const autoMergeStopReasonText = (reason: RequestAutoMergeStopReason) => reasons[reason] ?? 'auto-merge stopped'
+export const autoMergeStopReasonText = (reason: RequestAutoMergeStopReason) => reasons[reason]

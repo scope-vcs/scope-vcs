@@ -88,7 +88,7 @@ async fn published_receive_pack_push_applies_from_seeded_git_repo() {
         live_file_content(&state, "/notes.md").await.as_deref(),
         Some("new notes")
     );
-    let _ = fs::remove_dir_all(&staging_repo);
+    crate::git::storage::remove_dir_if_exists(&staging_repo).unwrap();
 }
 
 #[tokio::test]
@@ -276,7 +276,7 @@ async fn published_receive_pack_rejects_non_fast_forward_push() {
     )
     .unwrap();
     assert_eq!(current_head, accepted_head);
-    let _ = fs::remove_dir_all(&staging_repo);
+    crate::git::storage::remove_dir_if_exists(&staging_repo).unwrap();
 }
 
 #[tokio::test]
@@ -356,7 +356,7 @@ async fn published_receive_pack_staging_restores_accepted_git_head_from_bucket_s
     .unwrap();
 
     assert_eq!(actual_head, expected_head);
-    let _ = fs::remove_dir_all(&restored);
+    crate::git::storage::remove_dir_if_exists(&restored).unwrap();
 }
 
 #[tokio::test]

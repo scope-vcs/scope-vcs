@@ -32,7 +32,9 @@ fn main() -> anyhow::Result<()> {
         Ok(value) => value,
         Err(error) => {
             let message = format!("{error:#}");
-            let _ = client.complete_setup_failure(&message);
+            if let Err(report_error) = client.complete_setup_failure(&message) {
+                eprintln!("could not report runtime setup failure: {report_error:#}");
+            }
             return Err(error);
         }
     };

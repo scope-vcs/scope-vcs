@@ -15,7 +15,7 @@ export function OwnerProfilePage({ state }: { state: ProfileState }) {
 
   return (
     <AppShell
-      header={() => <ApplicationTopbar />}
+      header={<ApplicationTopbar />}
     >
       <PageContent>
         <PageHeader title={`@${profile.handle}`} />

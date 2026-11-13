@@ -1,5 +1,5 @@
 use super::{
-    MediaStore, ReserveUploadPartResult, StorePartResult,
+    AttachmentUploadSession, MediaStore, ReserveUploadPartResult, StorePartResult,
     persistence::{as_i32, as_i64},
     upload::{authorize_active_upload, lock_authorized_upload},
 };
@@ -10,18 +10,20 @@ use scope_domain::requests::attachments::{
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, TransactionTrait};
 
 impl MediaStore {
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "reserve_upload_part"))]
     pub async fn reserve_upload_part(
         &self,
-        attachment_id: &str,
-        upload_id: &str,
-        uploader_user_id: &str,
+        session: AttachmentUploadSession<'_>,
         part: RequestAttachmentStagedPart,
         write_token: &str,
         now_unix: u64,
         write_expires_at_unix: u64,
     ) -> Result<ReserveUploadPartResult, PostgresError> {
+        let AttachmentUploadSession {
+            attachment_id,
+            upload_id,
+            uploader_user_id,
+        } = session;
         validate_lease_grant(write_token, now_unix, write_expires_at_unix)?;
         let tx = self.db.begin().await?;
         let attachment = lock_authorized_upload(&tx, attachment_id, uploader_user_id)
@@ -110,18 +112,20 @@ impl MediaStore {
         Ok(ReserveUploadPartResult::Write(part))
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mark_upload_part_stored"))]
     pub async fn mark_upload_part_stored(
         &self,
-        attachment_id: &str,
-        upload_id: &str,
-        uploader_user_id: &str,
+        session: AttachmentUploadSession<'_>,
         part_number: u32,
         object_key: &str,
         write_token: &str,
         now_unix: u64,
     ) -> Result<StorePartResult, PostgresError> {
+        let AttachmentUploadSession {
+            attachment_id,
+            upload_id,
+            uploader_user_id,
+        } = session;
         let tx = self.db.begin().await?;
         let Some(attachment) = lock_authorized_upload(&tx, attachment_id, uploader_user_id).await?
         else {

@@ -40,7 +40,7 @@ async fn no_op_receive_pack_does_not_record_push_success() {
         git_receive_use_case::ReceiveCompletion::NoChange
     );
     assert!(recording.events().is_empty());
-    let _ = fs::remove_dir_all(staging_repo);
+    crate::git::storage::remove_dir_if_exists(&staging_repo).unwrap();
 }
 
 #[tokio::test]
@@ -229,7 +229,7 @@ async fn first_push_staging_repo_head_points_to_default_branch() {
     .unwrap();
 
     assert_eq!(head.trim(), format!("refs/heads/{DEFAULT_GIT_BRANCH}"));
-    let _ = fs::remove_dir_all(staging_repo);
+    crate::git::storage::remove_dir_if_exists(&staging_repo).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -86,7 +86,7 @@ fn only_an_open_full_view_request_on_a_connected_opted_in_repository_wants_a_car
         (disconnected, request.clone(), "disconnected"),
         (
             withheld,
-            request.clone(),
+            request,
             "private request on an unconfirmed public repository",
         ),
     ] {
@@ -144,7 +144,7 @@ fn a_stacked_request_targets_its_parent_branch_until_the_parent_or_its_pull_requ
     ended_elsewhere.destination.github_repository_id += 1;
     assert_eq!(base(&parent, Some(&ended_elsewhere)), parent_branch);
 
-    let mut merged_parent = parent.clone();
+    let mut merged_parent = parent;
     merged_parent.merged_at_unix = Some(40);
     assert_eq!(base(&merged_parent, None), Some("main".into()));
 }

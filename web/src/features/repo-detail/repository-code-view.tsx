@@ -406,7 +406,7 @@ function FileMeta({
       <Popover
         className="w-[min(280px,calc(100vw-3rem))] text-xs"
         label="File details"
-        panel={() => (
+        renderPanel={() => (
           <>
             <p>{formatBytes(file.size_bytes)}</p>
             <p className="mt-1 break-all font-mono">Blob: {file.oid}</p>
@@ -417,7 +417,7 @@ function FileMeta({
             )}
           </>
         )}
-        trigger={(props) => (
+        renderTrigger={(props) => (
           <button
             aria-label="File details"
             className="flex cursor-pointer items-center rounded p-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"

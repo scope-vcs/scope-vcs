@@ -1,3 +1,5 @@
+#![expect(clippy::unwrap_used)]
+
 mod support;
 
 use async_trait::async_trait;
@@ -54,10 +56,7 @@ async fn encrypted_chunks_support_verified_ranges_across_boundaries() {
     assert_eq!(object.chunks[1].plaintext_offset, MAX_CHUNK_BYTES as u64);
 
     let start = MAX_CHUNK_BYTES as u64 - 3;
-    let mut stream = storage
-        .read_range(&object, start..=start + 8)
-        .await
-        .unwrap();
+    let mut stream = storage.read_range(&object, start..=start + 8).unwrap();
     let mut received = Vec::new();
     while let Some(bytes) = stream.next().await {
         received.extend_from_slice(&bytes.unwrap());
@@ -100,7 +99,6 @@ async fn reads_fail_when_stored_bytes_disagree_with_the_manifest_digests() {
     wrong_chunk.chunks[0].sha256 = hex::encode(Sha256::digest(b"other"));
     let mut stream = storage
         .read_range(&wrong_chunk, 0..=plaintext.len() as u64 - 1)
-        .await
         .unwrap();
     let mut failure = None;
     while let Some(item) = stream.next().await {
@@ -128,7 +126,7 @@ async fn authenticated_frames_stream_before_a_stalled_backend_read_fails() {
     backend
         .stall_before_final_byte
         .store(true, Ordering::SeqCst);
-    let mut stream = storage.read_range(&object, 0..=6).await.unwrap();
+    let mut stream = storage.read_range(&object, 0..=6).unwrap();
     let first = tokio::time::timeout(Duration::from_secs(1), stream.next())
         .await
         .expect("an authenticated frame reaches the caller before its chunk ends");
@@ -156,7 +154,7 @@ async fn reads_time_out_while_waiting_for_a_storage_slot() {
     });
     tokio::time::sleep(Duration::from_millis(1)).await;
 
-    let mut stream = storage.read_range(&object, 0..=7).await.unwrap();
+    let mut stream = storage.read_range(&object, 0..=7).unwrap();
     let result = tokio::time::timeout(Duration::from_secs(31), stream.next())
         .await
         .expect("a read waiting for a storage slot keeps its deadline")
@@ -176,7 +174,6 @@ async fn returned_frames_hold_the_read_budget_until_their_bytes_are_released() {
     let object = support::store_bytes(&storage, &attempt, &plaintext).await;
     let mut stream = storage
         .read_range(&object, 0..=MAX_CHUNK_BYTES as u64)
-        .await
         .unwrap();
     let mut retained = Vec::new();
     for _ in 0..8 {

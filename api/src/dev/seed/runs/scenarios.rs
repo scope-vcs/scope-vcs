@@ -143,11 +143,13 @@ pub(super) async fn seed_canceled_run(
     runs.dispatch_job(
         &run_id,
         "test",
-        &attempt,
-        &token,
-        RUNTIME_VERSION,
+        scope_domain::runs::job::AttemptDispatch {
+            attempt_id: attempt.clone(),
+            token_hash: token.clone(),
+            runtime_version: RUNTIME_VERSION.to_string(),
+            lease_expires_at_unix: clock + DEFAULT_LEASE_SECONDS,
+        },
         clock,
-        clock + DEFAULT_LEASE_SECONDS,
     )
     .await?;
     clock += 1;
@@ -251,11 +253,13 @@ pub(super) async fn seed_timed_out_run(
     runs.dispatch_job(
         &run_id,
         "lint",
-        &attempt,
-        &token,
-        RUNTIME_VERSION,
+        scope_domain::runs::job::AttemptDispatch {
+            attempt_id: attempt.clone(),
+            token_hash: token.clone(),
+            runtime_version: RUNTIME_VERSION.to_string(),
+            lease_expires_at_unix: clock + DEFAULT_LEASE_SECONDS,
+        },
         clock,
-        clock + DEFAULT_LEASE_SECONDS,
     )
     .await?;
     clock += 1;

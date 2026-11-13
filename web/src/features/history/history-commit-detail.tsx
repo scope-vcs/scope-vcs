@@ -67,11 +67,11 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
         {...props}
         navigation={navigation}
         navigationLabel="Commit file navigator"
-        navigator={commit.files.length > 0 && (
+        navigator={commit.files.length > 0 ? (
           <FileSystemTree
             expandFolders
             files={commit.files}
-            getFileMeta={(file) => <Badge variant="neutral">{file.kind}</Badge>}
+            renderFileMeta={(file) => <Badge variant="neutral">{file.kind}</Badge>}
             metaColumnLabel="Change"
             showVisibility
             onSelectFile={(file) => {
@@ -80,7 +80,7 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
             }}
             selectedFilePath={selectedFilePath}
           />
-        )}
+        ) : null}
         selectedFileLines={commit.files.find((file) => file.path === selectedFilePath)?.lines ?? null}
         emptyFilesMessage={filesTruncated
           ? `${commit.change_count} changed files are outside the bounded file list.`

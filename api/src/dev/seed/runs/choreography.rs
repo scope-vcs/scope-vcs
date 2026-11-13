@@ -43,13 +43,15 @@ pub(super) async fn enqueue(
     let requested_by_user_id = matches!(trigger, RunTrigger::Manual)
         .then(|| crate::seed_user::DEV_SEED_USER_ID.to_string());
     let run = Run::new(
-        format!("run_dev_seed_{slug}"),
-        format!("dev-seed:{slug}"),
-        revision.workflow().clone(),
-        revision.digest().to_string(),
-        trigger,
-        requested_by_user_id,
-        fake_run_source(slug)?,
+        RunRequest {
+            id: format!("run_dev_seed_{slug}"),
+            idempotency_key: format!("dev-seed:{slug}"),
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger,
+            requested_by_user_id,
+            source: fake_run_source(slug)?,
+        },
         created_at_unix,
     )
     .map_err(ApiError::internal)?;
@@ -72,11 +74,13 @@ pub(super) async fn run_job(
         .dispatch_job(
             run_id,
             job_key,
-            &attempt,
-            &token,
-            RUNTIME_VERSION,
+            scope_domain::runs::job::AttemptDispatch {
+                attempt_id: attempt.clone(),
+                token_hash: token.clone(),
+                runtime_version: RUNTIME_VERSION.to_string(),
+                lease_expires_at_unix: *clock + DEFAULT_LEASE_SECONDS,
+            },
             *clock,
-            *clock + DEFAULT_LEASE_SECONDS,
         )
         .await?;
 

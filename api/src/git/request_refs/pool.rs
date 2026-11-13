@@ -339,8 +339,20 @@ async fn install_staged_pool_pack(
             scope: RequestPackScope::Full,
             ..
         } if &request.view != config.views.full() => return Ok(()),
-        _ if !shared && !request.is_author(pusher_id) => return Ok(()),
-        _ => None,
+        GitPoolPackOwner::Request {
+            scope: RequestPackScope::Full,
+            ..
+        }
+        | GitPoolPackOwner::Main { .. }
+            if !shared && !request.is_author(pusher_id) =>
+        {
+            return Ok(());
+        }
+        GitPoolPackOwner::Request {
+            scope: RequestPackScope::Full,
+            ..
+        }
+        | GitPoolPackOwner::Main { .. } => None,
     };
     let (objects_repo, installable) = {
         let state = state.clone();

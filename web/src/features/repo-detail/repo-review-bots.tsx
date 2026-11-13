@@ -7,7 +7,7 @@ import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { cn } from '@/lib/utils'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   reviewBotLogins,
   reviewBotsFromText,
@@ -38,11 +38,10 @@ export function RepoReviewBots({
   const logins = reviewBotLogins(draft)
   const dirty = !sameReviewBots(logins, bots)
 
-  useEffect(() => {
-    if (bots === source) return
+  if (bots !== source) {
     if (sameReviewBots(reviewBotLogins(draft), source)) setDraft(reviewBotsText(bots))
     setSource(bots)
-  }, [bots, draft, source])
+  }
 
   async function saveLogins() {
     const found = reviewBotsProblem(logins)

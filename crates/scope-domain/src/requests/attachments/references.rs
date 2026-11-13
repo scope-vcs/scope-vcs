@@ -10,7 +10,19 @@ pub fn request_attachment_references(markdown: &str) -> Result<BTreeSet<String>,
     for event in Parser::new_ext(markdown, Options::empty()) {
         let destination = match event {
             Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => dest_url,
-            _ => continue,
+            Event::Start(_)
+            | Event::End(_)
+            | Event::Text(_)
+            | Event::Code(_)
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_)
+            | Event::Html(_)
+            | Event::InlineHtml(_)
+            | Event::FootnoteReference(_)
+            | Event::SoftBreak
+            | Event::HardBreak
+            | Event::Rule
+            | Event::TaskListMarker(_) => continue,
         };
         capture_destination(destination.as_ref(), &mut references)?;
     }

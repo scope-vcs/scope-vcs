@@ -162,7 +162,21 @@ fn envelope_error(key: &str, error: GitStorageError) -> ObjectStoreError {
         GitStorageError::InvalidEnvelope(message) => {
             ObjectStoreError::integrity(format!("object {key} failed verification: {message}"))
         }
-        error => ObjectStoreError::internal(format!("object {key}: {error}")),
+        error @ GitStorageError::InvalidConfiguration(_)
+        | error @ GitStorageError::Input(_)
+        | error @ GitStorageError::PlaintextLimitExceeded { .. }
+        | error @ GitStorageError::Cancelled
+        | error @ GitStorageError::RemoteCleanupTimedOut { .. }
+        | error @ GitStorageError::Local(_)
+        | error @ GitStorageError::Encryption
+        | error @ GitStorageError::Output(_)
+        | error @ GitStorageError::VerifiedPackHydration(_)
+        | error @ GitStorageError::ChecksumMismatch { .. }
+        | error @ GitStorageError::SizeMismatch { .. }
+        | error @ GitStorageError::IncompleteIngest
+        | error @ GitStorageError::Task(_) => {
+            ObjectStoreError::internal(format!("object {key}: {error}"))
+        }
     }
 }
 

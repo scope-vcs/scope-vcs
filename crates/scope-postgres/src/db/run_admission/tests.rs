@@ -52,7 +52,9 @@ async fn concurrent_admission_obeys_global_capacity() {
             match outcome.unwrap() {
                 DispatchAdmission::Admitted(_) => admitted += 1,
                 DispatchAdmission::AtCapacity => {}
-                other => panic!("unexpected admission result: {other:?}"),
+                other @ (DispatchAdmission::Contended | DispatchAdmission::Empty) => {
+                    panic!("unexpected admission result: {other:?}")
+                }
             }
         }
         assert_eq!(admitted, limit);
@@ -87,11 +89,13 @@ async fn final_dispatch_expiry_is_terminal_and_healthy_job_progresses() {
         .dispatch_job(
             "run-000",
             "checks",
-            "last-attempt",
-            &"b".repeat(64),
-            "runtime",
+            scope_domain::runs::job::AttemptDispatch {
+                attempt_id: "last-attempt".to_string(),
+                token_hash: "b".repeat(64),
+                runtime_version: "runtime".to_string(),
+                lease_expires_at_unix: 12,
+            },
             11,
-            12,
         )
         .await
         .unwrap();
@@ -370,11 +374,13 @@ async fn expired_capacity_window_and_cancellation_settle_queued_retry() {
             .dispatch_job(
                 &id,
                 "checks",
-                &format!("capacity-{index}"),
-                &format!("{index:064x}"),
-                "runtime",
+                scope_domain::runs::job::AttemptDispatch {
+                    attempt_id: format!("capacity-{index}"),
+                    token_hash: format!("{index:064x}"),
+                    runtime_version: "runtime".to_string(),
+                    lease_expires_at_unix: 100,
+                },
                 11,
-                100,
             )
             .await
             .unwrap();

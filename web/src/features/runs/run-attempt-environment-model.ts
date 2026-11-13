@@ -22,7 +22,7 @@ export function cacheStateClass(cache: RepositoryRunCacheResponse) {
       return 'text-success'
     case 'cold':
       return 'text-warning'
-    default:
+    case 'not reported':
       return 'text-muted-foreground'
   }
 }

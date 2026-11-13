@@ -422,8 +422,10 @@ async fn terminate_git_child(child: &mut tokio::process::Child, process_id: Opti
     if let Some(process_id) = process_id {
         scope_git_process::kill_process_group(process_id);
     }
-    let _ = child.kill().await;
-    let _ = child.wait().await;
+    child.kill().await.ok();
+    if let Err(error) = child.wait().await {
+        tracing::warn!(%error, "failed to reap cancelled Git process");
+    }
 }
 
 async fn ingest_compacted_pack(
@@ -542,7 +544,11 @@ impl TemporaryGitRepo {
 
 impl Drop for TemporaryGitRepo {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        if let Err(error) = fs::remove_dir_all(&self.path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(%error, path = %self.path.display(), "failed to remove temporary Git repository");
+        }
     }
 }
 

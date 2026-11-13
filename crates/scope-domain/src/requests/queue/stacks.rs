@@ -38,7 +38,11 @@ pub fn request_queue_stack_groups(
             {
                 RequestQueueGroup::NeedsYou
             }
-            group => group,
+            group @ RequestQueueGroup::NeedsYou
+            | group @ RequestQueueGroup::Waiting
+            | group @ RequestQueueGroup::Unclaimed
+            | group @ RequestQueueGroup::SetAside
+            | group @ RequestQueueGroup::Done => group,
         })
         .collect()
 }

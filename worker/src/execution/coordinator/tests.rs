@@ -7,7 +7,7 @@ use scope_domain::{
     content_ref::ContentRef,
     repository::{RepoLifecycleState, Repository},
     runs::{
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
         workflow::{
             definition::{
@@ -313,7 +313,13 @@ async fn competing_workers_reserve_capacity_before_concurrent_provider_starts() 
         match run.state {
             scope_domain::runs::run::RunState::Dispatching => admitted_runs += 1,
             scope_domain::runs::run::RunState::Queued => {}
-            state => panic!("unexpected run state: {state:?}"),
+            state @ (scope_domain::runs::run::RunState::Running
+            | scope_domain::runs::run::RunState::Succeeded
+            | scope_domain::runs::run::RunState::Failed
+            | scope_domain::runs::run::RunState::Canceled
+            | scope_domain::runs::run::RunState::Lost) => {
+                panic!("unexpected run state: {state:?}")
+            }
         }
     }
     assert_eq!(admitted_runs, 3);
@@ -393,13 +399,15 @@ pub(super) async fn queued_runs(count: usize) -> MetadataStore {
     .unwrap();
     for id in 0..count {
         let run = Run::new(
-            format!("run-{id}"),
-            format!("manual:{id}"),
-            revision.workflow().clone(),
-            revision.digest(),
-            RunTrigger::Manual,
-            Some(owner.id.clone()),
-            source.clone(),
+            RunRequest {
+                id: format!("run-{id}"),
+                idempotency_key: format!("manual:{id}"),
+                workflow: revision.workflow().clone(),
+                workflow_revision_digest: revision.digest().to_string(),
+                trigger: RunTrigger::Manual,
+                requested_by_user_id: Some(owner.id.clone()),
+                source: source.clone(),
+            },
             crate::unix_now().unwrap(),
         )
         .unwrap();

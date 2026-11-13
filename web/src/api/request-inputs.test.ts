@@ -227,51 +227,65 @@ test('every route server function binds at most one validator, taken from an API
       }
     }
 
-    const parents = new WeakMap<object, any>()
+    const serverFunctions = file.program.body.flatMap(topLevelDeclarators).flatMap((declarator) => {
+      const validatorCalls = serverFunctionValidatorCalls(declarator.init, serverFactories)
+      return validatorCalls ? [{ declarator, validatorCalls }] : []
+    })
+    const factoryCalls = [...serverFactories].reduce(
+      (count, name) => count + (source.match(new RegExp(`\\b${name}\\(`, 'g'))?.length ?? 0),
+      0,
+    )
+    assert.equal(serverFunctions.length, factoryCalls, `${route}: server functions must be assigned to top-level variables`)
+
     const names = new Set<string>()
-    const inspect = (node: any) => {
-      if (!node || typeof node !== 'object') return
-      if (Array.isArray(node)) {
-        for (const child of node) inspect(child)
-        return
-      }
-      if (typeof node.type !== 'string') return
-      if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && serverFactories.has(node.callee.name)) {
-        const location = `${route}:${node.loc.start.line}`
-        const boundValidators: any[] = []
-        let chain = node
-        while (parents.get(chain)?.type === 'MemberExpression' && parents.get(parents.get(chain))?.type === 'CallExpression') {
-          const method = parents.get(chain)
-          const call = parents.get(method)
-          if (method.property.type === 'Identifier' && method.property.name === 'validator') {
-            assert.equal(call.arguments.length, 1, `${location}: validator needs one parser`)
-            boundValidators.push(call.arguments[0])
-          }
-          chain = call
-        }
-        const declaration = parents.get(chain)
-        assert.equal(declaration?.type, 'VariableDeclarator', `${location}: server function must be assigned to a variable`)
-        assert.equal(declaration.id.type, 'Identifier', `${location}: server function needs an identifier name`)
-        assert.ok(boundValidators.length <= 1, `${location}: server function binds more than one validator`)
-        assert.ok(!names.has(declaration.id.name), `${location}: duplicate server function name`)
-        names.add(declaration.id.name)
-        const validator = boundValidators[0]
+    for (const { declarator, validatorCalls } of serverFunctions) {
+      const location = `${route}:${declarator.loc?.start.line}`
+      assert.equal(declarator.id.type, 'Identifier', `${location}: server function needs an identifier name`)
+      const name = declarator.id.name
+      assert.ok(!names.has(name), `${location}: duplicate server function name`)
+      names.add(name)
+      assert.ok(validatorCalls.length <= 1, `${location}: server function binds more than one validator`)
+      for (const validatorArguments of validatorCalls) {
+        assert.equal(validatorArguments.length, 1, `${location}: validator needs one parser`)
+        const [validator] = validatorArguments
         if (validator?.type === 'Identifier') {
           assert.ok(apiImports.has(validator.name), `${location}: validator ${validator.name} must be imported from an @/api input module`)
         }
-        serverFunctionCount += 1
       }
-      for (const [key, value] of Object.entries(node)) {
-        if (key === 'loc' || key === 'extra' || key === 'comments') continue
-        if (value && typeof value === 'object') {
-          if (Array.isArray(value)) {
-            for (const child of value) if (child && typeof child === 'object') parents.set(child, node)
-          } else parents.set(value, node)
-          inspect(value)
-        }
-      }
+      serverFunctionCount += 1
     }
-    inspect(file.program)
   }
   assert.ok(serverFunctionCount > 0)
 })
+
+type ModuleStatement = ReturnType<typeof parse>['program']['body'][number]
+type VariableDeclarator = Extract<ModuleStatement, { type: 'VariableDeclaration' }>['declarations'][number]
+type Expression = NonNullable<VariableDeclarator['init']>
+type CallExpression = Extract<Expression, { type: 'CallExpression' }>
+type ChainNode = Expression | Extract<Expression, { type: 'MemberExpression' }>['object']
+
+function topLevelDeclarators(statement: ModuleStatement): VariableDeclarator[] {
+  if (statement.type === 'VariableDeclaration') return statement.declarations
+  if (statement.type === 'ExportNamedDeclaration' && statement.declaration?.type === 'VariableDeclaration') {
+    return statement.declaration.declarations
+  }
+  return []
+}
+
+function serverFunctionValidatorCalls(
+  expression: Expression | null | undefined,
+  serverFactories: ReadonlySet<string>,
+): CallExpression['arguments'][] | null {
+  const validatorCalls: CallExpression['arguments'][] = []
+  let current: ChainNode | null | undefined = expression
+  while (current?.type === 'CallExpression') {
+    const callee: CallExpression['callee'] = current.callee
+    if (callee.type === 'Identifier') return serverFactories.has(callee.name) ? validatorCalls : null
+    if (callee.type !== 'MemberExpression') return null
+    if (callee.property.type === 'Identifier' && callee.property.name === 'validator') {
+      validatorCalls.push(current.arguments)
+    }
+    current = callee.object
+  }
+  return null
+}

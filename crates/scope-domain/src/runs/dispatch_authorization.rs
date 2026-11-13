@@ -115,7 +115,7 @@ mod tests {
         let mut terminal_attempt = attempt.clone();
         terminal_attempt.state = AttemptState::Lost;
         assert!(authorize_start(&run, &job, &terminal_attempt, &"b".repeat(64), 12).is_err());
-        let mut old_attempt = attempt.clone();
+        let mut old_attempt = attempt;
         old_attempt.lease_expires_at_unix = u64::MAX;
         assert!(
             authorize_start(

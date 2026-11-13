@@ -550,7 +550,7 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
     assert!(approved.push_to_github);
     let closed = Request {
         closed_at_unix: Some(35),
-        ..request.clone()
+        ..request
     };
     let approved_closed = RequestCheckPlan::approve(
         &closed,

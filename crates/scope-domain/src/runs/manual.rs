@@ -1,6 +1,6 @@
 use super::{
     catalog::{RepositoryWorkflowCatalog, RepositoryWorkflowFile},
-    run::Run,
+    run::{Run, RunRequest},
     source::{RunSource, RunTrigger},
     validation::validate_git_oid,
     workflow::{identity::WorkflowPath, revision::WorkflowRevision},
@@ -146,13 +146,15 @@ impl ManualRunRequest {
             ));
         }
         let run = Run::new(
-            self.run_id(),
-            format!("manual:{}", self.request_id),
-            revision.workflow().clone(),
-            revision.digest(),
-            RunTrigger::Manual,
-            Some(self.user_id.clone()),
-            source,
+            RunRequest {
+                id: self.run_id(),
+                idempotency_key: format!("manual:{}", self.request_id),
+                workflow: revision.workflow().clone(),
+                workflow_revision_digest: revision.digest().to_string(),
+                trigger: RunTrigger::Manual,
+                requested_by_user_id: Some(self.user_id.clone()),
+                source,
+            },
             now_unix,
         )?;
         run.validate_workflow_revision(revision)?;
@@ -192,17 +194,19 @@ mod tests {
         })
         .unwrap();
         let run = Run::new(
-            request.run_id(),
-            format!("manual:{}", "1".repeat(32)),
-            WorkflowIdentity::new(
-                "owner/repo",
-                WorkflowPath::parse("/.scope/runs/checks.yml").unwrap(),
-            )
-            .unwrap(),
-            "c".repeat(64),
-            RunTrigger::Manual,
-            Some("user-owner".into()),
-            source,
+            RunRequest {
+                id: request.run_id(),
+                idempotency_key: format!("manual:{}", "1".repeat(32)),
+                workflow: WorkflowIdentity::new(
+                    "owner/repo",
+                    WorkflowPath::parse("/.scope/runs/checks.yml").unwrap(),
+                )
+                .unwrap(),
+                workflow_revision_digest: "c".repeat(64),
+                trigger: RunTrigger::Manual,
+                requested_by_user_id: Some("user-owner".into()),
+                source,
+            },
             1,
         )
         .unwrap();

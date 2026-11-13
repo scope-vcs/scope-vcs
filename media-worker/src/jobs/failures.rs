@@ -8,10 +8,11 @@ pub(super) const DECLARED_TYPE_MISMATCH: &str =
 pub(super) fn codec_failure(error: &CodecFailure) -> RequestAttachmentFailure {
     let code = match error.kind {
         CodecFailureKind::InvalidMedia => RequestAttachmentFailureCode::InvalidMedia,
-        CodecFailureKind::CorruptMedia => RequestAttachmentFailureCode::CorruptMedia,
         CodecFailureKind::UnsupportedMedia => RequestAttachmentFailureCode::UnsupportedMedia,
         CodecFailureKind::MediaLimitExceeded => RequestAttachmentFailureCode::MediaLimitExceeded,
-        CodecFailureKind::DeclaredKindMismatch => RequestAttachmentFailureCode::CorruptMedia,
+        CodecFailureKind::CorruptMedia | CodecFailureKind::DeclaredKindMismatch => {
+            RequestAttachmentFailureCode::CorruptMedia
+        }
         CodecFailureKind::TimedOut | CodecFailureKind::CodecFailed => {
             RequestAttachmentFailureCode::CodecFailed
         }
@@ -25,29 +26,28 @@ pub(super) fn codec_failure(error: &CodecFailure) -> RequestAttachmentFailure {
 }
 
 pub(super) fn storage_failure(error: &MediaStorageError) -> RequestAttachmentFailure {
-    let (code, retryable) = match error.kind {
-        MediaStorageErrorKind::Integrity | MediaStorageErrorKind::NotFound => {
-            (RequestAttachmentFailureCode::CorruptMedia, false)
-        }
-        MediaStorageErrorKind::InvalidInput => (RequestAttachmentFailureCode::Internal, false),
+    let (code, retryable, message) = match error.kind {
+        MediaStorageErrorKind::Integrity | MediaStorageErrorKind::NotFound => (
+            RequestAttachmentFailureCode::CorruptMedia,
+            false,
+            "The uploaded file could not be read. Upload it again.",
+        ),
+        MediaStorageErrorKind::InvalidInput => (
+            RequestAttachmentFailureCode::Internal,
+            false,
+            "Media processing failed. Retry processing.",
+        ),
         MediaStorageErrorKind::CapacityExhausted
         | MediaStorageErrorKind::Internal
-        | MediaStorageErrorKind::ServiceUnavailable => {
-            (RequestAttachmentFailureCode::StorageUnavailable, true)
-        }
+        | MediaStorageErrorKind::ServiceUnavailable => (
+            RequestAttachmentFailureCode::StorageUnavailable,
+            true,
+            "Media storage is temporarily unavailable. Retry processing.",
+        ),
     };
     RequestAttachmentFailure {
         code,
-        message: match code {
-            RequestAttachmentFailureCode::CorruptMedia => {
-                "The uploaded file could not be read. Upload it again."
-            }
-            RequestAttachmentFailureCode::StorageUnavailable => {
-                "Media storage is temporarily unavailable. Retry processing."
-            }
-            _ => "Media processing failed. Retry processing.",
-        }
-        .to_owned(),
+        message: message.to_owned(),
         retryable,
     }
 }

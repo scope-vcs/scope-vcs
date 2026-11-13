@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AlertTriangle, LoaderCircle, Trash2 } from 'lucide-react'
-import type { FormEvent, ReactNode } from 'react'
+import type { ReactNode, SubmitEvent } from 'react'
 import { useId, useState } from 'react'
 
 export function TypedConfirmationDialog({
@@ -40,7 +40,7 @@ export function TypedConfirmationDialog({
   const [busy, setBusy] = useState(false)
   const canConfirm = typed === confirmation
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!confirmed) {
       setConfirmed(true)

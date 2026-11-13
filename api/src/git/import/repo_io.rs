@@ -272,7 +272,7 @@ pub(crate) fn git_snapshot_from_ref(
     args.push(refname);
     run_git(Some(repo), &args, "creating Git snapshot bundle")?;
     let bytes = std::fs::read(&bundle_path).map_err(ApiError::internal)?;
-    let _ = std::fs::remove_file(&bundle_path);
+    crate::git::storage::discard_file(&bundle_path);
     let mut snapshot = content_object_for_bytes(ContentObjectKind::GitBundle, &bytes);
     snapshot.git_oid = head_oid.to_string();
     Ok((snapshot, bytes))

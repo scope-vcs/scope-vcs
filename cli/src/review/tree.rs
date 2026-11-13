@@ -3,12 +3,12 @@ use scope_domain::{policy::ScopePath, repo_control::is_repo_control_path};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReviewTree {
+pub(crate) struct ReviewTree {
     nodes: Vec<ReviewNode>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReviewNode {
+pub(crate) struct ReviewNode {
     pub id: usize,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
@@ -21,14 +21,16 @@ pub struct ReviewNode {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReviewNodeKind {
+pub(crate) enum ReviewNodeKind {
     Root,
     Directory,
     File,
 }
 
 impl ReviewTree {
-    pub fn from_paths(paths: &[String], changed_paths: &[GitChangedPath]) -> Self {
+    pub(crate) const ROOT_ID: usize = 0;
+
+    pub(crate) fn from_paths(paths: &[String], changed_paths: &[GitChangedPath]) -> Self {
         let mut nodes = vec![ReviewNode {
             id: 0,
             parent: None,
@@ -86,19 +88,15 @@ impl ReviewTree {
         tree
     }
 
-    pub fn root_id(&self) -> usize {
-        0
-    }
-
-    pub fn node(&self, id: usize) -> &ReviewNode {
+    pub(crate) fn node(&self, id: usize) -> &ReviewNode {
         &self.nodes[id]
     }
 
-    pub fn nodes(&self) -> &[ReviewNode] {
+    pub(crate) fn nodes(&self) -> &[ReviewNode] {
         &self.nodes
     }
 
-    pub fn file_paths_under(&self, id: usize) -> Vec<&str> {
+    pub(crate) fn file_paths_under(&self, id: usize) -> Vec<&str> {
         let mut paths = Vec::new();
         self.collect_file_paths(id, &mut paths);
         paths

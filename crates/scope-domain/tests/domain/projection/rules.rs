@@ -10,7 +10,7 @@ fn content_push_can_delete_former_rules_file() {
         policy: repo.policy.clone(),
         repo_config: config.clone(),
         live_files: repo.live_files.clone(),
-        git_head: repo.git_head.clone(),
+        git_head: repo.git_head,
     };
 
     let accepted = accept_content_push(
@@ -39,7 +39,7 @@ fn request_merge_accepts_unchanged_tree_without_weakening_push_rules() {
         policy: repo.policy.clone(),
         repo_config: config.clone(),
         live_files: repo.live_files.clone(),
-        git_head: repo.git_head.clone(),
+        git_head: repo.git_head,
     };
     let update = reviewed_update(
         "3333333333333333333333333333333333333333",

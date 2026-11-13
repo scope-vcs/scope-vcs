@@ -382,7 +382,7 @@ fn write_config_atomically(path: &Path, contents: &str, label: &str) -> anyhow::
     })();
 
     if result.is_err() {
-        let _ = fs::remove_file(&temp_path);
+        fs::remove_file(&temp_path).ok();
     }
     result
 }

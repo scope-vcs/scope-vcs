@@ -336,13 +336,16 @@ function emptyDraft(): RequestAttachmentDraft {
   return { attachments: [], baseText: null, initialized: false, pending: false, submission: null, text: '' }
 }
 
+function isDraftKeyParts(value: unknown): value is [string, string, string, string, string] {
+  return Array.isArray(value) && value.length === 5 && value.every((part: unknown) => typeof part === 'string')
+}
+
 function parseDraftKey(key: string) {
   try {
-    const value: unknown = JSON.parse(key)
-    if (!Array.isArray(value) || value.length !== 5) return null
-    const [viewerId, repoId, requestId, accessScope, target] = value
-    if ([viewerId, repoId, requestId, accessScope, target].some((part) => typeof part !== 'string')) return null
-    return { accessScope, repoId, requestId, target, viewerId } as RequestAttachmentDraftScope
+    const parts: unknown = JSON.parse(key)
+    if (!isDraftKeyParts(parts)) return null
+    const [viewerId, repoId, , accessScope] = parts
+    return { accessScope, repoId, viewerId }
   } catch {
     return null
   }

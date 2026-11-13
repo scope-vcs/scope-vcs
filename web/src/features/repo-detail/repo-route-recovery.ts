@@ -45,7 +45,7 @@ export async function loadRepoRouteState({
       throw new RepoRouteUnavailable(result.unavailable)
     } catch (error) {
       if (!refresh) throw error
-      if (error instanceof StaleBuildError) return await waitForAbort(signal)
+      if (error instanceof StaleBuildError) return waitForAbort(signal)
       if (!isRetryableRepoLoadError(error)) throw error
       signal.throwIfAborted()
       await wait(signal)
@@ -62,7 +62,7 @@ function waitForRetry(signal: AbortSignal) {
     const timer = setTimeout(finish, 2_000)
     const abort = () => {
       clearTimeout(timer)
-      reject(signal.reason)
+      reject(abortReason(signal))
     }
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
@@ -71,8 +71,13 @@ function waitForRetry(signal: AbortSignal) {
 
 function waitForAbort(signal: AbortSignal) {
   return new Promise<never>((_resolve, reject) => {
-    const abort = () => reject(signal.reason)
+    const abort = () => reject(abortReason(signal))
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
   })
+}
+
+function abortReason(signal: AbortSignal) {
+  const reason: unknown = signal.reason
+  return reason instanceof Error ? reason : new DOMException('The repository load was aborted.', 'AbortError')
 }

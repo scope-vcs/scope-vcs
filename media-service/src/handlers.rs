@@ -19,7 +19,9 @@ use axum::{
 use scope_api_contract::{RequestAttachmentMediaTarget, RequestAttachmentPartReceiptResponse};
 use scope_domain::requests::attachments::RequestMediaObject;
 use scope_media_storage::{MAX_CHUNK_BYTES, MEDIA_PUT_TIMEOUT, WriteAttempt};
-use scope_postgres::db::{RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult};
+use scope_postgres::db::{
+    AttachmentUploadSession, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+};
 use scope_service_runtime::{http::ServiceError, random_hex, unix_now};
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
@@ -98,9 +100,11 @@ pub(crate) async fn put_upload_part(
         .metadata
         .media()
         .reserve_upload_part(
-            &claims.attachment_id,
-            &claims.upload_id,
-            &claims.uploader_user_id,
+            AttachmentUploadSession {
+                attachment_id: &claims.attachment_id,
+                upload_id: &claims.upload_id,
+                uploader_user_id: &claims.uploader_user_id,
+            },
             planned,
             &write_token,
             write_started_at_unix,
@@ -141,9 +145,11 @@ pub(crate) async fn put_upload_part(
         .metadata
         .media()
         .mark_upload_part_stored(
-            &claims.attachment_id,
-            &claims.upload_id,
-            &claims.uploader_user_id,
+            AttachmentUploadSession {
+                attachment_id: &claims.attachment_id,
+                upload_id: &claims.upload_id,
+                uploader_user_id: &claims.uploader_user_id,
+            },
             part_number,
             &reserved.object_key,
             &write_token,
@@ -293,10 +299,9 @@ async fn serve_media(
         permit,
         original_filename.as_deref(),
     )
-    .await
 }
 
-async fn media_response(
+fn media_response(
     storage: &scope_media_storage::MediaStorage,
     object: &RequestMediaObject,
     requested: RequestedRange,
@@ -319,7 +324,6 @@ async fn media_response(
     } else {
         let stream = storage
             .read_range(object, start..=end.expect("nonempty media range"))
-            .await
             .map_err(media_storage_error)?;
         let permit = permit.expect("GET read permit");
         Body::from_stream(stream.map(move |bytes| {
@@ -455,7 +459,6 @@ mod tests {
             Some(permit),
             Some("recording.mov"),
         )
-        .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[ACCEPT_RANGES], "bytes");
@@ -482,7 +485,6 @@ mod tests {
             Some(permit),
             None,
         )
-        .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.headers()[CONTENT_RANGE], "bytes 3-6/10");
@@ -501,7 +503,6 @@ mod tests {
             None,
             None,
         )
-        .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.headers()[CONTENT_RANGE], "bytes 3-6/10");

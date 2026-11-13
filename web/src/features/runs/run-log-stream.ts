@@ -18,21 +18,18 @@ export async function watchRunLogs({ url, tokenTemplate, getToken, initialCursor
 }) {
   let cursor = initialCursor
   let reconnects = 0
-  while (!signal.aborted) {
-    try {
-      const result = await streamRunLogs({
-        url, tokenTemplate, getToken, cursor,
-        onLog: (log) => {
-          reconnects = 0
-          onLog(log)
-          cursor = log.position
-        },
-        signal,
-      })
-      if (result.stop || signal.aborted) return
-    } catch {
-      if (signal.aborted) return
-    }
+  for (;;) {
+    if (signal.aborted) return
+    const stop = await streamRunLogs({
+      url, tokenTemplate, getToken, cursor,
+      onLog: (log) => {
+        reconnects = 0
+        onLog(log)
+        cursor = log.position
+      },
+      signal,
+    }).then((result) => result.stop, () => false)
+    if (stop) return
     await waitForReconnect(reconnectDelay(reconnects++, Math.random()), signal)
   }
 }

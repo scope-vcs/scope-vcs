@@ -113,7 +113,7 @@ where
         .collect())
 }
 
-pub async fn claim_pending_repo_storage_cleanup<C>(
+pub(crate) async fn claim_pending_repo_storage_cleanup<C>(
     conn: &C,
     cleanup_repo_id: &str,
     now_unix: u64,

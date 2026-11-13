@@ -429,7 +429,7 @@ fn request_commit_display_metadata(
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
-    parse_request_commit_display_metadata(&output.stdout)
+    Ok(parse_request_commit_display_metadata(&output.stdout))
 }
 
 struct RequestCommitIdentity {
@@ -463,9 +463,7 @@ fn parse_request_commit_identity(output: &[u8]) -> Result<RequestCommitIdentity,
     })
 }
 
-fn parse_request_commit_display_metadata(
-    output: &[u8],
-) -> Result<RequestCommitDisplayMetadata, ApiError> {
+fn parse_request_commit_display_metadata(output: &[u8]) -> RequestCommitDisplayMetadata {
     let mut fields = output.splitn(2, |byte| *byte == 0);
     let author = fields
         .next()
@@ -475,11 +473,11 @@ fn parse_request_commit_display_metadata(
     let message = String::from_utf8_lossy(fields.next().unwrap_or_default())
         .trim()
         .to_string();
-    Ok(RequestCommitDisplayMetadata {
+    RequestCommitDisplayMetadata {
         author,
         message,
         complete: true,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -628,8 +626,7 @@ mod tests {
         .unwrap();
         let metadata = parse_request_commit_display_metadata(
             b"Ada \xff <ada@example.com>\0Fix \xfe metadata\n",
-        )
-        .unwrap();
+        );
 
         assert_eq!(identity.parent_oids.len(), 1);
         assert_eq!(identity.authored_at_unix, 1_700_000_000);

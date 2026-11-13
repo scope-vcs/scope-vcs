@@ -288,7 +288,7 @@ mod tests {
         )
     }
 
-    async fn age_snapshot(discovery: &BackendDiscovery, age: Duration) {
+    fn age_snapshot(discovery: &BackendDiscovery, age: Duration) {
         let mut cached = discovery.state.cached.lock().unwrap();
         let current = cached.snapshot.as_mut().expect("discovery snapshot");
         current.resolved_at = Instant::now() - age;
@@ -330,13 +330,13 @@ mod tests {
             DiscoveryFreshness::Fresh
         );
 
-        age_snapshot(&discovery, Duration::from_secs(11)).await;
+        age_snapshot(&discovery, Duration::from_secs(11));
         let stale = discovery.backends().await.unwrap();
         assert_eq!(stale.freshness, DiscoveryFreshness::Stale);
         assert_eq!(stale.backends[0].address, address);
 
         wait_for_refresh(&discovery).await;
-        age_snapshot(&discovery, Duration::from_secs(31)).await;
+        age_snapshot(&discovery, Duration::from_secs(31));
         let error = discovery.backends().await.unwrap_err().to_string();
         assert!(error.contains("expired"));
         assert!(error.contains("still down"));
@@ -353,7 +353,7 @@ mod tests {
         let second = "127.0.0.2:8080".parse().unwrap();
         let discovery = scripted(vec![Ok(vec![first]), Ok(vec![second])]);
         discovery.backends().await.unwrap();
-        age_snapshot(&discovery, Duration::from_secs(31)).await;
+        age_snapshot(&discovery, Duration::from_secs(31));
 
         let refreshed = discovery.backends().await.unwrap();
 
@@ -375,7 +375,7 @@ mod tests {
             discovery.backends().await.unwrap().backends[0].address,
             first
         );
-        age_snapshot(&discovery, Duration::from_secs(11)).await;
+        age_snapshot(&discovery, Duration::from_secs(11));
         assert_eq!(
             discovery.backends().await.unwrap().backends[0].address,
             first
@@ -408,7 +408,7 @@ mod tests {
             resolver,
         );
         discovery.backends().await.unwrap();
-        age_snapshot(&discovery, Duration::from_secs(11)).await;
+        age_snapshot(&discovery, Duration::from_secs(11));
         assert_eq!(
             discovery.backends().await.unwrap().freshness,
             DiscoveryFreshness::Stale
@@ -457,7 +457,7 @@ mod tests {
             resolver,
         );
         discovery.backends().await.unwrap();
-        age_snapshot(&discovery, Duration::from_secs(11)).await;
+        age_snapshot(&discovery, Duration::from_secs(11));
         let mut readers = tokio::task::JoinSet::new();
         for _ in 0..20 {
             let discovery = discovery.clone();

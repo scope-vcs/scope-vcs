@@ -86,7 +86,16 @@ impl From<scope_cache_domain::CacheDomainError> for PostgresError {
             }
             CacheDomainError::InvalidReferenceExpiry
             | CacheDomainError::InvalidUploadLeaseExpiry => PostgresErrorKind::Internal,
-            _ => PostgresErrorKind::InvalidInput,
+            CacheDomainError::MissingRepositoryId
+            | CacheDomainError::InvalidDigest
+            | CacheDomainError::MissingUploadLeaseId
+            | CacheDomainError::EmptyObject
+            | CacheDomainError::ObjectTooLarge { .. }
+            | CacheDomainError::TimestampOverflow
+            | CacheDomainError::ByteCountOverflow
+            | CacheDomainError::ReferenceScopeMismatch
+            | CacheDomainError::ReferenceAccessBeforeLastUpdate
+            | CacheDomainError::UploadLeaseMismatch => PostgresErrorKind::InvalidInput,
         };
         Self::new(kind, error.to_string())
     }

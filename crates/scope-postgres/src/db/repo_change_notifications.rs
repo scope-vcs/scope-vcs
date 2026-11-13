@@ -26,7 +26,11 @@ impl RepoChangeListener {
             .take();
         if let Some(task) = task {
             task.abort();
-            let _ = task.await;
+            if let Err(error) = task.await
+                && error.is_panic()
+            {
+                tracing::error!(%error, "repo change listener panicked");
+            }
         }
     }
 }

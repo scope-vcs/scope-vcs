@@ -23,7 +23,7 @@ const JWKS_REFRESH_FAILURE_BACKOFF: Duration = Duration::from_secs(5);
 const JWKS_UNKNOWN_KEY_REFRESH_COOLDOWN: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
-pub struct ClerkVerifier {
+pub(crate) struct ClerkVerifier {
     pub client: reqwest::Client,
     pub issuer: Option<String>,
     pub jwks_url: Option<String>,
@@ -91,7 +91,7 @@ enum RefreshReason {
 }
 
 impl ClerkVerifier {
-    pub fn from_env() -> Self {
+    pub(crate) fn from_env() -> Self {
         let issuer =
             non_empty_env(CLERK_ISSUER_ENV).map(|value| value.trim_end_matches('/').to_string());
         let jwks_url = non_empty_env(CLERK_JWKS_URL_ENV).or_else(|| {
@@ -102,7 +102,7 @@ impl ClerkVerifier {
         Self::new_with_policy(issuer, jwks_url, ClerkTokenPolicy::from_env())
     }
 
-    pub fn new_with_policy(
+    pub(crate) fn new_with_policy(
         issuer: Option<String>,
         jwks_url: Option<String>,
         token_policy: ClerkTokenPolicy,
@@ -143,7 +143,7 @@ impl ClerkVerifier {
         }
     }
 
-    pub async fn verify(&self, token: &str) -> Result<ClerkIdentity, ApiError> {
+    pub(crate) async fn verify(&self, token: &str) -> Result<ClerkIdentity, ApiError> {
         let issuer = self.issuer.as_deref().ok_or_else(|| {
             ApiError::infrastructure_unavailable(format!(
                 "Clerk auth requires {CLERK_ISSUER_ENV} to be configured"
@@ -325,10 +325,10 @@ impl ClerkVerifier {
     }
 }
 
-pub type ClerkIdentity = scope_domain::account::ExternalIdentity;
+pub(crate) type ClerkIdentity = scope_domain::account::ExternalIdentity;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ClerkTokenPolicy {
+pub(crate) struct ClerkTokenPolicy {
     pub authorized_parties: Vec<String>,
     pub audiences: Vec<String>,
 }
@@ -343,7 +343,7 @@ impl Default for ClerkTokenPolicy {
 }
 
 impl ClerkTokenPolicy {
-    pub fn from_env() -> Self {
+    pub(crate) fn from_env() -> Self {
         Self {
             authorized_parties: configured_authorized_parties(),
             audiences: configured_audiences(),
@@ -389,7 +389,7 @@ impl ClerkTokenPolicy {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ClerkClaims {
+pub(crate) struct ClerkClaims {
     pub sub: String,
     pub email: Option<String>,
     pub email_verified: Option<bool>,
@@ -399,7 +399,7 @@ pub struct ClerkClaims {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
-pub enum AudienceClaim {
+pub(crate) enum AudienceClaim {
     One(String),
     Many(Vec<String>),
 }
@@ -505,7 +505,7 @@ fn normalize_claim_value(value: &str) -> String {
     value.trim().trim_end_matches('/').to_string()
 }
 
-pub fn bearer_token(headers: &HeaderMap) -> Result<Option<&str>, ApiError> {
+pub(crate) fn bearer_token(headers: &HeaderMap) -> Result<Option<&str>, ApiError> {
     let Some(value) = headers.get(AUTHORIZATION) else {
         return Ok(None);
     };

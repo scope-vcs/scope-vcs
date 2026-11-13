@@ -73,9 +73,13 @@ function jwt(sub: string, expiresAtMs = 300_000) {
   return `${encode({ alg: 'RS256' })}.${encode({ exp: expiresAtMs / 1000, sub })}.sig`
 }
 
-function subject(token: string | null) {
+function subject(token: string | null): unknown {
   assert.ok(token)
-  return JSON.parse(JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()).sub)
+  const [, payload] = token.split('.')
+  assert.ok(payload)
+  const claims: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString())
+  assert.ok(typeof claims === 'object' && claims !== null && 'sub' in claims && typeof claims.sub === 'string')
+  return JSON.parse(claims.sub)
 }
 
 async function unexpectedMint(): Promise<string> {

@@ -110,7 +110,7 @@ function AttemptMenu({
       align="start"
       className="w-64 p-1"
       label="Attempts"
-      panel={(close) => (
+      renderPanel={(close) => (
         <ul className="max-h-[min(20rem,60vh)] overflow-y-auto">
           {attempts.map((attempt) => (
             <li key={attempt.id}>
@@ -135,7 +135,7 @@ function AttemptMenu({
           ))}
         </ul>
       )}
-      trigger={(props) => (
+      renderTrigger={(props) => (
         <button
           className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-xs font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-muted aria-expanded:text-foreground"
           type="button"

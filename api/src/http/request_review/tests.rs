@@ -131,7 +131,7 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
     let selected = request_revision_commits(
         directory.path(),
         &read_policy(&repo),
-        access.clone(),
+        access,
         &revision,
         Some(&oversized),
         100,

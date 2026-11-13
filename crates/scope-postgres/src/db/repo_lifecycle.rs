@@ -76,7 +76,7 @@ impl RepositoryStore {
             .await
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::internal_message("signed-in user was not persisted"))?
-            .try_into_domain()?;
+            .into_domain();
         let incarnation_id = generate_id(GeneratedIdKind::RepositoryIncarnation)?;
         let repo = create_repo_command(
             &owner,

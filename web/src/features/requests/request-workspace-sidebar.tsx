@@ -275,7 +275,7 @@ export function RequestWorkspaceSidebar({
   const stackedNeedsYou = stackRequestRows(needsYou)
   const visibleNeedsYou = foldStackedRequestRows(stackedNeedsYou, foldedStacks)
   const railRows = requestRailRows(visibleNeedsYou, selectedId)
-  const railed = visibleNeedsYou.filter((_, index) => railRows[index].shown).map(({ row }) => row)
+  const railed = visibleNeedsYou.filter((_, index) => railRows[index]?.shown).map(({ row }) => row)
   const foldedGroups = (Object.keys(FOLDED_LABELS) as (keyof typeof FOLDED_LABELS)[])
     .map((group) => ({
       group,
@@ -319,7 +319,7 @@ export function RequestWorkspaceSidebar({
       data-closing={closing || undefined}
       data-state={state}
       onBlur={(event) => {
-        if (!(event.relatedTarget as Element | null)?.closest('.request-workspace-rail-hint')) setHint(null)
+        if (!event.relatedTarget?.closest('.request-workspace-rail-hint')) setHint(null)
       }}
       onClick={click}
       onFocus={showHint}
@@ -502,7 +502,7 @@ function count(page: RequestQueuePageResponse, moved: number) {
 function GroupCount({ count }: { count: string | null }) {
   return (
     <span className="tabular-nums">
-      {count === null ? <TextSkeleton className="mx-auto" length="tiny" size="meta" /> : count}
+      {count ?? <TextSkeleton className="mx-auto" length="tiny" size="meta" />}
     </span>
   )
 }

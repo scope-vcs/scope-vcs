@@ -13,7 +13,7 @@ use sea_orm::{
 use std::collections::BTreeMap;
 
 #[derive(Debug, Default)]
-pub struct LiveFiles {
+pub(crate) struct LiveFiles {
     pub files: BTreeMap<ScopePath, SourceBlob>,
     pub rules: Vec<LabelRule>,
 }
@@ -126,7 +126,7 @@ where
         .collect()
 }
 
-pub async fn insert_repository_live_files<C>(
+pub(crate) async fn insert_repository_live_files<C>(
     conn: &C,
     repo_id: &str,
     live_files: &BTreeMap<ScopePath, SourceBlob>,

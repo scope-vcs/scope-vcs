@@ -4,28 +4,31 @@ use crate::{
     error::PostgresError,
 };
 use scope_cache_domain::{
-    CacheDigest, CacheDomainError, CacheObject, CacheReference, CommitUploadDecision,
-    MAX_REPOSITORY_CACHE_BYTES, PrepareUpload, PrepareUploadDecision, RepositoryId, UploadLease,
-    UploadLeaseId,
+    CacheDigest, CacheDomainError, CacheObject, CommitUploadDecision, MAX_REPOSITORY_CACHE_BYTES,
+    PrepareUpload, PrepareUploadDecision, RepositoryId, UploadLeaseId,
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseTransaction, FromQueryResult, QueryResult, Statement,
-    TransactionTrait,
+    ConnectionTrait, DatabaseBackend, DatabaseTransaction, QueryResult, Statement, TransactionTrait,
 };
 
 mod retention;
+mod rows;
 #[cfg(test)]
 mod tests;
 mod types;
 
 use retention::{active_repository_bytes, expire_repository_references, make_repository_room};
+use rows::{
+    ReferenceRow, decode_object, decode_reference, decode_upload, domain_object, domain_reference,
+    domain_reference_from_query, domain_upload,
+};
+use types::CacheUploadState;
 pub use types::{
     CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
-    CacheUploadCleanupClaim, CacheUploadRecord, CacheUploadState, PendingCacheDeletion,
-    PendingOrphanCacheUpload,
+    CacheUploadCleanupClaim, CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
+    RequestedCacheUpload,
 };
 
-#[allow(clippy::too_many_arguments)]
 impl CacheStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "restore"))]
     pub async fn restore(
@@ -110,15 +113,18 @@ impl CacheStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "prepare_upload"))]
     pub async fn prepare_upload(
         &self,
-        repository_id: &str,
-        identity_digest: &str,
-        compatibility_group_digest: &str,
-        checksum_sha256: &str,
-        size_bytes: u64,
-        storage_backend: &str,
-        upload_id: &str,
+        upload: RequestedCacheUpload<'_>,
         now_unix: u64,
     ) -> Result<CachePrepareResult, PostgresError> {
+        let RequestedCacheUpload {
+            repository_id,
+            identity_digest,
+            compatibility_group_digest,
+            checksum_sha256,
+            size_bytes,
+            storage_backend,
+            upload_id,
+        } = upload;
         let now = u64_to_i64(now_unix, "current time")?;
         let size = u64_to_i64(size_bytes, "cache object size")?;
         let requested_object = CacheObject::new(
@@ -432,35 +438,6 @@ impl CacheStore {
     }
 }
 
-#[derive(Clone, Debug)]
-struct ReferenceRow {
-    checksum_sha256: String,
-    compatibility_group_digest: String,
-    last_accessed_at_unix: u64,
-    expires_at_unix: u64,
-}
-
-#[derive(FromQueryResult)]
-struct StoredReferenceRow {
-    checksum_sha256: String,
-    compatibility_group_digest: String,
-    last_accessed_at_unix: i64,
-    expires_at_unix: i64,
-}
-
-fn decode_reference(row: &QueryResult) -> Result<ReferenceRow, PostgresError> {
-    let row = StoredReferenceRow::from_query_result(row, "")?;
-    Ok(ReferenceRow {
-        checksum_sha256: row.checksum_sha256,
-        compatibility_group_digest: row.compatibility_group_digest,
-        last_accessed_at_unix: i64_to_u64(
-            row.last_accessed_at_unix,
-            "cache reference last access time",
-        )?,
-        expires_at_unix: i64_to_u64(row.expires_at_unix, "cache expiry")?,
-    })
-}
-
 async fn lock_repository(
     tx: &DatabaseTransaction,
     repository_id: &str,
@@ -583,115 +560,4 @@ async fn live_upload(
 
 fn statement(sql: &str, values: Vec<sea_orm::Value>) -> Statement {
     Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values)
-}
-
-#[derive(FromQueryResult)]
-struct ObjectRow {
-    repository_id: String,
-    checksum_sha256: String,
-    storage_backend: String,
-    object_key: String,
-    size_bytes: i64,
-    created_at_unix: i64,
-}
-
-#[derive(FromQueryResult)]
-struct UploadRow {
-    upload_id: String,
-    repository_id: String,
-    identity_digest: String,
-    compatibility_group_digest: String,
-    checksum_sha256: String,
-    storage_backend: String,
-    object_key: String,
-    size_bytes: i64,
-    state: String,
-    created_at_unix: i64,
-    expires_at_unix: i64,
-}
-
-fn decode_object(row: &QueryResult) -> Result<CacheObjectRecord, PostgresError> {
-    let row = ObjectRow::from_query_result(row, "")?;
-    Ok(CacheObjectRecord {
-        repository_id: row.repository_id,
-        checksum_sha256: row.checksum_sha256,
-        storage_backend: row.storage_backend,
-        object_key: row.object_key,
-        size_bytes: i64_to_u64(row.size_bytes, "cache object size")?,
-        created_at_unix: i64_to_u64(row.created_at_unix, "cache object creation time")?,
-    })
-}
-
-fn decode_upload(row: &QueryResult) -> Result<CacheUploadRecord, PostgresError> {
-    let row = UploadRow::from_query_result(row, "")?;
-    Ok(CacheUploadRecord {
-        upload_id: row.upload_id,
-        repository_id: row.repository_id,
-        identity_digest: row.identity_digest,
-        compatibility_group_digest: row.compatibility_group_digest,
-        checksum_sha256: row.checksum_sha256,
-        storage_backend: row.storage_backend,
-        object_key: row.object_key,
-        size_bytes: i64_to_u64(row.size_bytes, "cache object size")?,
-        state: match row.state.as_str() {
-            "active" => CacheUploadState::Active,
-            "deleting" => CacheUploadState::Deleting,
-            "committed" => CacheUploadState::Committed,
-            value => {
-                return Err(PostgresError::internal_message(format!(
-                    "unknown cache upload state {value}"
-                )));
-            }
-        },
-        created_at_unix: i64_to_u64(row.created_at_unix, "cache object creation time")?,
-        expires_at_unix: i64_to_u64(row.expires_at_unix, "cache expiry")?,
-    })
-}
-
-fn domain_reference_from_query(
-    repository_id: &str,
-    identity_digest: &str,
-    row: &QueryResult,
-) -> Result<CacheReference, PostgresError> {
-    domain_reference(repository_id, identity_digest, &decode_reference(row)?)
-}
-
-fn domain_object(record: &CacheObjectRecord) -> Result<CacheObject, PostgresError> {
-    CacheObject::new(
-        RepositoryId::parse(record.repository_id.clone())?,
-        CacheDigest::parse(record.checksum_sha256.clone())?,
-        record.size_bytes,
-        record.created_at_unix,
-    )
-    .map_err(PostgresError::from)
-}
-
-fn domain_reference(
-    repository_id: &str,
-    identity_digest: &str,
-    row: &ReferenceRow,
-) -> Result<CacheReference, PostgresError> {
-    CacheReference::restore(
-        RepositoryId::parse(repository_id.to_string())?,
-        CacheDigest::parse(identity_digest.to_string())?,
-        CacheDigest::parse(row.compatibility_group_digest.clone())?,
-        CacheDigest::parse(row.checksum_sha256.clone())?,
-        row.last_accessed_at_unix,
-        row.expires_at_unix,
-    )
-    .map_err(PostgresError::from)
-}
-
-fn domain_upload(record: &CacheUploadRecord) -> Result<UploadLease, PostgresError> {
-    UploadLease::restore(
-        UploadLeaseId::parse(record.upload_id.clone())?,
-        RepositoryId::parse(record.repository_id.clone())?,
-        CacheDigest::parse(record.identity_digest.clone())?,
-        CacheDigest::parse(record.compatibility_group_digest.clone())?,
-        CacheDigest::parse(record.checksum_sha256.clone())?,
-        record.size_bytes,
-        record.created_at_unix,
-        record.expires_at_unix,
-    )
-    .map_err(PostgresError::from)
 }

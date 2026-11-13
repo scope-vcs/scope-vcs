@@ -1,9 +1,15 @@
-mod support;
+#![expect(clippy::unwrap_used)]
+
+#[path = "cli/support/command.rs"]
+mod command;
+#[path = "../src/test_support/temp_dir.rs"]
+mod temp_dir;
 
 use std::io::Read;
 use std::process::Stdio;
 
-use support::{TempDir, scope_command};
+use command::scope_command;
+use temp_dir::TempDir;
 
 #[test]
 fn licenses_exits_quietly_when_the_pipe_reader_closes() {

@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "scope_request_revisions")]
-pub struct Model {
+pub(crate) struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub request_id: String,
@@ -22,12 +22,12 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub(crate) enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
-    pub fn from_domain(value: &RequestRevision) -> Result<Self, PostgresError> {
+    pub(crate) fn from_domain(value: &RequestRevision) -> Result<Self, PostgresError> {
         let base = base::BaseColumns::from_domain(&value.base);
         Ok(Self {
             id: value.id.clone(),
@@ -48,7 +48,7 @@ impl Model {
         })
     }
 
-    pub fn try_into_domain(self) -> Result<RequestRevision, PostgresError> {
+    pub(crate) fn try_into_domain(self) -> Result<RequestRevision, PostgresError> {
         Ok(RequestRevision {
             id: self.id,
             request_id: self.request_id,

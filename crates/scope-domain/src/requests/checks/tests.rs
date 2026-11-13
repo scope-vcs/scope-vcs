@@ -644,7 +644,7 @@ fn a_push_is_revoked_by_a_disconnect_or_a_reconnect_elsewhere() {
                 reason: GitHubDisconnectReason::AppUninstalled,
                 at_unix: 2,
             },
-            ..connection.clone()
+            ..connection
         },
     ] {
         assert!(!destination.is_connected_through(&changed));

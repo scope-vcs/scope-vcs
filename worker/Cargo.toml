@@ -1,5 +1,6 @@
 [package]
 name = "worker"
+publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -32,3 +33,6 @@ tempfile.workspace = true
 [dev-dependencies]
 scope_postgres = { workspace = true, features = ["test-support"] }
 scope_product_analytics = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

@@ -11,9 +11,9 @@ const homePageView = () => pageViewProperties(
 
 test('real client preserves event identities and stores nothing on the device', async () => {
   const storage = new Map<string, string>()
-  const captured: Array<{ event: string; properties: Record<string, unknown>; timestamp: string }> = []
+  const captured: CapturedEvent[] = []
   const restore = browserGlobals(storage, { doNotTrack: '0' }, async (_input, init) => {
-    captured.push(JSON.parse(init?.body as string))
+    captured.push(capturedEvent(init?.body))
     return Response.json({ status: 1 })
   })
   try {
@@ -31,16 +31,18 @@ test('real client preserves event identities and stores nothing on the device', 
     client.capture('$pageview', homePageView())
     await until(() => captured.length === 3)
     assert.deepEqual(captured.map(value => value.event), ['$pageview', '$identify', '$pageview'])
-    assert.equal(captured[0].properties.distinct_id, anonymousId)
-    assert.equal(captured[1].properties.distinct_id, 'scope_usr_one')
-    assert.equal(captured[1].properties.$anon_distinct_id, anonymousId)
-    assert.equal(captured[1].properties.$process_person_profile, true)
-    assert.equal(captured[2].properties.distinct_id, afterLogout)
-    assert.equal(captured[2].properties.$process_person_profile, false)
-    assert.equal(captured[2].properties.$user_id, undefined)
-    assert.equal(captured[2].properties.environment, 'test')
-    assert.equal(captured[2].properties.release, 'web-abc123')
-    assert.equal(captured[2].properties.source, 'browser')
+    const [anonymousView, identify, signedOutView] = captured
+    assert.ok(anonymousView && identify && signedOutView)
+    assert.equal(anonymousView.properties.distinct_id, anonymousId)
+    assert.equal(identify.properties.distinct_id, 'scope_usr_one')
+    assert.equal(identify.properties.$anon_distinct_id, anonymousId)
+    assert.equal(identify.properties.$process_person_profile, true)
+    assert.equal(signedOutView.properties.distinct_id, afterLogout)
+    assert.equal(signedOutView.properties.$process_person_profile, false)
+    assert.equal(signedOutView.properties.$user_id, undefined)
+    assert.equal(signedOutView.properties.environment, 'test')
+    assert.equal(signedOutView.properties.release, 'web-abc123')
+    assert.equal(signedOutView.properties.source, 'browser')
     client.capture('frontend_error', {
       error_kind: 'type_error',
       error_origin: 'promise',
@@ -48,8 +50,10 @@ test('real client preserves event identities and stores nothing on the device', 
       route_name: 'request_changes',
     }, '2026-10-08T18:00:00.000Z')
     await until(() => captured.length === 4)
-    assert.equal(captured[3].timestamp, '2026-10-08T18:00:00.000Z')
-    assert.equal(captured[3].properties.release, 'web-original')
+    const errorEvent = captured.at(3)
+    assert.ok(errorEvent)
+    assert.equal(errorEvent.timestamp, '2026-10-08T18:00:00.000Z')
+    assert.equal(errorEvent.properties.release, 'web-original')
     assert.equal(storage.size, 0)
   } finally {
     restore()
@@ -57,9 +61,9 @@ test('real client preserves event identities and stores nothing on the device', 
 })
 
 test('identify without anonymous events switches identity without $identify', async () => {
-  const captured: Array<{ event: string; properties: Record<string, unknown> }> = []
+  const captured: CapturedEvent[] = []
   const restore = browserGlobals(new Map(), { doNotTrack: '0' }, async (_input, init) => {
-    captured.push(JSON.parse(init?.body as string))
+    captured.push(capturedEvent(init?.body))
     return Response.json({ status: 1 })
   })
   try {
@@ -74,9 +78,11 @@ test('identify without anonymous events switches identity without $identify', as
     await until(() => captured.length >= 2)
     assert.deepEqual(captured.map(value => value.event), ['$pageview', '$pageview'])
     assert.deepEqual(captured.map(value => value.properties.distinct_id), ['scope_usr_one', 'scope_usr_two'])
-    assert.equal(captured[1].properties.environment, 'test')
-    assert.equal(captured[1].properties.release, 'web-abc123')
-    assert.equal(captured[1].properties.source, 'browser')
+    const secondUserView = captured.at(1)
+    assert.ok(secondUserView)
+    assert.equal(secondUserView.properties.environment, 'test')
+    assert.equal(secondUserView.properties.release, 'web-abc123')
+    assert.equal(secondUserView.properties.source, 'browser')
   } finally {
     restore()
   }
@@ -104,6 +110,23 @@ for (const [name, preference] of [
       restore()
     }
   })
+}
+
+type CapturedEvent = {
+  event: string
+  properties: Record<string, unknown>
+  timestamp: unknown
+}
+
+function capturedEvent(body: BodyInit | null | undefined): CapturedEvent {
+  assert.ok(typeof body === 'string')
+  const parsed: unknown = JSON.parse(body)
+  assert.ok(isRecord(parsed) && typeof parsed.event === 'string' && isRecord(parsed.properties))
+  return { event: parsed.event, properties: parsed.properties, timestamp: parsed.timestamp }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 function browserGlobals(

@@ -119,7 +119,7 @@ mod tests {
             (
                 vec![
                     change("/same.md", public.clone(), private.clone()),
-                    change("/same.md", private.clone(), public.clone()),
+                    change("/same.md", private, public),
                 ],
                 None,
                 Err("visibility change set cannot contain duplicate paths"),

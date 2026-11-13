@@ -44,6 +44,13 @@ pub struct PreparedRequestAttachment {
     pub acknowledged_parts: Vec<RequestAttachmentPartReceipt>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AttachmentUploadSession<'a> {
+    pub attachment_id: &'a str,
+    pub upload_id: &'a str,
+    pub uploader_user_id: &'a str,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StorePartResult {
     Recorded,

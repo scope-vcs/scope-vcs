@@ -108,10 +108,10 @@ impl RepositoryStore {
                 .await?
                 .into_iter()
                 .map(|row| {
-                    let user = row.try_into_domain()?;
-                    Ok((user.id.clone(), user))
+                    let user = row.into_domain();
+                    (user.id.clone(), user)
                 })
-                .collect::<Result<_, PostgresError>>()?
+                .collect()
         };
         let invite_emails = latest_invite_emails(&tx, &collaboration.invitations).await?;
         tx.commit().await?;
@@ -371,10 +371,9 @@ where
     C: sea_orm::ConnectionTrait,
 {
     let normalized = normalize_repository_invite_email(email);
-    entities::user::Entity::find()
+    Ok(entities::user::Entity::find()
         .filter(entities::user::Column::Email.eq(normalized))
         .one(conn)
         .await?
-        .map(entities::user::Model::try_into_domain)
-        .transpose()
+        .map(entities::user::Model::into_domain))
 }

@@ -32,7 +32,14 @@ const TREE_HEADER_CLASS =
   'hidden gap-3 px-3 pb-1.5 pt-1 text-xs font-medium text-muted-foreground sm:grid sm:items-center'
 const TREE_ROW_CLASS =
   'grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm pointer-coarse:py-0'
-const PENDING_TREE_ROWS: TextSkeletonLength[] = ['medium', 'long', 'short', 'long', 'medium', 'long']
+const PENDING_TREE_ROWS: { id: string, length: TextSkeletonLength }[] = [
+  { id: 'first', length: 'medium' },
+  { id: 'second', length: 'long' },
+  { id: 'third', length: 'short' },
+  { id: 'fourth', length: 'long' },
+  { id: 'fifth', length: 'medium' },
+  { id: 'sixth', length: 'long' },
+]
 
 export function FileSystemTreeSkeleton({
   metaColumnLabel,
@@ -52,8 +59,8 @@ export function FileSystemTreeSkeleton({
         </div>
       )}
       <ul className="space-y-0.5">
-        {PENDING_TREE_ROWS.map((length, row) => (
-          <li className={cn(TREE_ROW_CLASS, columnsClassName)} key={`file-${row}`}>
+        {PENDING_TREE_ROWS.map(({ id, length }) => (
+          <li className={cn(TREE_ROW_CLASS, columnsClassName)} key={id}>
             <div className="flex min-w-0 items-center gap-2">
               <BlockSkeleton className="size-4 shrink-0" />
               <TextSkeleton length={length} size="meta" />
@@ -73,7 +80,7 @@ export function FileSystemTreeSkeleton({
 export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
   expandFolders = false,
   files,
-  getFileMeta,
+  renderFileMeta,
   metaColumnLabel = null,
   onActivateFile,
   onSelectFile,
@@ -82,7 +89,7 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
 }: {
   expandFolders?: boolean
   files: TFile[]
-  getFileMeta?: (file: TFile) => ReactNode
+  renderFileMeta?: (file: TFile) => ReactNode
   metaColumnLabel?: ReactNode
   onActivateFile?: (file: TFile) => void
   onSelectFile?: (file: TFile) => void
@@ -100,7 +107,7 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
     <FileSystemTreeRows
       columnsClassName={columnsClassName}
       expandFolders={expandFolders}
-      getFileMeta={getFileMeta}
+      renderFileMeta={renderFileMeta}
       key={treeKey}
       onActivateFile={onActivateFile}
       onSelectFile={onSelectFile}
@@ -115,7 +122,7 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
 function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
   columnsClassName,
   expandFolders,
-  getFileMeta,
+  renderFileMeta,
   metaColumnLabel,
   onActivateFile,
   onSelectFile,
@@ -125,7 +132,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
 }: {
   columnsClassName: string
   expandFolders: boolean
-  getFileMeta?: (file: TFile) => ReactNode
+  renderFileMeta?: (file: TFile) => ReactNode
   metaColumnLabel: ReactNode
   onActivateFile?: (file: TFile) => void
   onSelectFile?: (file: TFile) => void
@@ -181,7 +188,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
             folderState={folderState}
             columnsClassName={columnsClassName}
             depth={0}
-            getFileMeta={getFileMeta}
+            renderFileMeta={renderFileMeta}
             key={node.key}
             node={node}
             onActivateFile={onActivateFile}
@@ -202,7 +209,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
   folderState,
   columnsClassName,
   depth,
-  getFileMeta,
+  renderFileMeta,
   node,
   onActivateFile,
   onSelectFile,
@@ -214,7 +221,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
   folderState: FolderState
   columnsClassName: string
   depth: number
-  getFileMeta?: (file: TFile) => ReactNode
+  renderFileMeta?: (file: TFile) => ReactNode
   node: FileSystemTreeNode<TFile>
   onActivateFile?: (file: TFile) => void
   onSelectFile?: (file: TFile) => void
@@ -260,7 +267,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
           )}
         </div>
         <div className="flex items-center gap-1.5 text-xs leading-4">
-          {getFileMeta?.(node.file)}
+          {renderFileMeta?.(node.file)}
         </div>
         {showVisibility && (
           <div className="flex items-center justify-end gap-1.5 sm:justify-center">
@@ -331,7 +338,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
             folderState={folderState}
             columnsClassName={columnsClassName}
             depth={depth + 1}
-            getFileMeta={getFileMeta}
+            renderFileMeta={renderFileMeta}
             key={child.key}
             node={child}
             onActivateFile={onActivateFile}

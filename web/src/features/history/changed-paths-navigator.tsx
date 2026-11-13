@@ -188,11 +188,19 @@ export function ChangedPathsToolbarSkeleton() {
   )
 }
 
+const CHANGED_PATH_SKELETON_ROWS = [
+  { id: 'first', length: 'short' },
+  { id: 'second', length: 'medium' },
+  { id: 'third', length: 'short' },
+  { id: 'fourth', length: 'long' },
+  { id: 'fifth', length: 'medium' },
+] as const
+
 export function ChangedPathsSkeleton() {
   return (
     <div className="grid gap-2 py-3">
-      {(['short', 'medium', 'short', 'long', 'medium'] as const).map((length, index) => (
-        <TextSkeleton className="px-2" key={index} length={length} size="meta" />
+      {CHANGED_PATH_SKELETON_ROWS.map(({ id, length }) => (
+        <TextSkeleton className="px-2" key={id} length={length} size="meta" />
       ))}
     </div>
   )

@@ -32,7 +32,9 @@ pub(super) struct Snapshot {
 
 impl Drop for Snapshot {
     fn drop(&mut self) {
-        let _ = set_tree_writable(self.directory.path());
+        if let Err(error) = set_tree_writable(self.directory.path()) {
+            tracing::warn!(%error, "failed to make the dependency snapshot removable");
+        }
     }
 }
 
@@ -244,7 +246,9 @@ fn write_files(
                 }
                 target.paths.push(path);
             }
-            _ => stored.push((path, file.blob.clone())),
+            ContentRef::BlobSha256(_) | ContentRef::GitBundleSha256(_) => {
+                stored.push((path, file.blob.clone()));
+            }
         }
     }
     write_git_blobs(bare, &git_targets, cancellation)?;

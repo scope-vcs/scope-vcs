@@ -71,8 +71,8 @@ export function readLogLines(text: string, { anchors, stepsOf }: LogLineOptions 
 
 function stampedSource(content: string, seconds: Map<string, number>) {
   const stamp = TIMESTAMP.exec(content)
-  if (!stamp) return { content, time: null, second: null }
-  const time = stamp[1]!
+  const time = stamp?.[1]
+  if (!stamp || time === undefined) return { content, time: null, second: null }
   const whole = time.slice(0, 19)
   const second = seconds.get(whole) ?? Date.parse(`${whole}Z`) / 1_000
   seconds.set(whole, second)
@@ -108,7 +108,8 @@ export function lineByNumber(lines: readonly LogLine[], number: number) {
   let high = lines.length - 1
   while (low <= high) {
     const middle = (low + high) >> 1
-    const line = lines[middle]!
+    const line = lines[middle]
+    if (line === undefined) return null
     if (line.number === number) return line
     if (line.number < number) low = middle + 1
     else high = middle - 1

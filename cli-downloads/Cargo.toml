@@ -1,5 +1,6 @@
 [package]
 name = "scope-cli-downloads"
+publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -22,3 +23,6 @@ tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread"
 [dev-dependencies]
 scope_product_analytics = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
+
+[lints]
+workspace = true

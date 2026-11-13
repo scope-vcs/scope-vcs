@@ -3,10 +3,10 @@ use super::{
     log::{MAX_RUN_LOG_BYTES_PER_ATTEMPT, RunLogChunk},
     run::Run,
     step::{
-        AttemptConclusion, AttemptTerminalReason, RunAttemptStep, StepState, interrupt_steps,
-        skip_pending_steps,
+        AttemptCompletion, AttemptConclusion, AttemptTerminalReason, RunAttemptStep, StepState,
+        interrupt_steps, skip_pending_steps,
     },
-    validation::{required, validate_sha256_hash},
+    validation::{ensure_present, validate_sha256_hash},
     workflow::definition::{MAX_WORKFLOW_TIMEOUT_SECONDS, WorkflowJobId},
 };
 use crate::error::DomainError;
@@ -78,47 +78,14 @@ pub struct RunAttempt {
 }
 
 impl RunAttempt {
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        id: impl Into<String>,
-        run_id: impl Into<String>,
-        job_key: WorkflowJobId,
-        number: u32,
-        external_run_id: Option<String>,
-        runtime_version: impl Into<String>,
-        token_hash: impl Into<String>,
-        state: AttemptState,
-        lease_expires_at_unix: u64,
-        last_heartbeat_at_unix: u64,
-        created_at_unix: u64,
-        started_at_unix: Option<u64>,
-        completed_at_unix: Option<u64>,
-        terminal_reason: Option<AttemptTerminalReason>,
-        log_bytes: u64,
-        first_truncated_step_index: Option<u32>,
-    ) -> Result<Self, DomainError> {
-        let token_hash = token_hash.into();
-        validate_sha256_hash("attempt token hash", &token_hash)?;
-        let attempt = Self {
-            id: required("run attempt id", id.into())?,
-            run_id: required("run attempt run id", run_id.into())?,
-            job_key,
-            number,
-            external_run_id: external_run_id
-                .map(|value| required("external run id", value))
-                .transpose()?,
-            runtime_version: required("runtime version", runtime_version.into())?,
-            token_hash,
-            state,
-            lease_expires_at_unix,
-            last_heartbeat_at_unix,
-            created_at_unix,
-            started_at_unix,
-            completed_at_unix,
-            terminal_reason,
-            log_bytes,
-            first_truncated_step_index,
-        };
+    pub fn restore(attempt: Self) -> Result<Self, DomainError> {
+        validate_sha256_hash("attempt token hash", &attempt.token_hash)?;
+        ensure_present("run attempt id", &attempt.id)?;
+        ensure_present("run attempt run id", &attempt.run_id)?;
+        if let Some(external_run_id) = &attempt.external_run_id {
+            ensure_present("external run id", external_run_id)?;
+        }
+        ensure_present("runtime version", &attempt.runtime_version)?;
         attempt.validate_facts()?;
         Ok(attempt)
     }
@@ -301,17 +268,19 @@ impl RunAttempt {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn complete(
         &mut self,
         run: &Run,
         job: &mut RunJob,
         steps: &mut [RunAttemptStep],
         token_hash: &str,
-        conclusion: AttemptConclusion,
-        logs_truncated: bool,
+        completion: AttemptCompletion,
         now_unix: u64,
     ) -> Result<(), DomainError> {
+        let AttemptCompletion {
+            conclusion,
+            logs_truncated,
+        } = completion;
         if self.state.is_terminal() || job.state.is_terminal() {
             self.authenticate_identity(job, token_hash)?;
             return if self.matches_conclusion(&conclusion) {
@@ -407,7 +376,8 @@ impl RunAttempt {
     fn matches_conclusion(&self, conclusion: &AttemptConclusion) -> bool {
         match (conclusion, &self.terminal_reason) {
             (AttemptConclusion::Succeeded, None) => self.state == AttemptState::Succeeded,
-            (AttemptConclusion::Succeeded, Some(AttemptTerminalReason::Canceled { .. })) => {
+            (AttemptConclusion::Succeeded, Some(AttemptTerminalReason::Canceled { .. }))
+            | (AttemptConclusion::Canceled, Some(AttemptTerminalReason::Canceled { .. })) => {
                 self.state == AttemptState::Canceled
             }
             (
@@ -423,9 +393,6 @@ impl RunAttempt {
             }
             (AttemptConclusion::TimedOut, Some(AttemptTerminalReason::TimedOut { .. })) => {
                 self.state == AttemptState::Failed
-            }
-            (AttemptConclusion::Canceled, Some(AttemptTerminalReason::Canceled { .. })) => {
-                self.state == AttemptState::Canceled
             }
             _ => false,
         }
@@ -659,7 +626,12 @@ impl RunAttempt {
                     "active attempt cannot have a terminal reason",
                 ));
             }
-            _ => {}
+            AttemptState::Dispatching
+            | AttemptState::Running
+            | AttemptState::Succeeded
+            | AttemptState::Failed
+            | AttemptState::Canceled
+            | AttemptState::Lost => {}
         }
         Ok(())
     }

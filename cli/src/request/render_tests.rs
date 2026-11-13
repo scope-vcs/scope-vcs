@@ -57,12 +57,12 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
     let identity = json!({"title_sha256": oid('a'), "title_byte_count": 5,
         "description_sha256": oid('b'), "description_byte_count": 10});
     let payloads = [
-        json!({"Started": {"identity": identity.clone()}}),
+        json!({"Started": {"identity": identity}}),
         json!({"Submitted": {"head_oid": oid('a')}}),
         json!({"RevisionPushed": {"old_head_oid": oid('a'), "new_head_oid": oid('b'), "note": "note\n\u{1b}[31m"}}),
         json!({"Merged": {"head_oid": oid('b'), "main_oid": oid('c')}}),
         json!({"Closed": {"head_oid": oid('b')}}),
-        json!({"IdentityEdited": {"before": identity.clone(), "after": identity}}),
+        json!({"IdentityEdited": {"before": identity, "after": identity}}),
         json!({"DiscussionResolved": {"discussion_id": "discussion\nresolved"}}),
         json!({"DiscussionReopened": {"discussion_id": "discussion\treopened"}}),
         json!({"AutoMergeEnabled": {"intent_id": "ami_one", "revision_id": "rev_one", "head_oid": oid('b')}}),
@@ -518,7 +518,7 @@ fn review_bots_show_how_far_each_got_and_why_they_hold_the_merge() {
         rendered.contains("Mergeability: a required review bot has not finished the latest commit"),
         "{rendered}"
     );
-    let mut codex_only = checks.clone();
+    let mut codex_only = checks;
     codex_only.review_bots.truncate(1);
     assert_eq!(
         review_bots_detail_lines(&codex_only),

@@ -1,6 +1,9 @@
 use crate::{
     error::ApiError,
-    git::command::{git_command_output_with_timeout, prepare_git_subprocess, record_git_exit},
+    git::{
+        command::{git_command_output_with_timeout, prepare_git_subprocess, record_git_exit},
+        receive_pack::ReceivePackRun,
+    },
     runtime_budgets::RuntimeBudgets,
 };
 use axum::{body::Body, http::StatusCode, response::Response};
@@ -49,16 +52,17 @@ pub(crate) fn git_receive_pack_advertisement(
     CgiResponse::parse(output)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn git_http_backend_streaming(
-    staging_repo: &FsPath,
-    path_suffix: &str,
+pub(super) async fn git_receive_pack_streaming(
+    run: &ReceivePackRun<'_>,
     body: Body,
-    content_length: Option<u64>,
-    max_bytes: usize,
-    content_type: Option<String>,
-    remote_user: &str,
 ) -> Result<CgiResponse, ApiError> {
+    let ReceivePackRun {
+        staging_repo,
+        content_length,
+        max_bytes,
+        ref content_type,
+        remote_user,
+    } = *run;
     let receive_started = Instant::now();
     if content_length.is_some_and(|length| length > max_bytes as u64) {
         return Err(ApiError::payload_too_large(
@@ -78,7 +82,7 @@ pub(crate) async fn git_http_backend_streaming(
         .env("GIT_PROJECT_ROOT", staging_parent)
         .env("GIT_HTTP_EXPORT_ALL", "1")
         .env("REQUEST_METHOD", "POST")
-        .env("PATH_INFO", format!("/{repo_name}/{path_suffix}"))
+        .env("PATH_INFO", format!("/{repo_name}/git-receive-pack"))
         .env("QUERY_STRING", "")
         .env("REMOTE_USER", remote_user)
         .stdin(Stdio::piped())
@@ -223,8 +227,8 @@ async fn stop_git_http_backend(
     terminate_and_reap_git_child(child, process_group).await;
     stdout_task.abort();
     stderr_task.abort();
-    let _ = stdout_task.await;
-    let _ = stderr_task.await;
+    stdout_task.await.ok();
+    stderr_task.await.ok();
 }
 
 async fn terminate_and_reap_git_child(
@@ -232,8 +236,10 @@ async fn terminate_and_reap_git_child(
     process_group: &mut GitProcessGroupGuard,
 ) {
     process_group.kill();
-    let _ = child.kill().await;
-    let _ = child.wait().await;
+    child.kill().await.ok();
+    if let Err(error) = child.wait().await {
+        tracing::warn!(%error, "failed to reap git http-backend process");
+    }
 }
 
 struct GitProcessGroupGuard {

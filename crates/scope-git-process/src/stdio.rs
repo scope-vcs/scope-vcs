@@ -24,7 +24,7 @@ pub(crate) fn read_stdout(
                     retained.extend_from_slice(&buffer[..read.min(remaining)]);
                 }
                 if retained.len() > max_bytes && !limit_reported {
-                    let _ = limit_sender.send(());
+                    limit_sender.send(()).ok();
                     limit_reported = true;
                 }
             }

@@ -24,8 +24,10 @@ async fn cancellation_stops_a_remote_restore_and_reaps_index_pack() {
         let (mut stream, _) = listener.accept().await.unwrap();
         let mut request = [0_u8; 1];
         stream.read_exact(&mut request).await.unwrap();
-        let _ = started.send(());
-        let _ = tokio::io::copy(&mut stream, &mut tokio::io::sink()).await;
+        started.send(()).unwrap();
+        tokio::io::copy(&mut stream, &mut tokio::io::sink())
+            .await
+            .ok();
     });
     let store = GitSegmentStore::new(
         Arc::new(
@@ -100,5 +102,7 @@ async fn cancellation_stops_a_remote_restore_and_reaps_index_pack() {
     ));
     assert!(!process.path().exists(), "index-pack must be reaped");
     server.abort();
-    let _ = server.await;
+    if let Err(error) = server.await {
+        assert!(error.is_cancelled(), "test server failed: {error}");
+    }
 }

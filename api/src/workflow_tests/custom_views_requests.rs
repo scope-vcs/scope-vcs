@@ -211,7 +211,10 @@ async fn an_agent_request_merge_keeps_its_commits_only_in_the_agent_view() {
                 Some(native_head.as_str())
             );
         }
-        origin => panic!("expected an agent request merge, got {origin:?}"),
+        origin @ (LogicalCommitOrigin::CanonicalPush { .. }
+        | LogicalCommitOrigin::PrivateRequestMerge { .. }) => {
+            panic!("expected an agent request merge, got {origin:?}")
+        }
     }
 
     let agent_main = checkout.fetch_main();

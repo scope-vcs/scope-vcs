@@ -32,9 +32,8 @@ pub fn run_standalone_review(repo: &GitRepo) -> anyhow::Result<()> {
     match run_review_tui(state, None, |config| {
         write_worktree_scope_repo_config(&repo.root, config)
     })? {
-        TuiOutcome::Exit => Ok(()),
         TuiOutcome::Cancel => bail!("scope visibility edit cancelled"),
-        TuiOutcome::ContinuePush => Ok(()),
+        TuiOutcome::Exit | TuiOutcome::ContinuePush => Ok(()),
     }
 }
 

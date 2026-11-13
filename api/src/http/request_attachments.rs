@@ -105,7 +105,7 @@ pub(crate) async fn prepare(
             now_unix: now,
         })
         .await?;
-    let expires_at_unix = state.media_grants.expires_at(now)?;
+    let expires_at_unix = crate::media_grants::media_grant_expires_at(now)?;
     let grant = state
         .media_grants
         .sign(&RequestAttachmentUploadGrantClaims {
@@ -220,7 +220,7 @@ pub(crate) async fn media_grant(
         .await?
         .ok_or_else(|| ApiError::not_found("attachment not found"))?;
     object.ok_or_else(|| ApiError::not_found("attachment media is not available"))?;
-    let expires_at_unix = state.media_grants.expires_at(unix_now()?)?;
+    let expires_at_unix = crate::media_grants::media_grant_expires_at(unix_now()?)?;
     let grant = state
         .media_grants
         .sign(&RequestAttachmentMediaGrantClaims {

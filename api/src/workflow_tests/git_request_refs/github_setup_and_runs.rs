@@ -188,7 +188,15 @@ async fn request_check_deliveries_refresh_a_running_setup_test_of_the_same_commi
             crate::repo_events::RepoChangeKind::RepositoryChanged { .. } => {
                 settings_refreshed = true
             }
-            _ => {}
+            crate::repo_events::RepoChangeKind::Connected
+            | crate::repo_events::RepoChangeKind::Lagged
+            | crate::repo_events::RepoChangeKind::DependenciesChanged
+            | crate::repo_events::RepoChangeKind::GitHubWorkflowRunsChanged
+            | crate::repo_events::RepoChangeKind::GitHubWorkflowRunChanged { .. }
+            | crate::repo_events::RepoChangeKind::RequestStateChanged { .. }
+            | crate::repo_events::RepoChangeKind::RequestTimelineChanged { .. }
+            | crate::repo_events::RepoChangeKind::RequestAttachmentChanged { .. }
+            | crate::repo_events::RepoChangeKind::RunChanged { .. } => {}
         }
     }
     assert!(request_refreshed, "the associated request must refresh");

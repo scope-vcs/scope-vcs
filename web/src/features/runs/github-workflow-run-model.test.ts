@@ -76,7 +76,9 @@ test('a refresh reads as many pages again as were loaded, from the top', async (
   const requested: (string | undefined)[] = []
   const loadPage = async (after?: string) => {
     requested.push(after)
-    return pages[after ?? 'first']
+    const response = pages[after ?? 'first']
+    assert.ok(response)
+    return response
   }
   const reloaded = await reloadGitHubWorkflowRunPages(2, loadPage)
   assert.deepEqual(ids(reloaded.list), [6, 5, 4, 3])

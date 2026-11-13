@@ -2,7 +2,7 @@ import type { RepoSummaryResponse } from '@/api/types.generated'
 import { ExternalLink } from 'lucide-react'
 
 export function hasRepositoryAbout(repo: RepoSummaryResponse) {
-  return Boolean(repo.description || repo.website_url)
+  return Boolean(repo.description) || Boolean(repo.website_url)
 }
 
 export function RepositoryAbout({ repo }: { repo: RepoSummaryResponse }) {

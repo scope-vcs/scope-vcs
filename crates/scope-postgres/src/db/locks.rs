@@ -7,7 +7,7 @@ use sea_orm::{
 #[cfg(test)]
 use sea_orm::{DatabaseBackend, Statement};
 
-pub async fn acquire_aggregate_lock<C>(
+pub(super) async fn acquire_aggregate_lock<C>(
     conn: &C,
     namespace: &str,
     id: &str,

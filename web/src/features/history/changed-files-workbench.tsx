@@ -1,6 +1,6 @@
 import { EmptyState, PanelState } from '@/components/empty-state'
 import { FileWorkbench } from '@/components/file-workbench'
-import { useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { ReviewFileDiffDrawer, type ReviewDiffAnnotations } from '../review/review-file-diff-drawer'
 import type { CommitFileDiffState } from './history-state'
 import type { FileLineChangesResponse } from '@/api/types.generated'
@@ -38,13 +38,14 @@ export function ChangedFilesWorkbench({
   selectedFileLines?: FileLineChangesResponse | null
   navigation: ReturnType<typeof useChangedFileNavigation>
   navigationLabel: string
-  navigator: ReactNode
+  navigator: ReactElement | null
   toolbar?: ReactNode
   diffActions?: ReactNode
   diffContext?: ReactNode
   emptyFilesMessage?: string
   emptyPreviewMessage?: string
 }) {
+  const { closeDiff, open, setOpen, ref } = navigation
   const placeholder = <PanelState><span>{emptyPreviewMessage ?? 'Select a changed file'}</span></PanelState>
   const diff = selectedFilePath ? (
     <div className={DIFF_PANE_CLASS}>
@@ -58,7 +59,7 @@ export function ChangedFilesWorkbench({
         fullRender={fileDiffState.status === 'loaded' ? fileDiffState.fullRender : null}
         lines={selectedFileLines}
         loading={fileDiffState.status === 'loading'}
-        onClose={navigation.closeDiff}
+        onClose={closeDiff}
         onRetry={onRetryDiff}
         onScrollTopChange={onDiffScroll}
         scrollTop={diffScrollTop}
@@ -66,7 +67,7 @@ export function ChangedFilesWorkbench({
       />
     </div>
   ) : null
-  if (!navigator && emptyFilesMessage === undefined) return diff
+  if (navigator === null && emptyFilesMessage === undefined) return diff
   const desktopPlaceholder = emptyFilesMessage === undefined
     ? placeholder
     : <div className={DIFF_PANE_CLASS}>{placeholder}</div>
@@ -74,17 +75,17 @@ export function ChangedFilesWorkbench({
     <>
       {toolbar}
       <FileWorkbench
-        navigationOpen={navigation.open}
-        onNavigationOpenChange={navigation.setOpen}
+        navigationOpen={open}
+        onNavigationOpenChange={setOpen}
         selectedPath={selectedFilePath}
       >
         <div
           aria-label={navigationLabel}
           className="min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          ref={navigation.ref}
+          ref={ref}
           tabIndex={-1}
         >
-          {navigator || <EmptyState inline className="py-8" title={emptyFilesMessage ?? ''} />}
+          {navigator ?? <EmptyState inline className="py-8" title={emptyFilesMessage ?? ''} />}
         </div>
         {diff ?? <div className="hidden lg:contents">{desktopPlaceholder}</div>}
       </FileWorkbench>

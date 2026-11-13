@@ -1,13 +1,22 @@
+#![expect(clippy::unwrap_used)]
+
 #[path = "contribution_flow/checks.rs"]
 mod checks;
+#[path = "../src/test_support/git.rs"]
+mod git;
+#[path = "cli/support/git_output.rs"]
+mod git_output;
 #[path = "contribution_flow/private_auto_merge.rs"]
 mod private_auto_merge;
 #[path = "contribution_flow/private_stacks.rs"]
 mod private_stacks;
 #[path = "contribution_flow/public_stacks.rs"]
 mod public_stacks;
-mod support;
+#[path = "../src/test_support/temp_dir.rs"]
+mod temp_dir;
 
+use git::{commit_all, run_git};
+use git_output::{assert_success, git_stdout};
 use serde_json::Value;
 use std::{
     env, fs,
@@ -16,7 +25,7 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use support::{TempDir, assert_success, commit_all, git_stdout, run_git};
+use temp_dir::TempDir;
 
 const CONTRIBUTOR: &str = "river-contributor";
 const MAINTAINER: &str = "maya-maintainer";

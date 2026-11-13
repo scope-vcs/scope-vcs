@@ -27,7 +27,7 @@ pub(crate) struct CacheDownloadAttempt {
 }
 
 impl RuntimeClient {
-    pub fn restore_cache(
+    pub(crate) fn restore_cache(
         &self,
         request: &RestoreAttemptCacheRequest,
     ) -> anyhow::Result<RestoreAttemptCacheResponse> {
@@ -37,7 +37,7 @@ impl RuntimeClient {
         )
     }
 
-    pub fn prepare_cache_upload(
+    pub(crate) fn prepare_cache_upload(
         &self,
         request: &PrepareAttemptCacheUploadRequest,
     ) -> anyhow::Result<PrepareAttemptCacheUploadResponse> {
@@ -47,7 +47,7 @@ impl RuntimeClient {
         )
     }
 
-    pub fn commit_cache_upload(
+    pub(crate) fn commit_cache_upload(
         &self,
         request: &CommitAttemptCacheUploadRequest,
     ) -> anyhow::Result<()> {
@@ -57,7 +57,7 @@ impl RuntimeClient {
         )
     }
 
-    pub fn report_cache_preparations(
+    pub(crate) fn report_cache_preparations(
         &self,
         request: &ReportAttemptCachePreparationsRequest,
     ) -> anyhow::Result<()> {
@@ -68,7 +68,7 @@ impl RuntimeClient {
         )
     }
 
-    pub fn report_cache_finalizations(
+    pub(crate) fn report_cache_finalizations(
         &self,
         request: &ReportAttemptCacheFinalizationsRequest,
     ) -> anyhow::Result<()> {
@@ -79,7 +79,7 @@ impl RuntimeClient {
         )
     }
 
-    pub fn download_cache(
+    pub(crate) fn download_cache(
         &self,
         url: &str,
         destination: &Path,
@@ -130,7 +130,7 @@ impl RuntimeClient {
         }
     }
 
-    pub fn upload_cache(
+    pub(crate) fn upload_cache(
         &self,
         url: &str,
         headers: &BTreeMap<String, String>,

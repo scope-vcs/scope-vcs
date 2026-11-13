@@ -94,7 +94,7 @@ impl MediaStore {
                     .find(|derivative| derivative.id == derivative_id)
                     .map(|derivative| derivative.object.object_key.as_str())
             }
-            _ => None,
+            RequestMediaObjectTarget::Original | RequestMediaObjectTarget::Derivative(_) => None,
         };
         let mut object = match manifest_id {
             Some(manifest_id) => manifest_by_id(&tx, manifest_id).await?,

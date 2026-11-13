@@ -89,8 +89,9 @@ export function initiallyOpenGroups(paths: readonly ChangedPath[], selectedPath:
 
 export function visibilitySummary(paths: readonly ChangedPath[]) {
   const labels = paths.flatMap((path) => path.visibility.at(-1)?.new_label ?? [])
-  if (labels.length === 0) return null
-  const label: VisibilityState = labels.every((label) => label === labels[0]) ? labels[0] : 'Mixed'
+  const [first, ...rest] = labels
+  if (first === undefined) return null
+  const label: VisibilityState = rest.every((label) => label === first) ? first : 'Mixed'
   return { count: labels.length, label }
 }
 
@@ -121,9 +122,11 @@ export function steppedChangedPath(
   current: number,
   step: 1 | -1,
 ) {
-  if (openable.length === 0) return null
-  if (current === -1) return step === 1 ? openable[0] : openable.at(-1)!
-  return openable[Math.min(openable.length - 1, Math.max(0, current + step))]
+  const last = openable.length - 1
+  const index = current === -1
+    ? step === 1 ? 0 : last
+    : Math.min(last, Math.max(0, current + step))
+  return openable[index] ?? null
 }
 
 function matchesFilter(path: ChangedPath, filter: ChangedPathFilter) {
@@ -133,10 +136,10 @@ function matchesFilter(path: ChangedPath, filter: ChangedPathFilter) {
 }
 
 function pathParts(path: string) {
-  const parts = path.split('/')
-  const name = parts.at(-1) ?? path
-  if (parts.length === 1) return { path, group: '', directory: '', name }
-  return { path, group: parts[0], directory: parts.slice(1, -1).join('/'), name }
+  const [group, ...rest] = path.split('/')
+  const name = rest.at(-1)
+  if (group === undefined || name === undefined) return { path, group: '', directory: '', name: path }
+  return { path, group, directory: rest.slice(0, -1).join('/'), name }
 }
 
 function compareChangedPaths(left: ChangedPath, right: ChangedPath) {

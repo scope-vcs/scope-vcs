@@ -234,7 +234,7 @@ fn rejects_changed_recorded_tree_parents_or_commit_identity() {
         inspect_native_request_commit(repo.path(), &labels(), &wrong_tree, deadline()).is_err()
     );
     let mut wrong_parents = commit.clone();
-    wrong_parents.parent_oids.push(oid.clone());
+    wrong_parents.parent_oids.push(oid);
     assert!(
         inspect_native_request_commit(repo.path(), &labels(), &wrong_parents, deadline()).is_err()
     );

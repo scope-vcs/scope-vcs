@@ -2,12 +2,12 @@ use super::*;
 use scope_domain::github_account::{GitHubAccount, GitHubAccountType};
 use scope_domain::requests::{RequestDiscussionAuthor, RequestDiscussionResolver};
 
-pub mod github_account {
+pub(crate) mod github_account {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_github_accounts")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub github_user_id: i64,
         pub login: String,
@@ -17,12 +17,15 @@ pub mod github_account {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(value: &GitHubAccount, now_unix: u64) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(
+            value: &GitHubAccount,
+            now_unix: u64,
+        ) -> Result<Self, PostgresError> {
             Ok(Self {
                 github_user_id: u64_to_i64(value.id, "GitHub account id")?,
                 login: value.login.clone(),
@@ -32,7 +35,7 @@ pub mod github_account {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<GitHubAccount, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<GitHubAccount, PostgresError> {
             GitHubAccount::new(
                 i64_to_u64(self.github_user_id, "GitHub account id")?,
                 self.login,
@@ -44,13 +47,15 @@ pub mod github_account {
     }
 }
 
-pub struct AuthorColumns {
+pub(crate) struct AuthorColumns {
     pub user_id: Option<String>,
     pub github_user_id: Option<i64>,
     pub source_url: Option<String>,
 }
 
-pub fn author_columns(author: &RequestDiscussionAuthor) -> Result<AuthorColumns, PostgresError> {
+pub(super) fn author_columns(
+    author: &RequestDiscussionAuthor,
+) -> Result<AuthorColumns, PostgresError> {
     Ok(match author {
         RequestDiscussionAuthor::User(user_id) => AuthorColumns {
             user_id: Some(user_id.clone()),
@@ -73,7 +78,9 @@ pub fn author_columns(author: &RequestDiscussionAuthor) -> Result<AuthorColumns,
     })
 }
 
-pub fn discussion_author(columns: AuthorColumns) -> Result<RequestDiscussionAuthor, PostgresError> {
+pub(crate) fn discussion_author(
+    columns: AuthorColumns,
+) -> Result<RequestDiscussionAuthor, PostgresError> {
     match columns {
         AuthorColumns {
             user_id: Some(user_id),
@@ -99,7 +106,7 @@ pub fn discussion_author(columns: AuthorColumns) -> Result<RequestDiscussionAuth
     }
 }
 
-pub fn resolver_columns(
+pub(super) fn resolver_columns(
     resolver: Option<&RequestDiscussionResolver>,
 ) -> Result<(Option<String>, Option<i64>), PostgresError> {
     Ok(match resolver {
@@ -112,7 +119,7 @@ pub fn resolver_columns(
     })
 }
 
-pub fn discussion_resolver(
+pub(super) fn discussion_resolver(
     user_id: Option<String>,
     github_user_id: Option<i64>,
 ) -> Result<Option<RequestDiscussionResolver>, PostgresError> {

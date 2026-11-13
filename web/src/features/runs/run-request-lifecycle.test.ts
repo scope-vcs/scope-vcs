@@ -253,5 +253,5 @@ test('a native refresh reads one history page per retained page and keeps the wo
   assert.equal(loadPage.mock.callCount(), 0)
   const page = runHistoryResource.peek(historyKey)?.page
   assert.equal(page?.kind, 'native')
-  if (page?.kind === 'native') assert.deepEqual(page.workflows, workflows)
+  assert.deepEqual(page.workflows, workflows)
 })

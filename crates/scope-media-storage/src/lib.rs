@@ -1,4 +1,3 @@
-#![warn(unreachable_pub)]
 mod config;
 mod error;
 mod keys;

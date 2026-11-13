@@ -5,7 +5,7 @@ import { loadMoreRequestQueue, refreshRequestQueue, requestQueueResource, type L
 
 const row = (id: string) => ({ request: { id } }) as RequestQueueItemResponse
 const page = (ids: string[], cursor: string | null = null): RequestQueuePageResponse => ({ requests: ids.map(row), next_cursor: cursor, next_attention_at_unix: null })
-const load: LoadRequestQueuePage = async (section, cursor) => page([`${section}-${cursor || 'first'}`], cursor ? null : 'second')
+const load: LoadRequestQueuePage = async (section, cursor) => page([`${section}-${cursor ?? 'first'}`], cursor ? null : 'second')
 const open = (key: string, version = '1', fetchPage = load) => requestQueueResource.load(key, version, (signal) => refreshRequestQueue(key, fetchPage, signal))
 
 test('navigation reuses loaded pages in the same viewer/access scope', async () => {

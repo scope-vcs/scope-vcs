@@ -10,7 +10,7 @@ use crate::{
             persist_request_ref, request_view_bases, retain_staged_pool_pack,
         },
         staging::{create_seeded_receive_pack_staging_repo, install_ready_pre_receive_hook},
-        storage::remove_dir_if_exists,
+        storage::discard_dir,
     },
     persistence::unix_now,
     repo_events::RepoChangeReason,
@@ -189,7 +189,7 @@ pub(crate) async fn prepare_request_staging_repo(
             }
         });
         if result.is_err() {
-            let _ = remove_dir_if_exists(&path);
+            discard_dir(&path);
         }
         result
     })

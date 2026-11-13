@@ -114,7 +114,7 @@ function MemberList({
       itemId={(member) => member.user_id}
       items={members}
       onRemove={(member) => deleteMember(member.user_id)}
-      row={(member, actions) => (
+      renderRow={(member, actions) => (
         <>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">

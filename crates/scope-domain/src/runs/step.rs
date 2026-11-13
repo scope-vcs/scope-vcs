@@ -101,10 +101,23 @@ pub enum AttemptConclusion {
     Canceled,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttemptCompletion {
+    pub conclusion: AttemptConclusion,
+    pub logs_truncated: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StepConclusion {
     Succeeded,
     Failed { exit_code: i32 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StepCompletion {
+    pub step_index: u32,
+    pub conclusion: StepConclusion,
+    pub logs_truncated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -255,7 +268,13 @@ impl RunAttemptStep {
                     "unfinished or interrupted step cannot have an exit code",
                 ));
             }
-            _ => {}
+            StepState::Pending
+            | StepState::Running
+            | StepState::Succeeded
+            | StepState::Failed
+            | StepState::Canceled
+            | StepState::Lost
+            | StepState::Skipped => {}
         }
         if matches!(
             self.state,
@@ -317,17 +336,19 @@ impl RunAttempt {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn complete_step(
         &mut self,
         job: &mut RunJob,
         steps: &mut [RunAttemptStep],
         token_hash: &str,
-        step_index: u32,
-        conclusion: StepConclusion,
-        logs_truncated: bool,
+        completion: StepCompletion,
         now_unix: u64,
     ) -> Result<(), DomainError> {
+        let StepCompletion {
+            step_index,
+            conclusion,
+            logs_truncated,
+        } = completion;
         let index = step_index as usize;
         if self.state.is_terminal() || job.state.is_terminal() {
             self.authenticate_identity(job, token_hash)?;

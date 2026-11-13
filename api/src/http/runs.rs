@@ -14,7 +14,8 @@ use crate::{
             resolve_manual_run as resolve_manual_run_control, retry_run as retry_run_control,
         },
         run_inspection::{
-            inspect_run, inspect_run_detail, inspect_run_step_logs, require_full_view_member,
+            StepLogPageQuery, inspect_run, inspect_run_detail, inspect_run_step_logs,
+            require_full_view_member,
         },
     },
 };
@@ -176,10 +177,12 @@ pub(crate) async fn get_repository_run_step_logs(
         &owner,
         &repo_name,
         &run_id,
-        &attempt_id,
-        step_index,
-        cursor,
-        REPOSITORY_STEP_LOG_LIMIT,
+        StepLogPageQuery {
+            attempt_id: &attempt_id,
+            step_index,
+            cursor,
+            limit: REPOSITORY_STEP_LOG_LIMIT,
+        },
     )
     .await?;
     Ok(Json(step_log_page_response(page, cursor)))
@@ -192,7 +195,7 @@ fn step_log_page_response(
     let next_after = page.logs.last().map_or(
         match cursor {
             StepLogCursor::After(position) => position,
-            _ => 0,
+            StepLogCursor::Tail | StepLogCursor::Before(_) => 0,
         },
         |stored| stored.position,
     );
@@ -324,18 +327,18 @@ mod tests {
     }
 
     fn terminal_run() -> Run {
-        Run::restore(
-            "run-summary",
-            "manual:summary",
-            WorkflowIdentity::new(
+        Run::restore(Run {
+            id: "run-summary".into(),
+            idempotency_key: "manual:summary".into(),
+            workflow: WorkflowIdentity::new(
                 "owner/repo",
                 WorkflowPath::parse("/.scope/runs/checks.yml").unwrap(),
             )
             .unwrap(),
-            "a".repeat(64),
-            RunTrigger::Manual,
-            Some("user-1".to_string()),
-            RunSource::ephemeral_git_bundle(SourceBlob {
+            workflow_revision_digest: "a".repeat(64),
+            trigger: RunTrigger::Manual,
+            requested_by_user_id: Some("user-1".to_string()),
+            source: RunSource::ephemeral_git_bundle(SourceBlob {
                 content_ref: ContentRef::git_bundle_sha256("b".repeat(64)),
                 sha256: "b".repeat(64),
                 git_oid: "c".repeat(40),
@@ -343,32 +346,31 @@ mod tests {
                 size_bytes: 1,
             })
             .unwrap(),
-            RunState::Failed,
-            false,
-            1,
-            2,
-            Some(2),
-        )
+            state: RunState::Failed,
+            cancellation_requested: false,
+            created_at_unix: 1,
+            updated_at_unix: 2,
+            completed_at_unix: Some(2),
+        })
         .unwrap()
     }
 
     fn terminal_job(last_attempt_number: u32) -> RunJob {
-        RunJob::restore(
-            "run-summary",
-            WorkflowJobId::parse("checks").unwrap(),
-            scope_domain::runs::image::PinnedContainerImage::parse(format!(
-                "rust@sha256:{}",
-                "d".repeat(64)
-            ))
+        RunJob::restore(RunJob {
+            run_id: "run-summary".into(),
+            key: WorkflowJobId::parse("checks").unwrap(),
+            pinned_container_image: scope_domain::runs::image::PinnedContainerImage::parse(
+                format!("rust@sha256:{}", "d".repeat(64)),
+            )
             .unwrap(),
-            RunJobState::Failed,
+            state: RunJobState::Failed,
             last_attempt_number,
-            None,
-            1,
-            2,
-            Some(2),
-            None,
-        )
+            current_attempt_id: None,
+            created_at_unix: 1,
+            updated_at_unix: 2,
+            completed_at_unix: Some(2),
+            capacity_retry: None,
+        })
         .unwrap()
     }
 }

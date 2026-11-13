@@ -3,7 +3,7 @@ use anyhow::Context as _;
 use scope_api_contract::ClaimRuntimeResponse;
 
 impl RuntimeClient {
-    pub fn claim(&self, bootstrap_token: &str) -> anyhow::Result<ClaimRuntimeResponse> {
+    pub(crate) fn claim(&self, bootstrap_token: &str) -> anyhow::Result<ClaimRuntimeResponse> {
         let response = self
             .client
             .post(self.url("claim"))

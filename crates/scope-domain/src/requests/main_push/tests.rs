@@ -306,7 +306,7 @@ fn only_the_pushers_own_open_request_for_the_same_head_makes_a_push_a_retry() {
         },
         Request {
             head_oid: BASE.into(),
-            ..open.clone()
+            ..open
         },
     ] {
         assert_eq!(classify(&taken), MainPushRequestName::Taken);
@@ -333,7 +333,7 @@ fn the_request_transaction_decides_retries_collisions_and_stale_pushes() {
     let taken = decide(MainPushRequestFacts {
         request_with_name: Some(Request {
             author_user_id: Some("someone".into()),
-            ..open.clone()
+            ..open
         }),
         ..facts()
     })

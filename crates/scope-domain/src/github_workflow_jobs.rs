@@ -273,7 +273,7 @@ mod tests {
         assert!(finished.ran());
         let skipped = GitHubWorkflowJob {
             conclusion: Some(GitHubCheckConclusion::Skipped),
-            ..finished.clone()
+            ..finished
         };
         assert!(!skipped.ran());
         let cancelled_before_a_runner = GitHubWorkflowJob {

@@ -31,7 +31,7 @@ const loadRepoLiveState = createServerFn({ method: 'GET' })
     try {
       return { live: await loadRepoLiveStateForRequest(data) }
     } catch (error) {
-      if (isNotFoundError(error)) throw notFound()
+      if (isNotFoundError(error)) notFound({ throw: true })
       if (isRetryableRepoLoadError(error)) {
         return { unavailable: 'Repository refresh is temporarily unavailable.' }
       }

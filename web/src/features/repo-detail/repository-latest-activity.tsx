@@ -56,7 +56,8 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       </div>
     )
   }
-  const message = entry.message.split('\n', 1)[0] || 'Repository updated'
+  const [firstLine = ''] = entry.message.split('\n', 1)
+  const message = firstLine === '' ? 'Repository updated' : firstLine
   return (
     <div
       aria-label="Latest repository change"

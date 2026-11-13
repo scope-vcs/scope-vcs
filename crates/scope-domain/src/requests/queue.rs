@@ -55,7 +55,15 @@ pub fn request_queue_group(
             | Reason::NewActivity
             | Reason::Restored
             | Reason::SnoozeExpired => RequestQueueGroup::NeedsYou,
-            _ => RequestQueueGroup::Waiting,
+            Reason::Authored
+            | Reason::Unclaimed
+            | Reason::ClaimedElsewhere
+            | Reason::Waiting
+            | Reason::Snoozed
+            | Reason::Settled
+            | Reason::Open
+            | Reason::Closed
+            | Reason::Merged => RequestQueueGroup::Waiting,
         },
     }
 }
@@ -127,7 +135,6 @@ fn next_step_for(
     if viewer_user_id.is_some() && author_user_id == viewer_user_id {
         return match readiness {
             Status::Ready if viewer.merge => RequestQueueNextStep::Merge,
-            Status::Ready => RequestQueueNextStep::Wait,
             Status::ChecksAwaitingApproval | Status::WaitingForParent | Status::AncestorBlocked
                 if viewer.approve_pending_checks =>
             {
@@ -143,7 +150,8 @@ fn next_step_for(
             | Status::MissingRequestBranch => RequestQueueNextStep::Update,
             Status::Draft => RequestQueueNextStep::Submit,
             Status::Closed | Status::Merged => RequestQueueNextStep::Done,
-            Status::RepositoryNotReady
+            Status::Ready
+            | Status::RepositoryNotReady
             | Status::NotMaintainer
             | Status::ChecksNotEvaluated
             | Status::ChecksAwaitingApproval
@@ -399,7 +407,12 @@ pub fn apply_request_attention_action(
                     updated_at_unix: input.now_unix,
                 },
             )),
-            _ => input.existing_claim.cloned(),
+            RequestAttentionAction::Wait
+            | RequestAttentionAction::Settle
+            | RequestAttentionAction::Snooze { .. }
+            | RequestAttentionAction::Restore
+            | RequestAttentionAction::Release
+            | RequestAttentionAction::Acknowledge => input.existing_claim.cloned(),
         };
     Ok(RequestAttentionMutation {
         attention: Some(RequestAttention {
@@ -497,7 +510,11 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
                 RequestQueueRule::Authored => RequestAttentionReason::Authored,
                 RequestQueueRule::Invited => RequestAttentionReason::Invited,
                 RequestQueueRule::Open => RequestAttentionReason::Open,
-                _ => unreachable!(),
+                RequestQueueRule::Terminal
+                | RequestQueueRule::Waiting
+                | RequestQueueRule::Snoozed
+                | RequestQueueRule::ClaimedElsewhere
+                | RequestQueueRule::Unclaimed => unreachable!(),
             };
             RequestQueueClassification {
                 section: rule.section(),

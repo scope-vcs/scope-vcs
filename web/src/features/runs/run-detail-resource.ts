@@ -28,8 +28,9 @@ export async function refreshRunDetail(
     const detail = await loadDetail(AbortSignal.any([signal, AbortSignal.timeout(15_000)]))
     return { ...current, detail, generation, updatedAt: Date.now() }
   }
-  if (runDetailResource.getSnapshot(key).pending) {
-    const value = await runDetailResource.ensure(key, runDetailResource.getSnapshot(key).version!, load)
+  const inFlight = runDetailResource.getSnapshot(key)
+  if (inFlight.pending && inFlight.version !== null) {
+    const value = await runDetailResource.ensure(key, inFlight.version, load)
     if (!forceAfterInFlight) {
       if (!value) throw runDetailResource.getSnapshot(key).error
       return

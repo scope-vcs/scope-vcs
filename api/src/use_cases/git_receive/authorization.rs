@@ -177,19 +177,23 @@ async fn authorize_scope_user(
     }
     let rejection = match push_mode {
         MainPushMode::Denied => not_found(),
-        _ if repo.lifecycle_state == RepoLifecycleState::AwaitingFirstPush => {
+        MainPushMode::FirstPush | MainPushMode::Ready | MainPushMode::ThroughView(_)
+            if repo.lifecycle_state == RepoLifecycleState::AwaitingFirstPush =>
+        {
             return Err(ApiError::conflict(
                 "repo is awaiting its first push and cannot receive another push",
             ));
         }
-        _ => match push_intent_secret.map(|secret| state.validate_push_intent_secret(secret)) {
-            Some(Ok(_)) => ApiError::forbidden(format!(
-                "this Scope push intent does not push to main through the {} view",
-                views.display_name(view)
-            )),
-            Some(Err(error)) => error,
-            None => ApiError::forbidden("valid Scope push intent required"),
-        },
+        MainPushMode::FirstPush | MainPushMode::Ready | MainPushMode::ThroughView(_) => {
+            match push_intent_secret.map(|secret| state.validate_push_intent_secret(secret)) {
+                Some(Ok(_)) => ApiError::forbidden(format!(
+                    "this Scope push intent does not push to main through the {} view",
+                    views.display_name(view)
+                )),
+                Some(Err(error)) => error,
+                None => ApiError::forbidden("valid Scope push intent required"),
+            }
+        }
     };
     if repo.lifecycle_state == RepoLifecycleState::Ready
         && request_ref::actor_has_open_editable_request(

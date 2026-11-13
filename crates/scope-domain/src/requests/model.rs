@@ -242,7 +242,7 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
         {
             return Err(DomainError::conflict("invalid request parent pin"));
         }
-        _ => {}
+        super::RequestBase::Main { .. } | super::RequestBase::Request { .. } => {}
     }
     if request.base_version == 0 || request.base.review_base_oid().is_empty() {
         return Err(DomainError::conflict(

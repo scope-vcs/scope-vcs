@@ -25,7 +25,10 @@ pub(super) struct ProjectionHistory {
 }
 
 impl ProjectionHistory {
-    pub fn replay(mut tree: BTreeMap<ScopePath, SourceBlob>, projection: Projection) -> Self {
+    pub(super) fn replay(
+        mut tree: BTreeMap<ScopePath, SourceBlob>,
+        projection: Projection,
+    ) -> Self {
         let mut result = Self::default();
         for commit in projection.commits {
             if let Some(set_id) = commit.visibility_change_set_id {

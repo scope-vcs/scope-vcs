@@ -37,7 +37,6 @@ function present(
 test('public files importing private files are a leak with every finding retained', () => {
   const presentation = present({})
   assert.equal(presentation.kind, 'leak')
-  if (presentation.kind !== 'leak') return
   assert.equal(presentation.label, '1 public file imports private files')
   assert.equal(presentation.meta, 'JS/TS only')
   assert.equal(presentation.details.report.findings.length, 2)
@@ -56,7 +55,6 @@ test('a leak stays visible while its report updates or fails to refresh', () => 
   for (const { overrides, refresh, meta } of states) {
     const presentation = present(overrides, refresh)
     assert.equal(presentation.kind, 'leak')
-    if (presentation.kind !== 'leak') return
     assert.equal(presentation.meta, meta)
     assert.match(presentation.details.coverage, /^Showing main at a71c9f2.*These results may have changed\.$/)
   }
@@ -65,7 +63,6 @@ test('a leak stays visible while its report updates or fails to refresh', () => 
 test('an incomplete zero-finding report is a status with its gaps, never hidden as clear', () => {
   const presentation = present({ report: incompleteReport })
   assert.equal(presentation.kind, 'status')
-  if (presentation.kind !== 'status') return
   assert.equal(presentation.label, 'Dependency check incomplete')
   assert.deepEqual(presentation.details?.report.gaps, incompleteReport.gaps)
 })
@@ -83,7 +80,6 @@ test('a failed check is a status, keeping the last clear report when one exists'
   })
   const stale = present({ report: clearReport }, { refreshError: 'request failed' })
   assert.equal(stale.kind, 'status')
-  if (stale.kind !== 'status') return
   assert.equal(stale.label, 'Dependency check unavailable')
   assert.equal(stale.details?.report, clearReport)
 })

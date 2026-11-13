@@ -273,7 +273,34 @@ pub(crate) fn repository_change_event(
         kind: match reason {
             RepoChangeReason::Connected => RepoChangeKind::Connected,
             RepoChangeReason::Lagged => RepoChangeKind::Lagged,
-            reason => RepoChangeKind::RepositoryChanged {
+            reason @ (RepoChangeReason::Redacted
+            | RepoChangeReason::RepoDeleted
+            | RepoChangeReason::ConfigApplied
+            | RepoChangeReason::MetadataUpdated
+            | RepoChangeReason::RequestMerged
+            | RepoChangeReason::RequestDeleted
+            | RepoChangeReason::RequestClosed
+            | RepoChangeReason::RequestStarted
+            | RepoChangeReason::RequestIdentityEdited
+            | RepoChangeReason::RequestInviteeLeft
+            | RepoChangeReason::RequestRevised
+            | RepoChangeReason::RequestChecksUpdated
+            | RepoChangeReason::RequestStackUpdated
+            | RepoChangeReason::MemberAdded
+            | RepoChangeReason::InviteUpdated
+            | RepoChangeReason::MemberPermissionsChanged
+            | RepoChangeReason::InviteRevoked
+            | RepoChangeReason::MemberRemoved
+            | RepoChangeReason::ContributorDeleted
+            | RepoChangeReason::FirstPushApplied
+            | RepoChangeReason::PushReceived
+            | RepoChangeReason::RequestSubmitted
+            | RepoChangeReason::RequestRated
+            | RepoChangeReason::RequestInviteeAdded
+            | RepoChangeReason::RequestInviteeRemoved
+            | RepoChangeReason::RequestAttentionChanged
+            | RepoChangeReason::NativeRunsChanged
+            | RepoChangeReason::GitHubConnectionChanged) => RepoChangeKind::RepositoryChanged {
                 reason: reason.as_str().to_string(),
             },
         },

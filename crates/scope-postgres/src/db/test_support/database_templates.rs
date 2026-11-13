@@ -160,15 +160,15 @@ async fn create_database(
     .await
     .with_context(|| format!("creating private PostgreSQL test database {database_name}"));
     let close_result = admin.close().await;
-    if let Err(error) = create_result {
-        let _ = try_drop_database(admin_url, database_name).await;
-        return Err(error);
+    let error = match (create_result, close_result) {
+        (Ok(()), Ok(())) => return Ok(()),
+        (Err(error), _) => error,
+        (Ok(()), Err(error)) => error.into(),
+    };
+    if let Err(drop_error) = try_drop_database(admin_url, database_name).await {
+        eprintln!("test database cleanup failed for {database_name}: {drop_error}");
     }
-    if let Err(error) = close_result {
-        let _ = try_drop_database(admin_url, database_name).await;
-        return Err(error.into());
-    }
-    Ok(())
+    Err(error)
 }
 
 fn register_process_database(
@@ -176,10 +176,9 @@ fn register_process_database(
     database_name: &str,
     database: Weak<DatabaseConnection>,
 ) -> anyhow::Result<()> {
-    match EXIT_HOOK.get_or_init(|| {
-        let result = unsafe { libc::atexit(cleanup_process_databases_at_exit) };
-        (result == 0).then_some(()).ok_or(result)
-    }) {
+    match EXIT_HOOK
+        .get_or_init(|| super::process_os::register_exit_hook(cleanup_process_databases_at_exit))
+    {
         Ok(()) => {}
         Err(code) => anyhow::bail!("registering PostgreSQL test cleanup hook failed with {code}"),
     }

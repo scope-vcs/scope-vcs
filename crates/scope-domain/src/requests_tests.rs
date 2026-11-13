@@ -372,7 +372,7 @@ enum ViewerKind {
 fn policy_for(request: &Request, viewer: ViewerKind) -> RequestPolicyDecision {
     let access = match viewer {
         ViewerKind::Maintainer => access(RepositoryActor::Member, ViewId::private(), true),
-        _ => RepositoryAccess::public(),
+        ViewerKind::Anonymous | ViewerKind::Author => RepositoryAccess::public(),
     };
     let user_id = match viewer {
         ViewerKind::Anonymous => None,

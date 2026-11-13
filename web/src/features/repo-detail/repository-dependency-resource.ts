@@ -68,7 +68,7 @@ export function createRepositoryDependencyResource(
   }
 
   return {
-    subscribe: cache.subscribe,
+    subscribe: (identity: string, listener: () => void) => cache.subscribe(identity, listener),
     getSnapshot: cache.getSnapshot,
     getServerSnapshot: cache.getServerSnapshot,
     peek: cache.peek,

@@ -65,10 +65,7 @@ fn folder_toggle_canonicalizes_subtree_rules() {
             ],
         ),
         (
-            vec![
-                ("/src/**", public.clone()),
-                ("/src/secrets/**", private.clone()),
-            ],
+            vec![("/src/**", public), ("/src/secrets/**", private.clone())],
             vec!["/src/lib.rs", "/src/secrets/key"],
             vec![],
         ),
@@ -136,7 +133,7 @@ fn canonicalization_preserves_same_base_exact_and_subtree_semantics() {
         (
             public.clone(),
             vec![("/docs", public.clone()), ("/docs/**", private.clone())],
-            vec![("/docs", public.clone()), ("/docs/**", private.clone())],
+            vec![("/docs", public), ("/docs/**", private.clone())],
         ),
     ];
     for (default, rules, expected) in cases {

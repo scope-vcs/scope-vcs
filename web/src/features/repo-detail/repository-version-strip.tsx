@@ -35,9 +35,10 @@ export function RepositoryRequestStrip({
   const scope = isLoaded ? repoResourceScope(repo, viewerId) : null
   const identity = scope ? requestStateIdentity(scope, requestId) : null
   const load = useCallback((signal: AbortSignal) => {
+    if (identity === null) throw new Error('Request state scope is unavailable.')
     const request = { ...params, request_id: requestId }
     return reloadRequestStateValue(
-      identity!,
+      identity,
       (stateSignal) => loadRequestStateForViewer(request, viewerId, stateSignal),
       (cursor, childSignal) => loadRequestChildrenForViewer({ ...request, cursor }, viewerId, childSignal),
       signal,
@@ -101,7 +102,7 @@ export function RepositoryUpdateStrip({
   return (
     <VersionStrip
       className="border-warning-border bg-warning-soft text-warning-strong"
-      title={entry?.message.split('\n', 1)[0] || 'Past update'}
+      title={pastUpdateTitle(entry?.message ?? '')}
     >
       <span className="shrink-0 rounded-full border border-warning-border bg-card px-2">Past update</span>
       {entry?.author && <span className="min-w-0 max-w-40 truncate">{entry.author}</span>}
@@ -143,4 +144,9 @@ function VersionStrip({
       {children}
     </div>
   )
+}
+
+function pastUpdateTitle(message: string) {
+  const [firstLine = ''] = message.split('\n', 1)
+  return firstLine === '' ? 'Past update' : firstLine
 }

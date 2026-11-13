@@ -80,13 +80,14 @@ export function WorkspaceTabStrip({
     }
     if (nextIndex === null) return
     event.preventDefault()
-    tabRefs?.get(tabs[nextIndex].id)?.focus()
+    const nextTab = tabs[nextIndex]
+    if (nextTab) tabRefs.get(nextTab.id)?.focus()
   }
 
   function closeTab(id: string) {
     const focusId = onClose(id)
     requestAnimationFrame(() => {
-      if (focusId) tabRefs?.get(focusId)?.focus()
+      if (focusId) tabRefs.get(focusId)?.focus()
       else onEmptyFocus()
     })
   }

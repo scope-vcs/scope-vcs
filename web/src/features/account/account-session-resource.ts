@@ -31,8 +31,9 @@ export async function loadAccountSessionValue(
     try {
       return { account: await load(signal) }
     } catch (error) {
-      if (signal.aborted || attempt >= delays.length) throw error
-      await wait(delays[attempt], signal)
+      const delay = delays[attempt]
+      if (signal.aborted || delay === undefined) throw error
+      await wait(delay, signal)
     }
   }
 }
@@ -41,7 +42,8 @@ function abortableDelay(delay: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     const onAbort = () => {
       window.clearTimeout(timeout)
-      reject(signal.reason)
+      const reason: unknown = signal.reason
+      reject(reason instanceof Error ? reason : new DOMException('Account session retry was aborted.', 'AbortError'))
     }
     const timeout = window.setTimeout(() => {
       signal.removeEventListener('abort', onAbort)

@@ -2,43 +2,43 @@ use std::path::{Path as FsPath, PathBuf};
 
 use scope_git::{DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits};
 
-pub const SCOPE_APP_ORIGIN_ENV: &str = "SCOPE_APP_ORIGIN";
-pub const SCOPE_API_PUBLIC_URL_ENV: &str = "SCOPE_API_PUBLIC_URL";
-pub const SCOPE_GIT_PUBLIC_URL_ENV: &str = "SCOPE_GIT_PUBLIC_URL";
-pub const DATABASE_URL_ENV: &str = "DATABASE_URL";
-pub const SCOPE_DATABASE_MAX_CONNECTIONS_ENV: &str = "SCOPE_DATABASE_MAX_CONNECTIONS";
-pub const SCOPE_REPO_ROOT_ENV: &str = "SCOPE_REPO_ROOT";
-pub const SCOPE_DATA_DIR_ENV: &str = "SCOPE_DATA_DIR";
-pub const SCOPE_OBJECT_ENCRYPTION_KEY_ENV: &str = "SCOPE_OBJECT_ENCRYPTION_KEY";
-pub const SCOPE_OBJECT_STORE_MAX_BYTES_ENV: &str = "SCOPE_OBJECT_STORE_MAX_BYTES";
-pub const SCOPE_GIT_CACHE_MAX_BYTES_ENV: &str = "SCOPE_GIT_CACHE_MAX_BYTES";
-pub const SCOPE_DISPATCH_BROKER_TOKEN_ENV: &str = "SCOPE_DISPATCH_BROKER_TOKEN";
-pub const CLERK_ISSUER_ENV: &str = "CLERK_ISSUER";
-pub const CLERK_JWKS_URL_ENV: &str = "CLERK_JWKS_URL";
-pub const CLERK_AUTHORIZED_PARTIES_ENV: &str = "CLERK_AUTHORIZED_PARTIES";
-pub const CLERK_AUDIENCE_ENV: &str = "CLERK_AUDIENCE";
-pub const CLERK_SECRET_KEY_ENV: &str = "CLERK_SECRET_KEY";
-pub const DEFAULT_CLERK_AUDIENCE: &str = "scope-api";
-pub const LOCAL_APP_ORIGIN: &str = "http://localhost:3000";
-pub const LOCAL_API_ORIGIN: &str = "http://localhost:8080";
-pub const FIRST_PUSH_TOKEN_PREFIX: &str = "scope_fp_";
-pub const GIT_PUSH_TOKEN_PREFIX: &str = "scope_git_";
-pub const CLI_SESSION_TOKEN_PREFIX: &str = "scope_cli_";
-pub const RECEIVE_PACK_STAGING_BYTES: usize = 16;
-pub const GIT_UPLOAD_PACK: &str = "git-upload-pack";
-pub const GIT_RECEIVE_PACK: &str = "git-receive-pack";
-pub const DEFAULT_GIT_CACHE_MAX_BYTES: usize = 10 * 1024 * 1024 * 1024;
-pub const AWAITING_FIRST_PUSH_GIT_ERROR: &str = "repo is awaiting its first push";
-pub const MAX_RECEIVE_PACK_BYTES: usize = 512 * 1024 * 1024;
-pub const MAX_UPLOAD_PACK_BYTES: usize = 64 * 1024 * 1024;
-pub const MAX_PENDING_IMPORT_BLOB_BYTES: usize = 25 * 1024 * 1024;
+pub(crate) const SCOPE_APP_ORIGIN_ENV: &str = "SCOPE_APP_ORIGIN";
+pub(crate) const SCOPE_API_PUBLIC_URL_ENV: &str = "SCOPE_API_PUBLIC_URL";
+pub(crate) const SCOPE_GIT_PUBLIC_URL_ENV: &str = "SCOPE_GIT_PUBLIC_URL";
+pub(crate) const DATABASE_URL_ENV: &str = "DATABASE_URL";
+pub(crate) const SCOPE_DATABASE_MAX_CONNECTIONS_ENV: &str = "SCOPE_DATABASE_MAX_CONNECTIONS";
+pub(crate) const SCOPE_REPO_ROOT_ENV: &str = "SCOPE_REPO_ROOT";
+pub(crate) const SCOPE_DATA_DIR_ENV: &str = "SCOPE_DATA_DIR";
+pub(crate) const SCOPE_OBJECT_ENCRYPTION_KEY_ENV: &str = "SCOPE_OBJECT_ENCRYPTION_KEY";
+pub(crate) const SCOPE_OBJECT_STORE_MAX_BYTES_ENV: &str = "SCOPE_OBJECT_STORE_MAX_BYTES";
+pub(crate) const SCOPE_GIT_CACHE_MAX_BYTES_ENV: &str = "SCOPE_GIT_CACHE_MAX_BYTES";
+pub(crate) const SCOPE_DISPATCH_BROKER_TOKEN_ENV: &str = "SCOPE_DISPATCH_BROKER_TOKEN";
+pub(crate) const CLERK_ISSUER_ENV: &str = "CLERK_ISSUER";
+pub(crate) const CLERK_JWKS_URL_ENV: &str = "CLERK_JWKS_URL";
+pub(crate) const CLERK_AUTHORIZED_PARTIES_ENV: &str = "CLERK_AUTHORIZED_PARTIES";
+pub(crate) const CLERK_AUDIENCE_ENV: &str = "CLERK_AUDIENCE";
+pub(crate) const CLERK_SECRET_KEY_ENV: &str = "CLERK_SECRET_KEY";
+pub(crate) const DEFAULT_CLERK_AUDIENCE: &str = "scope-api";
+pub(crate) const LOCAL_APP_ORIGIN: &str = "http://localhost:3000";
+pub(crate) const LOCAL_API_ORIGIN: &str = "http://localhost:8080";
+pub(crate) const FIRST_PUSH_TOKEN_PREFIX: &str = "scope_fp_";
+pub(crate) const GIT_PUSH_TOKEN_PREFIX: &str = "scope_git_";
+pub(crate) const CLI_SESSION_TOKEN_PREFIX: &str = "scope_cli_";
+pub(crate) const RECEIVE_PACK_STAGING_BYTES: usize = 16;
+pub(crate) const GIT_UPLOAD_PACK: &str = "git-upload-pack";
+pub(crate) const GIT_RECEIVE_PACK: &str = "git-receive-pack";
+pub(crate) const DEFAULT_GIT_CACHE_MAX_BYTES: usize = 10 * 1024 * 1024 * 1024;
+pub(crate) const AWAITING_FIRST_PUSH_GIT_ERROR: &str = "repo is awaiting its first push";
+pub(crate) const MAX_RECEIVE_PACK_BYTES: usize = 512 * 1024 * 1024;
+pub(crate) const MAX_UPLOAD_PACK_BYTES: usize = 64 * 1024 * 1024;
+pub(crate) const MAX_PENDING_IMPORT_BLOB_BYTES: usize = 25 * 1024 * 1024;
 
-pub fn database_url_from_env() -> anyhow::Result<String> {
+pub(crate) fn database_url_from_env() -> anyhow::Result<String> {
     non_empty_env(DATABASE_URL_ENV)
         .ok_or_else(|| anyhow::anyhow!("{DATABASE_URL_ENV} is required for Scope metadata storage"))
 }
 
-pub fn git_public_url_from_env(local_fallback: Option<&str>) -> anyhow::Result<String> {
+pub(crate) fn git_public_url_from_env(local_fallback: Option<&str>) -> anyhow::Result<String> {
     git_public_url(std::env::var(SCOPE_GIT_PUBLIC_URL_ENV).ok(), local_fallback)
 }
 
@@ -59,11 +59,11 @@ fn git_public_url(
         })
 }
 
-pub fn non_empty_env(name: &str) -> Option<String> {
+pub(crate) fn non_empty_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
 }
 
-pub fn git_storage_limits_from_env() -> anyhow::Result<GitStorageLimits> {
+pub(crate) fn git_storage_limits_from_env() -> anyhow::Result<GitStorageLimits> {
     let max_object_bytes = parse_usize_env(
         SCOPE_OBJECT_STORE_MAX_BYTES_ENV,
         DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES,
@@ -71,7 +71,7 @@ pub fn git_storage_limits_from_env() -> anyhow::Result<GitStorageLimits> {
     GitStorageLimits::new(max_object_bytes).map_err(anyhow::Error::from)
 }
 
-pub fn git_cache_max_bytes_from_env() -> anyhow::Result<usize> {
+pub(crate) fn git_cache_max_bytes_from_env() -> anyhow::Result<usize> {
     let bytes = parse_usize_env(SCOPE_GIT_CACHE_MAX_BYTES_ENV, DEFAULT_GIT_CACHE_MAX_BYTES)?;
     if bytes == 0 {
         anyhow::bail!("{SCOPE_GIT_CACHE_MAX_BYTES_ENV} must be greater than zero");
@@ -79,7 +79,7 @@ pub fn git_cache_max_bytes_from_env() -> anyhow::Result<usize> {
     Ok(bytes)
 }
 
-pub fn database_max_connections_from_env() -> anyhow::Result<u32> {
+pub(crate) fn database_max_connections_from_env() -> anyhow::Result<u32> {
     let value = parse_positive_usize_env(
         SCOPE_DATABASE_MAX_CONNECTIONS_ENV,
         scope_postgres::db::DEFAULT_METADATA_POOL_MAX_CONNECTIONS as usize,
@@ -105,7 +105,7 @@ pub(crate) fn parse_usize_env(name: &str, default: usize) -> anyhow::Result<usiz
     }
 }
 
-pub fn data_dir(repo_root: &FsPath) -> PathBuf {
+pub(crate) fn data_dir(repo_root: &FsPath) -> PathBuf {
     non_empty_env(SCOPE_DATA_DIR_ENV)
         .map(|value| {
             let path = PathBuf::from(value);
@@ -118,7 +118,7 @@ pub fn data_dir(repo_root: &FsPath) -> PathBuf {
         .unwrap_or_else(|| repo_root.join(".scope"))
 }
 
-pub fn git_repo_root() -> PathBuf {
+pub(crate) fn git_repo_root() -> PathBuf {
     if let Some(root) = non_empty_env(SCOPE_REPO_ROOT_ENV) {
         return PathBuf::from(root);
     }

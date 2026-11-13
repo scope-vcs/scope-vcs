@@ -271,7 +271,10 @@ fn main_push_commit_error(error: RepositoryMutationError) -> ApiError {
         {
             ApiError::conflict(STALE_MAIN_PUSH_ERROR)
         }
-        error => error.into(),
+        error
+        @ (RepositoryMutationError::Behavior(_) | RepositoryMutationError::Persistence(_)) => {
+            error.into()
+        }
     }
 }
 

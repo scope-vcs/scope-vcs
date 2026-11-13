@@ -145,7 +145,7 @@ impl RequestStore {
         accounts: &[GitHubAccount],
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
-        let columns = subject_columns(&job.subject)?;
+        let columns = subject_columns(&job.subject);
         let tx = self.db.begin().await?;
         let carrier =
             super::github_pull_requests::github_pull_request(&tx, &job.request_id).await?;
@@ -244,7 +244,7 @@ impl RequestStore {
         job: &GitHubReviewImportJob,
         finish: GitHubReviewImportFinish,
     ) -> Result<(), PostgresError> {
-        let columns = subject_columns(&job.subject)?;
+        let columns = subject_columns(&job.subject);
         let mut values = vec![
             job.request_id.clone().into(),
             columns.subject.into(),
@@ -591,8 +591,8 @@ async fn lock_importing_request<C: ConnectionTrait>(
     Ok(accepts_github_reviews(&request, &views).then_some((request, views)))
 }
 
-fn subject_columns(subject: &GitHubReviewImportSubject) -> Result<SubjectColumns, PostgresError> {
-    Ok(match subject {
+fn subject_columns(subject: &GitHubReviewImportSubject) -> SubjectColumns {
+    match subject {
         GitHubReviewImportSubject::Review { review_id } => SubjectColumns {
             subject: REVIEW,
             github_subject_id: *review_id,
@@ -619,7 +619,7 @@ fn subject_columns(subject: &GitHubReviewImportSubject) -> Result<SubjectColumns
             thread_resolved: Some(*resolved),
             github_actor_id: Some(*github_account_id),
         },
-    })
+    }
 }
 
 impl ImportJobRow {

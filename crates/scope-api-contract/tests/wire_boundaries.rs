@@ -1,29 +1,24 @@
 use scope_api_contract::*;
 
 #[test]
-#[allow(dead_code)]
 fn public_payload_fields_are_owned_wire_types() {
-    fn session(response: CliSessionTokenResponse) {
+    let _session = |response: CliSessionTokenResponse| {
         let _: SessionIdentity = response.identity;
-    }
-    fn repository(
-        summary: RepoSummaryResponse,
-        access: RepositoryAccessResponse,
-        token: FirstPushTokenResponse,
-        config: RepoConfigResponse,
-    ) {
+    };
+    let _repository = |summary: RepoSummaryResponse,
+                       access: RepositoryAccessResponse,
+                       token: FirstPushTokenResponse,
+                       config: RepoConfigResponse| {
         let _: RepoLifecycleState = summary.lifecycle_state;
         let _: RepositoryActor = access.actor;
         let _: FirstPushTokenStatus = token.status;
         let _: RepoConfig = config.config;
-    }
-    fn request(
-        summary: RequestSummaryResponse,
-        list_item: RequestListItemResponse,
-        event: RequestEventResponse,
-        discussion: RequestDiscussionSummaryResponse,
-        file: CommitFileResponse,
-    ) {
+    };
+    let _request = |summary: RequestSummaryResponse,
+                    list_item: RequestListItemResponse,
+                    event: RequestEventResponse,
+                    discussion: RequestDiscussionSummaryResponse,
+                    file: CommitFileResponse| {
         let _: RequestActorRole = summary.author_role;
         let _: ViewId = summary.view;
         let _: RequestState = summary.state;
@@ -34,34 +29,30 @@ fn public_payload_fields_are_owned_wire_types() {
         let _: RequestDiscussionStatus = discussion.status;
         let _: FileChangeKind = file.kind;
         let _: ViewId = file.label;
-    }
-    fn request_auto_merge(response: RequestAutoMergeResponse) {
+    };
+    let _request_auto_merge = |response: RequestAutoMergeResponse| {
         if let Some(intent) = response.intent {
             let _: RequestActorSummaryResponse = intent.actor;
             let _: RequestAutoMergeIntentStatus = intent.status;
             let _: Option<RequestAutoMergeStopReason> = intent.reason;
         }
-    }
-    fn repository_events(event: RepoChangeEvent) {
+    };
+    let _repository_events = |event: RepoChangeEvent| {
         let _: RepoChangeKind = event.kind;
-    }
-    fn runtime(
-        status: AttemptStatusResponse,
-        step: AttemptStepStatusResponse,
-        preparation: AttemptCachePreparationReport,
-        finalization: AttemptCacheFinalizationReport,
-    ) {
+    };
+    let _runtime = |status: AttemptStatusResponse,
+                    step: AttemptStepStatusResponse,
+                    preparation: AttemptCachePreparationReport,
+                    finalization: AttemptCacheFinalizationReport| {
         let _: AttemptState = status.state;
         let _: StepState = step.state;
         let _: CachePreparation = preparation.preparation;
         let _: CacheFinalState = finalization.final_state;
-    }
-    fn repository_run(
-        summary: RepositoryRunSummaryResponse,
-        attempt: RepositoryRunAttemptResponse,
-        step: RepositoryRunStepResponse,
-        cache: RepositoryRunCacheObservationResponse,
-    ) {
+    };
+    let _repository_run = |summary: RepositoryRunSummaryResponse,
+                           attempt: RepositoryRunAttemptResponse,
+                           step: RepositoryRunStepResponse,
+                           cache: RepositoryRunCacheObservationResponse| {
         let _: RepositoryRunTrigger = summary.trigger;
         let _: RunState = summary.state;
         let _: AttemptState = attempt.state;
@@ -69,5 +60,5 @@ fn public_payload_fields_are_owned_wire_types() {
         let _: StepState = step.state;
         let _: CachePreparation = cache.preparation;
         let _: CacheFinalState = cache.final_state;
-    }
+    };
 }

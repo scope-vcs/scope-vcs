@@ -6,7 +6,7 @@ import { Select } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import * as Dialog from '@radix-ui/react-dialog'
 import { CalendarIcon, Minus, Plus } from 'lucide-react'
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type SubmitEvent } from 'react'
 import {
   localSnoozeDate,
   localSnoozeTime,
@@ -35,7 +35,7 @@ export function RequestCustomSnoozeDialog({
   const [unit, setUnit] = useState<(typeof DURATION_UNITS)[number]>('hours')
   const [error, setError] = useState<string | null>(null)
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     const input: CustomSnoozeInput =
       mode === 'date' ? { mode, date: localSnoozeDate(date), time } : { mode, amount, unit }
@@ -96,10 +96,10 @@ export function RequestCustomSnoozeDialog({
                     align="start"
                     className="p-2"
                     label="Choose snooze date"
-                    panel={(close) => (
+                    renderPanel={(close) => (
                       <Calendar
                         defaultMonth={date}
-                        disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
+                        disabled={{ before: startOfToday() }}
                         mode="single"
                         onSelect={(selected) => {
                           setDate(selected)
@@ -110,7 +110,7 @@ export function RequestCustomSnoozeDialog({
                         selected={date}
                       />
                     )}
-                    trigger={(props) => (
+                    renderTrigger={(props) => (
                       <Button
                         {...props}
                         aria-labelledby={`${id}-date ${id}-date-value`}
@@ -200,4 +200,8 @@ export function RequestCustomSnoozeDialog({
       </Dialog.Portal>
     </Dialog.Root>
   )
+}
+
+function startOfToday() {
+  return new Date(new Date().setHours(0, 0, 0, 0))
 }

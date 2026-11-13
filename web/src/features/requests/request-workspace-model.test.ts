@@ -60,7 +60,7 @@ test('a custom date is a local wall clock that must exist and be in the future',
     ['2026-09-15', '09:60'],
     ['', '09:00'],
     ['2026-09-15', ''],
-  ]) {
+  ] satisfies [string, string][]) {
     assert.equal(resolveCustomSnooze({ mode: 'date', date, time }, now), null, `${date} ${time}`)
   }
 })

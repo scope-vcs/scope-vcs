@@ -56,7 +56,7 @@ test('SSE parsing returns explicit validated outcomes', () => {
     'event: repo-change\ndata: {"repo_id":"owner/repo","incarnation_id":"repoi-owner-repo","version":2,"kind":{"RequestTimelineChanged":{"request_id":"request-1"}}}',
   )
   assert.equal(invalid.type, 'protocol-error')
-  assert.equal(invalid.type === 'protocol-error' ? invalid.failureClass : '', 'schema')
+  assert.equal(invalid.failureClass, 'schema')
   assert.deepEqual(
     parseRepoStreamMessage(
       'event: error\ndata: {"code":"service_unavailable","message":"retry","retryable":true}',
@@ -127,7 +127,7 @@ test('stream connection errors use the generated public error contract', async (
     new AbortController().signal,
   )
   assert.equal(invalid.type, 'protocol-error')
-  assert.equal(invalid.type === 'protocol-error' ? invalid.failureClass : '', 'schema')
+  assert.equal(invalid.failureClass, 'schema')
   assert.equal(onEvent.mock.callCount(), 0)
 })
 

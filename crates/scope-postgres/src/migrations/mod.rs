@@ -1,29 +1,55 @@
 mod baseline;
+#[expect(unreachable_pub)]
 mod m0084_request_review_bases;
+#[expect(unreachable_pub)]
 mod m0085_request_check_identity;
+#[expect(unreachable_pub)]
 mod m0086_private_request_stacks;
+#[expect(unreachable_pub)]
 mod m0087_stack_auto_merge_stop_reasons;
+#[expect(unreachable_pub)]
 mod m0088_request_navigation_children_index;
+#[expect(unreachable_pub)]
 mod m0089_contribution_request_stacks;
+#[expect(unreachable_pub)]
 mod m0090_job_traceparents;
+#[expect(unreachable_pub)]
 mod m0091_media_reconcile_once;
+#[expect(unreachable_pub)]
 mod m0092_request_discussion_line_anchors;
+#[expect(unreachable_pub)]
 mod m0093_github_main_publication;
+#[expect(unreachable_pub)]
 mod m0094_github_carrier_pull_requests;
+#[expect(unreachable_pub)]
 mod m0095_github_review_imports;
+#[expect(unreachable_pub)]
 mod m0096_github_review_bot_gate;
+#[expect(unreachable_pub)]
 mod m0097_review_bot_status_carriers;
+#[expect(unreachable_pub)]
 mod m0098_live_file_views;
+#[expect(unreachable_pub)]
 mod m0099_request_object_pool;
+#[expect(unreachable_pub)]
 mod m0100_head_only_run_sources;
+#[expect(unreachable_pub)]
 mod m0101_main_pool_packs;
+#[expect(unreachable_pub)]
 mod m0102_projection_file_symlinks;
+#[expect(unreachable_pub)]
 mod m0103_review_request_times;
+#[expect(unreachable_pub)]
 mod m0104_request_revision_diff_stats;
+#[expect(unreachable_pub)]
 mod m0105_view_pool_packs;
+#[expect(unreachable_pub)]
 mod m0106_git_fetch_advertisements;
+#[expect(unreachable_pub)]
 mod m0107_delete_request_bundles;
+#[expect(unreachable_pub)]
 mod m0108_github_pull_request_merges;
+#[expect(unreachable_pub)]
 mod m0109_main_advanced_by;
 
 #[cfg(test)]
@@ -38,7 +64,7 @@ use serde::Serialize;
 const MIGRATION_LOCK: &str = "scope:metadata-migrations";
 const MIGRATION_TABLE: &str = "seaql_migrations";
 
-pub struct Migrator;
+pub(crate) struct Migrator;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PendingMigration {
@@ -197,7 +223,7 @@ impl Default for MigrationLimits {
     }
 }
 
-pub async fn apply_in_maintenance(
+pub(crate) async fn apply_in_maintenance(
     db: &DatabaseConnection,
     limits: MigrationLimits,
 ) -> Result<(), DbErr> {
@@ -210,7 +236,7 @@ pub async fn apply_in_maintenance(
     tx.commit().await
 }
 
-pub async fn preflight(
+pub(crate) async fn preflight(
     db: &DatabaseConnection,
     limits: MigrationLimits,
 ) -> Result<MigrationPlan, DbErr> {
@@ -252,7 +278,7 @@ async fn set_operation_limits<C: ConnectionTrait>(
     Ok(())
 }
 
-pub async fn plan<C>(db: &C) -> Result<MigrationPlan, DbErr>
+pub(crate) async fn plan<C>(db: &C) -> Result<MigrationPlan, DbErr>
 where
     C: ConnectionTrait,
 {
@@ -303,7 +329,7 @@ where
     Ok(())
 }
 
-pub async fn assert_exact_state<C>(db: &C) -> Result<(), DbErr>
+pub(crate) async fn assert_exact_state<C>(db: &C) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {

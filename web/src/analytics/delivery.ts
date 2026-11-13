@@ -45,7 +45,7 @@ export class BoundedDelivery {
     this.current?.abort()
     const beacon = this.options.beacon ?? (typeof navigator === 'undefined'
       ? undefined
-      : navigator.sendBeacon?.bind(navigator))
+      : 'sendBeacon' in navigator ? navigator.sendBeacon.bind(navigator) : undefined)
     if (beacon) {
       const payloads = this.activePayload === null
         ? this.pending
@@ -68,7 +68,8 @@ export class BoundedDelivery {
     this.sending = true
     try {
       while (!this.closed && this.pending.length > 0) {
-        const payload = this.pending.shift()!
+        const payload = this.pending.shift()
+        if (payload === undefined) break
         this.activePayload = payload
         try {
           await this.deliver(payload)
@@ -80,6 +81,10 @@ export class BoundedDelivery {
       this.sending = false
       if (!this.closed && this.pending.length > 0) void this.drain()
     }
+  }
+
+  private cancelled(generation: number) {
+    return this.closed || generation !== this.generation
   }
 
   private async deliver(payload: string) {
@@ -106,7 +111,7 @@ export class BoundedDelivery {
         clearTimeout(timer)
         if (this.current === controller) this.current = null
       }
-      if (this.closed || generation !== this.generation) return
+      if (this.cancelled(generation)) return
       if (!retry || attempt === RETRY_DELAYS_MS.length) return
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]))
     }

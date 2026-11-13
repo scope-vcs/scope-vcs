@@ -71,7 +71,7 @@ struct QueuedMerge {
 
 impl QueuedMerge {
     fn answer(self, result: Result<LandedMerge, RequestMergeFailure>) {
-        let _ = self.reply.send(result);
+        self.reply.send(result).ok();
     }
 
     fn author(&self) -> MergeAuthor<'_> {

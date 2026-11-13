@@ -18,7 +18,6 @@ const PALETTE: readonly (readonly [number, number, number])[] = [
   [0, 0, 0], [205, 0, 0], [0, 205, 0], [205, 205, 0], [0, 0, 238], [205, 0, 205], [0, 205, 205], [229, 229, 229],
   [127, 127, 127], [255, 0, 0], [0, 255, 0], [255, 255, 0], [92, 92, 255], [255, 0, 255], [0, 255, 255], [255, 255, 255],
 ]
-const CUBE_LEVELS = [0, 95, 135, 175, 215, 255]
 
 export function readAnsi(raw: string, carried: LogStyle = PLAIN): AnsiText {
   if (!raw.includes(ESC) && sameStyle(carried, PLAIN)) return { text: raw, spans: null, style: carried }
@@ -96,7 +95,8 @@ function applySgr(current: LogStyle, params: string): LogStyle {
   const codes = params === '' ? [0] : params.split(/[;:]/).map((part) => Number(part) || 0)
   let style = current
   for (let index = 0; index < codes.length; index++) {
-    const code = codes[index]!
+    const code = codes[index]
+    if (code === undefined) break
     if (code === 0) style = PLAIN
     else if (code === 1) style = { ...style, bold: true }
     else if (code === 2) style = { ...style, dim: true }
@@ -131,13 +131,17 @@ function paletteFor256(value: number) {
   if (value < 232) {
     const cube = value - 16
     return nearestPalette(
-      CUBE_LEVELS[Math.floor(cube / 36)]!,
-      CUBE_LEVELS[Math.floor(cube / 6) % 6]!,
-      CUBE_LEVELS[cube % 6]!,
+      cubeLevel(Math.floor(cube / 36)),
+      cubeLevel(Math.floor(cube / 6) % 6),
+      cubeLevel(cube % 6),
     )
   }
   const level = 8 + (Math.min(value, 255) - 232) * 10
   return nearestPalette(level, level, level)
+}
+
+function cubeLevel(step: number) {
+  return step === 0 ? 0 : 55 + step * 40
 }
 
 function nearestPalette(red: number, green: number, blue: number) {
@@ -154,5 +158,5 @@ function nearestPalette(red: number, green: number, blue: number) {
 }
 
 function withPaletteColor(style: LogStyle, color: number): LogStyle {
-  return { ...style, tone: TONES[color % 8]!, bright: color >= 8 }
+  return { ...style, tone: TONES[color % 8] ?? null, bright: color >= 8 }
 }

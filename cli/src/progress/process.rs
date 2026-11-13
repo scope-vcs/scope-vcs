@@ -1,3 +1,7 @@
+#[expect(unsafe_code)]
+#[path = "process/tree.rs"]
+mod tree;
+
 use super::{CancellationToken, Cancelled};
 use anyhow::{Context, bail};
 use std::{
@@ -10,6 +14,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use tree::ProcessTree;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 const MAX_STDERR_BYTES: usize = 1024 * 1024;
@@ -35,8 +40,8 @@ pub fn run_cancellable(
     let process_tree = match ProcessTree::attach(&child) {
         Ok(process_tree) => process_tree,
         Err(error) => {
-            let _ = child.kill();
-            let _ = child.wait();
+            child.kill().ok();
+            child.wait().ok();
             return Err(error).context("manage child process tree");
         }
     };
@@ -184,9 +189,9 @@ fn join_io(
 }
 
 fn terminate_and_reap(child: &mut Child, process_tree: &ProcessTree) {
-    process_tree.terminate(child);
-    let _ = child.kill();
-    let _ = child.wait();
+    process_tree.terminate();
+    child.kill().ok();
+    child.wait().ok();
 }
 
 #[cfg(unix)]
@@ -204,93 +209,6 @@ fn configure_process_group(command: &mut Command) {
 
 #[cfg(not(any(unix, windows)))]
 fn configure_process_group(_command: &mut Command) {}
-
-#[cfg(unix)]
-struct ProcessTree;
-
-#[cfg(unix)]
-impl ProcessTree {
-    fn attach(_child: &Child) -> io::Result<Self> {
-        Ok(Self)
-    }
-
-    fn terminate(&self, child: &Child) {
-        if let Ok(process_group) = i32::try_from(child.id()) {
-            unsafe {
-                libc::kill(-process_group, libc::SIGKILL);
-            }
-        }
-    }
-}
-
-#[cfg(windows)]
-struct ProcessTree {
-    job: windows_sys::Win32::Foundation::HANDLE,
-}
-
-#[cfg(windows)]
-impl ProcessTree {
-    fn attach(child: &Child) -> io::Result<Self> {
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-            SetInformationJobObject,
-        };
-
-        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
-        if job.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        let configured = unsafe {
-            SetInformationJobObject(
-                job,
-                JobObjectExtendedLimitInformation,
-                std::ptr::from_ref(&limits).cast(),
-                std::mem::size_of_val(&limits) as u32,
-            )
-        };
-        let assigned = configured != 0
-            && unsafe { AssignProcessToJobObject(job, child.as_raw_handle() as _) } != 0;
-        if !assigned {
-            let error = io::Error::last_os_error();
-            unsafe {
-                windows_sys::Win32::Foundation::CloseHandle(job);
-            }
-            return Err(error);
-        }
-        Ok(Self { job })
-    }
-
-    fn terminate(&self, _child: &Child) {
-        unsafe {
-            windows_sys::Win32::System::JobObjects::TerminateJobObject(self.job, 1);
-        }
-    }
-}
-
-#[cfg(windows)]
-impl Drop for ProcessTree {
-    fn drop(&mut self) {
-        unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(self.job);
-        }
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-struct ProcessTree;
-
-#[cfg(not(any(unix, windows)))]
-impl ProcessTree {
-    fn attach(_child: &Child) -> io::Result<Self> {
-        Ok(Self)
-    }
-
-    fn terminate(&self, _child: &Child) {}
-}
 
 #[cfg(test)]
 mod tests {

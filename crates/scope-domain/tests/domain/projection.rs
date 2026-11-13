@@ -418,7 +418,7 @@ fn request_merge_requires_an_ordered_native_range_inside_its_view() {
         policy: repo.policy.clone(),
         repo_config: config.clone(),
         live_files: repo.live_files.clone(),
-        git_head: repo.git_head.clone(),
+        git_head: repo.git_head,
     };
     let update = reviewed_update(
         "3333333333333333333333333333333333333333",

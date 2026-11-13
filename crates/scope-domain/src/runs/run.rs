@@ -1,6 +1,6 @@
 use super::{
     source::{RunSource, RunTrigger},
-    validation::{required, validate_sha256_hash},
+    validation::{ensure_present, validate_sha256_hash},
     workflow::{identity::WorkflowIdentity, revision::WorkflowRevision},
 };
 use crate::error::DomainError;
@@ -65,103 +65,44 @@ pub struct Run {
     pub completed_at_unix: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunRequest {
+    pub id: String,
+    pub idempotency_key: String,
+    pub workflow: WorkflowIdentity,
+    pub workflow_revision_digest: String,
+    pub trigger: RunTrigger,
+    pub requested_by_user_id: Option<String>,
+    pub source: RunSource,
+}
+
 impl Run {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: impl Into<String>,
-        idempotency_key: impl Into<String>,
-        workflow: WorkflowIdentity,
-        workflow_revision_digest: impl Into<String>,
-        trigger: RunTrigger,
-        requested_by_user_id: Option<String>,
-        source: RunSource,
-        now_unix: u64,
-    ) -> Result<Self, DomainError> {
-        if trigger == RunTrigger::Manual && requested_by_user_id.is_none() {
+    pub fn new(request: RunRequest, now_unix: u64) -> Result<Self, DomainError> {
+        if request.trigger == RunTrigger::Manual && request.requested_by_user_id.is_none() {
             return Err(DomainError::invalid_input(
                 "manual run requester user id is required",
             ));
         }
-        Self::queued(
-            id,
-            idempotency_key,
-            workflow,
-            workflow_revision_digest,
-            trigger,
-            requested_by_user_id,
-            source,
-            now_unix,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn queued(
-        id: impl Into<String>,
-        idempotency_key: impl Into<String>,
-        workflow: WorkflowIdentity,
-        workflow_revision_digest: impl Into<String>,
-        trigger: RunTrigger,
-        requested_by_user_id: Option<String>,
-        source: RunSource,
-        now_unix: u64,
-    ) -> Result<Self, DomainError> {
-        let id = required("run id", id.into())?;
-        let idempotency_key = required("run idempotency key", idempotency_key.into())?;
-        let workflow_revision_digest = workflow_revision_digest.into();
-        validate_sha256_hash("workflow revision digest", &workflow_revision_digest)?;
-        if requested_by_user_id
-            .as_deref()
-            .is_some_and(|id| id.trim().is_empty())
-        {
-            return Err(DomainError::invalid_input(
-                "run requester user id cannot be empty",
-            ));
-        }
-        Ok(Self {
-            id,
-            idempotency_key,
-            workflow,
-            workflow_revision_digest,
-            trigger,
-            requested_by_user_id,
-            source,
+        let run = Self {
+            id: request.id,
+            idempotency_key: request.idempotency_key,
+            workflow: request.workflow,
+            workflow_revision_digest: request.workflow_revision_digest,
+            trigger: request.trigger,
+            requested_by_user_id: request.requested_by_user_id,
+            source: request.source,
             state: RunState::Queued,
             cancellation_requested: false,
             created_at_unix: now_unix,
             updated_at_unix: now_unix,
             completed_at_unix: None,
-        })
+        };
+        run.validate_request()?;
+        Ok(run)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        id: impl Into<String>,
-        idempotency_key: impl Into<String>,
-        workflow: WorkflowIdentity,
-        workflow_revision_digest: impl Into<String>,
-        trigger: RunTrigger,
-        requested_by_user_id: Option<String>,
-        source: RunSource,
-        state: RunState,
-        cancellation_requested: bool,
-        created_at_unix: u64,
-        updated_at_unix: u64,
-        completed_at_unix: Option<u64>,
-    ) -> Result<Self, DomainError> {
-        let mut run = Self::queued(
-            id,
-            idempotency_key,
-            workflow,
-            workflow_revision_digest,
-            trigger,
-            requested_by_user_id,
-            source,
-            created_at_unix,
-        )?;
-        run.state = state;
-        run.cancellation_requested = cancellation_requested;
-        run.updated_at_unix = updated_at_unix;
-        run.completed_at_unix = completed_at_unix;
+    pub fn restore(run: Self) -> Result<Self, DomainError> {
+        run.validate_request()?;
         run.validate_facts()?;
         Ok(run)
     }
@@ -226,6 +167,22 @@ impl Run {
         if now_unix < self.updated_at_unix {
             return Err(DomainError::invalid_input(
                 "run transition time cannot move backward",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_request(&self) -> Result<(), DomainError> {
+        ensure_present("run id", &self.id)?;
+        ensure_present("run idempotency key", &self.idempotency_key)?;
+        validate_sha256_hash("workflow revision digest", &self.workflow_revision_digest)?;
+        if self
+            .requested_by_user_id
+            .as_deref()
+            .is_some_and(|id| id.trim().is_empty())
+        {
+            return Err(DomainError::invalid_input(
+                "run requester user id cannot be empty",
             ));
         }
         Ok(())

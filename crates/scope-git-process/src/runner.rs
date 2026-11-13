@@ -230,15 +230,15 @@ where
                 Ok(Err(error)) => {
                     cancellation.cancel();
                     child.terminate_and_reap();
-                    let _ = join_writer(stdin_writer, action);
-                    let _ = join_reader(stderr_reader, action);
+                    join_writer(stdin_writer, action).ok();
+                    join_reader(stderr_reader, action).ok();
                     return Err(StreamingProcessError::Consumer(error));
                 }
                 Err(_) => {
                     cancellation.cancel();
                     child.terminate_and_reap();
-                    let _ = join_writer(stdin_writer, action);
-                    let _ = join_reader(stderr_reader, action);
+                    join_writer(stdin_writer, action).ok();
+                    join_reader(stderr_reader, action).ok();
                     return Err(ProcessError::ThreadPanicked {
                         action: action.to_string(),
                     }
@@ -252,11 +252,11 @@ where
                 Err(source) => {
                     cancellation.cancel();
                     child.terminate_and_reap();
-                    let _ = join_writer(stdin_writer, action);
+                    join_writer(stdin_writer, action).ok();
                     if let Some(stdout_consumer) = stdout_consumer {
-                        let _ = stdout_consumer.join();
+                        stdout_consumer.join().ok();
                     }
-                    let _ = join_reader(stderr_reader, action);
+                    join_reader(stderr_reader, action).ok();
                     return Err(ProcessError::Io {
                         action: action.to_string(),
                         source,
@@ -274,9 +274,9 @@ where
         if started_at.elapsed() >= limits.timeout {
             cancellation.cancel();
             child.terminate_and_reap();
-            let _ = join_writer(stdin_writer, action);
+            join_writer(stdin_writer, action).ok();
             if let Some(stdout_consumer) = stdout_consumer {
-                let _ = stdout_consumer.join();
+                stdout_consumer.join().ok();
             }
             let stderr = join_reader(stderr_reader, action).unwrap_or_default();
             return Err(ProcessError::TimedOut {
@@ -395,17 +395,17 @@ fn wait_for_output(
     let status = loop {
         if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
             child.terminate_and_reap();
-            let _ = join_writer(stdin_writer, action);
-            let _ = join_reader(stdout_reader, action);
-            let _ = join_reader(stderr_reader, action);
+            join_writer(stdin_writer, action).ok();
+            join_reader(stdout_reader, action).ok();
+            join_reader(stderr_reader, action).ok();
             return Err(ProcessError::Cancelled {
                 action: action.to_string(),
             });
         }
         if stdout_limit_receiver.try_recv().is_ok() {
             child.terminate_and_reap();
-            let _ = join_writer(stdin_writer, action);
-            let _ = join_reader(stdout_reader, action);
+            join_writer(stdin_writer, action).ok();
+            join_reader(stdout_reader, action).ok();
             let stderr = join_reader(stderr_reader, action).unwrap_or_default();
             return Err(ProcessError::StdoutLimitExceeded {
                 action: action.to_string(),
@@ -433,8 +433,8 @@ fn wait_for_output(
         }
         if started_at.elapsed() >= limits.timeout {
             child.terminate_and_reap();
-            let _ = join_writer(stdin_writer, action);
-            let _ = join_reader(stdout_reader, action);
+            join_writer(stdin_writer, action).ok();
+            join_reader(stdout_reader, action).ok();
             let stderr = join_reader(stderr_reader, action).unwrap_or_default();
             return Err(ProcessError::TimedOut {
                 action: action.to_string(),

@@ -1,5 +1,6 @@
 [package]
 name = "scope-run-config"
+publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,3 +11,6 @@ scope_domain.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 yaml_serde = "0.10.4"
+
+[lints]
+workspace = true

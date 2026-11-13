@@ -100,10 +100,10 @@ export function RunLogText({
       {blocks.map((block, index) => (
         <LogBlock
           currentMatch={currentMatch}
-          eager={(index === 0 && !focusHere) || (followTail && index === blocks.length - 1) || block.some((line) => eagerLines.includes(line.number))}
-          key={index}
+          eager={(index === 0 && !focusHere) || (followTail && index === blocks.length - 1) || block.lines.some((line) => eagerLines.includes(line.number))}
+          key={block.start}
           lineId={lineId}
-          lines={block}
+          lines={block.lines}
           markedLine={markedLine}
           matches={matches}
           onLinkLine={onLinkLine}
@@ -220,8 +220,8 @@ function LogRow({
         className={clsx('min-w-0 pr-4', wrap ? 'whitespace-pre-wrap break-words [overflow-wrap:anywhere]' : 'whitespace-pre', group && 'cursor-pointer hover:text-foreground')}
         onClick={group ? () => onToggleGroup(line.number) : undefined}
       >
-        {pieces.map((piece, index) => (
-          <LogPiece key={index} match={piece.match} style={piece.style} text={piece.text} />
+        {pieces.map((piece) => (
+          <LogPiece key={piece.start} match={piece.match} style={piece.style} text={piece.text} />
         ))}
         {group && !open ? (
           <span className="ml-2 select-none rounded-full bg-muted px-1.5 py-px font-sans text-[11px] text-muted-foreground">
