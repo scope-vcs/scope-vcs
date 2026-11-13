@@ -12,7 +12,7 @@ const IDENTITY = 'diff'
 const FALLBACK = 'This file diff is unavailable.'
 
 function diff(presentation: ReviewFileDiff['presentation']): ReviewFileDiff {
-  return { kind: 'Modified', new_mode: '100644', old_mode: '100644', path: '/inventory.json', presentation }
+  return { kind: 'Modified', new_mode: '100644', old_mode: '100644', old_path: null, path: '/inventory.json', presentation }
 }
 
 const omitted = diff({ budget: 'standard', kind: 'omitted', reason: 'input' })

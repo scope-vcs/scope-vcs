@@ -32,6 +32,7 @@ pub(crate) async fn review_file_diff_response_for_blobs(
     };
     Ok(ReviewFileDiffResponse {
         path,
+        old_path: None,
         kind: kind.into(),
         old_mode,
         new_mode,

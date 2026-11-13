@@ -10,6 +10,7 @@ function emptyDiff(overrides: Partial<ReviewFileDiff> = {}): ReviewFileDiff {
     kind: 'Modified',
     new_mode: '100644',
     old_mode: '100644',
+    old_path: null,
     path: '/fixture.txt',
     presentation: { kind: 'empty' },
     ...overrides,
@@ -29,5 +30,9 @@ test('preserves zero-hunk and mode-only labels', () => {
   assert.equal(
     reviewFileDiffEmptyLabel(emptyDiff({ kind: 'Deleted', new_mode: null })),
     'Empty file deleted',
+  )
+  assert.equal(
+    reviewFileDiffEmptyLabel(emptyDiff({ kind: 'Renamed', old_path: '/before.txt' })),
+    'File renamed without changes',
   )
 })

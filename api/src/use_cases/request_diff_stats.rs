@@ -8,7 +8,8 @@ use crate::{
     use_cases::{
         request_inspection_policy::MAX_REQUEST_INSPECTION_PATHS,
         request_revision_inspection::{
-            parse_numstat_entry, read_nul_field_bounded, request_comparison_base_oid,
+            ChangePairing, parse_numstat_entry, read_nul_field_bounded,
+            request_comparison_base_oid, whole_file_line_counts,
         },
     },
 };
@@ -16,8 +17,8 @@ use scope_domain::{
     policy::ScopePath,
     repository::{RepoLifecycleState, RepositoryIncarnation, access::RepositoryAccessContext},
     requests::{
-        DiffStat, Request, RequestComparison, RequestRevision, RevisionDiffStat,
-        RevisionDiffStatBuilder,
+        DiffStat, FileDiffStat, FileLineChanges, RenameSource, Request, RequestComparison,
+        RequestRevision, RevisionDiffStat, RevisionDiffStatBuilder,
     },
 };
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
@@ -124,6 +125,12 @@ async fn record_revision_diff_stat(
         .await?)
 }
 
+struct CountedRename {
+    lines: FileLineChanges,
+    old_path: ScopePath,
+    path: ScopePath,
+}
+
 fn revision_diff_stat(
     raw_repo: &Path,
     base_oid: &str,
@@ -136,7 +143,7 @@ fn revision_diff_stat(
         "-r",
         "--numstat",
         "-z",
-        "--no-renames",
+        ChangePairing::Renames.git_arg(),
         base_oid,
         head_oid,
         "--",
@@ -151,15 +158,40 @@ fn revision_diff_stat(
         move |stdout, _cancellation| {
             let mut reader = BufReader::new(stdout);
             let mut builder = RevisionDiffStatBuilder::new(MAX_REQUEST_INSPECTION_PATHS);
+            let mut renames = Vec::new();
             while let Some(field) = read_nul_field_bounded(&mut reader)? {
                 let (lines, path) = parse_numstat_entry(&field.bytes)?;
-                let path = (!field.truncated)
-                    .then(|| std::str::from_utf8(path).ok())
-                    .flatten()
-                    .and_then(|path| ScopePath::parse(format!("/{path}")).ok());
-                builder.add(path, lines);
+                if !path.is_empty() {
+                    match listed_path(field.truncated, path) {
+                        Some(path) => builder.add(FileDiffStat {
+                            path,
+                            lines,
+                            renamed_from: None,
+                        }),
+                        None => builder.add_unlisted(lines),
+                    }
+                    continue;
+                }
+                let mut next_path = || {
+                    read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
+                        ApiError::internal_message("request diff line count is missing a path")
+                    })
+                };
+                let old_path = next_path()?;
+                let path = next_path()?;
+                match (
+                    listed_path(old_path.truncated, &old_path.bytes),
+                    listed_path(path.truncated, &path.bytes),
+                ) {
+                    (Some(old_path), Some(path)) => renames.push(CountedRename {
+                        lines,
+                        old_path,
+                        path,
+                    }),
+                    _ => builder.add_unlisted(lines),
+                }
             }
-            Ok(builder.finish())
+            Ok((builder, renames))
         },
     )
     .map_err(|error| match error {
@@ -175,7 +207,40 @@ fn revision_diff_stat(
             truncated_stderr(&output.stderr, scope_git_process::STDERR_DIAGNOSTIC_BYTES).trim()
         )));
     }
-    Ok(output.value)
+    let (mut builder, renames) = output.value;
+    let mut whole_lines = whole_file_line_counts(
+        raw_repo,
+        &[base_oid, head_oid],
+        renames
+            .iter()
+            .flat_map(|rename| [&rename.old_path, &rename.path])
+            .map(|path| path.as_str().trim_start_matches('/').as_bytes().to_vec())
+            .collect(),
+    )?;
+    let mut whole_file = |path: &ScopePath| {
+        whole_lines
+            .remove(path.as_str().trim_start_matches('/').as_bytes())
+            .ok_or_else(|| ApiError::internal_message("renamed file line counts are missing"))
+    };
+    for rename in renames {
+        builder.add(FileDiffStat {
+            renamed_from: Some(RenameSource {
+                old_file: whole_file(&rename.old_path)?,
+                new_file: whole_file(&rename.path)?,
+                path: rename.old_path,
+            }),
+            path: rename.path,
+            lines: rename.lines,
+        });
+    }
+    Ok(builder.finish())
+}
+
+fn listed_path(truncated: bool, path: &[u8]) -> Option<ScopePath> {
+    (!truncated)
+        .then(|| std::str::from_utf8(path).ok())
+        .flatten()
+        .and_then(|path| ScopePath::parse(format!("/{path}")).ok())
 }
 
 async fn publish_recorded(

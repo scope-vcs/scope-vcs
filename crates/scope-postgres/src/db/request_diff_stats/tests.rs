@@ -54,13 +54,14 @@ async fn only_the_current_revision_counts_and_recording_it_is_idempotent() {
     start_public_request(&store).await;
     let first = revise(&store, "head", "head_1").await;
     let mut unlisted = RevisionDiffStatBuilder::new(0);
-    unlisted.add(
-        Some(path("/old.rs")),
-        FileLineChanges::Text {
+    unlisted.add(FileDiffStat {
+        path: path("/old.rs"),
+        lines: FileLineChanges::Text {
             additions: 9,
             deletions: 9,
         },
-    );
+        renamed_from: None,
+    });
     assert!(
         store
             .requests()
@@ -88,14 +89,37 @@ async fn only_the_current_revision_counts_and_recording_it_is_idempotent() {
     );
 
     let mut listed = RevisionDiffStatBuilder::new(10);
-    listed.add(
-        Some(path("/src/lib.rs")),
-        FileLineChanges::Text {
+    listed.add(FileDiffStat {
+        path: path("/src/lib.rs"),
+        lines: FileLineChanges::Text {
             additions: 3,
             deletions: 1,
         },
-    );
-    listed.add(Some(path("/logo.png")), FileLineChanges::Binary);
+        renamed_from: None,
+    });
+    listed.add(FileDiffStat {
+        path: path("/logo.png"),
+        lines: FileLineChanges::Binary,
+        renamed_from: None,
+    });
+    listed.add(FileDiffStat {
+        path: path("/src/main.rs"),
+        lines: FileLineChanges::Text {
+            additions: 1,
+            deletions: 1,
+        },
+        renamed_from: Some(RenameSource {
+            path: path("/main.rs"),
+            old_file: FileLineChanges::Text {
+                additions: 0,
+                deletions: 40,
+            },
+            new_file: FileLineChanges::Text {
+                additions: 40,
+                deletions: 0,
+            },
+        }),
+    });
     let listed = listed.finish();
     assert!(
         store

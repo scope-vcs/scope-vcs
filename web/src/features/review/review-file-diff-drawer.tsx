@@ -20,6 +20,7 @@ import { createPortal } from 'react-dom'
 import {
   reviewFileDiffEmptyLabel,
   reviewFileDiffModeChangeLabel,
+  reviewFileDiffRenameLabel,
   reviewFileDiffOmittedLabel,
 } from './review-file-diff-presentation'
 import {
@@ -97,12 +98,17 @@ export function ReviewFileDiffDrawer({
             >
               {displayName || 'Diff'}
             </div>
-            <div className="text-xs leading-4 text-muted-foreground">
+            <div className="break-words text-xs leading-4 text-muted-foreground">
               {loading
                 ? null
                 : error
                   ? 'Diff unavailable'
-                  : <DiffSubtitle lines={lines} modeChange={reviewFileDiffModeChangeLabel(diff)} />}
+                  : (
+                    <DiffSubtitle
+                      lines={lines}
+                      notes={[reviewFileDiffRenameLabel(diff), reviewFileDiffModeChangeLabel(diff)]}
+                    />
+                  )}
             </div>
           </div>
           {actions}
@@ -346,11 +352,12 @@ function OmittedDiffState({
   )
 }
 
-function DiffSubtitle({ lines, modeChange }: { lines: FileLineChangesResponse | null; modeChange: string | null }) {
-  if (!lines) return modeChange ?? 'Diff'
+function DiffSubtitle({ lines, notes }: { lines: FileLineChangesResponse | null; notes: (string | null)[] }) {
+  const prefix = notes.filter((note) => note !== null).join(' · ')
+  if (!lines) return prefix || 'Diff'
   return (
     <>
-      {modeChange && `${modeChange} · `}
+      {prefix && `${prefix} · `}
       <FileLineCounts lines={lines} />
     </>
   )

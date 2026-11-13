@@ -5,7 +5,7 @@ use scope_domain::views::{ViewId, Views};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::{BufReader, Read},
+    io::{BufRead, BufReader, Read},
     process::Command,
 };
 
@@ -31,6 +31,8 @@ pub(super) fn inspect_comparison_files(
     head_oid: &str,
     file_limit: usize,
 ) -> Result<(Vec<CommitFileResponse>, bool), ApiError> {
+    let mut revisions = Vec::from_iter(base_oid);
+    revisions.push(head_oid);
     let mut command = Command::new("git");
     command.arg("-C").arg(raw_repo).args([
         "--literal-pathspecs",
@@ -41,13 +43,10 @@ pub(super) fn inspect_comparison_files(
         "--raw",
         "--numstat",
         "-z",
-        "--no-renames",
+        ChangePairing::Renames.git_arg(),
         "--abbrev=64",
     ]);
-    if let Some(base_oid) = base_oid {
-        command.arg(base_oid);
-    }
-    command.arg(head_oid).arg("--");
+    command.args(&revisions).arg("--");
     let git_span = crate::git::command::prepare_git_subprocess(&mut command)?;
     let _entered = git_span.enter();
     let policy = policy.clone();
@@ -65,52 +64,70 @@ pub(super) fn inspect_comparison_files(
             let mut counted = 0usize;
             let mut incomplete = false;
             let mut files = Vec::new();
+            let mut parts = Vec::new();
             while let Some(field) = read_nul_field_bounded(&mut reader)? {
                 if counted == 0 && field.bytes.starts_with(b":") {
                     validate_request_diff_header(&field)?;
-                    let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
-                        ApiError::internal_message("request comparison diff is missing a path")
-                    })?;
+                    let old_path = raw_change_has_source(&field.bytes)
+                        .then(|| read_comparison_path(&mut reader))
+                        .transpose()?;
+                    let path = read_comparison_path(&mut reader)?;
                     let index = changes;
                     changes += 1;
-                    if path.truncated || readable.len() == file_limit {
+                    let truncated =
+                        path.truncated || old_path.as_ref().is_some_and(|path| path.truncated);
+                    if truncated || readable.len() == file_limit {
                         incomplete = true;
                         continue;
                     }
-                    match inspect_raw_request_change(
-                        &field.bytes,
-                        &path.bytes,
-                        &policy,
-                        &views,
-                        &access,
-                    )? {
-                        Some(change) => {
-                            readable.insert(index, change);
+                    let raw = RawRequestChange {
+                        header: &field.bytes,
+                        old_path: old_path.as_ref().map(|path| path.bytes.as_slice()),
+                        path: &path.bytes,
+                    };
+                    match inspect_raw_request_change(raw, &policy, &views, &access)? {
+                        ReadableRequestChange::Whole(change) => {
+                            readable.insert(index, (path.bytes, Some(change)));
                         }
-                        None => incomplete = true,
+                        ReadableRequestChange::Part(change) => {
+                            incomplete = true;
+                            readable.insert(index, (path.bytes, None));
+                            parts.push(change);
+                        }
+                        ReadableRequestChange::Hidden => incomplete = true,
                     }
                     continue;
                 }
                 let index = counted;
                 counted += 1;
-                let Some(change) = readable.remove(&index) else {
+                let (lines, numstat_path) = parse_numstat_entry(&field.bytes)?;
+                let numstat_path = if numstat_path.is_empty() {
+                    read_comparison_path(&mut reader)?;
+                    read_comparison_path(&mut reader)?
+                } else {
+                    BoundedNulField {
+                        bytes: numstat_path.to_vec(),
+                        truncated: field.truncated,
+                    }
+                };
+                let Some((path, change)) = readable.remove(&index) else {
                     continue;
                 };
-                let (lines, path) = parse_numstat_entry(&field.bytes)?;
-                if !field.truncated && path != change.path.as_bytes() {
+                if !numstat_path.truncated && numstat_path.bytes != path {
                     return Err(ApiError::internal_message(
                         "request comparison line counts are out of order",
                     ));
                 }
-                files.push(request_file_response(change.with_lines(lines)));
+                if let Some(change) = change {
+                    files.push(request_file_response(change.with_lines(lines)));
+                }
             }
             if counted != changes {
                 return Err(ApiError::internal_message(
                     "request comparison line counts do not match its changes",
                 ));
             }
-            files.sort_by(|left, right| left.path.cmp(&right.path));
-            Ok((files, incomplete))
+            Ok((files, parts, incomplete))
         },
     )
     .map_err(|error| match error {
@@ -126,7 +143,28 @@ pub(super) fn inspect_comparison_files(
             truncated_stderr(&output.stderr, scope_git_process::STDERR_DIAGNOSTIC_BYTES).trim()
         )));
     }
-    Ok(output.value)
+    let (mut files, parts, incomplete) = output.value;
+    let mut whole_lines = whole_file_line_counts(
+        raw_repo,
+        &revisions,
+        parts
+            .iter()
+            .map(|change| change.path.as_bytes().to_vec())
+            .collect(),
+    )?;
+    for change in parts {
+        let lines = whole_lines
+            .remove(change.path.as_bytes())
+            .ok_or_else(|| ApiError::internal_message("renamed file line counts are missing"))?;
+        files.push(request_file_response(change.with_lines(lines)));
+    }
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok((files, incomplete))
+}
+
+fn read_comparison_path(reader: &mut impl BufRead) -> Result<BoundedNulField, ApiError> {
+    read_nul_field_bounded(reader)?
+        .ok_or_else(|| ApiError::internal_message("request comparison diff is missing a path"))
 }
 
 pub(super) fn inspect_request_commit(
@@ -148,18 +186,18 @@ fn inspect_request_commit_with_identity(
     commit_oid: &str,
     identity: RequestCommitIdentity,
 ) -> Result<InspectedRequestCommit, ApiError> {
-    let changes = inspect_counted_request_changes(
+    let Some(changes) = inspect_counted_request_changes(
         &request_counted_commit_changes(raw_repo, commit_oid)?,
         policy,
         views,
         &access,
-    )?;
-    if changes.hidden {
+    )?
+    else {
         return Ok(InspectedRequestCommit {
             commit: None,
             inspection: RequestRevisionInspectionState::Complete,
         });
-    }
+    };
     let metadata = request_commit_display_metadata(raw_repo, commit_oid)?;
     Ok(InspectedRequestCommit {
         commit: Some(RequestRevisionCommitResponse {
@@ -172,12 +210,8 @@ fn inspect_request_commit_with_identity(
             author: metadata.author,
             authored_at_unix: identity.authored_at_unix,
             message: metadata.message,
-            change_count: changes.files.len(),
-            files: changes
-                .files
-                .into_iter()
-                .map(request_file_response)
-                .collect(),
+            change_count: changes.len(),
+            files: changes.into_iter().map(request_file_response).collect(),
             files_truncated: false,
         }),
         inspection: if metadata.complete {
@@ -270,7 +304,7 @@ fn request_commit_change_summaries(
         "--raw",
         "-r",
         "-z",
-        "--no-renames",
+        ChangePairing::Renames.git_arg(),
         "--abbrev=64",
         "--diff-merges=first-parent",
         "--always",
@@ -321,15 +355,18 @@ fn parse_request_commit_change_summaries(
                     ApiError::internal_message("request identity diff is missing a commit header")
                 })?;
             validate_request_diff_header(&field)?;
-            let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
-                ApiError::internal_message("request identity diff is missing a path")
-            })?;
+            let paths = 1 + usize::from(raw_change_has_source(&field.bytes));
             summary.change_count = summary.change_count.checked_add(1).ok_or_else(|| {
                 ApiError::internal_message("request identity diff change count overflowed")
             })?;
-            if view != views.full() && !summary.hidden {
-                summary.hidden =
-                    path.truncated || !request_path_is_visible(policy, views, view, &path.bytes)?;
+            for _ in 0..paths {
+                let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
+                    ApiError::internal_message("request identity diff is missing a path")
+                })?;
+                if view != views.full() && !summary.hidden {
+                    summary.hidden = path.truncated
+                        || !request_path_is_visible(policy, views, view, &path.bytes)?;
+                }
             }
             continue;
         }

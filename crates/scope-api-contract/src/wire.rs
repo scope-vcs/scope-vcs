@@ -136,7 +136,7 @@ wire_enum!(RepositoryInviteState => DomainRepositoryInviteState {
 });
 wire_enum!(RepoLifecycleState => DomainRepoLifecycleState { AwaitingFirstPush, Ready });
 wire_enum!(FirstPushTokenStatus => DomainFirstPushTokenStatus { Active, Expired, Used });
-wire_enum!(FileChangeKind => DomainFileChangeKind { Added, Modified, Deleted });
+wire_enum!(FileChangeKind => DomainFileChangeKind { Added, Modified, Deleted, Renamed });
 wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]

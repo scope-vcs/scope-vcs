@@ -28,6 +28,7 @@ pub enum FileChangeKind {
     Added,
     Modified,
     Deleted,
+    Renamed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

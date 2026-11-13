@@ -369,7 +369,12 @@ fn diff_entries<'a>(
 ) -> Vec<DiffEntry<'a>> {
     let DiffSelection { commit, path } = selection;
     let path_matches = |file: &&CommitFileResponse| {
-        path.is_none_or(|path| path.trim_start_matches('/') == file.path.trim_start_matches('/'))
+        path.is_none_or(|path| {
+            let path = path.trim_start_matches('/');
+            std::iter::once(&file.path)
+                .chain(&file.old_path)
+                .any(|candidate| candidate.trim_start_matches('/') == path)
+        })
     };
     let mut entries = Vec::new();
     if let Some(comparison) = &revisions.comparison {

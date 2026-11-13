@@ -32,7 +32,7 @@ export type RepositoryDependencyCheckResponse = { status: RepositoryDependencyCh
 
 export type FirstPushTokenStatus = "Active" | "Expired" | "Used";
 
-export type FileChangeKind = "Added" | "Modified" | "Deleted";
+export type FileChangeKind = "Added" | "Modified" | "Deleted" | "Renamed";
 
 export type RepoConfig = { kind: string, version: number, views: Array<ViewDefinition>, files: RepoConfigFiles, history: RepoConfigHistory, };
 
@@ -274,7 +274,7 @@ export type RequestFileDiffRequest = { path: string, };
 
 export type ReviewFileContentResponse = { "kind": "text", text: string, } | { "kind": "binary", oid: string, size_bytes: number, };
 
-export type ReviewFileDiffResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_content: ReviewFileContentResponse | null, new_content: ReviewFileContentResponse | null, };
+export type ReviewFileDiffResponse = { path: string, old_path: string | null, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_content: ReviewFileContentResponse | null, new_content: ReviewFileContentResponse | null, };
 
 export type HistoryPageResponse = { feed: HistoryFeed, view: ViewId, repo_id: string, generation: string, head_oid: string | null, entries: Array<HistoryEntrySummaryResponse>, next_cursor: string | null, };
 
@@ -296,7 +296,7 @@ export type HistoryVisibilitySummaryResponse = { entered_count: number, left_cou
 
 export type HistoryVisibilityChangeResponse = { id: string, file: HistoryEntryFileResponse | null, path: string, old_label: ViewId, new_label: ViewId, };
 
-export type CommitFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, lines: FileLineChangesResponse, };
+export type CommitFileResponse = { path: string, old_path: string | null, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, lines: FileLineChangesResponse, };
 
 export type FileLineChangesResponse = { "kind": "text", additions: number, deletions: number, } | { "kind": "binary" };
 

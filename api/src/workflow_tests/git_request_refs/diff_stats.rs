@@ -43,6 +43,8 @@ async fn pushed_line_counts_reach_every_request_read_and_exclude_unreadable_file
     let state = test_state_with_request().await;
     let (source, remote, _server, _) = request_checkout(&state, "request-diff-stats").await;
     fs::write(source.join("logo.bin"), b"\x89PNG\0\x01binary").unwrap();
+    fs::create_dir(source.join("docs")).unwrap();
+    fs::rename(source.join("README.md"), source.join("docs/README.md")).unwrap();
     push_change(
         &source,
         &remote,
@@ -66,7 +68,7 @@ async fn pushed_line_counts_reach_every_request_read_and_exclude_unreadable_file
     let app = router(state.clone());
     let owner = bearer_header();
     let public = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
-    let full = diff_stat(4, 0, 3);
+    let full = diff_stat(4, 0, 4);
 
     let changes = get_json(
         &app,
@@ -80,9 +82,28 @@ async fn pushed_line_counts_reach_every_request_read_and_exclude_unreadable_file
         .iter()
         .map(|file| (file["path"].as_str().unwrap(), file["lines"].clone()))
         .collect::<Vec<_>>();
+    let renamed = &changes["comparison"]["files"][0];
+    assert_eq!(
+        (&renamed["kind"], &renamed["old_path"]),
+        (
+            &serde_json::json!("Renamed"),
+            &serde_json::json!("README.md")
+        )
+    );
+    let file_diff = format!(
+        "/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/changes/{}/file-diff?path=docs/README.md",
+        changes["comparison"]["revision_id"].as_str().unwrap()
+    );
+    let renamed_diff = get_json(&app, &file_diff, &owner).await;
+    assert_eq!(renamed_diff["old_path"], "README.md");
+    assert_eq!(renamed_diff["old_content"], renamed_diff["new_content"]);
     assert_eq!(
         lines,
         [
+            (
+                "docs/README.md",
+                serde_json::json!({ "kind": "text", "additions": 0, "deletions": 0 })
+            ),
             ("logo.bin", serde_json::json!({ "kind": "binary" })),
             (
                 "notes.txt",
@@ -114,15 +135,43 @@ async fn pushed_line_counts_reach_every_request_read_and_exclude_unreadable_file
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.policy
-                .add_rule(LabelRule::private(ScopePath::parse("/notes.txt").unwrap()))
-                .unwrap();
+            for private in ["/notes.txt", "/README.md"] {
+                repo.policy
+                    .add_rule(LabelRule::private(ScopePath::parse(private).unwrap()))
+                    .unwrap();
+            }
             repo.record.change_version += 1;
             repo.record.content_version = repo.record.change_version;
         })
         .await
         .unwrap();
-    let restricted = diff_stat(1, 0, 2);
+    let restricted = diff_stat(2, 0, 3);
+    let public_changes = get_json(
+        &app,
+        &format!("/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/changes"),
+        &public,
+    )
+    .await;
+    let moved = &public_changes["comparison"]["files"][0];
+    assert_eq!(
+        (
+            &moved["path"],
+            &moved["kind"],
+            &moved["old_path"],
+            &moved["lines"]
+        ),
+        (
+            &serde_json::json!("docs/README.md"),
+            &serde_json::json!("Added"),
+            &serde_json::Value::Null,
+            &serde_json::json!({ "kind": "text", "additions": 1, "deletions": 0 })
+        )
+    );
+    let moved_diff = get_json(&app, &file_diff, &public).await;
+    assert_eq!(
+        (&moved_diff["kind"], &moved_diff["old_content"]),
+        (&serde_json::json!("Added"), &serde_json::Value::Null)
+    );
     assert_eq!(listed_diff_stat(&app, &public).await, restricted);
     assert_eq!(detail_diff_stat(&app, &public).await, restricted);
     assert_eq!(listed_diff_stat(&app, &owner).await, full);

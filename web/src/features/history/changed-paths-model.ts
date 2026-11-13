@@ -25,7 +25,7 @@ export type ChangedPathTarget =
 
 export type ChangedPathGroup = { name: string; paths: ChangedPath[] }
 
-const FILTER_ORDER: ChangedPathFilter[] = ['all', 'visibility', 'Added', 'Modified', 'Deleted']
+const FILTER_ORDER: ChangedPathFilter[] = ['all', 'visibility', 'Added', 'Modified', 'Renamed', 'Deleted']
 const SMALL_CHANGE_LIMIT = 20
 
 export function changedPaths(

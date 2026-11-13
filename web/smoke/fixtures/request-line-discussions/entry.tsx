@@ -19,7 +19,8 @@ const base = 'a'.repeat(40)
 const firstHead = 'b'.repeat(40)
 const head = 'c'.repeat(40)
 const path = '/src/lib.ts'
-const file = { path, kind: 'Modified', old_oid: base, new_oid: head, old_mode: '100644', new_mode: '100644', label: 'private', lines: { kind: 'text', additions: 3, deletions: 1 } }
+const oldPath = '/src/legacy/review-helpers/shared-library-module.ts'
+const file = { path, old_path: oldPath, kind: 'Renamed', old_oid: base, new_oid: head, old_mode: '100644', new_mode: '100644', label: 'private', lines: { kind: 'text', additions: 3, deletions: 1 } }
 const revision = (id: string, position: number, newHead: string) => ({
   base: { kind: 'main', review_base_oid: base }, base_version: 1, id, position, actor: null,
   old_head_oid: base, new_head_oid: newHead, inspection: 'Complete', created_at_unix: position,
@@ -89,7 +90,7 @@ function Changes() {
           }}
           initialDiscussionReferences={{ referenceKey: null, page: null }}
           loadDiff={async (input) => ({
-            kind: 'Modified', new_mode: '100644', old_mode: '100644', path: input.path,
+            kind: 'Renamed', new_mode: '100644', old_mode: '100644', old_path: oldPath, path: input.path,
             presentation: { kind: 'html', html: window.diffHtml },
           })}
           loadDiscussions={async () => ({ discussions: [...discussions], next_cursor: null, snapshot_version: 10 + createCalls.length })}

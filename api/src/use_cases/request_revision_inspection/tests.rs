@@ -8,7 +8,7 @@ fn inspect_request_changes(
     changes: &[u8],
     policy: &Policy,
     access: RepositoryAccess,
-) -> Result<InspectedRequestChanges, ApiError> {
+) -> Result<Option<Vec<InspectedRequestChange>>, ApiError> {
     super::inspect_counted_request_changes(
         changes,
         policy,
@@ -23,17 +23,33 @@ fn changes_preserve_kinds_modes_oids_raw_paths_and_sorting() {
         :100644 120000 old new T\0nested//type.txt\0\
         :000000 100755 added new A\0a.txt\0\
         :100644 100755 old new M\0m.txt\0\
+        :100644 100755 old new R087\0from.txt\0zz.txt\0\
         0\t4\tz.txt\0-\t-\tnested//type.txt\0\
         12\t0\ta.txt\0\
-        3\t1\tm.txt\0";
-    let inspected = inspect_request_changes(
+        3\t1\tm.txt\0\
+        2\t1\t\0from.txt\0zz.txt\0";
+    let mut files = inspect_request_changes(
         changes,
         &Policy::new(ViewId::public()),
         RepositoryAccess::public(),
     )
+    .unwrap()
     .unwrap();
-    assert!(!inspected.hidden);
-    let files = inspected.files;
+    let renamed = files.pop().unwrap();
+    assert_eq!(renamed.file.path, "zz.txt");
+    assert_eq!(renamed.file.old_path.as_deref(), Some("from.txt"));
+    assert_eq!(renamed.file.kind, FileChangeKind::Renamed);
+    assert_eq!(renamed.file.old_mode.as_deref(), Some("100644"));
+    assert_eq!(renamed.file.new_mode.as_deref(), Some("100755"));
+    assert_eq!(renamed.file.old_oid.as_deref(), Some("old"));
+    assert_eq!(renamed.file.new_oid.as_deref(), Some("new"));
+    assert_eq!(
+        renamed.lines,
+        FileLineChanges::Text {
+            additions: 2,
+            deletions: 1
+        }
+    );
     assert_eq!(
         files
             .iter()
@@ -41,6 +57,7 @@ fn changes_preserve_kinds_modes_oids_raw_paths_and_sorting() {
             .collect::<Vec<_>>(),
         ["a.txt", "m.txt", "nested//type.txt", "z.txt"]
     );
+    assert!(files.iter().all(|file| file.file.old_path.is_none()));
     assert_eq!(files[0].file.kind, FileChangeKind::Added);
     assert_eq!(files[0].file.old_mode, None);
     assert_eq!(files[0].file.old_oid, None);
@@ -81,7 +98,7 @@ fn changes_preserve_kinds_modes_oids_raw_paths_and_sorting() {
 }
 
 #[test]
-fn mixed_visibility_records_hidden_paths_without_hiding_readable_changes() {
+fn counted_changes_with_any_unreadable_path_are_withheld() {
     let mut policy = Policy::new(ViewId::private());
     policy
         .add_rule(LabelRule::public(ScopePath::parse("/public").unwrap()))
@@ -104,26 +121,30 @@ fn mixed_visibility_records_hidden_paths_without_hiding_readable_changes() {
             },
         )
         .unwrap();
-        assert_eq!(result.hidden, !full_view);
-        assert_eq!(result.files.len(), if full_view { 2 } else { 1 });
-        if full_view {
-            assert_eq!(result.files[0].file.label, ViewId::private());
-        }
-        let public = result.files.last().unwrap();
-        assert_eq!(public.file.path, "public//file.txt");
-        assert_eq!(public.file.label, ViewId::public());
+        let Some(files) = result else {
+            assert!(!full_view);
+            continue;
+        };
+        assert!(full_view);
+        assert_eq!(
+            files
+                .iter()
+                .map(|file| (file.file.path.as_str(), file.file.label.clone()))
+                .collect::<Vec<_>>(),
+            [
+                ("private.txt", ViewId::private()),
+                ("public//file.txt", ViewId::public())
+            ]
+        );
     }
-    let hidden = inspect_request_changes(
-        b":100644 100644 old new M\0private.txt\0\
-        :100644 100644 old new R100\0renamed.txt\0\
-        1\t1\tprivate.txt\0\
-        1\t1\trenamed.txt\0",
-        &Policy::new(ViewId::private()),
+    let partial_rename = inspect_request_changes(
+        b":100644 100644 old new R100\0private.txt\0public/file.txt\0\
+        0\t0\t\0private.txt\0public/file.txt\0",
+        &policy,
         RepositoryAccess::public(),
     )
     .unwrap();
-    assert!(hidden.hidden);
-    assert!(hidden.files.is_empty());
+    assert!(partial_rename.is_none());
 }
 
 #[test]
@@ -142,8 +163,12 @@ fn malformed_records_keep_their_error_categories_and_diagnostics() {
             ApiError::internal_message("request diff is missing a path"),
         ),
         (
-            &b":100644 100644 old new R100\0file\x001\t0\tfile\0"[..],
-            ApiError::internal_message("unsupported request diff status R100"),
+            &b":100644 100644 old new C100\0file\x001\t0\tfile\0"[..],
+            ApiError::internal_message("unsupported request diff status C100"),
+        ),
+        (
+            &b":100644 100644 old new R100\0from\0to\x001\t0\t\0from\0other\0"[..],
+            ApiError::internal_message("request diff line counts are out of order"),
         ),
         (
             &b":100644 100644 old new M\0file\0"[..],
@@ -201,25 +226,18 @@ fn reader_keeps_existing_permissive_framing_and_status_interpretation() {
         &Policy::new(ViewId::public()),
         RepositoryAccess::public(),
     )
+    .unwrap()
     .unwrap();
-    assert_eq!(result.files.len(), 1);
-    assert_eq!(result.files[0].file.kind, FileChangeKind::Modified);
-    assert_eq!(result.files[0].file.path, "file");
-    let empty_path = inspect_request_changes(
-        b":100644 100644 old new M\0\x000\t0\t\0",
-        &Policy::new(ViewId::public()),
-        RepositoryAccess::public(),
-    )
-    .unwrap();
-    assert_eq!(empty_path.files[0].file.path, "");
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].file.kind, FileChangeKind::Modified);
+    assert_eq!(result[0].file.path, "file");
     let empty = inspect_request_changes(
         b"\0",
         &Policy::new(ViewId::public()),
         RepositoryAccess::public(),
     )
     .unwrap();
-    assert!(empty.files.is_empty());
-    assert!(!empty.hidden);
+    assert_eq!(empty.map(|files| files.len()), Some(0));
 }
 
 #[test]
@@ -231,7 +249,10 @@ fn uncounted_changes_need_no_line_counts_and_still_hide_unreadable_paths() {
     let changes = super::inspect_request_changes(
         b":100644 100644 old new M\0public/b.txt\0\
         :000000 100644 added new A\0public/a.txt\0\
-        :100644 100644 old new M\0private.txt\0",
+        :100644 100644 old new M\0private.txt\0\
+        :100644 100644 old new R090\0private-source.txt\0public/moved.txt\0\
+        :100644 100644 old new R090\0public/gone.txt\0private-target.txt\0\
+        :100644 100644 old new R090\0public/from.txt\0public/to.txt\0",
         &policy,
         &scope_domain::views::Views::builtin(),
         &RepositoryAccess::public(),
@@ -246,7 +267,24 @@ fn uncounted_changes_need_no_line_counts_and_still_hide_unreadable_paths() {
             .collect::<Vec<_>>(),
         [
             ("public/a.txt", FileChangeKind::Added),
-            ("public/b.txt", FileChangeKind::Modified)
+            ("public/b.txt", FileChangeKind::Modified),
+            ("public/gone.txt", FileChangeKind::Deleted),
+            ("public/moved.txt", FileChangeKind::Added),
+            ("public/to.txt", FileChangeKind::Renamed),
         ]
+    );
+    let gone = &changes.files[2];
+    assert_eq!(
+        (gone.new_mode.as_deref(), gone.new_oid.as_deref()),
+        (None, None)
+    );
+    let moved = &changes.files[3];
+    assert_eq!(
+        (moved.old_mode.as_deref(), moved.old_oid.as_deref()),
+        (None, None)
+    );
+    assert_eq!(
+        changes.files[4].old_path.as_deref(),
+        Some("public/from.txt")
     );
 }

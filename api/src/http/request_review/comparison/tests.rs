@@ -122,12 +122,12 @@ fn request_comparison_keeps_cumulative_net_changes_separate_from_push_and_commit
     );
     let detail = crate::use_cases::request_diff_file::select_request_diff_file(
         raw_repo,
-        &policy.policy,
         &policy.context.views,
         &access,
         &revision,
         &crate::use_cases::request_diff_file::RequestDiffRange::Request,
         &ScopePath::parse("/child.txt").unwrap(),
+        |_| Ok(policy.policy.clone()),
     )
     .unwrap()
     .unwrap();

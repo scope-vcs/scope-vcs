@@ -128,6 +128,7 @@ function reviewFileDiffBase(diff: ReviewFileDiffResponse) {
     kind: diff.kind,
     new_mode: diff.new_mode,
     old_mode: diff.old_mode,
+    old_path: diff.old_path,
     path: diff.path,
   }
 }

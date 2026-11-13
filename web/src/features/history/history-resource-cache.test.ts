@@ -16,6 +16,7 @@ function diff(path: string, text = 'content'): ReviewFileDiff {
     kind: 'Modified',
     new_mode: '100644',
     old_mode: '100644',
+    old_path: null,
     path,
     presentation: { html: text, kind: 'html' },
   }
