@@ -10,3 +10,6 @@ pub(crate) mod types;
 mod freshness_tests;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod test_process;
