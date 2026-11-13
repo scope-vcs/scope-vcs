@@ -12,6 +12,13 @@ use std::{
 pub(crate) use walk::MergeBases;
 
 const MAX_TAG_DEPTH: usize = 32;
+const MAX_TAG_BYTES: u64 = 1024 * 1024;
+
+enum Peeled {
+    Missing,
+    Commit(ObjectId),
+    Other,
+}
 
 pub(crate) struct GitReader {
     repo: gix::Repository,
@@ -25,7 +32,10 @@ impl GitReader {
     }
 
     fn open_with_budget(path: &FsPath, budget: Duration) -> Option<Self> {
-        let repo = settled(gix::open_opts(path, gix::open::Options::isolated()))?;
+        let deadline = Instant::now() + budget;
+        let options =
+            gix::open::Options::isolated().config_overrides(["core.useReplaceRefs=false"]);
+        let repo = settled(gix::open_opts(path, options))?;
         if settled(repo.is_shallow())?
             || has_replacements(&repo)?
             || repo.git_dir().join("info").join("grafts").exists()
@@ -34,7 +44,7 @@ impl GitReader {
         }
         Some(Self {
             repo,
-            deadline: Instant::now() + budget,
+            deadline,
             budget,
         })
     }
@@ -74,21 +84,10 @@ impl GitReader {
     }
 
     pub(crate) fn peels_to_commit(&self, oid: &str) -> Option<bool> {
-        let mut id = self.canonical_oid(oid)?;
-        for _ in 0..MAX_TAG_DEPTH {
-            if Instant::now() >= self.deadline {
-                return None;
-            }
-            let Some(object) = settled(self.repo.try_find_object(id))? else {
-                return Some(false);
-            };
-            match object.kind {
-                Kind::Commit => return Some(true),
-                Kind::Tree | Kind::Blob => return Some(false),
-                Kind::Tag => id = settled(settled(object.try_into_tag())?.target_id())?.detach(),
-            }
-        }
-        None
+        Some(match self.peel(self.canonical_oid(oid)?)? {
+            Peeled::Commit(_) => true,
+            Peeled::Missing | Peeled::Other => false,
+        })
     }
 
     pub(crate) fn reference_target(&self, name: &str) -> Option<Option<String>> {
@@ -216,16 +215,29 @@ impl GitReader {
         Some(Some(settled(reference.follow_to_object())?.detach()))
     }
 
-    fn peeled_commit(&self, mut id: ObjectId) -> Option<ObjectId> {
+    fn peeled_commit(&self, id: ObjectId) -> Option<ObjectId> {
+        match self.peel(id)? {
+            Peeled::Commit(id) => Some(id),
+            Peeled::Missing | Peeled::Other => None,
+        }
+    }
+
+    fn peel(&self, mut id: ObjectId) -> Option<Peeled> {
         for _ in 0..MAX_TAG_DEPTH {
             if Instant::now() >= self.deadline {
                 return None;
             }
-            let object = settled(self.repo.try_find_object(id))??;
-            match object.kind {
-                Kind::Commit => return Some(id),
-                Kind::Tree | Kind::Blob => return None,
-                Kind::Tag => id = settled(settled(object.try_into_tag())?.target_id())?.detach(),
+            let Some(header) = settled(self.repo.try_find_header(id))? else {
+                return Some(Peeled::Missing);
+            };
+            match header.kind() {
+                Kind::Commit => return Some(Peeled::Commit(id)),
+                Kind::Tree | Kind::Blob => return Some(Peeled::Other),
+                Kind::Tag if header.size() > MAX_TAG_BYTES => return None,
+                Kind::Tag => {
+                    let tag = settled(settled(self.repo.try_find_object(id))??.try_into_tag())?;
+                    id = settled(tag.target_id())?.detach();
+                }
             }
         }
         None

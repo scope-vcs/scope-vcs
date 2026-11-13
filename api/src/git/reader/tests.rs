@@ -505,3 +505,27 @@ fn bulk_reads_fail_like_a_timed_out_git_command_once_the_deadline_passes() {
         );
     }
 }
+
+#[test]
+fn oversized_tags_leave_peeling_to_git() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_ok(repo, &["init", "-q", "-b", "main"]);
+    let first = commit(repo, "first");
+    let message = "x".repeat(1024 * 1024 + 1);
+    pinned_identity_git(repo, &["tag", "-a", "-F", "-", "large"], Some(&message));
+    let large = g(repo, &["rev-parse", "refs/tags/large"]);
+    let blob = pinned_identity_git(repo, &["hash-object", "-w", "--stdin"], Some("blob"));
+
+    let reader = GitReader::open(repo).unwrap();
+    assert_eq!(reader.peels_to_commit(&large), None);
+    assert_eq!(reader.peels_to_commit(&blob), Some(false));
+    let git_answer = git(repo, &["cat-file", "-e", &format!("{large}^{{commit}}")])
+        .status
+        .success();
+    assert!(git_answer);
+    assert_eq!(
+        crate::git::command::git_contains_commit(repo, &large, &first, "checking").unwrap(),
+        git_answer
+    );
+}
