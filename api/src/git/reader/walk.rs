@@ -69,10 +69,7 @@ pub(super) fn merge_bases(
     );
     let bases = gix_revision::merge_base(one, &[two], &mut graph);
     if outcome.expired.get() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "failed {action}: Git reader timed out after {}ms",
-            reader.budget.as_millis()
-        )));
+        return Err(reader.timed_out(action));
     }
     if outcome.missing.get() {
         return Ok(None);

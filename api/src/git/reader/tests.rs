@@ -395,3 +395,41 @@ fn walks_that_reach_a_missing_parent_leave_the_answer_to_git() {
     let error = git_is_ancestor(repo, &lonely, &tip, "checking").unwrap_err();
     assert!(error.operator_diagnostic().starts_with("checking: "));
 }
+
+#[test]
+fn shallow_repositories_leave_ancestry_to_git() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_ok(repo, &["init", "-q", "-b", "main"]);
+    let first = commit(repo, "first");
+    let boundary = commit(repo, "boundary");
+    let tip = commit(repo, "tip");
+    fs::write(repo.join(".git/shallow"), format!("{boundary}\n")).unwrap();
+
+    assert!(GitReader::open(repo).is_none());
+    let git_answer = git(repo, &["merge-base", "--is-ancestor", &first, &tip])
+        .status
+        .success();
+    assert!(!git_answer);
+    assert_eq!(
+        git_is_ancestor(repo, &first, &tip, "checking").unwrap(),
+        git_answer
+    );
+}
+
+#[test]
+fn tag_peeling_stops_on_a_replacement_cycle() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_ok(repo, &["init", "-q", "-b", "main"]);
+    commit(repo, "first");
+    g(repo, &["tag", "-a", "-m", "outer", "outer"]);
+    let outer = g(repo, &["rev-parse", "refs/tags/outer"]);
+    g(repo, &["tag", "-a", "-m", "inner", "inner", &outer]);
+    let inner = g(repo, &["rev-parse", "refs/tags/inner"]);
+    g(repo, &["replace", "-f", &outer, &inner]);
+
+    let reader = GitReader::open(repo).unwrap();
+    assert_eq!(reader.peels_to_commit(&outer), None);
+    assert_eq!(reader.revision_commit(&outer), None);
+}

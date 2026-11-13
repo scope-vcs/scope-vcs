@@ -11,6 +11,8 @@ use std::{
 
 pub(crate) use walk::MergeBases;
 
+const MAX_TAG_DEPTH: usize = 32;
+
 pub(crate) struct GitReader {
     repo: gix::Repository,
     deadline: Instant,
@@ -24,6 +26,9 @@ impl GitReader {
 
     fn open_with_budget(path: &FsPath, budget: Duration) -> Option<Self> {
         let repo = settled(gix::open_opts(path, gix::open::Options::isolated()))?;
+        if settled(repo.is_shallow())? {
+            return None;
+        }
         Some(Self {
             repo,
             deadline: Instant::now() + budget,
@@ -49,7 +54,10 @@ impl GitReader {
 
     pub(crate) fn peels_to_commit(&self, oid: &str) -> Option<bool> {
         let mut id = self.canonical_oid(oid)?;
-        loop {
+        for _ in 0..MAX_TAG_DEPTH {
+            if Instant::now() >= self.deadline {
+                return None;
+            }
             let Some(object) = settled(self.repo.try_find_object(id))? else {
                 return Some(false);
             };
@@ -59,6 +67,7 @@ impl GitReader {
                 Kind::Tag => id = settled(settled(object.try_into_tag())?.target_id())?.detach(),
             }
         }
+        None
     }
 
     pub(crate) fn reference_target(&self, name: &str) -> Option<Option<String>> {
@@ -111,7 +120,7 @@ impl GitReader {
             self.revision_commit(ancestor),
             self.revision_commit(descendant),
         ) else {
-            return Ok(None);
+            return self.unanswered(action);
         };
         Ok(walk::merge_bases(self, ancestor, descendant, action)?
             .map(|bases| bases.contains(&ancestor)))
@@ -125,9 +134,23 @@ impl GitReader {
     ) -> Result<Option<MergeBases>, ApiError> {
         let (Some(left), Some(right)) = (self.revision_commit(left), self.revision_commit(right))
         else {
-            return Ok(None);
+            return self.unanswered(action);
         };
         Ok(walk::merge_bases(self, left, right, action)?.map(MergeBases::from_bases))
+    }
+
+    fn unanswered<T>(&self, action: &str) -> Result<Option<T>, ApiError> {
+        if Instant::now() >= self.deadline {
+            return Err(self.timed_out(action));
+        }
+        Ok(None)
+    }
+
+    pub(super) fn timed_out(&self, action: &str) -> ApiError {
+        ApiError::infrastructure_unavailable(format!(
+            "failed {action}: Git reader timed out after {}ms",
+            self.budget.as_millis()
+        ))
     }
 
     fn revision_commit(&self, revision: &str) -> Option<ObjectId> {
@@ -150,7 +173,10 @@ impl GitReader {
     }
 
     fn peeled_commit(&self, mut id: ObjectId) -> Option<ObjectId> {
-        loop {
+        for _ in 0..MAX_TAG_DEPTH {
+            if Instant::now() >= self.deadline {
+                return None;
+            }
             let object = settled(self.repo.try_find_object(id))??;
             match object.kind {
                 Kind::Commit => return Some(id),
@@ -158,6 +184,7 @@ impl GitReader {
                 Kind::Tag => id = settled(settled(object.try_into_tag())?.target_id())?.detach(),
             }
         }
+        None
     }
 
     fn canonical_oid(&self, oid: &str) -> Option<ObjectId> {
