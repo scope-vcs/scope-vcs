@@ -73,7 +73,7 @@ pub(crate) async fn checks_view(
     }
     match evaluate_saved_head(state, repo, request).await? {
         Some(mutation) => {
-            publish_request_checks_change(state, &repo.incarnation(), &mutation).await;
+            publish_request_checks_change(state, &repo.incarnation(), request, &mutation).await;
             recorded_checks_view(state, request).await
         }
         None => Ok(view),
@@ -239,7 +239,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     .await;
     match evaluated {
         Ok(mutation) => {
-            publish_request_checks_change(state, &git.incarnation, &mutation).await;
+            publish_request_checks_change(state, &git.incarnation, request, &mutation).await;
         }
         Err(error) => warn_evaluation_failed(request, &error),
     }
@@ -279,7 +279,7 @@ async fn renew_check_commit(
         })
         .await?;
     if let Some(mutation) = &mutation {
-        publish_request_checks_change(state, &git.incarnation, mutation).await;
+        publish_request_checks_change(state, &git.incarnation, request, mutation).await;
     }
     Ok(mutation)
 }
@@ -541,6 +541,7 @@ fn request_workflow_revisions(request: &Request, files: ReadWorkflowFiles) -> Na
 pub(crate) async fn publish_request_checks_change(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
+    request: &Request,
     mutation: &RequestChecksMutation,
 ) {
     for run in &mutation.created_runs {
@@ -556,7 +557,7 @@ pub(crate) async fn publish_request_checks_change(
         state.wakeups.github_pushes.notify_one();
     }
     state
-        .publish_request_state_refresh(incarnation, &mutation.evaluation.request_id)
+        .publish_known_request_state_refresh(incarnation, request)
         .await;
 }
 

@@ -461,7 +461,7 @@ pub(super) async fn persist_request_ref_revision(
                 body: None,
                 now_unix,
             },
-            request.base_version,
+            &request,
             Some(parent_facts),
             child_facts,
             PushedRevisionObjects {

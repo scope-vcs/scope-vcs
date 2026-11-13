@@ -166,12 +166,19 @@ impl RequestStore {
         &self,
         input: RecordRequestRevisionInput,
     ) -> Result<RequestRevisionMutation, PostgresError> {
-        let observed = self
-            .request_by_id(&input.request_id)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("request not found"))?;
-        self.record_request_revision_with_stack(input, observed.base_version, None, Vec::new())
-            .await
+        let observed = self.observed_request(&input.request_id).await?;
+        self.publish_request_revision(
+            input,
+            ObservedRevisionBase {
+                repo_id: &observed.repo_id,
+                base_version: observed.base_version,
+            },
+            None,
+            Vec::new(),
+            None,
+            None,
+        )
+        .await
     }
 
     pub async fn record_request_revision_with_stack(
@@ -181,21 +188,35 @@ impl RequestStore {
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
     ) -> Result<RequestRevisionMutation, PostgresError> {
-        self.publish_request_revision(input, expected_base_version, facts, children, None, None)
-            .await
+        let observed = self.observed_request(&input.request_id).await?;
+        self.publish_request_revision(
+            input,
+            ObservedRevisionBase {
+                repo_id: &observed.repo_id,
+                base_version: expected_base_version,
+            },
+            facts,
+            children,
+            None,
+            None,
+        )
+        .await
     }
 
     pub async fn record_pushed_request_revision(
         &self,
         input: RecordRequestRevisionInput,
-        expected_base_version: u64,
+        observed: &Request,
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
         objects: PushedRevisionObjects,
     ) -> Result<RequestRevisionMutation, PostgresError> {
         self.publish_request_revision(
             input,
-            expected_base_version,
+            ObservedRevisionBase {
+                repo_id: &observed.repo_id,
+                base_version: observed.base_version,
+            },
             facts,
             children,
             None,
@@ -211,9 +232,13 @@ impl RequestStore {
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
     ) -> Result<RequestRevisionMutation, PostgresError> {
+        let observed = self.observed_request(&input.request_id).await?;
         self.publish_request_revision(
             input,
-            context.expected_base_version,
+            ObservedRevisionBase {
+                repo_id: &observed.repo_id,
+                base_version: context.expected_base_version,
+            },
             facts,
             children,
             Some(context),
@@ -222,21 +247,24 @@ impl RequestStore {
         .await
     }
 
+    async fn observed_request(&self, request_id: &str) -> Result<Request, PostgresError> {
+        self.request_by_id(request_id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("request not found"))
+    }
+
     async fn publish_request_revision(
         &self,
         input: RecordRequestRevisionInput,
-        expected_base_version: u64,
+        observed: ObservedRevisionBase<'_>,
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
         context: Option<super::RequestRevisionContextPublication>,
         pushed: Option<PushedRevisionObjects>,
     ) -> Result<RequestRevisionMutation, PostgresError> {
-        let observed = self
-            .request_by_id(&input.request_id)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("request not found"))?;
+        let expected_base_version = observed.base_version;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        super::locks::acquire_shared_repository_lock(&tx, &observed.repo_id).await?;
+        super::locks::acquire_shared_repository_lock(&tx, observed.repo_id).await?;
         let request = request_by_id(&tx, &input.request_id)
             .await?
             .filter(|request| request.repo_id == observed.repo_id)
@@ -245,10 +273,8 @@ impl RequestStore {
         if let Some(pushed) = &pushed {
             ensure_object_generation(&tx, &request.repo_id, &pushed.object_generation).await?;
         }
-        super::request_stack::lock_graph(&tx, &request, input.new_base.as_ref()).await?;
-        let request = request_by_id(&tx, &input.request_id)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("request not found"))?;
+        let request =
+            super::request_stack::lock_graph(&tx, &request, input.new_base.as_ref()).await?;
         if let Some(context) = &context
             && let Some(accepted) = super::request_revision_context::receipt(
                 &tx,
@@ -506,6 +532,11 @@ pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
         .await?;
     tombstone_request_attachments(tx, &request.id, now_unix).await?;
     delete_request_rows(tx, &request.id).await
+}
+
+struct ObservedRevisionBase<'a> {
+    repo_id: &'a str,
+    base_version: u64,
 }
 
 #[cfg(test)]

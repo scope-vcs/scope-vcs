@@ -35,11 +35,27 @@ use std::{
 use tracing::Instrument as _;
 pub(super) mod fetch_folder;
 #[cfg(test)]
-pub(crate) use fetch_folder::prepare as git_upload_pack_repo_for_request;
-#[cfg(test)]
 mod fetch_tests;
 mod protocol;
 pub(crate) use protocol::GitProtocol;
+
+pub(crate) struct AuthorizedGitRead {
+    pub(crate) source: GitReadSource,
+    pub(crate) viewer_user_id: Option<String>,
+}
+
+#[cfg(test)]
+pub(crate) async fn git_upload_pack_repo_for_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    owner: &str,
+    repo_name: &str,
+    view: &ViewId,
+    ask: &scope_domain::requests::GitFetchAsk,
+) -> Result<GitRepoHandle, ApiError> {
+    let read = authorized_git_read(state, headers, owner, repo_name, view).await?;
+    fetch_folder::prepare(state, read, view, ask).await
+}
 
 pub(crate) async fn authorized_git_read(
     state: &AppState,
@@ -47,7 +63,7 @@ pub(crate) async fn authorized_git_read(
     owner: &str,
     repo_name: &str,
     view: &ViewId,
-) -> Result<(GitReadSource, Option<String>), ApiError> {
+) -> Result<AuthorizedGitRead, ApiError> {
     let anonymous = !headers.contains_key(AUTHORIZATION);
     let credentials_required = || ApiError::unauthorized("Git credentials required");
     let viewer_user_id = if anonymous {
@@ -79,7 +95,10 @@ pub(crate) async fn authorized_git_read(
     }
     let repository_readable = context.can_read(source.public_files_visible);
     match (repository_readable, context.can_read_view(view), anonymous) {
-        (true, true, _) => Ok((source, viewer_user_id)),
+        (true, true, _) => Ok(AuthorizedGitRead {
+            source,
+            viewer_user_id,
+        }),
         (_, _, true) => Err(credentials_required()),
         (false, _, false) => Err(repo_not_found(owner, repo_name)),
         (true, false, false) => Err(ApiError::not_found(format!(
