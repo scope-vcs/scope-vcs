@@ -3,13 +3,16 @@ use crate::{
     error::ApiError,
     git::request_refs::with_request_revision_store_repo,
     repo_events::RepoChangeReason,
-    runtime_budgets::RuntimeBudgets,
     state::AppState,
     use_cases::{
         request_inspection_policy::MAX_REQUEST_INSPECTION_PATHS,
         request_revision_inspection::{
-            ChangePairing, parse_numstat_entry, read_nul_field_bounded,
-            request_comparison_base_oid, whole_file_line_counts,
+            ChangePairing,
+            diff_stream::{
+                BoundedNulField, read_nul_field_bounded, read_numstat_record, stream_request_diff,
+                whole_file_line_counts,
+            },
+            request_comparison_base_oid,
         },
     },
 };
@@ -21,12 +24,9 @@ use scope_domain::{
         RequestRevision, RevisionDiffStat, RevisionDiffStatBuilder,
     },
 };
-use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::BufReader,
     path::Path,
-    process::Command,
     time::Duration,
 };
 
@@ -137,104 +137,67 @@ fn revision_diff_stat(
     base_oid: &str,
     head_oid: &str,
 ) -> Result<RevisionDiffStat, ApiError> {
-    let mut command = Command::new("git");
-    command.arg("-C").arg(raw_repo).args([
-        "--literal-pathspecs",
-        "diff-tree",
-        "-r",
-        "--numstat",
-        "-z",
-        ChangePairing::Renames.git_arg(),
-        base_oid,
-        head_oid,
-        "--",
-    ]);
-    let git_span = crate::git::command::prepare_git_subprocess(&mut command)?;
-    let _entered = git_span.enter();
-    let output = run_with_stdout(
-        &mut command,
+    let (mut builder, renames) = stream_request_diff(
+        raw_repo,
+        &[
+            "--literal-pathspecs",
+            "diff-tree",
+            "-r",
+            "--numstat",
+            "-z",
+            ChangePairing::Renames.git_arg(),
+            base_oid,
+            head_oid,
+            "--",
+        ],
         None,
-        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
         "counting request revision lines",
-        move |stdout, _cancellation| {
-            let mut reader = BufReader::new(stdout);
+        move |mut reader| {
             let mut builder = RevisionDiffStatBuilder::new(MAX_REQUEST_INSPECTION_PATHS);
             let mut renames = Vec::new();
             while let Some(field) = read_nul_field_bounded(&mut reader)? {
-                let (lines, path) = parse_numstat_entry(&field.bytes)?;
+                let (lines, old_path, path) = read_numstat_record(field, &mut reader)?;
                 let listable = builder.listing_room() > renames.len();
-                if !path.is_empty() {
-                    match listed_path(field.truncated, path) {
-                        Some(path) if listable => builder.add(FileDiffStat {
-                            path,
-                            lines,
-                            renamed_from: None,
-                        }),
-                        _ => builder.add_unlisted(lines),
-                    }
-                    continue;
-                }
-                let mut next_path = || {
-                    read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
-                        ApiError::internal_message("request diff line count is missing a path")
-                    })
-                };
-                let old_path = next_path()?;
-                let path = next_path()?;
-                match (
-                    listed_path(old_path.truncated, &old_path.bytes),
-                    listed_path(path.truncated, &path.bytes),
-                ) {
-                    (Some(old_path), Some(path)) if listable => renames.push(CountedRename {
-                        lines,
-                        old_path,
+                match (old_path.as_ref().map(listed_path), listed_path(&path)) {
+                    (None, Some(path)) if listable => builder.add(FileDiffStat {
                         path,
+                        lines,
+                        renamed_from: None,
                     }),
+                    (Some(Some(old_path)), Some(path)) if listable => {
+                        renames.push(CountedRename {
+                            lines,
+                            old_path,
+                            path,
+                        });
+                    }
                     _ => builder.add_unlisted(lines),
                 }
             }
             Ok((builder, renames))
         },
-    )
-    .map_err(|error| match error {
-        StreamingProcessError::Process(error) => {
-            ApiError::infrastructure_unavailable(error.to_string())
-        }
-        StreamingProcessError::Consumer(error) => error,
-    })?;
-    crate::git::command::record_git_exit(&git_span, output.status);
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "counting request revision lines: {}",
-            truncated_stderr(&output.stderr, scope_git_process::STDERR_DIAGNOSTIC_BYTES).trim()
-        )));
-    }
-    let (mut builder, renames) = output.value;
+    )?;
     if builder.listing_room() < renames.len() {
         for rename in renames {
             builder.add_unlisted(rename.lines);
         }
         return Ok(builder.finish());
     }
+    let git_path = |path: &ScopePath| path.as_str().trim_start_matches('/').as_bytes().to_vec();
     let mut whole_lines = whole_file_line_counts(
         raw_repo,
         &[base_oid, head_oid],
         renames
             .iter()
             .flat_map(|rename| [&rename.old_path, &rename.path])
-            .map(|path| path.as_str().trim_start_matches('/').as_bytes().to_vec())
+            .map(git_path)
             .collect(),
     )?;
-    let mut whole_file = |path: &ScopePath| {
-        whole_lines
-            .remove(path.as_str().trim_start_matches('/').as_bytes())
-            .ok_or_else(|| ApiError::internal_message("renamed file line counts are missing"))
-    };
     for rename in renames {
         builder.add(FileDiffStat {
             renamed_from: Some(RenameSource {
-                old_file: whole_file(&rename.old_path)?,
-                new_file: whole_file(&rename.path)?,
+                old_file: whole_lines.take(&git_path(&rename.old_path))?,
+                new_file: whole_lines.take(&git_path(&rename.path))?,
                 path: rename.old_path,
             }),
             path: rename.path,
@@ -244,9 +207,9 @@ fn revision_diff_stat(
     Ok(builder.finish())
 }
 
-fn listed_path(truncated: bool, path: &[u8]) -> Option<ScopePath> {
-    (!truncated)
-        .then(|| std::str::from_utf8(path).ok())
+fn listed_path(path: &BoundedNulField) -> Option<ScopePath> {
+    (!path.truncated)
+        .then(|| std::str::from_utf8(&path.bytes).ok())
         .flatten()
         .and_then(|path| ScopePath::parse(format!("/{path}")).ok())
 }

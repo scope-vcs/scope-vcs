@@ -1,7 +1,6 @@
 use crate::{
     error::ApiError,
     git::command::{git_is_ancestor, run_git_output},
-    runtime_budgets::RuntimeBudgets,
 };
 use scope_domain::{
     history::FileChangeKind,
@@ -13,14 +12,9 @@ use scope_domain::{
     },
     views::{ViewId, Views},
 };
-use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    io::{BufRead, BufReader},
-    path::Path as FsPath,
-    process::Command,
-};
+use std::{collections::BTreeSet, path::Path as FsPath};
 
+pub(crate) mod diff_stream;
 #[cfg(test)]
 mod tests;
 
@@ -108,21 +102,21 @@ fn next_raw_change<'a>(
     header: &'a [u8],
     fields: &mut impl Iterator<Item = &'a [u8]>,
 ) -> Result<RawRequestChange<'a>, ApiError> {
-    let mut next_path = || {
-        fields
-            .next()
-            .ok_or_else(|| ApiError::internal_message("request diff is missing a path"))
-    };
-    let old_path = if raw_change_has_source(header) {
-        Some(next_path()?)
-    } else {
-        None
-    };
+    let (old_path, path) = change_paths(raw_change_has_source(header), || Ok(fields.next()))?;
     Ok(RawRequestChange {
         header,
         old_path,
-        path: next_path()?,
+        path,
     })
+}
+
+pub(crate) fn change_paths<P>(
+    renamed: bool,
+    mut next: impl FnMut() -> Result<Option<P>, ApiError>,
+) -> Result<(Option<P>, P), ApiError> {
+    let mut path =
+        || next()?.ok_or_else(|| ApiError::internal_message("request diff is missing a path"));
+    Ok((renamed.then(&mut path).transpose()?, path()?))
 }
 
 pub(crate) fn inspect_request_changes(
@@ -171,12 +165,7 @@ pub(crate) fn inspect_counted_request_changes(
         }
         let (lines, path) = parse_numstat_entry(field)?;
         let paths = if path.is_empty() {
-            let mut next_path = || {
-                fields.next().ok_or_else(|| {
-                    ApiError::internal_message("request diff line count is missing a path")
-                })
-            };
-            (Some(next_path()?), next_path()?)
+            change_paths(true, || Ok(fields.next()))?
         } else {
             (None, path)
         };
@@ -535,66 +524,6 @@ pub(crate) fn request_range_changes(
     Ok(output.stdout)
 }
 
-pub(crate) fn whole_file_line_counts(
-    raw_repo: &FsPath,
-    revisions: &[&str],
-    paths: BTreeSet<Vec<u8>>,
-) -> Result<BTreeMap<Vec<u8>, FileLineChanges>, ApiError> {
-    if paths.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    let mut command = Command::new("git");
-    command.arg("-C").arg(raw_repo).args([
-        "--literal-pathspecs",
-        "diff-tree",
-        "--root",
-        "--no-commit-id",
-        "-r",
-        "--numstat",
-        "-z",
-        ChangePairing::PerPath.git_arg(),
-    ]);
-    command.args(revisions).arg("--");
-    let git_span = crate::git::command::prepare_git_subprocess(&mut command)?;
-    let _entered = git_span.enter();
-    let output = run_with_stdout(
-        &mut command,
-        None,
-        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
-        "counting renamed file lines",
-        move |stdout, _cancellation| {
-            let mut reader = BufReader::new(stdout);
-            let mut counts = BTreeMap::new();
-            while let Some(field) = read_nul_field_bounded(&mut reader)? {
-                let (lines, path) = parse_numstat_entry(&field.bytes)?;
-                if !field.truncated && paths.contains(path) {
-                    counts.insert(path.to_vec(), lines);
-                }
-            }
-            if counts.len() != paths.len() {
-                return Err(ApiError::internal_message(
-                    "renamed file line counts are missing a path",
-                ));
-            }
-            Ok(counts)
-        },
-    )
-    .map_err(|error| match error {
-        StreamingProcessError::Process(error) => {
-            ApiError::infrastructure_unavailable(error.to_string())
-        }
-        StreamingProcessError::Consumer(error) => error,
-    })?;
-    crate::git::command::record_git_exit(&git_span, output.status);
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "counting renamed file lines: {}",
-            truncated_stderr(&output.stderr, scope_git_process::STDERR_DIAGNOSTIC_BYTES).trim()
-        )));
-    }
-    Ok(output.value)
-}
-
 pub(crate) fn request_revision_commit_oids(
     raw_repo: &FsPath,
     comparison: &RequestComparison,
@@ -634,47 +563,4 @@ pub(crate) fn request_revision_commit_oids(
         .filter(|line| !line.trim().is_empty())
         .map(ToString::to_string)
         .collect())
-}
-
-const MAX_REQUEST_DIFF_FIELD_BYTES: usize = 64 * 1024;
-
-pub(crate) struct BoundedNulField {
-    pub(crate) bytes: Vec<u8>,
-    pub(crate) truncated: bool,
-}
-
-pub(crate) fn read_nul_field_bounded(
-    reader: &mut impl BufRead,
-) -> Result<Option<BoundedNulField>, ApiError> {
-    let mut bytes = Vec::new();
-    let mut truncated = false;
-    loop {
-        let available = reader.fill_buf().map_err(|error| {
-            ApiError::infrastructure_unavailable(format!(
-                "reading request identity diff failed: {error}"
-            ))
-        })?;
-        if available.is_empty() {
-            if bytes.is_empty() && !truncated {
-                return Ok(None);
-            }
-            return Err(ApiError::internal_message(
-                "request identity diff ended inside a field",
-            ));
-        }
-        let consumed = available
-            .iter()
-            .position(|byte| *byte == 0)
-            .map_or(available.len(), |position| position + 1);
-        let content =
-            &available[..consumed.saturating_sub(usize::from(available[consumed - 1] == 0))];
-        let remaining = MAX_REQUEST_DIFF_FIELD_BYTES.saturating_sub(bytes.len());
-        bytes.extend_from_slice(&content[..content.len().min(remaining)]);
-        truncated |= content.len() > remaining;
-        let terminated = available[consumed - 1] == 0;
-        reader.consume(consumed);
-        if terminated {
-            return Ok(Some(BoundedNulField { bytes, truncated }));
-        }
-    }
 }
