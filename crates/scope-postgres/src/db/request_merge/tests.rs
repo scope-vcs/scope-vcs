@@ -27,7 +27,6 @@ use scope_domain::{
     reviewed_updates::content::{
         ReviewedContentChange, ReviewedUpdateInput, apply_reviewed_update_to_repo,
     },
-    runs::catalog::RepositoryWorkflowCatalog,
 };
 
 const BASE_HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -297,7 +296,6 @@ struct MergePreparation {
     expected_git_frontier: scope_domain::repository::git::GitFrontier,
     expected_repo_change_version: u64,
     update: ReviewedUpdateInput,
-    workflow_catalog: RepositoryWorkflowCatalog,
 }
 
 async fn member_without_push_access(store: &super::super::MetadataStore) {
@@ -434,7 +432,7 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
         )
         .unwrap()
         .evaluation;
-        evaluation.approve(Vec::new(), 5).unwrap();
+        evaluation.approve(5).unwrap();
         evaluation
     } else {
         RequestCheckEvaluation::no_checks(&context, 5).unwrap()
@@ -455,8 +453,6 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
                 .await
                 .unwrap(),
             evaluation,
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -479,18 +475,10 @@ async fn merge_preparation(store: &super::super::MetadataStore) -> MergePreparat
         "/README.md",
         source_blob("merged-content"),
     );
-    let workflow_catalog = RepositoryWorkflowCatalog::captured(
-        "owner/repo",
-        MERGED_HEAD,
-        repo.record.change_version + 1,
-        Vec::new(),
-    )
-    .unwrap();
     MergePreparation {
         expected_git_frontier: repo.git_head.as_ref().unwrap().frontier(),
         expected_repo_change_version: repo.record.change_version,
         update,
-        workflow_catalog,
     }
 }
 
@@ -580,7 +568,6 @@ async fn merge_command(
         },
         update: prepared.update,
         landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
-        workflow_catalog: prepared.workflow_catalog,
         origin: RequestMergeOrigin::Canonical {
             request_id: "req_1".to_string(),
             request_head_oid: REQUEST_HEAD.to_string(),

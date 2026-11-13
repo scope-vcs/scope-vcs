@@ -437,8 +437,6 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
                 .await
                 .unwrap(),
             evaluation: evaluation.clone(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await

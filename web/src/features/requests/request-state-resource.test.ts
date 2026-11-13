@@ -42,41 +42,8 @@ test('a workflow run association arriving after check results refreshes embedded
   requestStateResource.write(identity, { state: state() })
   invalidateRepoResources('viewer-access', event('GitHubWorkflowRunsChanged'))
   assert.equal(requestStateResource.getSnapshot(identity).stale, true)
-  assert.equal(requestStateResource.peek(identity)?.state?.checks.checks[0]?.provider, 'native')
+  assert.equal(requestStateResource.peek(identity)?.state?.checks.checks[0]?.name, 'checks')
 })
-
-test('native run changes leave requests with different runs reusable', () => {
-  const other = requestStateIdentity('viewer-access', 'other')
-  requestStateResource.write(identity, { state: state() })
-  const otherState = state()
-  otherState.checks.checks = [{ provider: 'native', run_id: 'other-run', run_state: 'running', workflow_name: 'checks', workflow_path: '/.scope/runs/checks.yml' }]
-  requestStateResource.write(other, { state: otherState })
-  invalidateRepoResources('viewer-access', event({ RunChanged: { run_id: 'run', change: 'StatusChanged' } }))
-  assert.equal(requestStateResource.getSnapshot(identity).stale, true)
-  assert.equal(requestStateResource.getSnapshot(other).stale, false)
-})
-
-for (const retained of [false, true]) {
-  test(`a native completion during a pending snapshot load triggers recovery with retained data: ${retained}`, async () => {
-    if (retained) requestStateResource.write(identity, { state: state() })
-    requestStateResource.invalidate(identity)
-    const response = deferred<{ state: RequestStateResponse }>()
-    const first = loadRequestStateValue(identity, () => response.promise)
-    await Promise.resolve()
-    invalidateRepoResources('viewer-access', event({ RunChanged: { run_id: 'new-run', change: 'StatusChanged' } }))
-    const incoming = state()
-    incoming.checks.checks = [{ provider: 'native', run_id: 'new-run', run_state: 'running', workflow_name: 'checks', workflow_path: '/.scope/runs/checks.yml' }]
-    response.resolve({ state: incoming })
-    await first
-    assert.equal(requestStateResource.getSnapshot(identity).stale, true)
-    const recovered = state()
-    recovered.checks.checks = [{ provider: 'native', run_id: 'new-run', run_state: 'succeeded', workflow_name: 'checks', workflow_path: '/.scope/runs/checks.yml' }]
-    await loadRequestStateValue(identity, async () => ({ state: recovered }))
-    const check = requestStateResource.peek(identity)?.state?.checks.checks[0]
-    assert.equal(check?.provider === 'native' ? check.run_state : null, 'succeeded')
-    assert.equal(requestStateResource.getSnapshot(identity).stale, false)
-  })
-}
 
 test('a mutation receipt cannot mix requests or heads or replace an event-triggered snapshot', async () => {
   requestStateResource.write(identity, { state: state() })
@@ -105,7 +72,7 @@ function state(head = 'head'): RequestStateResponse {
     detail: { request: { id: 'request', head_oid: head, mergeability } },
     checks: {
       request_id: 'request', head_oid: head, state: 'started', outcome: 'pending', message: null,
-      checks: [{ provider: 'native', run_id: 'run', run_state: 'running', workflow_name: 'checks', workflow_path: '/.scope/runs/checks.yml' }],
+      checks: [{ name: 'checks', status: 'in_progress', conclusion: null, details_url: null, run: null }],
       can_approve: false, changes_github_workflows: false, private_request_on_public_github: false, github_push: null, github_pull_request: null, review_bots: [] as RequestStateResponse['checks']['review_bots'], review_bots_enforced: false, mergeability,
     },
     auto_merge: { request_id: 'request', revision_id: 'revision', head_oid: head, intent: { id: 'intent', actor: { id: 'user', handle: 'adam' }, revision_id: 'revision', head_oid: head, status: 'Active', reason: null, created_at_unix: 1, updated_at_unix: 1 }, waiting_reason: 'Checks are running.', can_enable: false, can_cancel: true },

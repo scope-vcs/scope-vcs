@@ -279,7 +279,6 @@ async fn the_visible_public_search_path_survives_the_baseline_schema_check() {
     let (target, db, _lease) = isolated_database().await;
     baseline_database(&db).await;
     let before = representative_business_snapshot(&db).await;
-    let sequence = sequence_state(&db).await;
     let mut options = sea_orm::ConnectOptions::new(target.schema_database_url());
     options.max_connections(1);
     let visible_public = sea_orm::Database::connect(options).await.unwrap();
@@ -311,7 +310,6 @@ async fn the_visible_public_search_path_survives_the_baseline_schema_check() {
         .await
         .unwrap();
     assert_eq!(representative_business_snapshot(&db).await, before);
-    assert_eq!(sequence_state(&db).await, sequence);
     let restored_path = visible_public
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,

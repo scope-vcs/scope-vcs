@@ -79,13 +79,11 @@ pub(super) async fn persist_batch(
         )
         .await;
         persisted.staged_pack.finish(state).await;
-        state
-            .publish_repo_change(
-                &persisted.incarnation,
-                mutation.git_head.change_version,
-                RepoChangeReason::RequestMerged,
-            )
-            .await;
+        state.publish_repo_change(
+            &persisted.incarnation,
+            mutation.git_head.change_version,
+            RepoChangeReason::RequestMerged,
+        );
         landed_in.get_or_insert_with(|| {
             (
                 persisted.incarnation.clone(),
@@ -106,9 +104,7 @@ pub(super) async fn persist_batch(
         ));
     }
     if let Some((incarnation, owner, repo_name)) = landed_in {
-        state
-            .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
-            .await;
+        state.publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged);
         crate::use_cases::request_checks::renew_stale_check_commits_in_background(
             state, &owner, &repo_name,
         );
@@ -171,7 +167,6 @@ fn split_prepared(
         stack_children: prepared.stack_children,
         update: prepared.update.into_reviewed_update(),
         landing_file_mutation: prepared.landing_file_mutation,
-        workflow_catalog: prepared.workflow_catalog,
         origin: prepared.origin,
         now_unix,
     };

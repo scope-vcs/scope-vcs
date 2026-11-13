@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils'
 import { Check, Circle, LoaderCircle, Minus, X } from 'lucide-react'
 import { type RunTone, runStatus } from './run-status'
-import type { RepositoryRunTerminalReason } from '@/api/types.generated'
 
 export const RUN_TONE_TEXT_CLASS: Record<RunTone, string> = {
   danger: 'text-danger-strong',
@@ -19,14 +18,8 @@ const TONE_ICON: Record<RunTone, typeof Check> = {
   waiting: Circle,
 }
 
-export function RunStatusIcon({
-  state,
-  terminalReason,
-}: {
-  state: string
-  terminalReason?: RepositoryRunTerminalReason | null
-}) {
-  const status = runStatus(state, terminalReason)
+export function RunStatusIcon({ state }: { state: string }) {
+  const status = runStatus(state)
   const Icon = TONE_ICON[status.tone]
   return (
     <Icon

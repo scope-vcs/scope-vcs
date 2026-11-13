@@ -10,21 +10,6 @@ use std::{
 };
 use tokio::io::AsyncWrite;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ContentObjectKind {
-    Blob,
-    GitBundle,
-}
-
-impl ContentObjectKind {
-    fn content_ref(self, sha256: String) -> ContentRef {
-        match self {
-            Self::Blob => ContentRef::blob_sha256(sha256),
-            Self::GitBundle => ContentRef::git_bundle_sha256(sha256),
-        }
-    }
-}
-
 pub fn object_key(blob: &SourceBlob) -> String {
     match &blob.content_ref {
         ContentRef::BlobSha256(sha256) => format!("objects/blobs/{sha256}"),
@@ -33,10 +18,10 @@ pub fn object_key(blob: &SourceBlob) -> String {
     }
 }
 
-pub fn content_object_for_bytes(kind: ContentObjectKind, bytes: &[u8]) -> SourceBlob {
+pub fn content_object_for_bytes(bytes: &[u8]) -> SourceBlob {
     let sha256 = hex::encode(Sha256::digest(bytes));
     SourceBlob {
-        content_ref: kind.content_ref(sha256.clone()),
+        content_ref: ContentRef::blob_sha256(sha256.clone()),
         sha256,
         git_oid: git_blob_oid(bytes),
         git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
@@ -48,16 +33,8 @@ pub async fn put_source_blob(
     store: &dyn ObjectStore,
     bytes: &[u8],
 ) -> Result<SourceBlob, ObjectStoreError> {
-    put_content_object(store, ContentObjectKind::Blob, bytes.to_vec()).await
-}
-
-pub async fn put_content_object(
-    store: &dyn ObjectStore,
-    kind: ContentObjectKind,
-    bytes: Vec<u8>,
-) -> Result<SourceBlob, ObjectStoreError> {
-    let blob = content_object_for_bytes(kind, &bytes);
-    store.put(&object_key(&blob), bytes).await?;
+    let blob = content_object_for_bytes(bytes);
+    store.put(&object_key(&blob), bytes.to_vec()).await?;
     Ok(blob)
 }
 

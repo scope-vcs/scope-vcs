@@ -219,10 +219,9 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         "message": null, "can_approve": true, "github_push": null,
         "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false,
         "checks": [
-            {"provider": "native", "workflow_path": "/.scope/runs/checks.yml",
-                "workflow_name": "checks\u{001b}[31m", "run_id": null, "run_state": null},
-            {"provider": "native", "workflow_path": "/.scope/runs/lint.yml",
-                "workflow_name": "lint", "run_id": null, "run_state": null}
+            {"name": "checks\u{001b}[31m", "status": null, "conclusion": null,
+                "details_url": null},
+            {"name": "lint", "status": null, "conclusion": null, "details_url": null}
         ],
         "mergeability": {
             "status": "ChecksAwaitingApproval", "current_main_oid": oid('a'),
@@ -240,11 +239,11 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("checks [31m · Scope · not started"),
+        rendered.contains("checks [31m · GitHub · no run yet"),
         "{rendered}"
     );
     assert!(
-        rendered.contains("lint · Scope · not started"),
+        rendered.contains("lint · GitHub · no run yet"),
         "{rendered}"
     );
     assert!(
@@ -259,24 +258,18 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
 }
 
 #[test]
-fn started_checks_report_each_provider_state_and_where_its_logs_are() {
+fn started_checks_report_each_state_and_where_its_logs_are() {
     let checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "started", "outcome": "failed",
         "message": null, "can_approve": false, "github_push": null,
         "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false,
         "checks": [
-            {"provider": "native", "workflow_path": "/.scope/runs/checks.yml",
-                "workflow_name": "checks", "run_id": "run_a", "run_state": "succeeded"},
-            {"provider": "native", "workflow_path": "/.scope/runs/lint.yml",
-                "workflow_name": "lint", "run_id": "run_b", "run_state": "running"},
-            {"provider": "native", "workflow_path": "/.scope/runs/docs.yml",
-                "workflow_name": "docs", "run_id": "run_c", "run_state": null},
-            {"provider": "github", "name": "ci / test", "status": "completed",
+            {"name": "ci / test", "status": "completed",
                 "conclusion": "timed_out",
                 "details_url": "https://github.com/o/r/runs/1\u{001b}[31m"},
-            {"provider": "github", "name": "ci / lint", "status": "in_progress",
+            {"name": "ci / lint", "status": "in_progress",
                 "conclusion": null, "details_url": null},
-            {"provider": "github", "name": "ci / docs", "status": null,
+            {"name": "ci / docs", "status": null,
                 "conclusion": null, "details_url": null}
         ],
         "mergeability": {
@@ -289,18 +282,6 @@ fn started_checks_report_each_provider_state_and_where_its_logs_are() {
     let rendered = request_checks_lines(&checks).join("\n");
 
     assert!(rendered.contains("CI: failed"), "{rendered}");
-    assert!(
-        rendered.contains("checks · Scope · succeeded (run_a)"),
-        "{rendered}"
-    );
-    assert!(
-        rendered.contains("lint · Scope · running (run_b)"),
-        "{rendered}"
-    );
-    assert!(
-        rendered.contains("docs · Scope · run is gone (run_c)"),
-        "{rendered}"
-    );
     assert!(
         rendered.contains("ci / test · GitHub · timed out (https://github.com/o/r/runs/1 [31m)"),
         "{rendered}"
@@ -328,7 +309,7 @@ fn started_checks_that_all_succeeded_report_ci_passed() {
         "message": null, "can_approve": false, "changes_github_workflows": false,
         "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false,
         "github_push": {"state": "sent", "branch": "scope/requests/req_one", "error": null},
-        "checks": [{"provider": "github", "name": "Required PR checks", "status": "completed",
+        "checks": [{"name": "Required PR checks", "status": "completed",
             "conclusion": "success", "details_url": null}],
         "mergeability": {
             "status": "Ready", "current_main_oid": oid('a'),
@@ -357,7 +338,7 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
             "outcome": if state == "started" { "pending" } else { state },
             "message": null, "can_approve": can_approve, "github_push": push,
             "changes_github_workflows": can_approve, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false,
-            "checks": [{"provider": "github", "name": "ci / test", "status": null,
+            "checks": [{"name": "ci / test", "status": null,
                 "conclusion": null, "details_url": null}],
             "mergeability": {
                 "status": "ChecksPending", "current_main_oid": oid('a'),

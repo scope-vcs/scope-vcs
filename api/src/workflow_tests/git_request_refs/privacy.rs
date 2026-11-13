@@ -35,12 +35,11 @@ async fn private_history_shapes_cannot_enter_public_request_refs() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn forbidden_intermediate_trees_cannot_enter_public_request_history() {
-    let workflow = workflow_named("Test");
     for (label, path, content, existed_before, private_rule) in [
         (
-            "workflow",
+            "control",
             ".scope/runs/test.yml",
-            workflow.as_str(),
+            "name: Test\n",
             false,
             None,
         ),

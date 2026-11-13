@@ -6,21 +6,14 @@ pub(super) type WriteBodies = BTreeMap<(&'static str, &'static str), String>;
 pub(super) fn write_bodies(params: &BTreeMap<&'static str, String>) -> WriteBodies {
     let request = "/v1/repos/{owner}/{repo}/requests/{request_id}";
     let attachment = "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}";
-    let attempt = "/v1/runtime-protocol/attempts/{attempt_id}";
     let permissions =
         json!({ "can_push": false, "can_change_file_visibility": false, "view": "private" });
-    let cache = json!({
-        "cache_name": "isolation",
-        "compatibility_inputs_digest": "isolation",
-        "exact_inputs_digest": "isolation",
-    });
     let reply = json!({
         "body_markdown": "isolation reply",
         "client_reply_id": "isolation-reply",
         "reply_to_reply_id": null,
         "wait_after_reply": false,
     });
-    let succeeded = json!({ "conclusion": { "kind": "succeeded" }, "logs_truncated": false });
     let bodies: Vec<(&str, String, Value)> = vec![
         (
             "POST",
@@ -62,11 +55,6 @@ pub(super) fn write_bodies(params: &BTreeMap<&'static str, String>) -> WriteBodi
             "POST",
             "/v1/github/setup".into(),
             json!({ "state": "unheld", "code": "unheld" }),
-        ),
-        (
-            "POST",
-            "/internal/cloud-dispatch/authorize".into(),
-            json!({ "action": "stop", "attempt_id": params["attempt_id"] }),
         ),
         (
             "POST",
@@ -221,42 +209,6 @@ pub(super) fn write_bodies(params: &BTreeMap<&'static str, String>) -> WriteBodi
             "POST",
             format!("{attachment}/retry"),
             json!({ "operation_id": "isolation" }),
-        ),
-        (
-            "POST",
-            format!("{attempt}/cache-observations/finalizations"),
-            json!({ "caches": [] }),
-        ),
-        (
-            "POST",
-            format!("{attempt}/cache-observations/preparations"),
-            json!({ "authorization_ms": 0, "wall_ms": 0, "caches": [] }),
-        ),
-        (
-            "POST",
-            format!("{attempt}/caches/restore"),
-            json!({ "cache": cache }),
-        ),
-        (
-            "POST",
-            format!("{attempt}/caches/uploads/prepare"),
-            json!({ "cache": cache, "object_digest": "isolation", "size_bytes": 1 }),
-        ),
-        (
-            "POST",
-            format!("{attempt}/caches/uploads/commit"),
-            json!({ "cache": cache, "lease_id": "isolation", "object_digest": "isolation", "size_bytes": 1 }),
-        ),
-        ("POST", format!("{attempt}/complete"), succeeded.clone()),
-        (
-            "POST",
-            format!("{attempt}/steps/{{step_index}}/complete"),
-            succeeded,
-        ),
-        (
-            "POST",
-            format!("{attempt}/logs"),
-            json!({ "step_index": 0, "sequence": 0, "text": "isolation" }),
         ),
     ];
     bodies

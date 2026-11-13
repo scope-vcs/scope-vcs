@@ -77,8 +77,6 @@ def verify(root, inventory, references, escrow):
         path = root / object_path(ref["bucket"], ref["key"])
         if ref["kind"] == "segment":
             checksum, size = segment_digest(path, ref, object_key)
-        elif ref["kind"] == "cache":
-            checksum, size = digest(path), path.stat().st_size
         else:
             media = ref["kind"] == "media"
             sinks = []

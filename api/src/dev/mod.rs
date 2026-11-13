@@ -54,25 +54,9 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
                 error.into_operator_diagnostic()
             )
         })?;
-    seed::seed_run_gallery(
-        &metadata,
-        &settings.seed_user.handle,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|error| anyhow::anyhow!("reading the local dev clock: {error}"))?
-            .as_secs(),
-    )
-    .await
-    .map_err(|error| {
-        anyhow::anyhow!(
-            "seeding local dev runs: {}",
-            error.into_operator_diagnostic()
-        )
-    })?;
     AppState::connect(AppServices {
         storage,
         metadata,
-        run_caches: crate::use_cases::run_caches::RunCacheStorage::unreachable(),
         media_grants: crate::media_grants::MediaGrantIssuer::local()?,
         product_analytics: ProductAnalytics::disabled(),
         git_public_url,

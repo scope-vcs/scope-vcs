@@ -116,9 +116,7 @@ BEGIN
     FOR relation IN SELECT c.oid, c.relname FROM pg_class c
       WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'S' LOOP
       FOREACH permission IN ARRAY ARRAY['USAGE', 'SELECT', 'UPDATE'] LOOP
-        expected := relation.relname = 'scope_run_creation_sequence'
-          AND role_name IN ('scope_api', 'scope_run_worker') AND permission = 'USAGE';
-        IF has_sequence_privilege(role_name, relation.oid, permission) IS DISTINCT FROM expected THEN
+        IF has_sequence_privilege(role_name, relation.oid, permission) THEN
           RAISE EXCEPTION 'Production sequence privilege differs: % %.%', role_name, relation.relname, permission;
         END IF;
       END LOOP;

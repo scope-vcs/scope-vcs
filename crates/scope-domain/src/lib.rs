@@ -37,6 +37,5 @@ pub mod requests;
 #[cfg(test)]
 mod requests_tests;
 pub mod reviewed_updates;
-pub mod runs;
 pub mod views;
 pub mod visibility_changes;

@@ -43,11 +43,6 @@ pub struct CleanupStore {
 }
 
 #[derive(Clone)]
-pub struct CacheStore {
-    pub(super) db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
 pub struct RepositoryStore {
     pub(super) db: Arc<DatabaseConnection>,
     pub(super) postgres_database_url: Option<Arc<str>>,
@@ -62,16 +57,6 @@ pub struct RequestStore {
 
 #[derive(Clone)]
 pub struct MediaStore {
-    pub(super) db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
-pub struct RunStore {
-    pub(super) db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
-pub struct NativeRunsStore {
     pub(super) db: Arc<DatabaseConnection>,
 }
 
@@ -107,12 +92,6 @@ impl MetadataStore {
         }
     }
 
-    pub fn caches(&self) -> CacheStore {
-        CacheStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
     pub fn repositories(&self) -> RepositoryStore {
         RepositoryStore {
             db: Arc::clone(&self.db),
@@ -136,18 +115,6 @@ impl MetadataStore {
 
     pub fn jobs(&self) -> JobStore {
         JobStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub fn runs(&self) -> RunStore {
-        RunStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub fn native_runs(&self) -> NativeRunsStore {
-        NativeRunsStore {
             db: Arc::clone(&self.db),
         }
     }

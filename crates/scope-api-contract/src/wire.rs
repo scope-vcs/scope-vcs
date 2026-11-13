@@ -477,36 +477,10 @@ pub struct RepoChangeEvent {
     pub kind: RepoChangeKind,
 }
 
-const UNVERSIONED_CHANGE: u64 = 0;
-
-impl RepoChangeEvent {
-    pub fn run_changed(
-        repo_id: String,
-        incarnation_id: String,
-        run_id: String,
-        change: RunChangeKind,
-    ) -> Self {
-        Self {
-            repo_id,
-            incarnation_id,
-            version: UNVERSIONED_CHANGE,
-            kind: RepoChangeKind::RunChanged { run_id, change },
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoChangeNotification {
     pub event: RepoChangeEvent,
     pub origin_id: String,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub enum RunChangeKind {
-    Created,
-    StatusChanged,
-    LogsAppended,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -537,10 +511,6 @@ pub enum RepoChangeKind {
         attachment_id: String,
         view: ViewId,
     },
-    RunChanged {
-        run_id: String,
-        change: RunChangeKind,
-    },
 }
 
 #[cfg(test)]
@@ -556,31 +526,6 @@ mod tests {
             view
         );
         assert!(serde_json::from_str::<ViewId>("\"Review\"").is_err());
-    }
-
-    #[test]
-    fn run_change_uses_the_repo_event_envelope() {
-        let event = RepoChangeEvent::run_changed(
-            "owner/repo".to_string(),
-            "inc_1".to_string(),
-            "run_1".to_string(),
-            RunChangeKind::Created,
-        );
-
-        assert_eq!(
-            serde_json::to_value(event).unwrap(),
-            serde_json::json!({
-                "repo_id": "owner/repo",
-                "incarnation_id": "inc_1",
-                "version": 0,
-                "kind": {
-                    "RunChanged": {
-                        "run_id": "run_1",
-                        "change": "Created"
-                    }
-                }
-            })
-        );
     }
 
     #[test]

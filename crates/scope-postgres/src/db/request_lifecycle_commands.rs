@@ -69,7 +69,6 @@ pub struct MergeRequestContentCommand {
     pub expected_merge_evidence: ExpectedRequestMergeEvidence,
     pub update: scope_domain::reviewed_updates::content::ReviewedUpdateInput,
     pub landing_file_mutation: scope_domain::landing_file::RepositoryLandingFileMutation,
-    pub workflow_catalog: scope_domain::runs::catalog::RepositoryWorkflowCatalog,
     pub origin: scope_domain::repository::updates::RequestMergeOrigin,
     pub now_unix: u64,
 }

@@ -2,8 +2,6 @@ use super::segment_upload::{
     GitSegmentUploadHeartbeat, RemoteCleanup, begin_git_segment_upload,
     best_effort_delete_git_segment_identity, best_effort_delete_staged_git_segment,
 };
-#[cfg(test)]
-use crate::git::command::run_git;
 use crate::{
     error::ApiError,
     git::{
@@ -16,14 +14,10 @@ use crate::{
     },
     state::AppState,
 };
-#[cfg(test)]
-use scope_domain::content::SourceBlob;
 use scope_domain::repository::git::{GitHead, GitPoolPackStorage};
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git::{PreparedGitPush, prepare_git_push};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
-#[cfg(test)]
-use scope_storage::{ContentObjectKind, content_object_for_bytes};
 use scope_storage::{GitStorageError, StagedGitSegment};
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
@@ -258,37 +252,4 @@ pub(crate) async fn git_push_from_repo(
         "Git push pack timing"
     );
     Ok(StagedGitPush { head, pack })
-}
-
-#[cfg(test)]
-pub(crate) fn git_snapshot_from_ref(
-    repo: &FsPath,
-    refname: &str,
-    base_oid: Option<&str>,
-) -> Result<(SourceBlob, Vec<u8>), ApiError> {
-    let head_oid = git_stdout_text(repo, &["rev-parse", refname], "reading Git snapshot head")?;
-    let head_oid = head_oid.trim();
-    let bundle_path = repo.join(format!("scope-snapshot-{}.bundle", random_bundle_id()?));
-    let bundle = bundle_path.to_string_lossy().to_string();
-    let exclude_base = base_oid
-        .filter(|base_oid| *base_oid != head_oid)
-        .map(|base_oid| format!("^{base_oid}"));
-    let mut args = vec!["bundle", "create", bundle.as_str()];
-    args.extend(exclude_base.as_deref());
-    args.push(refname);
-    run_git(Some(repo), &args, "creating Git snapshot bundle")?;
-    let bytes = std::fs::read(&bundle_path).map_err(ApiError::internal)?;
-    crate::git::storage::discard_file(&bundle_path);
-    let mut snapshot = content_object_for_bytes(ContentObjectKind::GitBundle, &bytes);
-    snapshot.git_oid = head_oid.to_string();
-    Ok((snapshot, bytes))
-}
-
-#[cfg(test)]
-fn random_bundle_id() -> Result<String, ApiError> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| {
-        ApiError::internal_message(format!("Git snapshot bundle id generation failed: {error}"))
-    })?;
-    Ok(format!("{}-{}", std::process::id(), hex::encode(bytes)))
 }

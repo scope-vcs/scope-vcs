@@ -47,7 +47,7 @@ pub use auto_merge::{
     RequestAutoMergeStopReason, RequestAutoMergeWaitingReason, authorize_request_auto_merge,
     cancel_request_auto_merge, fulfill_request_auto_merge, request_auto_merge_can_cancel,
     request_auto_merge_can_enable, request_auto_merge_readiness, stop_request_auto_merge,
-    stop_request_auto_merge_for_check_evaluation, stop_request_auto_merge_for_check_run,
+    stop_request_auto_merge_for_check_evaluation,
 };
 pub mod attachments;
 mod checks;
@@ -60,11 +60,11 @@ pub use checks::{
     GitHubPullRequestState, GitHubPullRequestStatus, GitHubPullRequestStatusState,
     GitHubPullRequestStep, GitHubPullRequestsBasedOnBranch, GitHubPush, GitHubPushDestination,
     GitHubPushState, GitHubPushStatus, GitHubRequestChecks, GitHubReviewRequest,
-    GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, OpenedGitHubPullRequest,
+    GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, OpenedGitHubPullRequest,
     PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext, RequestCheckEvaluation,
-    RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
-    RequestCheckReviewer, RequestChecksOutcome, carrier_may_change, carrier_pull_request_base,
-    carrier_text_digest, carries_private_request, changes_github_workflows, check_commit_message,
+    RequestCheckEvaluationState, RequestCheckPlan, RequestCheckResults, RequestCheckReviewer,
+    RequestChecksOutcome, carrier_may_change, carrier_pull_request_base, carrier_text_digest,
+    carries_private_request, changes_github_workflows, check_commit_message,
     closes_carrier_pull_request, ensure_approving_reviewed_head, github_branch_deletion_recheck_at,
     github_push_retry_at, github_retry_at, main_publication_contains_merge, may_carry_on_github,
     request_checks_message, request_checks_outcome, request_head_awaits_evaluation,
@@ -134,7 +134,7 @@ pub use limits::{
     REQUEST_DISCUSSION_BODY_MAX_BYTES, REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES,
     REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_TITLE_MAX_BYTES,
 };
-pub(super) use limits::{validate_body_size, validate_required};
+pub(super) use limits::{validate_body_size, validate_git_oid, validate_required};
 mod model;
 pub use model::{
     Request, RequestActorRole, RequestEvent, RequestEventKind, RequestEventPayload,

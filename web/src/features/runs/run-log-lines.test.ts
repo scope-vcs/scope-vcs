@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readLogLines, readStepLogLines, visibleLogLines } from './run-log-lines'
+import { readLogLines, visibleLogLines } from './run-log-lines'
 import { findLogMatches, logLinePieces } from './run-log-search'
 
 const ESC = '\u001b'
@@ -37,11 +37,8 @@ test('workflow markers set line kinds, hide their text, and fold groups by their
   assert.deepEqual(visibleLogLines(lines, new Set([9])).map((line) => line.number), [1, 5, 6, 7, 8, 9, 10])
 })
 
-test('a color set on one line stays on later lines and native chunks until reset', () => {
-  const lines = readStepLogLines([
-    { position: 1, text: `${ESC}[31mfirst\nsec` },
-    { position: 2, text: `ond${ESC}[0m tail\nplain\n` },
-  ])
+test('a color set on one line stays on later lines until reset', () => {
+  const lines = readLogLines(`${ESC}[31mfirst\nsecond${ESC}[0m tail\nplain\n`)
   assert.deepEqual(
     lines.map((line) => line.spans?.map(({ text, style }) => [text, style.tone]) ?? null),
     [[['first', 'red']], [['second', 'red'], [' tail', null]], null],

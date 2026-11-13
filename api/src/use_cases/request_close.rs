@@ -45,8 +45,6 @@ pub(crate) async fn close_request(
             request_actor_role(repo.access.clone()),
             outcome,
         ));
-    state
-        .publish_request_summary_refresh(&repo.incarnation(), reason)
-        .await;
+    state.publish_request_summary_refresh(&repo.incarnation(), reason);
     Ok(mutation)
 }

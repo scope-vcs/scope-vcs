@@ -8,18 +8,15 @@ import {
   requestReviewBotRows,
 } from './request-check-rows'
 
-type GitHubCheck = Extract<RequestCheckResponse, { provider: 'github' }>
-
 const github = (
   name: string,
-  status: GitHubCheck['status'],
-  conclusion: GitHubCheck['conclusion'] = null,
-  run: GitHubCheck['run'] = null,
+  status: RequestCheckResponse['status'],
+  conclusion: RequestCheckResponse['conclusion'] = null,
+  run: RequestCheckResponse['run'] = null,
 ): RequestCheckResponse => ({
   conclusion,
   details_url: status ? 'https://github.com/o/r/runs/1' : null,
   name,
-  provider: 'github',
   run,
   status,
 })
@@ -31,48 +28,10 @@ const checks = (
 
 const rows = (...list: RequestCheckResponse[]) => requestChecksSummary(checks(list)).all
 
-test('a native check links its run, and one without a run has not started', () => {
-  const native = {
-    provider: 'native',
-    run_id: 'run_a',
-    run_state: 'dispatching',
-    workflow_name: 'checks',
-    workflow_path: '/.scope/runs/checks.yml',
-  } as const
-  assert.deepEqual(rows(native)[0], {
-    key: 'native:/.scope/runs/checks.yml',
-    provider: 'native',
-    workflow: null,
-    reason: null,
-    leaf: 'checks',
-    name: 'checks',
-    parents: [],
-    run: { id: 'run_a' },
-    state: 'dispatching',
-    tone: 'waiting',
-  })
-  assert.deepEqual(
-    rows({ ...native, run_id: null, run_state: null })[0],
-    {
-      key: 'native:/.scope/runs/checks.yml',
-      provider: 'native',
-      workflow: null,
-      reason: null,
-      leaf: 'checks',
-      name: 'checks',
-      parents: [],
-      run: null,
-      state: 'pending',
-      tone: 'waiting',
-    },
-  )
-})
-
 test('a GitHub check takes its conclusion, then its status, names only a specific failure reason, and opens its job on Scope', () => {
   const run = { run_id: '42', workflow_name: 'Build and test', job_id: '7' }
   assert.deepEqual(rows(github('ci / unit / test', 'completed', 'timed_out', run))[0], {
-    key: 'github:ci / unit / test',
-    provider: 'github',
+    key: 'ci / unit / test',
     workflow: { id: '42', name: 'Build and test' },
     reason: 'timed out',
     leaf: 'test',
@@ -121,16 +80,11 @@ test('the summary leads with its most urgent count and lists only checks that ne
   assert.equal(requestChecksSummary(checks([])).status, null)
 
   const canceled = requestChecksSummary(checks([
-    { provider: 'native', workflow_path: '/a.yml', workflow_name: 'a', run_id: 'run_a', run_state: 'succeeded' },
-    { provider: 'native', workflow_path: '/b.yml', workflow_name: 'b', run_id: 'run_b', run_state: 'canceled' },
+    github('a', 'completed', 'success'),
+    github('b', 'completed', 'cancelled'),
   ]))
   assert.deepEqual(canceled.status, { tone: 'danger', text: '1 failed' })
-  assert.deepEqual(canceled.attention.map((row) => [row.name, row.reason]), [['b', 'canceled']])
-
-  const lost = requestChecksSummary(checks([
-    { provider: 'native', workflow_path: '/c.yml', workflow_name: 'c', run_id: 'run_c', run_state: 'lost' },
-  ]))
-  assert.deepEqual(lost.attention.map((row) => row.reason), ['lost'])
+  assert.deepEqual(canceled.attention.map((row) => [row.name, row.reason]), [['b', 'cancelled']])
 })
 
 test('the summary says when checks are starting or could not start, without naming the host', () => {
@@ -158,7 +112,6 @@ test('jobs group by their actual workflow run, independently of job paths or sha
     github('lint', 'completed', 'success', { ...run, job_id: '8' }),
     github('validate / cli', 'queued', null, { ...run, run_id: '43', job_id: '9' }),
     github('validate / missing', null),
-    { provider: 'native', workflow_path: '/native.yml', workflow_name: 'Native', run_id: 'run_native', run_state: 'running' },
   ))
   const workflows = groups.filter((group) => group.kind === 'workflow')
   assert.deepEqual(workflows.map((group) => ({
@@ -171,8 +124,6 @@ test('jobs group by their actual workflow run, independently of job paths or sha
   ])
   const unassigned = groups.find((group) => group.kind === 'unassigned')
   assert.deepEqual(unassigned?.jobs.map((job) => job.name), ['validate / missing'])
-  const native = groups.find((group) => group.kind === 'native')
-  assert.equal(native?.row.name, 'Native')
 })
 
 test('a carrier pull request links to GitHub once it has a number and explains failures', () => {

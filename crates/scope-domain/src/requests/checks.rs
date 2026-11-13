@@ -1,16 +1,7 @@
 use super::{Request, RequestState, limits::validate_required};
+use crate::requests::validate_git_oid;
 use crate::views::ViewId;
-use crate::{
-    error::DomainError,
-    github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
-    runs::{
-        availability::NATIVE_RUNS_UNAVAILABLE,
-        run::{Run, RunRequest, RunState},
-        source::{RunSource, RunTrigger},
-        validation::{validate_git_oid, validate_sha256_hash},
-        workflow::revision::WorkflowRevision,
-    },
-};
+use crate::{error::DomainError, github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -51,21 +42,6 @@ pub use tested_commit::{
     check_commit_message,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RequestCheckProvider<'a> {
-    Native,
-    GitHub(&'a GitHubConnection),
-}
-
-impl<'a> RequestCheckProvider<'a> {
-    pub fn for_repository(github_connection: Option<&'a GitHubConnection>) -> Self {
-        match github_connection {
-            Some(connection) => Self::GitHub(connection),
-            None => Self::Native,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RequestCheckEvaluationState {
@@ -76,94 +52,8 @@ pub enum RequestCheckEvaluationState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "provider")]
-pub enum RequestCheck {
-    #[serde(rename = "native")]
-    Native(NativeRequestCheck),
-    #[serde(rename = "github")]
-    GitHub { name: String },
-}
-
-impl RequestCheck {
-    pub fn native(&self) -> Option<&NativeRequestCheck> {
-        match self {
-            Self::Native(check) => Some(check),
-            Self::GitHub { .. } => None,
-        }
-    }
-
-    fn native_mut(&mut self) -> Option<&mut NativeRequestCheck> {
-        match self {
-            Self::Native(check) => Some(check),
-            Self::GitHub { .. } => None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NativeRequestCheck {
-    pub workflow_path: String,
-    pub workflow_name: String,
-    pub workflow_revision_digest: String,
-    pub run_id: Option<String>,
-}
-
-impl NativeRequestCheck {
-    pub fn for_revision(revision: &WorkflowRevision) -> Self {
-        Self {
-            workflow_path: revision.workflow().path().as_str().to_string(),
-            workflow_name: revision.workflow().path().name().to_string(),
-            workflow_revision_digest: revision.digest().to_string(),
-            run_id: None,
-        }
-    }
-
-    pub fn run(
-        &self,
-        request: &Request,
-        source: Option<&crate::content::SourceBlob>,
-        evaluation_id: &str,
-        revision: &WorkflowRevision,
-        requested_by_user_id: &str,
-        now_unix: u64,
-    ) -> Result<Run, DomainError> {
-        if revision.digest() != self.workflow_revision_digest
-            || revision.workflow().path().as_str() != self.workflow_path
-        {
-            return Err(DomainError::invalid_input(
-                "request check does not match the workflow revision",
-            ));
-        }
-        if request.pushed_at_unix.is_none() {
-            return Err(DomainError::conflict("request branch has not been pushed"));
-        }
-        let source =
-            source.ok_or_else(|| DomainError::conflict("request run source is unavailable"))?;
-        if source.git_oid != request.head_oid {
-            return Err(DomainError::conflict(
-                "request run source does not match its head",
-            ));
-        }
-        let idempotency_key = format!(
-            "request:{}:{}:{}",
-            request.id, evaluation_id, self.workflow_path
-        );
-        let digest = Sha256::digest(
-            format!("{}\0{idempotency_key}", revision.workflow().repository_id()).as_bytes(),
-        );
-        Run::new(
-            RunRequest {
-                id: format!("run_request_{}", hex::encode(digest)),
-                idempotency_key,
-                workflow: revision.workflow().clone(),
-                workflow_revision_digest: revision.digest().to_string(),
-                trigger: RunTrigger::Request,
-                requested_by_user_id: Some(requested_by_user_id.to_string()),
-                source: RunSource::ephemeral_git_bundle(source.clone())?,
-            },
-            now_unix,
-        )
-    }
+pub struct RequestCheck {
+    pub name: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,14 +91,9 @@ impl RequestCheckEvaluation {
         checks: Vec<RequestCheck>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
-        if checks.is_empty()
-            || checks
-                .iter()
-                .filter_map(RequestCheck::native)
-                .any(|check| check.run_id.is_some())
-        {
+        if checks.is_empty() {
             return Err(DomainError::invalid_input(
-                "checks awaiting approval must exist and cannot have runs",
+                "checks awaiting approval must exist",
             ));
         }
         Self::new(
@@ -225,7 +110,9 @@ impl RequestCheckEvaluation {
         checks: Vec<RequestCheck>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
-        ensure_every_check_started(&checks)?;
+        if checks.is_empty() {
+            return Err(DomainError::invalid_input("started checks must exist"));
+        }
         Self::new(
             context,
             RequestCheckEvaluationState::Started,
@@ -251,37 +138,16 @@ impl RequestCheckEvaluation {
         )
     }
 
-    pub fn approve(&mut self, run_ids: Vec<String>, now_unix: u64) -> Result<(), DomainError> {
+    pub fn approve(&mut self, now_unix: u64) -> Result<(), DomainError> {
         self.ensure_awaiting_approval()?;
-        if run_ids.len() != self.native_checks().count() {
-            return Err(DomainError::invalid_input(
-                "approval must start every recorded check",
-            ));
-        }
         if now_unix < self.created_at_unix {
             return Err(DomainError::invalid_input(
                 "request check approval cannot predate the evaluation",
             ));
         }
-        for (check, run_id) in self
-            .checks
-            .iter_mut()
-            .filter_map(RequestCheck::native_mut)
-            .zip(run_ids)
-        {
-            check.run_id = Some(run_id);
-        }
-        ensure_every_check_started(&self.checks)?;
         self.state = RequestCheckEvaluationState::Started;
         self.updated_at_unix = now_unix;
         Ok(())
-    }
-
-    pub fn uses_native_runs(&self) -> bool {
-        matches!(
-            self.state,
-            RequestCheckEvaluationState::AwaitingApproval | RequestCheckEvaluationState::Started
-        ) && self.native_checks().next().is_some()
     }
 
     pub fn ensure_awaiting_approval(&self) -> Result<(), DomainError> {
@@ -291,56 +157,12 @@ impl RequestCheckEvaluation {
         Ok(())
     }
 
-    pub fn withdraw_native_runs(
-        &self,
-        run_states: &[(String, RunState)],
-        now_unix: u64,
-    ) -> Result<Option<Self>, DomainError> {
-        let waiting = match self.state {
-            RequestCheckEvaluationState::AwaitingApproval => self.native_checks().next().is_some(),
-            RequestCheckEvaluationState::Started => {
-                let verdicts = self
-                    .native_checks()
-                    .map(|check| native_verdict(check, run_states))
-                    .collect::<Vec<_>>();
-                !verdicts.contains(&CheckVerdict::Failed)
-                    && verdicts.contains(&CheckVerdict::Pending)
-            }
-            RequestCheckEvaluationState::NoChecks
-            | RequestCheckEvaluationState::ConfigurationError => false,
-        };
-        if !waiting {
-            return Ok(None);
-        }
-        let mut withdrawn = Self::configuration_error(
-            &self.context(),
-            NATIVE_RUNS_UNAVAILABLE,
-            now_unix.max(self.updated_at_unix),
-        )?;
-        withdrawn.checks = self.checks.clone();
-        withdrawn.id = self.id.clone();
-        withdrawn.github_repository_id = self.github_repository_id;
-        withdrawn.created_at_unix = self.created_at_unix;
-        Ok(Some(withdrawn))
-    }
-
     pub fn awaits_approval(&self) -> bool {
         self.state == RequestCheckEvaluationState::AwaitingApproval
     }
 
-    pub fn native_checks(&self) -> impl Iterator<Item = &NativeRequestCheck> {
-        self.checks.iter().filter_map(RequestCheck::native)
-    }
-
-    pub fn run_ids(&self) -> impl Iterator<Item = &str> {
-        self.native_checks()
-            .filter_map(|check| check.run_id.as_deref())
-    }
-
     pub fn asks_github(&self) -> bool {
-        self.checks
-            .iter()
-            .any(|check| matches!(check, RequestCheck::GitHub { .. }))
+        !self.checks.is_empty()
     }
 
     pub fn tests_check_commit(&self) -> bool {
@@ -368,9 +190,9 @@ impl RequestCheckEvaluation {
 
     fn test_check_commit(&mut self, oid: String, base: CheckCommitBase) -> Result<(), DomainError> {
         validate_git_oid("request check commit", &oid)?;
-        if oid == self.head_oid || self.native_checks().next().is_some() {
+        if oid == self.head_oid {
             return Err(DomainError::invalid_input(
-                "only GitHub checks can test a commit other than the head",
+                "a check commit must differ from the head",
             ));
         }
         self.tested_oid = oid;
@@ -390,17 +212,7 @@ impl RequestCheckEvaluation {
         validate_required("request id", &request_id)?;
         validate_git_oid("request check head", &head_oid)?;
         for check in &checks {
-            match check {
-                RequestCheck::Native(check) => {
-                    validate_required("check workflow path", &check.workflow_path)?;
-                    validate_required("check workflow name", &check.workflow_name)?;
-                    validate_sha256_hash(
-                        "check workflow revision digest",
-                        &check.workflow_revision_digest,
-                    )?;
-                }
-                RequestCheck::GitHub { name } => validate_required("check name", name)?,
-            }
+            validate_required("check name", &check.name)?;
         }
         let mut evaluation = Self {
             id: String::new(),
@@ -471,37 +283,12 @@ impl RequestCheckEvaluation {
             digest.update([0]);
         }
         for check in &self.checks {
-            match check {
-                RequestCheck::Native(check) => {
-                    digest.update(b"native\0");
-                    digest.update(check.workflow_path.as_bytes());
-                    digest.update([0]);
-                    digest.update(check.workflow_revision_digest.as_bytes());
-                    digest.update([0]);
-                }
-                RequestCheck::GitHub { name } => {
-                    digest.update(b"github\0");
-                    digest.update(name.as_bytes());
-                    digest.update([0]);
-                }
-            }
+            digest.update(b"github\0");
+            digest.update(check.name.as_bytes());
+            digest.update([0]);
         }
         self.id = format!("evaluation_{}", hex::encode(digest.finalize()));
     }
-}
-
-fn ensure_every_check_started(checks: &[RequestCheck]) -> Result<(), DomainError> {
-    if checks.is_empty()
-        || checks
-            .iter()
-            .filter_map(RequestCheck::native)
-            .any(|check| check.run_id.is_none())
-    {
-        return Err(DomainError::invalid_input(
-            "started checks must exist and each needs a run",
-        ));
-    }
-    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -516,7 +303,6 @@ pub enum RequestChecksOutcome {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestCheckResults {
-    pub native_runs: Vec<(String, RunState)>,
     pub github: GitHubCheckResults,
     pub withheld_from_github: Vec<String>,
     pub canonical_main_oid: Option<String>,
@@ -563,13 +349,7 @@ pub fn request_checks_outcome(
         RequestCheckEvaluationState::Started => {
             let mut outcome = RequestChecksOutcome::Clear;
             for check in &evaluation.checks {
-                let verdict = match check {
-                    RequestCheck::Native(check) => native_verdict(check, &results.native_runs),
-                    RequestCheck::GitHub { name } => {
-                        results.github.verdict(&evaluation.tested_oid, name)
-                    }
-                };
-                match verdict {
+                match results.github.verdict(&evaluation.tested_oid, &check.name) {
                     CheckVerdict::Passed => {}
                     CheckVerdict::Pending => outcome = RequestChecksOutcome::Pending,
                     CheckVerdict::Failed => return RequestChecksOutcome::Failed,
@@ -611,19 +391,6 @@ pub fn request_checks_message(
     (now_unix >= pushed_at.saturating_add(GITHUB_WORKFLOWS_START_WITHIN_SECS)
         && !results.github.any_on(&evaluation.tested_oid))
     .then(|| NO_GITHUB_WORKFLOWS_STARTED.to_string())
-}
-
-fn native_verdict(check: &NativeRequestCheck, runs: &[(String, RunState)]) -> CheckVerdict {
-    let state = check.run_id.as_deref().and_then(|run_id| {
-        runs.iter()
-            .find(|(id, _)| id == run_id)
-            .map(|(_, state)| *state)
-    });
-    match state {
-        Some(RunState::Succeeded) => CheckVerdict::Passed,
-        Some(state) if !state.is_terminal() => CheckVerdict::Pending,
-        Some(_) | None => CheckVerdict::Failed,
-    }
 }
 
 pub fn request_head_awaits_evaluation(request: &Request, outcome: RequestChecksOutcome) -> bool {

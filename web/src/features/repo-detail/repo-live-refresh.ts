@@ -154,8 +154,7 @@ export function createRepoRefreshCoordinator({
         event.kind === 'GitHubWorkflowRunsChanged' ||
         typeof event.kind === 'object' && (
           'GitHubWorkflowRunChanged' in event.kind ||
-          'RequestTimelineChanged' in event.kind ||
-          'RunChanged' in event.kind
+          'RequestTimelineChanged' in event.kind
         )
       ) {
         return false

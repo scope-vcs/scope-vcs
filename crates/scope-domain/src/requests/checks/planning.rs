@@ -1,9 +1,9 @@
 use super::{
-    GitHubCheckTarget, GitHubTestedCommit, NativeRequestCheck, PRIVATE_CODE_CONFLICT_MESSAGE,
-    Request, RequestCheck, RequestCheckContext, RequestCheckEvaluation,
-    RequestCheckEvaluationState, RequestCheckReviewer, RequestState, Run, WorkflowRevision,
+    GitHubCheckTarget, GitHubTestedCommit, PRIVATE_CODE_CONFLICT_MESSAGE, Request, RequestCheck,
+    RequestCheckContext, RequestCheckEvaluation, RequestCheckEvaluationState, RequestCheckReviewer,
+    RequestState,
 };
-use crate::{error::DomainError, runs::availability::NativeRunsAvailability, views::Views};
+use crate::{error::DomainError, views::Views};
 
 pub struct GitHubRequestChecks<'a> {
     pub github_repository_id: u64,
@@ -14,7 +14,6 @@ pub struct GitHubRequestChecks<'a> {
 #[derive(Clone, Debug)]
 pub struct RequestCheckPlan {
     pub evaluation: RequestCheckEvaluation,
-    pub runs: Vec<Run>,
     pub push_to_github: bool,
 }
 
@@ -23,62 +22,17 @@ impl RequestCheckPlan {
         request.state() != RequestState::Merged
     }
 
-    pub fn evaluate(
+    pub fn without_github(
         request: &Request,
-        source: Option<&crate::content::SourceBlob>,
         context: &RequestCheckContext,
-        native_runs: NativeRunsAvailability,
-        revisions: Result<&[WorkflowRevision], &str>,
-        reviewing_pusher: Option<RequestCheckReviewer<'_>>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         if !context.matches_request(request) {
             return Err(DomainError::conflict("request changed while evaluating CI"));
         }
-        if !native_runs.is_available() {
-            return Ok(Self::native(
-                RequestCheckEvaluation::no_checks(context, now_unix)?,
-                Vec::new(),
-            ));
-        }
-        let revisions = match revisions {
-            Ok(revisions) => revisions,
-            Err(message) => {
-                return Ok(Self::native(
-                    RequestCheckEvaluation::configuration_error(context, message, now_unix)?,
-                    Vec::new(),
-                ));
-            }
-        };
-        if revisions.is_empty() {
-            return Ok(Self::native(
-                RequestCheckEvaluation::no_checks(context, now_unix)?,
-                Vec::new(),
-            ));
-        }
-        let checks = revisions
-            .iter()
-            .map(NativeRequestCheck::for_revision)
-            .map(RequestCheck::Native)
-            .collect();
-        let mut evaluation = RequestCheckEvaluation::awaiting_approval(context, checks, now_unix)?;
-        let runs = if let Some(starter) = reviewing_pusher.filter(|_| Self::starts_on_push(request))
-        {
-            let runs = plan_runs(
-                request,
-                source,
-                &evaluation.id,
-                evaluation.native_checks(),
-                revisions,
-                starter.user_id(),
-                now_unix,
-            )?;
-            evaluation.approve(runs.iter().map(|run| run.id.clone()).collect(), now_unix)?;
-            runs
-        } else {
-            Vec::new()
-        };
-        Ok(Self::native(evaluation, runs))
+        Ok(Self::unpushed(RequestCheckEvaluation::no_checks(
+            context, now_unix,
+        )?))
     }
 
     pub fn evaluate_github(
@@ -86,7 +40,7 @@ impl RequestCheckPlan {
         context: &RequestCheckContext,
         views: &Views,
         github: GitHubRequestChecks<'_>,
-        reviewing_pusher: Option<RequestCheckReviewer<'_>>,
+        reviewing_pusher: Option<RequestCheckReviewer>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         let GitHubRequestChecks {
@@ -114,16 +68,16 @@ impl RequestCheckPlan {
                 evaluation.github_repository_id = Some(github_repository_id);
                 evaluation.checks = required_check_names
                     .iter()
-                    .map(|name| RequestCheck::GitHub { name: name.clone() })
+                    .map(|name| RequestCheck { name: name.clone() })
                     .collect();
                 evaluation.renew_identity();
-                return Ok(Self::native(evaluation, Vec::new()));
+                return Ok(Self::unpushed(evaluation));
             }
         };
         let starts = reviewing_pusher.is_some() && Self::starts_on_push(request);
         let checks = required_check_names
             .iter()
-            .map(|name| RequestCheck::GitHub { name: name.clone() })
+            .map(|name| RequestCheck { name: name.clone() })
             .collect::<Vec<_>>();
         let mut evaluation = if checks.is_empty() {
             RequestCheckEvaluation::no_checks(context, now_unix)?
@@ -139,7 +93,6 @@ impl RequestCheckPlan {
         evaluation.renew_identity();
         Ok(Self {
             evaluation,
-            runs: Vec::new(),
             push_to_github: starts,
         })
     }
@@ -174,7 +127,7 @@ impl RequestCheckPlan {
                 conflict.github_repository_id = evaluation.github_repository_id;
                 conflict.checks = evaluation.checks.clone();
                 conflict.renew_identity();
-                return Ok(Self::native(conflict, Vec::new()));
+                return Ok(Self::unpushed(conflict));
             }
             GitHubTestedCommit::Head => {
                 return Err(DomainError::invalid_input(
@@ -191,16 +144,13 @@ impl RequestCheckPlan {
         Ok(Self {
             push_to_github: !request.is_terminal(),
             evaluation,
-            runs: Vec::new(),
         })
     }
 
     pub fn approve(
         request: &Request,
-        source: Option<&crate::content::SourceBlob>,
         mut evaluation: RequestCheckEvaluation,
-        revisions: &[WorkflowRevision],
-        approver: RequestCheckReviewer<'_>,
+        _approver: RequestCheckReviewer,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         evaluation.ensure_awaiting_approval()?;
@@ -209,61 +159,19 @@ impl RequestCheckPlan {
                 "request check evaluation does not match the request head",
             ));
         }
-        let runs = plan_runs(
-            request,
-            source,
-            &evaluation.id,
-            evaluation.native_checks(),
-            revisions,
-            approver.user_id(),
-            now_unix,
-        )?;
-        evaluation.approve(runs.iter().map(|run| run.id.clone()).collect(), now_unix)?;
+        evaluation.approve(now_unix)?;
         Ok(Self {
             push_to_github: evaluation.asks_github() && !request.is_terminal(),
             evaluation,
-            runs,
         })
     }
 
-    fn native(evaluation: RequestCheckEvaluation, runs: Vec<Run>) -> Self {
+    fn unpushed(evaluation: RequestCheckEvaluation) -> Self {
         Self {
             evaluation,
-            runs,
             push_to_github: false,
         }
     }
-}
-
-fn plan_runs<'a>(
-    request: &Request,
-    source: Option<&crate::content::SourceBlob>,
-    evaluation_id: &str,
-    checks: impl IntoIterator<Item = &'a NativeRequestCheck>,
-    revisions: &[WorkflowRevision],
-    actor_user_id: &str,
-    now_unix: u64,
-) -> Result<Vec<Run>, DomainError> {
-    let checks = checks.into_iter().collect::<Vec<_>>();
-    if checks.len() != revisions.len() {
-        return Err(DomainError::invalid_input(
-            "approval must start every recorded check",
-        ));
-    }
-    checks
-        .into_iter()
-        .zip(revisions)
-        .map(|(check, revision)| {
-            check.run(
-                request,
-                source,
-                evaluation_id,
-                revision,
-                actor_user_id,
-                now_unix,
-            )
-        })
-        .collect()
 }
 
 #[cfg(test)]

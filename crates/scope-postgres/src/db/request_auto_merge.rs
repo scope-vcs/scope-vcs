@@ -11,16 +11,15 @@ use crate::error::PostgresError;
 use scope_domain::requests::{
     AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, MergeGateInput,
     RequestAutoMergeIntent, RequestAutoMergeMutation, RequestAutoMergeStopReason,
-    RequestCheckEvaluation, RequestMergeSubject, RequestViewer, authorize_request_auto_merge,
-    cancel_request_auto_merge, evaluate_merge_gate, request_auto_merge_readiness,
-    request_checks_outcome, request_policy, stop_request_auto_merge,
-    stop_request_auto_merge_for_check_run,
+    RequestMergeSubject, RequestViewer, authorize_request_auto_merge, cancel_request_auto_merge,
+    evaluate_merge_gate, request_auto_merge_readiness, request_checks_outcome, request_policy,
+    stop_request_auto_merge,
 };
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, ExprTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
     sea_query::{LockBehavior, LockType},
 };
 
@@ -97,9 +96,6 @@ impl RequestStore {
         let actor_can_merge = request_policy(&request, viewer.clone(), &repo.views)
             .permissions
             .can_merge;
-        if actor_can_merge {
-            lock_request_check_evidence(&tx, &request.id, &revision.new_head_oid).await?;
-        }
         let evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
             .await?
             .filter(|evaluation| {
@@ -368,104 +364,6 @@ pub(super) async fn lock_active_intent_for_request(
         .await?
         .map(StoredIntent::from_model)
         .transpose()
-}
-
-pub(super) async fn lock_active_auto_merge_for_run(
-    tx: &DatabaseTransaction,
-    run_id: &str,
-) -> Result<Option<StoredIntent>, PostgresError> {
-    let Some(request_id) = request_id_for_check_run(tx, run_id).await? else {
-        return Ok(None);
-    };
-    acquire_aggregate_lock(tx, "request", &request_id).await?;
-    let Some(stored) = lock_active_intent_for_request(tx, &request_id).await? else {
-        return Ok(None);
-    };
-    let evaluation =
-        evaluation_for_head(tx, &stored.intent.request_id, &stored.intent.head_oid).await?;
-    if evaluation
-        .iter()
-        .flat_map(RequestCheckEvaluation::run_ids)
-        .any(|id| id == run_id)
-    {
-        Ok(Some(stored))
-    } else {
-        Ok(None)
-    }
-}
-
-pub(super) async fn request_id_for_check_run<C: ConnectionTrait>(
-    conn: &C,
-    run_id: &str,
-) -> Result<Option<String>, PostgresError> {
-    let row = conn
-        .query_one_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-            SELECT evaluation.request_id
-              FROM scope_request_check_evaluations evaluation
-              JOIN scope_requests request ON request.current_check_evaluation_id = evaluation.id
-             WHERE evaluation.checks @> jsonb_build_array(
-                   jsonb_build_object('provider', 'native', 'run_id', $1::text)
-               )
-             LIMIT 1
-            "#,
-            [run_id.into()],
-        ))
-        .await?;
-    row.map(|row| {
-        row.try_get::<String>("", "request_id")
-            .map_err(PostgresError::internal)
-    })
-    .transpose()
-}
-
-async fn lock_request_check_evidence(
-    tx: &DatabaseTransaction,
-    request_id: &str,
-    head_oid: &str,
-) -> Result<(), PostgresError> {
-    let Some(evaluation) = evaluation_for_head(tx, request_id, head_oid).await? else {
-        return Ok(());
-    };
-    let mut run_ids = evaluation.run_ids().map(str::to_string).collect::<Vec<_>>();
-    run_ids.sort_unstable();
-    run_ids.dedup();
-    for run_id in run_ids {
-        let exists = entities::run::Entity::find_by_id(&run_id)
-            .lock_exclusive()
-            .one(tx)
-            .await?
-            .is_some();
-        if !exists {
-            return Err(PostgresError::conflict(
-                "request CI evidence is no longer available",
-            ));
-        }
-    }
-    Ok(())
-}
-
-pub(super) async fn stop_auto_merge_for_terminal_run(
-    tx: &DatabaseTransaction,
-    active: Option<StoredIntent>,
-    run: &scope_domain::runs::run::Run,
-) -> Result<(), PostgresError> {
-    let Some(StoredIntent { model, intent }) = active else {
-        return Ok(());
-    };
-    let request = request_by_id(tx, &intent.request_id)
-        .await?
-        .ok_or_else(|| PostgresError::internal_message("auto-merge request is missing"))?;
-    if let Some(mutation) = stop_request_auto_merge_for_check_run(
-        &request,
-        &intent,
-        run,
-        automatic_event_id("stopped", &intent.id),
-    )? {
-        persist_existing_auto_merge_mutation(tx, model, &mutation).await?;
-    }
-    Ok(())
 }
 
 pub(super) async fn stop_auto_merges_for_revoked_actor(

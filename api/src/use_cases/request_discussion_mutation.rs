@@ -136,7 +136,7 @@ pub(crate) async fn create_discussion(
     }
     let discussion_id = mutation.discussion.id.clone();
     let through_position = mutation.discussion.last_activity_position;
-    publish_timeline_change(state, &context, discussion_id.clone(), through_position).await;
+    publish_timeline_change(state, &context, discussion_id.clone(), through_position);
     load_discussion_result(state, &context, &discussion_id, &command.actor_user_id).await
 }
 
@@ -216,8 +216,7 @@ pub(crate) async fn transition_discussion(
         &context,
         command.discussion_id.clone(),
         through_position,
-    )
-    .await;
+    );
     load_discussion_result(
         state,
         &context,
@@ -371,7 +370,7 @@ async fn reply_mutation_result(
                 request_actor_role(context.repo.access.clone()),
             ));
     }
-    publish_timeline_change(state, context, discussion_id.clone(), reply.position).await;
+    publish_timeline_change(state, context, discussion_id.clone(), reply.position);
     let discussion = load_discussion_result(state, context, &discussion_id, actor_user_id).await?;
     let (reply, reply_actors) = state
         .metadata
@@ -412,21 +411,19 @@ async fn load_discussion_result(
     })
 }
 
-async fn publish_timeline_change(
+fn publish_timeline_change(
     state: &AppState,
     context: &MutationContext,
     discussion_id: String,
     through_position: u64,
 ) {
-    state
-        .publish_request_timeline_change(
-            &context.repo.incarnation(),
-            context.request.id.clone(),
-            discussion_id,
-            through_position,
-            context.request.view.clone(),
-        )
-        .await;
+    state.publish_request_timeline_change(
+        &context.repo.incarnation(),
+        context.request.id.clone(),
+        discussion_id,
+        through_position,
+        context.request.view.clone(),
+    );
 }
 
 async fn ensure_discussion_in_request(

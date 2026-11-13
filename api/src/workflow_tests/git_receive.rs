@@ -147,13 +147,6 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
                 test_git_segment_ref(&format!("Git segment {sequence}")),
             ),
         };
-        update.workflow_catalog = scope_domain::runs::catalog::RepositoryWorkflowCatalog::captured(
-            TEST_REPO_ID,
-            &head_oid,
-            sequence,
-            Vec::new(),
-        )
-        .unwrap();
 
         let next_frontier = update.git_head.frontier();
         let persisted = persist_test_update(&state, update).await.unwrap();
@@ -462,7 +455,13 @@ async fn pending_object_cleanup_uses_transactional_reference_rows() {
         .await
         .unwrap();
 
-    let report = drain_pending_source_blob_deletions(&state).await.unwrap();
+    let report = scope_content_lifecycle::drain_source_blob_cleanup(
+        &state.metadata,
+        state.object_store.as_ref(),
+        unix_now(),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         report,

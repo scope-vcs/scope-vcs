@@ -12,18 +12,15 @@ use scope_domain::{
         Request, RequestDiscussion, RequestDiscussionReadState, RequestDiscussionReply,
         RequestEvent, RequestRevision,
     },
-    runs::catalog::RepositoryWorkflowCatalog,
     views::ViewId,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct CatalogFixture {
     pub users: BTreeMap<String, UserAccount>,
-    pub native_runs_accounts: BTreeSet<String>,
     pub repositories: BTreeMap<String, Repository>,
     pub repository_landing_files: BTreeMap<String, RepositoryLandingFile>,
-    pub repository_workflow_catalogs: BTreeMap<String, RepositoryWorkflowCatalog>,
     pub git_segment_uploads: Vec<GitSegmentUpload>,
     pub git_pool_packs: BTreeMap<String, Vec<GitPoolPack>>,
     pub requests: BTreeMap<String, Request>,

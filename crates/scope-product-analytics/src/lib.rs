@@ -4,12 +4,10 @@ use serde_json::{Map, Value};
 use transport::ProductEventContext;
 
 mod transport;
-mod workflow;
 
 pub use transport::ProductAnalytics;
 #[cfg(any(test, feature = "test-support"))]
 pub use transport::RecordingProductAnalytics;
-pub use workflow::{WorkflowAttempt, WorkflowAttemptResult, WorkflowRunResult, WorkflowRunTrigger};
 
 const SCOPE_USER_ID_PREFIX: &str = "scope_usr_";
 const SCOPE_SYSTEM_DISTINCT_ID: &str = "scope_system";
@@ -359,13 +357,6 @@ impl ProductActor<'_> {
             Self::System => SCOPE_SYSTEM_DISTINCT_ID,
         }
     }
-
-    fn actor_type(self) -> &'static str {
-        match self {
-            Self::User(_) => "user",
-            Self::System => "system",
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -389,7 +380,6 @@ pub enum EventSource {
     Cli,
     CliDownloads,
     Git,
-    Worker,
 }
 
 impl EventSource {
@@ -399,7 +389,6 @@ impl EventSource {
             Self::Cli => "cli",
             Self::CliDownloads => "cli_downloads",
             Self::Git => "git",
-            Self::Worker => "worker",
         }
     }
 }
@@ -545,41 +534,6 @@ mod tests {
                 ("source".to_string(), Value::String("api".to_string())),
             ]),
         );
-    }
-
-    #[test]
-    fn workflow_events_keep_the_emitting_service_source() {
-        for source in [EventSource::Api, EventSource::Worker] {
-            let (analytics, recording) = ProductAnalytics::recording_for_source(source);
-            let attempt = WorkflowAttempt {
-                repository_id: "repoi_test",
-                run_id: "run_test",
-                attempt_id: "attempt_test",
-                attempt_number: 2,
-                trigger: WorkflowRunTrigger::PushMain,
-            };
-            analytics.capture(ProductEvent::workflow_attempt_started(
-                ProductActor::System,
-                attempt,
-            ));
-            analytics.capture(ProductEvent::workflow_attempt_completed(
-                ProductActor::System,
-                attempt,
-                WorkflowAttemptResult::Succeeded,
-                Some(WorkflowRunResult::Succeeded),
-                1000,
-            ));
-            for index in [0, 1] {
-                assert_eq!(
-                    recording.property(index, "source"),
-                    Some(Value::String(source.as_str().into()))
-                );
-                assert_eq!(
-                    recording.property(index, "actor_type"),
-                    Some(Value::String("system".into()))
-                );
-            }
-        }
     }
 
     #[test]

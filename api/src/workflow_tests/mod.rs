@@ -37,7 +37,7 @@ use scope_domain::{
     reviewed_updates::content::ReviewedContentChange,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_storage::{ContentObjectKind, ObjectStore, put_source_blob};
+use scope_storage::{ObjectStore, put_source_blob};
 use std::{
     collections::BTreeMap,
     fs,
@@ -53,7 +53,6 @@ mod auth;
 mod auth_fixtures;
 mod cli_auth;
 mod clone_access;
-mod cloud_runs;
 mod cross_repo_isolation;
 mod custom_views;
 mod custom_views_main_push;
@@ -76,10 +75,8 @@ mod history;
 mod http;
 mod landing_file;
 mod main_pool;
-mod manual_runs;
 mod mcp;
 mod merge_commits;
-mod native_runs_accounts;
 mod push_intent_completion;
 mod repo_cleanup;
 mod repo_collaboration_access;
@@ -95,8 +92,6 @@ mod request_auto_merge;
 mod request_discussions;
 mod request_stacks_publication;
 mod requests;
-mod run_inspection;
-mod run_resources;
 mod runtime_budgets;
 
 use auth_fixtures::*;
@@ -141,15 +136,6 @@ fn test_state_with_repo() -> AppState {
         })
         .unwrap();
     state
-}
-
-async fn allow_native_runs(state: &AppState) {
-    state
-        .metadata
-        .native_runs()
-        .add_account(TEST_REPO_OWNER, None, unix_now())
-        .await
-        .unwrap();
 }
 
 async fn replace_test_repo(state: &AppState, repo: Repository) {
@@ -794,13 +780,6 @@ fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> 
                 test_git_segment_ref("test staged Git segment"),
             ),
         },
-        workflow_catalog: scope_domain::runs::catalog::RepositoryWorkflowCatalog::captured(
-            TEST_REPO_ID,
-            head_oid,
-            2,
-            Vec::new(),
-        )
-        .unwrap(),
         landing_file_mutation: scope_domain::landing_file::RepositoryLandingFileMutation::Unchanged,
         previous_config: None,
         base_config_hash: repo_config_fingerprint(&config).unwrap(),
@@ -870,25 +849,6 @@ impl ObjectStore for DeleteFailsObjectStore {
             "delete failed",
         ))
     }
-}
-
-const WORKFLOW: &str = r#"
-name: Test
-on:
-  manual: true
-caches: []
-container:
-  image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-timeout: 5m
-jobs:
-  checks:
-    steps:
-      - name: Test
-        run: printf 'hello from runner\n'
-"#;
-
-fn workflow_named(name: &str) -> String {
-    WORKFLOW.replacen("name: Test", &format!("name: {name}"), 1)
 }
 
 fn logical_commit(id: &str, message: &str, changes: Vec<FileChange>) -> LogicalCommit {

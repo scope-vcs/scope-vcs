@@ -12,7 +12,7 @@ export const Route = createFileRoute('/$owner/$repo/runs/')({
     if (typeof window !== 'undefined') return null
     const live = (await parentMatchPromise).loaderData as RepoLiveState
     const { userId } = await auth()
-    return { scope: repoResourceScope(live.repo, userId), resources: await loadRepoRunPage({ data: { ...params, githubRuns: live.githubRuns } }) }
+    return { scope: repoResourceScope(live.repo, userId), page: await loadRepoRunPage({ data: params }) }
   },
   errorComponent: RunsPageError,
   pendingComponent: RunsPagePending,
@@ -22,7 +22,7 @@ export const Route = createFileRoute('/$owner/$repo/runs/')({
 function RepoRunsRoute() {
   return (
     <RepositoryRunsRoute
-      initialResources={Route.useLoaderData()}
+      initialPage={Route.useLoaderData()}
       params={Route.useParams()}
     />
   )

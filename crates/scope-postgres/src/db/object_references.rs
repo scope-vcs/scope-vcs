@@ -41,11 +41,9 @@ where
     C: ConnectionTrait,
 {
     entities::object_reference::Entity::delete_many()
-        .filter(entities::object_reference::Column::RefKind.is_in([
-            "file_change",
-            "visibility_change",
-            "push_trigger_source",
-        ]))
+        .filter(
+            entities::object_reference::Column::RefKind.is_in(["file_change", "visibility_change"]),
+        )
         .filter(entities::object_reference::Column::RefId.starts_with(format!("{repo_id}:")))
         .exec(conn)
         .await?;

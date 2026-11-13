@@ -73,12 +73,10 @@ async fn run_claimed_import(
     {
         Ok(true) => match state.repository_incarnation(&import.repository_id).await {
             Ok(Some(incarnation)) => {
-                state
-                    .publish_request_summary_refresh(
-                        &incarnation,
-                        RepoChangeReason::GitHubConnectionChanged,
-                    )
-                    .await;
+                state.publish_request_summary_refresh(
+                    &incarnation,
+                    RepoChangeReason::GitHubConnectionChanged,
+                );
             }
             Ok(None) => {}
             Err(error) => tracing::warn!(

@@ -51,15 +51,12 @@ test('GitHub numbers its runs while Scope prefixes its own', () => {
   for (const runId of ['run_01h', '', '12a', '-1']) assert.equal(isGitHubRunId(runId), false, runId)
 })
 
-test('a run-job hash names a job, and a line hash also names its step, line and native attempt', () => {
+test('a run-job hash names a job, and a line hash also names its step and line', () => {
   const keys = ['2', 'build linux']
-  assert.deepEqual(runJobLinkForHash(keys, `#${runJobPanelId('build linux')}`), { key: 'build linux', attempt: null, step: null, line: null })
-  assert.deepEqual(runJobLinkForHash(keys, `#${runLogLineId('2', null, 4, '435')}`), { key: '2', attempt: null, step: 4, line: '435' })
-  assert.deepEqual(
-    runJobLinkForHash(keys, `#${runLogLineId('build linux', 'attempt:1', 0, '17.3')}`),
-    { key: 'build linux', attempt: 'attempt:1', step: 0, line: '17.3' },
-  )
-  for (const hash of ['#run-job-3', '#run-job-3:4:L1', '#run-job-2:4', '#run-job-2:a:4:L1.', '#ci', '']) {
+  assert.deepEqual(runJobLinkForHash(keys, `#${runJobPanelId('build linux')}`), { key: 'build linux', step: null, line: null })
+  assert.deepEqual(runJobLinkForHash(keys, `#${runLogLineId('2', 4, '435')}`), { key: '2', step: 4, line: '435' })
+  assert.deepEqual(runJobLinkForHash(keys, `#${runLogLineId('build linux', 0, '17.3')}`), { key: 'build linux', step: 0, line: '17.3' })
+  for (const hash of ['#run-job-3', '#run-job-3:4:L1', '#run-job-2:4', '#run-job-2:a:4:L1', '#run-job-2:4:L1.', '#ci', '']) {
     assert.equal(runJobLinkForHash(keys, hash), null, hash)
   }
 })

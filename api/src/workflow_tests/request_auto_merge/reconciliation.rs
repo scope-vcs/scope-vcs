@@ -4,8 +4,7 @@ use scope_domain::views::ViewId;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reconciliation_retries_a_transient_check_evaluation_failure() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-retry-checks", ViewId::public()).await;
-    allow_native_runs(&state).await;
+        pushed_request("request-auto-merge-retry-checks", ViewId::public()).await;
     let revision = state
         .metadata
         .requests()
@@ -19,23 +18,17 @@ async fn reconciliation_retries_a_transient_check_evaluation_failure() {
         .forget_request_check_evaluations_for_tests(&request_id)
         .await
         .unwrap();
-    let catalog_source = state
-        .metadata
-        .repositories()
-        .current_repository_workflow_catalog(TEST_REPO_ID)
-        .await
-        .unwrap()
-        .unwrap()
-        .catalog
-        .unwrap()
-        .source_head_oid()
-        .to_string();
     state
         .metadata
-        .repositories()
-        .set_repository_workflow_catalog_source_for_tests(
-            TEST_REPO_ID,
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        .admin()
+        .execute_for_tests(
+            "CREATE FUNCTION refuse_check_evaluation() RETURNS trigger AS $$
+             BEGIN
+                 RAISE EXCEPTION 'check evaluation storage is unavailable';
+             END $$ LANGUAGE plpgsql;
+             CREATE TRIGGER refuse_check_evaluation
+             BEFORE INSERT ON scope_request_check_evaluations
+             FOR EACH ROW EXECUTE FUNCTION refuse_check_evaluation();",
         )
         .await
         .unwrap();
@@ -72,8 +65,10 @@ async fn reconciliation_retries_a_transient_check_evaluation_failure() {
     assert_eq!(reconcile(&state, first_attempt + 5).await, 0);
     state
         .metadata
-        .repositories()
-        .set_repository_workflow_catalog_source_for_tests(TEST_REPO_ID, &catalog_source)
+        .admin()
+        .execute_for_tests(
+            "DROP TRIGGER refuse_check_evaluation ON scope_request_check_evaluations",
+        )
         .await
         .unwrap();
     assert_eq!(reconcile(&state, first_attempt + 10).await, 1);
@@ -102,7 +97,7 @@ async fn reconciliation_retries_a_transient_check_evaluation_failure() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reconciliation_stops_when_the_authorizing_member_loses_access() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-revoked", ViewId::private()).await;
+        pushed_request("request-auto-merge-revoked", ViewId::private()).await;
     let member_id = "user_auto_merge_member";
     state
         .metadata

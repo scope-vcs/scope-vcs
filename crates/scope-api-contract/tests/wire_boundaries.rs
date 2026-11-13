@@ -40,25 +40,4 @@ fn public_payload_fields_are_owned_wire_types() {
     let _repository_events = |event: RepoChangeEvent| {
         let _: RepoChangeKind = event.kind;
     };
-    let _runtime = |status: AttemptStatusResponse,
-                    step: AttemptStepStatusResponse,
-                    preparation: AttemptCachePreparationReport,
-                    finalization: AttemptCacheFinalizationReport| {
-        let _: AttemptState = status.state;
-        let _: StepState = step.state;
-        let _: CachePreparation = preparation.preparation;
-        let _: CacheFinalState = finalization.final_state;
-    };
-    let _repository_run = |summary: RepositoryRunSummaryResponse,
-                           attempt: RepositoryRunAttemptResponse,
-                           step: RepositoryRunStepResponse,
-                           cache: RepositoryRunCacheObservationResponse| {
-        let _: RepositoryRunTrigger = summary.trigger;
-        let _: RunState = summary.state;
-        let _: AttemptState = attempt.state;
-        let _: Option<RepositoryRunTerminalReason> = attempt.terminal_reason;
-        let _: StepState = step.state;
-        let _: CachePreparation = cache.preparation;
-        let _: CacheFinalState = cache.final_state;
-    };
 }

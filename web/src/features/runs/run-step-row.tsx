@@ -7,7 +7,6 @@ import { RunStatusIcon } from './run-status-icon'
 export function RunStepRow({
   children,
   completedAt,
-  exitCode,
   name,
   onToggle,
   open,
@@ -17,7 +16,6 @@ export function RunStepRow({
 }: {
   children: ReactNode
   completedAt: number | null
-  exitCode: number | null
   name: string
   onToggle: () => void
   open: boolean
@@ -44,9 +42,6 @@ export function RunStepRow({
         <RunStatusIcon state={state} />
         <span className="truncate text-[13.5px] font-medium">{name}</span>
         <span className="flex items-center gap-2.5 text-xs text-muted-foreground">
-          {exitCode !== null && exitCode !== 0 ? (
-            <span className="font-mono text-danger-strong">exit {exitCode}</span>
-          ) : null}
           {state === 'skipped' ? 'Skipped' : <RunDuration end={completedAt} start={startedAt} />}
         </span>
       </button>

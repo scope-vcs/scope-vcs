@@ -103,7 +103,6 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
     run_maintenance plan | jq -e '.exact == true and .pending == []' >/dev/null
   else
     run_maintenance plan >/dev/null
-    run_maintenance validate-workflow-catalogs
     migration_started_at="$(( $(date +%s) - runner_clock_skew_allowance_seconds ))"
     run_maintenance apply
     defer_staging_deletions_sql "$migration_started_at" | railway_private_command "$staging_environment_id" \

@@ -25,8 +25,4 @@ FROM scope_request_media_upload_parts part WHERE state = 'Stored'
 AND NOT EXISTS (
     SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
     WHERE cleanup.attachment_id = part.attachment_id
-)
-UNION ALL
-SELECT 'cache', 'cache', NULL, object_key, checksum_sha256, NULL, NULL,
-       size_bytes, NULL, NULL, NULL, NULL
-FROM scope_cache_objects;
+);

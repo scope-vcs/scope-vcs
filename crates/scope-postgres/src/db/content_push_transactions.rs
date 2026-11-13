@@ -11,8 +11,6 @@ use super::{
     integer_columns::{i64_to_u64, u64_to_i64},
     landing_files::apply_repository_landing_file_mutation,
     projection_read_models::fold_live_projection_read_models,
-    push_triggers::enqueue_push_main_trigger_evaluation,
-    workflow_catalogs::apply_repository_workflow_catalog,
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseTransaction, EntityTrait,
@@ -32,8 +30,6 @@ use {
             AcceptedContentPush, ContentPushState, ReviewedUpdateInput, accept_content_push,
             accept_request_merge,
         },
-        runs::catalog::RepositoryWorkflowCatalog,
-        runs::trigger::PushTriggerInput,
     },
 };
 
@@ -41,16 +37,15 @@ pub(super) async fn accept_and_persist_content_push(
     tx: &DatabaseTransaction,
     repo_row: entities::repository::Model,
     update: ReviewedUpdateInput,
-    snapshots: RepositoryContentSnapshots,
-    push_trigger_input: PushTriggerInput,
+    landing_file_mutation: RepositoryLandingFileMutation,
     now_unix: u64,
 ) -> Result<PersistedMainChange, PostgresError> {
     accept_and_persist_content_update(
         tx,
         repo_row,
         update,
-        snapshots,
-        ContentUpdateKind::MainPush(push_trigger_input),
+        landing_file_mutation,
+        ContentUpdateKind::MainPush,
         now_unix,
     )
     .await
@@ -60,7 +55,7 @@ pub(super) async fn accept_and_persist_request_merge(
     tx: &DatabaseTransaction,
     repo_row: entities::repository::Model,
     update: ReviewedUpdateInput,
-    snapshots: RepositoryContentSnapshots,
+    landing_file_mutation: RepositoryLandingFileMutation,
     origin: RequestMergeOrigin,
     now_unix: u64,
 ) -> Result<PersistedMainChange, PostgresError> {
@@ -68,7 +63,7 @@ pub(super) async fn accept_and_persist_request_merge(
         tx,
         repo_row,
         update,
-        snapshots,
+        landing_file_mutation,
         ContentUpdateKind::RequestMerge(origin),
         now_unix,
     )
@@ -81,13 +76,8 @@ pub(super) struct PersistedMainChange {
 }
 
 enum ContentUpdateKind {
-    MainPush(PushTriggerInput),
+    MainPush,
     RequestMerge(RequestMergeOrigin),
-}
-
-pub(super) struct RepositoryContentSnapshots {
-    pub(super) landing_file_mutation: RepositoryLandingFileMutation,
-    pub(super) workflow_catalog: RepositoryWorkflowCatalog,
 }
 
 #[tracing::instrument(level = "debug", skip_all, fields(repository_id = %repo_row.id))]
@@ -95,14 +85,10 @@ async fn accept_and_persist_content_update(
     tx: &DatabaseTransaction,
     repo_row: entities::repository::Model,
     mut update: ReviewedUpdateInput,
-    snapshots: RepositoryContentSnapshots,
+    landing_file_mutation: RepositoryLandingFileMutation,
     kind: ContentUpdateKind,
     now_unix: u64,
 ) -> Result<PersistedMainChange, PostgresError> {
-    let RepositoryContentSnapshots {
-        landing_file_mutation,
-        workflow_catalog,
-    } = snapshots;
     let repo_id = repo_row.id.clone();
     let repo_incarnation_id = repo_row.incarnation_id.clone();
     let LiveFiles {
@@ -136,7 +122,7 @@ async fn accept_and_persist_content_update(
         .map(entities::git_head::Model::try_into_domain)
         .transpose()?;
     update.previous_config = Some(repo_config.clone());
-    let (accepted, push_trigger_input) = {
+    let accepted = {
         let state = ContentPushState {
             change_version,
             content_version,
@@ -146,10 +132,8 @@ async fn accept_and_persist_content_update(
             git_head: previous_git_head.clone(),
         };
         match kind {
-            ContentUpdateKind::MainPush(input) => (accept_content_push(state, update), Some(input)),
-            ContentUpdateKind::RequestMerge(origin) => {
-                (accept_request_merge(state, update, origin), None)
-            }
+            ContentUpdateKind::MainPush => accept_content_push(state, update),
+            ContentUpdateKind::RequestMerge(origin) => accept_request_merge(state, update, origin),
         }
     };
     let accepted = accepted.map_err(reviewed_update_domain_error)?;
@@ -161,9 +145,6 @@ async fn accept_and_persist_content_update(
         main_pack,
         logical_commit,
     } = accepted;
-    let workflow_catalog = workflow_catalog
-        .rebind_source_change_version(&repo_id, &git_head.head_oid, git_head.change_version)
-        .map_err(PostgresError::internal)?;
 
     for change in &logical_commit.changes {
         if change.new_content.is_some() {
@@ -215,11 +196,7 @@ async fn accept_and_persist_content_update(
     )
     .await?;
     apply_repository_landing_file_mutation(tx, &repo_id, landing_file_mutation).await?;
-    apply_repository_workflow_catalog(tx, &workflow_catalog).await?;
     fold_live_projection_read_models(tx, &repo_id, content_version).await?;
-    if let Some(input) = push_trigger_input {
-        enqueue_push_main_trigger_evaluation(tx, &repo_id, &git_head, &input, now_unix).await?;
-    }
     let queued_main_publication =
         queue_main_publication(tx, &repo_id, &git_head.head_oid, now_unix).await?;
     Ok(PersistedMainChange {

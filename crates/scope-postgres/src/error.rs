@@ -73,34 +73,6 @@ impl From<scope_domain::error::DomainError> for PostgresError {
     }
 }
 
-impl From<scope_cache_domain::CacheDomainError> for PostgresError {
-    fn from(error: scope_cache_domain::CacheDomainError) -> Self {
-        use scope_cache_domain::CacheDomainError;
-
-        let kind = match error {
-            CacheDomainError::RepositoryBudgetExceeded { .. } => {
-                PostgresErrorKind::ResourceExhausted
-            }
-            CacheDomainError::UploadLeaseExpired | CacheDomainError::StaleUploadLease => {
-                PostgresErrorKind::Conflict
-            }
-            CacheDomainError::InvalidReferenceExpiry
-            | CacheDomainError::InvalidUploadLeaseExpiry => PostgresErrorKind::Internal,
-            CacheDomainError::MissingRepositoryId
-            | CacheDomainError::InvalidDigest
-            | CacheDomainError::MissingUploadLeaseId
-            | CacheDomainError::EmptyObject
-            | CacheDomainError::ObjectTooLarge { .. }
-            | CacheDomainError::TimestampOverflow
-            | CacheDomainError::ByteCountOverflow
-            | CacheDomainError::ReferenceScopeMismatch
-            | CacheDomainError::ReferenceAccessBeforeLastUpdate
-            | CacheDomainError::UploadLeaseMismatch => PostgresErrorKind::InvalidInput,
-        };
-        Self::new(kind, error.to_string())
-    }
-}
-
 impl From<sea_orm::DbErr> for PostgresError {
     fn from(error: sea_orm::DbErr) -> Self {
         Self::internal(error)

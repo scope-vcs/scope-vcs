@@ -6,7 +6,6 @@ use scope_cli::{
     git_credential::run_git_credential,
     login::session_from_cache_or_browser,
     request::{RequestArgs, prepare_request_command, run_request_command},
-    run::RunArgs,
     visibility::VisibilityArgs,
 };
 use scope_domain::views::ViewId;
@@ -15,17 +14,13 @@ use std::{path::PathBuf, process::ExitCode};
 #[derive(Parser)]
 #[command(
     name = "scope",
-    about = "Work with Scope repositories, requests, visibility, and cloud runs"
+    about = "Work with Scope repositories, requests, and visibility"
 )]
 #[command(
     after_help = "Start here: scope login, then scope clone owner/repo or scope init --name repo.\nInspect your checkout with scope status. Use --repo owner/repo for remote-only commands."
 )]
 struct Cli {
-    #[arg(
-        long,
-        global = true,
-        help = "Print JSON results; run watch emits JSON lines"
-    )]
+    #[arg(long, global = true, help = "Print JSON results")]
     json: bool,
     #[arg(
         long,
@@ -79,8 +74,6 @@ enum CommandKind {
     Doctor(InspectionArgs),
     #[command(about = "Print embedded Scope and third-party licenses, including offline")]
     Licenses,
-    #[command(about = "Discover workflows, launch runs, inspect logs, and control runs")]
-    Run(RunArgs),
     #[command(about = "Generate shell completions")]
     Completions {
         #[arg(value_enum)]
@@ -109,8 +102,6 @@ struct PushArgs {
         help = "Skip the TUI and use the local per-worktree visibility config"
     )]
     no_review: bool,
-    #[arg(long, help = "Wait for push-triggered workflows to finish")]
-    wait: bool,
 }
 #[derive(Parser)]
 struct PullArgs {
@@ -215,7 +206,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             | CommandKind::View(_)
             | CommandKind::Request(_)
             | CommandKind::Clone(_)
-            | CommandKind::Run(_)
     ) {
         scope_cli::git_version::require_supported()?;
     }
@@ -231,7 +221,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             if !args.main {
                 return Err(CliError::usage("choose a push destination: use `scope request push` to update a request, or `scope push --main` to publish HEAD to main").into());
             }
-            scope_cli::push::run(args.remote.as_deref(), args.no_review, args.wait)
+            scope_cli::push::run(args.remote.as_deref(), args.no_review)
         }
         CommandKind::Pull(args) => scope_cli::pull::run(args.remote.as_deref()),
         CommandKind::Visibility(args) => scope_cli::visibility::run(args),
@@ -254,7 +244,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             scope_cli::inspection::doctor(args.remote.as_deref(), args.offline)
         }
         CommandKind::Licenses => scope_cli::licenses::run(cli.json),
-        CommandKind::Run(args) => scope_cli::run::run_command(args),
         CommandKind::GitCredential(args) => run_git_credential(&args.operation),
         CommandKind::Completions { shell } => {
             if cli.json {

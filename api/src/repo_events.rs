@@ -1,77 +1,16 @@
 use scope_api_contract::RepoChangeNotification;
-pub(crate) use scope_api_contract::{RepoChangeEvent, RepoChangeKind, RunChangeKind};
+pub(crate) use scope_api_contract::{RepoChangeEvent, RepoChangeKind};
 use scope_domain::repository::RepositoryIncarnation;
 use scope_domain::views::ViewId;
-use scope_postgres::db::MetadataStore;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     sync::{Arc, Mutex},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::broadcast;
 
 const REPO_CHANGE_CHANNEL_CAPACITY: usize = 128;
-const RUN_LOG_NOTIFY_WINDOW: Duration = Duration::from_millis(250);
 pub(crate) const REQUEST_SUMMARY_REFRESH_VERSION: u64 = 0;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LogNotifyAction {
-    Publish,
-    Schedule(Duration),
-    Pending,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct LogNotifyWindow {
-    last_published: Option<Instant>,
-    trailing_due: Option<Instant>,
-}
-
-#[derive(Debug)]
-struct LogNotifyRegistry {
-    windows: HashMap<String, LogNotifyWindow>,
-    prune_after: Instant,
-}
-
-impl Default for LogNotifyRegistry {
-    fn default() -> Self {
-        Self {
-            windows: HashMap::new(),
-            prune_after: Instant::now() + Duration::from_secs(30),
-        }
-    }
-}
-
-impl LogNotifyWindow {
-    fn on_append(&mut self, now: Instant) -> LogNotifyAction {
-        match self.last_published {
-            Some(last) if now < last + RUN_LOG_NOTIFY_WINDOW => {
-                if self.trailing_due.is_some() {
-                    LogNotifyAction::Pending
-                } else {
-                    let due = last + RUN_LOG_NOTIFY_WINDOW;
-                    self.trailing_due = Some(due);
-                    LogNotifyAction::Schedule(due - now)
-                }
-            }
-            _ => {
-                self.last_published = Some(now);
-                self.trailing_due = None;
-                LogNotifyAction::Publish
-            }
-        }
-    }
-
-    fn on_deadline(&mut self, now: Instant) -> bool {
-        if self.trailing_due.is_some_and(|due| now >= due) {
-            self.last_published = Some(now);
-            self.trailing_due = None;
-            true
-        } else {
-            false
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RepoChangeReason {
@@ -103,7 +42,6 @@ pub(crate) enum RepoChangeReason {
     RequestInviteeAdded,
     RequestInviteeRemoved,
     RequestAttentionChanged,
-    NativeRunsChanged,
     GitHubConnectionChanged,
 }
 
@@ -138,7 +76,6 @@ impl RepoChangeReason {
             Self::RequestInviteeAdded => "request-invitee-added",
             Self::RequestInviteeRemoved => "request-invitee-removed",
             Self::RequestAttentionChanged => "request-attention-changed",
-            Self::NativeRunsChanged => "native-runs-changed",
             Self::GitHubConnectionChanged => "github-connection-changed",
         }
     }
@@ -147,7 +84,6 @@ impl RepoChangeReason {
 #[derive(Clone, Debug)]
 pub(crate) struct RepoChangeBus {
     channels: Arc<Mutex<BTreeMap<String, broadcast::Sender<RepoChangeEvent>>>>,
-    log_notifications: Arc<Mutex<LogNotifyRegistry>>,
     origin_id: Arc<str>,
 }
 
@@ -155,7 +91,6 @@ impl Default for RepoChangeBus {
     fn default() -> Self {
         Self {
             channels: Arc::new(Mutex::new(BTreeMap::new())),
-            log_notifications: Arc::new(Mutex::new(LogNotifyRegistry::default())),
             origin_id: Arc::from(new_origin_id()),
         }
     }
@@ -163,47 +98,12 @@ impl Default for RepoChangeBus {
 
 impl RepoChangeBus {
     #[expect(clippy::expect_used)]
-    fn log_notifications(&self) -> std::sync::MutexGuard<'_, LogNotifyRegistry> {
-        self.log_notifications
-            .lock()
-            .expect("run log notification holders do not panic, so the lock is never poisoned")
-    }
-
-    #[expect(clippy::expect_used)]
     fn channels(
         &self,
     ) -> std::sync::MutexGuard<'_, BTreeMap<String, broadcast::Sender<RepoChangeEvent>>> {
         self.channels
             .lock()
             .expect("repo change bus holders do not panic, so the lock is never poisoned")
-    }
-
-    fn on_log_append(&self, run_id: &str, now: Instant) -> LogNotifyAction {
-        let mut registry = self.log_notifications();
-        if now >= registry.prune_after {
-            registry.windows.retain(|_, window| {
-                window.trailing_due.is_some()
-                    || window
-                        .last_published
-                        .is_some_and(|last| now < last + RUN_LOG_NOTIFY_WINDOW)
-            });
-            registry.prune_after = now + Duration::from_secs(30);
-        }
-        registry
-            .windows
-            .entry(run_id.to_owned())
-            .or_insert(LogNotifyWindow {
-                last_published: None,
-                trailing_due: None,
-            })
-            .on_append(now)
-    }
-
-    fn on_log_deadline(&self, run_id: &str, now: Instant) -> bool {
-        self.log_notifications()
-            .windows
-            .get_mut(run_id)
-            .is_some_and(|window| window.on_deadline(now))
     }
 
     pub(crate) fn origin_id(&self) -> &str {
@@ -301,7 +201,6 @@ pub(crate) fn repository_change_event(
             | RepoChangeReason::RequestInviteeAdded
             | RepoChangeReason::RequestInviteeRemoved
             | RepoChangeReason::RequestAttentionChanged
-            | RepoChangeReason::NativeRunsChanged
             | RepoChangeReason::GitHubConnectionChanged) => RepoChangeKind::RepositoryChanged {
                 reason: reason.as_str().to_string(),
             },
@@ -329,19 +228,6 @@ pub(crate) fn request_timeline_change_event(
     }
 }
 
-pub(crate) fn run_change_event(
-    incarnation: &RepositoryIncarnation,
-    run_id: String,
-    change: RunChangeKind,
-) -> RepoChangeEvent {
-    RepoChangeEvent::run_changed(
-        incarnation.repository_id().to_string(),
-        incarnation.incarnation_id().to_string(),
-        run_id,
-        change,
-    )
-}
-
 impl crate::state::AppState {
     pub(crate) async fn repository_incarnation(
         &self,
@@ -355,23 +241,22 @@ impl crate::state::AppState {
             .map(|record| record.incarnation()))
     }
 
-    pub(crate) async fn publish_repo_change(
+    pub(crate) fn publish_repo_change(
         &self,
         incarnation: &RepositoryIncarnation,
         version: u64,
         reason: RepoChangeReason,
     ) {
         let event = repository_change_event(incarnation, version, reason);
-        self.publish_repo_event(event, "repo change").await;
+        self.publish_repo_event(event, "repo change");
     }
 
-    pub(crate) async fn publish_request_summary_refresh(
+    pub(crate) fn publish_request_summary_refresh(
         &self,
         incarnation: &RepositoryIncarnation,
         reason: RepoChangeReason,
     ) {
-        self.publish_repo_change(incarnation, REQUEST_SUMMARY_REFRESH_VERSION, reason)
-            .await;
+        self.publish_repo_change(incarnation, REQUEST_SUMMARY_REFRESH_VERSION, reason);
     }
 
     pub(crate) async fn publish_request_state_refresh(
@@ -387,11 +272,10 @@ impl crate::state::AppState {
                 return;
             }
         };
-        self.publish_known_request_state_refresh(incarnation, &request)
-            .await;
+        self.publish_known_request_state_refresh(incarnation, &request);
     }
 
-    pub(crate) async fn publish_known_request_state_refresh(
+    pub(crate) fn publish_known_request_state_refresh(
         &self,
         incarnation: &RepositoryIncarnation,
         request: &scope_domain::requests::Request,
@@ -405,10 +289,10 @@ impl crate::state::AppState {
                 view: request.view.clone().into(),
             },
         };
-        self.publish_repo_event(event, "request state").await;
+        self.publish_repo_event(event, "request state");
     }
 
-    pub(crate) async fn publish_request_timeline_change(
+    pub(crate) fn publish_request_timeline_change(
         &self,
         incarnation: &RepositoryIncarnation,
         request_id: String,
@@ -423,23 +307,20 @@ impl crate::state::AppState {
             through_position,
             view,
         );
-        self.publish_repo_event(event, "request discussion").await;
+        self.publish_repo_event(event, "request discussion");
     }
 
-    pub(crate) async fn publish_github_workflow_runs_change(
-        &self,
-        incarnation: &RepositoryIncarnation,
-    ) {
+    pub(crate) fn publish_github_workflow_runs_change(&self, incarnation: &RepositoryIncarnation) {
         let event = RepoChangeEvent {
             repo_id: incarnation.repository_id().to_string(),
             incarnation_id: incarnation.incarnation_id().to_string(),
             version: 0,
             kind: RepoChangeKind::GitHubWorkflowRunsChanged,
         };
-        self.publish_repo_event(event, "GitHub workflow run").await;
+        self.publish_repo_event(event, "GitHub workflow run");
     }
 
-    pub(crate) async fn publish_github_workflow_run_change(
+    pub(crate) fn publish_github_workflow_run_change(
         &self,
         incarnation: &RepositoryIncarnation,
         github_run_id: u64,
@@ -450,91 +331,29 @@ impl crate::state::AppState {
             version: 0,
             kind: RepoChangeKind::GitHubWorkflowRunChanged { github_run_id },
         };
-        self.publish_repo_event(event, "GitHub workflow job").await;
+        self.publish_repo_event(event, "GitHub workflow job");
     }
 
-    pub(crate) async fn publish_run_change(
-        &self,
-        repo_id: &str,
-        run_id: String,
-        change: RunChangeKind,
-    ) {
-        if change == RunChangeKind::LogsAppended {
-            match self.repo_events.on_log_append(&run_id, Instant::now()) {
-                LogNotifyAction::Publish => {}
-                LogNotifyAction::Pending => return,
-                LogNotifyAction::Schedule(delay) => {
-                    let state = self.clone();
-                    let repo_id = repo_id.to_owned();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(delay).await;
-                        if state.repo_events.on_log_deadline(&run_id, Instant::now()) {
-                            state
-                                .publish_run_change_now(
-                                    &repo_id,
-                                    run_id,
-                                    RunChangeKind::LogsAppended,
-                                )
-                                .await;
-                        }
-                    });
-                    return;
-                }
-            }
-        }
-        self.publish_run_change_now(repo_id, run_id, change).await;
-    }
-
-    async fn publish_run_change_now(&self, repo_id: &str, run_id: String, change: RunChangeKind) {
-        let incarnation = match self
-            .metadata
-            .repositories()
-            .run_repository_incarnation(&run_id, repo_id)
-            .await
-        {
-            Ok(Some(incarnation)) => incarnation,
-            Ok(None) => return,
+    fn publish_repo_event(&self, event: RepoChangeEvent, description: &'static str) {
+        self.repo_events.publish_event(event.clone());
+        let payload = match self.repo_events.notification_payload(&event) {
+            Ok(payload) => payload,
             Err(error) => {
-                tracing::warn!(repo_id, error = %error.message, "failed to resolve run notification repository incarnation");
+                tracing::warn!(repo_id = %event.repo_id, %error, "failed to serialize {description} notification");
                 return;
             }
         };
-        let event = run_change_event(&incarnation, run_id, change);
-        self.publish_repo_event(event, "run change").await;
-    }
-
-    pub(crate) async fn publish_repo_event(
-        &self,
-        event: RepoChangeEvent,
-        description: &'static str,
-    ) {
-        publish_repo_event(&self.repo_events, &self.metadata, event, description).await;
-    }
-}
-
-pub(crate) async fn publish_repo_event(
-    bus: &RepoChangeBus,
-    metadata: &MetadataStore,
-    event: RepoChangeEvent,
-    description: &'static str,
-) {
-    bus.publish_event(event.clone());
-    let payload = match bus.notification_payload(&event) {
-        Ok(payload) => payload,
-        Err(error) => {
-            tracing::warn!(repo_id = %event.repo_id, %error, "failed to serialize {description} notification");
-            return;
+        if let Err(error) = self
+            .metadata
+            .repositories()
+            .queue_repo_change_notification(payload)
+        {
+            tracing::warn!(
+                repo_id = %event.repo_id,
+                error = %error.message,
+                "failed to publish {description} notification"
+            );
         }
-    };
-    if let Err(error) = metadata
-        .repositories()
-        .queue_repo_change_notification(payload)
-    {
-        tracing::warn!(
-            repo_id = %event.repo_id,
-            error = %error.message,
-            "failed to publish {description} notification"
-        );
     }
 }
 
@@ -549,55 +368,6 @@ fn new_origin_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn log_notifications_publish_at_most_four_times_per_second_and_keep_the_trailing_edge() {
-        let start = Instant::now();
-        let mut window = LogNotifyWindow {
-            last_published: None,
-            trailing_due: None,
-        };
-        let mut published = Vec::new();
-        for tick in 0..100 {
-            let now = start + Duration::from_millis(tick * 10);
-            if window.on_deadline(now) {
-                published.push(now);
-            }
-            if window.on_append(now) == LogNotifyAction::Publish {
-                published.push(now);
-            }
-        }
-        assert_eq!(published.len(), 4);
-        assert!(
-            published
-                .windows(2)
-                .all(|times| times[1] - times[0] >= RUN_LOG_NOTIFY_WINDOW)
-        );
-        assert!(window.on_deadline(start + Duration::from_secs(1)));
-        assert_eq!(window.last_published, Some(start + Duration::from_secs(1)));
-        assert!(!window.on_deadline(start + Duration::from_millis(1_250)));
-    }
-
-    #[test]
-    fn log_notification_windows_are_per_run_and_a_stale_timer_cannot_duplicate_a_publish() {
-        let bus = RepoChangeBus::default();
-        let start = Instant::now();
-        assert_eq!(bus.on_log_append("first", start), LogNotifyAction::Publish);
-        assert_eq!(bus.on_log_append("second", start), LogNotifyAction::Publish);
-        assert_eq!(
-            bus.on_log_append("first", start + Duration::from_millis(100)),
-            LogNotifyAction::Schedule(Duration::from_millis(150))
-        );
-        assert_eq!(
-            bus.on_log_append("first", start + Duration::from_millis(200)),
-            LogNotifyAction::Pending
-        );
-        assert_eq!(
-            bus.on_log_append("first", start + Duration::from_millis(250)),
-            LogNotifyAction::Publish
-        );
-        assert!(!bus.on_log_deadline("first", start + Duration::from_millis(250)));
-    }
 
     fn incarnation(repo_id: &str) -> RepositoryIncarnation {
         RepositoryIncarnation::new(repo_id, format!("repoi_{repo_id}"))

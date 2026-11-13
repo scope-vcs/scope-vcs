@@ -5,7 +5,7 @@ from pathlib import Path
 from common import Incomplete, digest
 
 
-def snapshot(url, destination, include_cache=False):
+def snapshot(url, destination):
     import psycopg
     from psycopg.rows import dict_row
 
@@ -31,16 +31,12 @@ def snapshot(url, destination, include_cache=False):
             raise Incomplete("database contains an unsupported content reference")
         captured_at = connection.execute("SELECT transaction_timestamp()::text AS captured_at").fetchone()["captured_at"]
         connection.rollback()
-    return metadata(rows, captured_at, destination, include_cache)
+    return metadata(rows, captured_at, destination)
 
 
-def metadata(rows, captured_at, destination, include_cache=False):
+def metadata(rows, captured_at, destination):
     required = []
-    excluded_cache_objects = 0
     for row in rows:
-        if row["bucket"] == "cache" and not include_cache:
-            excluded_cache_objects += 1
-            continue
         if row["kind"] == "content":
             reference = row.pop("content_ref")
             if not isinstance(reference, dict) or len(reference) != 1 or not set(reference) <= {"GitBlob", "BlobSha256", "GitBundleSha256"}:
@@ -53,5 +49,4 @@ def metadata(rows, captured_at, destination, include_cache=False):
         else:
             row.pop("content_ref")
         required.append(row)
-    return {"captured_at": captured_at, "dump_sha256": digest(destination), "references": required,
-            "excluded_rebuildable_buckets": [] if include_cache else ["cache"], "excluded_cache_objects": excluded_cache_objects}
+    return {"captured_at": captured_at, "dump_sha256": digest(destination), "references": required}

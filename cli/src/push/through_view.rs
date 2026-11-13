@@ -23,15 +23,7 @@ pub(super) fn push(
     api_url: &str,
     target: &ScopeRemote,
     head_oid: &str,
-    wait: bool,
 ) -> anyhow::Result<()> {
-    if wait {
-        return Err(CliError::usage(format!(
-            "--wait follows workflows on main, but pushes through the {} view land as a request; follow it with scope request show",
-            target.view
-        ))
-        .into());
-    }
     progress.set_stage("Verifying login…")?;
     let client = http_client()?;
     let session = session_from_cache_or_browser_with_progress(&client, api_url, &progress)?;

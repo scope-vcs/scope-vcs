@@ -1,6 +1,5 @@
 use super::*;
 use crate::repo_events::{RepoChangeReason, repository_change_event};
-use scope_api_contract::RunChangeKind;
 use scope_domain::requests::{RequestActorRole, StartRequestInput};
 use scope_domain::views::ViewId;
 use std::time::Duration;
@@ -303,9 +302,7 @@ async fn event_streams_isolate_missed_recreation_notifications() {
         .recreate_repository_for_tests(recreated)
         .await
         .unwrap();
-    state
-        .publish_repo_change(&recreated_incarnation, 1, RepoChangeReason::MetadataUpdated)
-        .await;
+    state.publish_repo_change(&recreated_incarnation, 1, RepoChangeReason::MetadataUpdated);
 
     let error = next_event(&mut old_stream).await;
     assert!(error.contains("event: error"), "{error}");
@@ -320,9 +317,7 @@ async fn event_streams_isolate_missed_recreation_notifications() {
         99,
         RepoChangeReason::MetadataUpdated,
     ));
-    state
-        .publish_repo_change(&recreated_incarnation, 2, RepoChangeReason::MetadataUpdated)
-        .await;
+    state.publish_repo_change(&recreated_incarnation, 2, RepoChangeReason::MetadataUpdated);
     let update = next_event(&mut new_stream).await;
     assert!(update.contains("event: repo-change"), "{update}");
     assert!(update.contains(r#""version":2"#), "{update}");
@@ -397,15 +392,13 @@ async fn public_repo_stream_drops_private_request_identifiers() {
     state
         .publish_request_state_refresh(&test_repo_incarnation(), "req_private_stream")
         .await;
-    state
-        .publish_request_timeline_change(
-            &test_repo_incarnation(),
-            "req_private_stream".to_string(),
-            "discussion_private".to_string(),
-            2,
-            ViewId::private(),
-        )
-        .await;
+    state.publish_request_timeline_change(
+        &test_repo_incarnation(),
+        "req_private_stream".to_string(),
+        "discussion_private".to_string(),
+        2,
+        ViewId::private(),
+    );
     assert!(
         tokio::time::timeout(std::time::Duration::from_millis(250), stream.next())
             .await
@@ -420,27 +413,23 @@ async fn public_repo_stream_drops_private_request_identifiers() {
     assert!(state_changed.contains("req_public_stream"));
     assert!(!state_changed.contains("req_private_stream"));
 
-    state
-        .publish_request_timeline_change(
-            &test_repo_incarnation(),
-            "req_public_stream".to_string(),
-            "discussion_ready".to_string(),
-            2,
-            ViewId::public(),
-        )
-        .await;
+    state.publish_request_timeline_change(
+        &test_repo_incarnation(),
+        "req_public_stream".to_string(),
+        "discussion_ready".to_string(),
+        2,
+        ViewId::public(),
+    );
     let ready = next_event(&mut stream).await;
     assert!(ready.contains("discussion_ready"));
 
-    state
-        .publish_request_timeline_change(
-            &test_repo_incarnation(),
-            "req_public_stream".to_string(),
-            "discussion_open".to_string(),
-            3,
-            ViewId::public(),
-        )
-        .await;
+    state.publish_request_timeline_change(
+        &test_repo_incarnation(),
+        "req_public_stream".to_string(),
+        "discussion_open".to_string(),
+        3,
+        ViewId::public(),
+    );
     let visible = next_event(&mut stream).await;
     assert!(visible.contains("req_public_stream"));
     assert!(visible.contains("discussion_open"));
@@ -461,13 +450,6 @@ async fn run_and_dependency_changes_reach_members_but_not_public_repo_streams() 
     assert!(next_event(&mut member_stream).await.contains("Connected"));
 
     for (kind, member_sees) in [
-        (
-            scope_api_contract::RepoChangeKind::RunChanged {
-                run_id: "run_private".to_string(),
-                change: RunChangeKind::Created,
-            },
-            r#""run_id":"run_private""#,
-        ),
         (
             scope_api_contract::RepoChangeKind::DependenciesChanged,
             "DependenciesChanged",

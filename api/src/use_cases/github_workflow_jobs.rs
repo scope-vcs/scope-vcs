@@ -266,9 +266,7 @@ pub(super) async fn publish(
         .repository_incarnation(&connection.repository_id)
         .await?
     {
-        state
-            .publish_github_workflow_run_change(&incarnation, github_run_id)
-            .await;
+        state.publish_github_workflow_run_change(&incarnation, github_run_id);
     }
     Ok(())
 }

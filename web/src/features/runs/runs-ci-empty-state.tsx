@@ -11,10 +11,9 @@ import { openGitHubAuthorization } from '../github/github-authorization'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { type RepoSettingsData, repoSettingsResource } from '../repo-detail/repo-settings-resource'
-import { NoRunsEmptyState } from './run-history-list'
 import { RUNS_COME_FROM_GITHUB, runsCiOffer } from './runs-ci-offer-model'
 
-export type RunsGitHubActions = {
+type RunsGitHubActions = {
   configured: boolean
   loadSettings: (params: RepoParams, signal: AbortSignal) => Promise<RepoSettingsData>
   startAuthorization: (params: RepoParams) => Promise<GitHubAuthorizeResponse>
@@ -22,18 +21,15 @@ export type RunsGitHubActions = {
 
 export function RunsCiEmptyState({
   github,
-  hasWorkflows,
   params,
 }: {
   github: RunsGitHubActions
-  hasWorkflows: boolean
   params: RepoParams
 }) {
   const { isLoaded, userId } = useAuth()
   const { repo } = useRepoLayout()
   const maintainer = repo.access.actor !== 'Public'
-  const asksGitHub = github.configured && !hasWorkflows
-  const scope = isLoaded && maintainer && asksGitHub ? repoResourceScope(repo, userId ?? null) : null
+  const scope = isLoaded && maintainer && github.configured ? repoResourceScope(repo, userId ?? null) : null
   const { loadSettings, startAuthorization } = github
   const { owner, repo: repoName } = params
   const settings = useCachedResource({
@@ -50,10 +46,9 @@ export function RunsCiEmptyState({
   const offer = runsCiOffer({
     configured: github.configured,
     github: settings.value?.github ?? null,
-    hasWorkflows,
     maintainer,
   })
-  if (offer.kind === 'none') return <NoRunsEmptyState />
+  if (offer.kind === 'none') return <EmptyState icon={<TerminalSquare />} title="No runs yet" />
 
   async function connect() {
     setError(null)

@@ -1,6 +1,4 @@
-use super::pushed_tree::{
-    GitTreeFile, git_changed_tree_entries, git_tree_entries_under, validate_pushed_commit_range,
-};
+use super::pushed_tree::{GitTreeFile, git_changed_tree_entries, validate_pushed_commit_range};
 use super::repo_io::{
     PushedCommit, StagedGitPush, describe_refs, git_push_from_repo, git_refs, pushed_commit,
 };
@@ -8,10 +6,9 @@ use super::staging::{ReceivePackUpdate, ensure_default_branch};
 use crate::{
     error::ApiError,
     git::{
-        command::{git_process_output, run_git_output, run_git_output_bounded},
+        command::{run_git_output, run_git_output_bounded},
         pool_pack::StagedPoolPack,
     },
-    runtime_budgets::RuntimeBudgets,
     state::AppState,
 };
 use scope_domain::content::is_regular_git_file_mode;
@@ -23,16 +20,8 @@ use scope_domain::policy::ScopePath;
 use scope_domain::repo_config::RepoConfig;
 use scope_domain::repository::{RepoLifecycleState, Repository, git::GitHead};
 use scope_domain::reviewed_updates::content::ReviewedContentChange;
-use scope_domain::runs::{
-    catalog::{
-        MAX_REPOSITORY_WORKFLOW_FILES, MAX_WORKFLOW_DEFINITION_BYTES, RepositoryWorkflowCatalog,
-        RepositoryWorkflowFile,
-    },
-    workflow::identity::WorkflowPath,
-};
 use scope_git::git_blob_reference;
-use scope_git_process::ProcessLimits;
-use std::{path::Path as FsPath, process::Command, time::Instant};
+use std::{path::Path as FsPath, time::Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReviewedUpdateMode {
@@ -172,18 +161,9 @@ async fn reviewed_update_on_base(
     let inspected = {
         let path = staging_repo.to_path_buf();
         let head = head_oid.clone();
-        let repo_id = repo.repo_id.to_string();
         let base_head = repo.git_head.map(|head| head.head_oid.clone());
-        let change_version = repo.change_version.saturating_add(1);
         crate::git::blocking::run(move || {
-            inspect_received_tree(
-                &path,
-                &head,
-                base_head.as_deref(),
-                &repo_id,
-                change_version,
-                mode,
-            )
+            inspect_received_tree(&path, &head, base_head.as_deref(), mode)
         })
         .await?
     };
@@ -192,7 +172,6 @@ async fn reviewed_update_on_base(
         occurred_at_unix,
         changes,
         landing_file_mutation,
-        workflow_catalog,
         diff_ms,
     } = inspected;
     let pack_started = Instant::now();
@@ -223,7 +202,6 @@ async fn reviewed_update_on_base(
             message,
             git_head,
             main_pack: staged_pack.pack.clone(),
-            workflow_catalog,
             landing_file_mutation,
             changes,
             previous_config: Some(repo.repo_config.clone()),
@@ -290,7 +268,6 @@ struct InspectedReceiveTree {
     occurred_at_unix: Option<i64>,
     changes: Vec<ReviewedContentChange>,
     landing_file_mutation: RepositoryLandingFileMutation,
-    workflow_catalog: RepositoryWorkflowCatalog,
     diff_ms: u128,
 }
 
@@ -298,8 +275,6 @@ fn inspect_received_tree(
     staging_repo: &FsPath,
     head_oid: &str,
     base_head_oid: Option<&str>,
-    repository_id: &str,
-    change_version: u64,
     mode: ReviewedUpdateMode,
 ) -> Result<InspectedReceiveTree, ApiError> {
     let PushedCommit {
@@ -317,8 +292,6 @@ fn inspect_received_tree(
         ));
     }
     let landing_file_mutation = repository_landing_file_mutation(staging_repo, &pushed_entries)?;
-    let workflow_catalog =
-        capture_repository_workflow_catalog(staging_repo, repository_id, head_oid, change_version)?;
     let changes = pushed_entries
         .into_iter()
         .map(|(path, entry)| ReviewedContentChange {
@@ -331,7 +304,6 @@ fn inspect_received_tree(
         occurred_at_unix,
         changes,
         landing_file_mutation,
-        workflow_catalog,
         diff_ms,
     })
 }
@@ -370,121 +342,6 @@ fn repository_landing_file_mutation(
     RepositoryLandingFile::from_source_blob(&source, output.stdout)
         .map(RepositoryLandingFileMutation::Upsert)
         .map_err(ApiError::from)
-}
-
-pub(crate) enum ReadWorkflowFiles {
-    Files(Vec<RepositoryWorkflowFile>),
-    Rejected(String),
-}
-
-pub(crate) fn read_repository_workflow_files(
-    staging_repo: &FsPath,
-    head_oid: &str,
-) -> Result<ReadWorkflowFiles, ApiError> {
-    let workflow_entries = git_tree_entries_under(staging_repo, head_oid, ".scope/runs")?;
-    if workflow_entries.len() > MAX_REPOSITORY_WORKFLOW_FILES {
-        return Ok(ReadWorkflowFiles::Rejected(format!(
-            "repository contains more than {MAX_REPOSITORY_WORKFLOW_FILES} workflow definitions"
-        )));
-    }
-
-    for entry in &workflow_entries {
-        let path = format!("/{}", entry.path);
-        if WorkflowPath::parse(path.clone()).is_err() {
-            return Ok(ReadWorkflowFiles::Rejected(format!(
-                "invalid workflow path {path}"
-            )));
-        }
-        if entry.size_bytes > MAX_WORKFLOW_DEFINITION_BYTES as u64 {
-            return Ok(ReadWorkflowFiles::Rejected(format!(
-                "workflow {path} exceeds {MAX_WORKFLOW_DEFINITION_BYTES} bytes"
-            )));
-        }
-        if !is_regular_git_file_mode(&entry.mode) {
-            return Ok(ReadWorkflowFiles::Rejected(format!(
-                "workflow {path} must be a regular file"
-            )));
-        }
-    }
-    if workflow_entries.is_empty() {
-        return Ok(ReadWorkflowFiles::Files(Vec::new()));
-    }
-    let input = workflow_entries
-        .iter()
-        .map(|entry| format!("{}\n", entry.oid))
-        .collect::<String>()
-        .into_bytes();
-    let max_stdout_bytes = workflow_entries
-        .iter()
-        .map(|entry| entry.size_bytes as usize + entry.oid.len() + 32)
-        .sum();
-    let output = git_process_output(
-        Command::new("git")
-            .arg("-C")
-            .arg(staging_repo)
-            .args(["cat-file", "--batch"]),
-        Some(input),
-        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout())
-            .with_max_stdout_bytes(max_stdout_bytes),
-    )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(
-            "reading repository workflow definitions failed",
-        ));
-    }
-    let mut remaining = output.stdout.as_slice();
-    let mut workflows = Vec::with_capacity(workflow_entries.len());
-    for entry in workflow_entries {
-        let path = format!("/{}", entry.path);
-        let header_end = remaining
-            .iter()
-            .position(|byte| *byte == b'\n')
-            .ok_or_else(|| {
-                ApiError::infrastructure_unavailable("invalid repository workflow batch response")
-            })?;
-        let expected_header = format!("{} blob {}", entry.oid, entry.size_bytes);
-        if &remaining[..header_end] != expected_header.as_bytes() {
-            return Err(ApiError::infrastructure_unavailable(
-                "repository workflow batch response does not match tree metadata",
-            ));
-        }
-        remaining = &remaining[header_end + 1..];
-        let size = entry.size_bytes as usize;
-        if remaining.get(size) != Some(&b'\n') {
-            return Err(ApiError::infrastructure_unavailable(
-                "truncated repository workflow batch response",
-            ));
-        }
-        let source = git_blob_reference(entry.oid, entry.mode, entry.size_bytes);
-        workflows.push(
-            RepositoryWorkflowFile::from_source_blob(path, &source, remaining[..size].to_vec())
-                .map_err(ApiError::internal)?,
-        );
-        remaining = &remaining[size + 1..];
-    }
-    if !remaining.is_empty() {
-        return Err(ApiError::infrastructure_unavailable(
-            "unexpected trailing repository workflow batch response",
-        ));
-    }
-    Ok(ReadWorkflowFiles::Files(workflows))
-}
-
-fn capture_repository_workflow_catalog(
-    staging_repo: &FsPath,
-    repository_id: &str,
-    head_oid: &str,
-    change_version: u64,
-) -> Result<RepositoryWorkflowCatalog, ApiError> {
-    match read_repository_workflow_files(staging_repo, head_oid)? {
-        ReadWorkflowFiles::Files(workflows) => {
-            RepositoryWorkflowCatalog::captured(repository_id, head_oid, change_version, workflows)
-        }
-        ReadWorkflowFiles::Rejected(message) => {
-            RepositoryWorkflowCatalog::rejected(repository_id, head_oid, change_version, message)
-        }
-    }
-    .map_err(ApiError::internal)
 }
 
 #[cfg(test)]
@@ -589,39 +446,5 @@ mod tests {
         assert_eq!(file.oid, oid);
         assert_eq!(file.content_bytes, bytes);
         assert_eq!(file.size_bytes, bytes.len() as u64);
-    }
-
-    #[test]
-    fn workflow_files_read_multiple_blobs_in_tree_order() {
-        let repo = TestRepo::init();
-        fs::create_dir_all(repo.join(".scope/runs")).unwrap();
-        fs::write(repo.join(".scope/runs/first.yml"), b"first\n\0body").unwrap();
-        fs::write(repo.join(".scope/runs/second.yaml"), b"second\nbody").unwrap();
-        run_git(Some(&repo), &["add", "."], "staging workflow files").unwrap();
-        let tree = run_git_output(Some(&repo), &["write-tree"], "writing workflow tree").unwrap();
-        let tree_oid = String::from_utf8(tree.stdout).unwrap();
-        let ReadWorkflowFiles::Files(files) =
-            read_repository_workflow_files(&repo, tree_oid.trim()).unwrap()
-        else {
-            panic!("expected workflow files");
-        };
-        assert_eq!(files.len(), 2);
-        assert_eq!(files[0].path().as_str(), "/.scope/runs/first.yml");
-        assert_eq!(files[0].content_bytes(), b"first\n\0body");
-        assert_eq!(files[1].path().as_str(), "/.scope/runs/second.yaml");
-        assert_eq!(files[1].content_bytes(), b"second\nbody");
-
-        fs::write(
-            repo.join(".scope/runs/oversized.yml"),
-            vec![b'x'; MAX_WORKFLOW_DEFINITION_BYTES + 1],
-        )
-        .unwrap();
-        run_git(Some(&repo), &["add", "."], "staging oversized workflow").unwrap();
-        let tree = run_git_output(Some(&repo), &["write-tree"], "writing oversized tree").unwrap();
-        let tree_oid = String::from_utf8(tree.stdout).unwrap();
-        assert!(matches!(
-            read_repository_workflow_files(&repo, tree_oid.trim()).unwrap(),
-            ReadWorkflowFiles::Rejected(reason) if reason.contains("exceeds")
-        ));
     }
 }

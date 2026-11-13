@@ -1,13 +1,13 @@
 use crate::{repository::access::RepositoryAccess, views::Views};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RequestCheckReviewer<'a> {
-    user_id: &'a str,
+pub struct RequestCheckReviewer {
+    _authorized: (),
 }
 
-impl<'a> RequestCheckReviewer<'a> {
-    pub fn for_actor(user_id: &'a str, access: &RepositoryAccess, views: &Views) -> Option<Self> {
-        Self::may_review(access, views).then_some(Self { user_id })
+impl RequestCheckReviewer {
+    pub fn for_actor(access: &RepositoryAccess, views: &Views) -> Option<Self> {
+        Self::may_review(access, views).then_some(Self { _authorized: () })
     }
 
     pub fn may_review(access: &RepositoryAccess, views: &Views) -> bool {
@@ -24,13 +24,9 @@ impl<'a> RequestCheckReviewer<'a> {
         }
     }
 
-    pub fn user_id(&self) -> &'a str {
-        self.user_id
-    }
-
     #[cfg(test)]
-    pub(crate) fn trusted(user_id: &'a str) -> Self {
-        Self { user_id }
+    pub(crate) fn trusted() -> Self {
+        Self { _authorized: () }
     }
 }
 
@@ -49,18 +45,15 @@ mod tests {
     #[test]
     fn only_maintainers_who_read_the_full_view_review_request_checks() {
         let views = views_with_agent();
-        assert_eq!(
+        assert!(
             RequestCheckReviewer::for_actor(
-                "member",
                 &access(RepositoryActor::Member, ViewId::private(), true),
                 &views
             )
-            .map(|reviewer| reviewer.user_id()),
-            Some("member")
+            .is_some()
         );
         assert!(
             RequestCheckReviewer::for_actor(
-                "member",
                 &access(RepositoryActor::Member, agent(), true),
                 &views
             )
@@ -68,7 +61,6 @@ mod tests {
         );
         assert!(
             RequestCheckReviewer::for_actor(
-                "member",
                 &access(RepositoryActor::Member, ViewId::public(), true),
                 &views
             )
@@ -76,7 +68,7 @@ mod tests {
         );
         let outsider =
             repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "outsider");
-        assert!(RequestCheckReviewer::for_actor("outsider", &outsider, &views).is_none());
+        assert!(RequestCheckReviewer::for_actor(&outsider, &views).is_none());
         assert_eq!(
             RequestCheckReviewer::refusal(&outsider, &views),
             "repo maintainer required"
@@ -87,6 +79,6 @@ mod tests {
         );
         let owner =
             repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");
-        assert!(RequestCheckReviewer::for_actor("owner", &owner, &views).is_some());
+        assert!(RequestCheckReviewer::for_actor(&owner, &views).is_some());
     }
 }

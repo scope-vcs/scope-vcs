@@ -2,11 +2,7 @@ use super::{
     Request, RequestAutoMergeIntent, RequestAutoMergeMutation, RequestAutoMergeStopReason,
     RequestCheckEvaluation, stop_request_auto_merge,
 };
-use crate::{
-    error::DomainError,
-    requests::RequestCheckEvaluationState,
-    runs::run::{Run, RunState},
-};
+use crate::{error::DomainError, requests::RequestCheckEvaluationState};
 
 pub fn stop_request_auto_merge_for_check_evaluation(
     request: &Request,
@@ -28,31 +24,6 @@ pub fn stop_request_auto_merge_for_check_evaluation(
         event_id,
         evaluation
             .updated_at_unix
-            .max(request.updated_at_unix)
-            .max(intent.updated_at_unix),
-    )
-    .map(Some)
-}
-
-pub fn stop_request_auto_merge_for_check_run(
-    request: &Request,
-    intent: &RequestAutoMergeIntent,
-    run: &Run,
-    event_id: String,
-) -> Result<Option<RequestAutoMergeMutation>, DomainError> {
-    if !matches!(
-        run.state,
-        RunState::Failed | RunState::Canceled | RunState::Lost
-    ) {
-        return Ok(None);
-    }
-    stop_request_auto_merge(
-        request,
-        intent,
-        RequestAutoMergeStopReason::ChecksFailed,
-        event_id,
-        run.completed_at_unix
-            .unwrap_or(run.updated_at_unix)
             .max(request.updated_at_unix)
             .max(intent.updated_at_unix),
     )

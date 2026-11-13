@@ -17,11 +17,9 @@ use std::time::Duration;
 mod history;
 mod request_attachments;
 mod requests;
-mod runs;
 pub use history::*;
 pub use request_attachments::*;
 pub use requests::*;
-pub use runs::*;
 
 const DEFAULT_API_URL: &str = "https://api.scopevcs.com";
 

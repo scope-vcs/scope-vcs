@@ -37,7 +37,7 @@ class CriticalPathTest(unittest.TestCase):
         self.assertEqual(self.run_violations(), [])
 
     def test_more_parallel_jobs_than_the_runner_cap_fail(self):
-        self.edit("rust-workspace-checks.yml", "lane: [workspace,", "lane: [extra-one, extra-two, workspace,")
+        self.edit("rust-workspace-checks.yml", "lane: [workspace,", "lane: [extra-one, extra-two, extra-three, workspace,")
         self.assertEqual(
             self.run_violations(),
             ["a full pull request run can have 21 jobs running at once; GitHub's free plan runs 20"],
@@ -48,7 +48,7 @@ class CriticalPathTest(unittest.TestCase):
                   "    if: inputs.run_checks\n    strategy:\n      matrix:\n        shard: [one, two]\n    uses:")
         self.assertEqual(
             self.run_violations(),
-            ["a full pull request run can have 24 jobs running at once; GitHub's free plan runs 20"],
+            ["a full pull request run can have 23 jobs running at once; GitHub's free plan runs 20"],
         )
 
     def test_a_heavy_job_waiting_on_another_heavy_job_fails(self):

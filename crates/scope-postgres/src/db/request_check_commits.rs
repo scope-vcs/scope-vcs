@@ -78,7 +78,6 @@ impl RequestStore {
         let RequestCheckPlan {
             evaluation,
             push_to_github,
-            ..
         } = RequestCheckPlan::rebuild_check_commit(
             &request,
             evaluation,
@@ -94,7 +93,6 @@ impl RequestStore {
         tx.commit().await?;
         Ok(Some(RequestChecksMutation {
             evaluation,
-            created_runs: Vec::new(),
             queued_github_push,
         }))
     }

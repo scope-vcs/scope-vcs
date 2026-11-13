@@ -9,15 +9,12 @@ use std::{path::PathBuf, time::Duration};
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
 const SCOPE_DATA_DIR_ENV: &str = "SCOPE_DATA_DIR";
 const SCOPE_OBJECT_STORE_MAX_BYTES_ENV: &str = "SCOPE_OBJECT_STORE_MAX_BYTES";
-const CLOUD_RUN_MAX_CONCURRENCY_ENV: &str = "SCOPE_CLOUD_RUN_MAX_CONCURRENCY";
 const SCOPE_GIT_COMPACTION_CONCURRENCY_ENV: &str = "SCOPE_GIT_COMPACTION_CONCURRENCY";
-const DISPATCH_BROKER_FUNCTION_ARN_ENV: &str = "SCOPE_DISPATCH_BROKER_FUNCTION_ARN";
 const DEFAULT_HEALTH_PORT: u16 = 8081;
 
 pub(crate) const CONTROL_POLL_BATCH_SIZE: usize = 10;
 pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(1_000);
 pub(crate) const GIT_COMPACTION_TIMEOUT: Duration = Duration::from_secs(120);
-const CLOUD_RUN_MAX_CONCURRENCY: usize = 20;
 
 #[derive(Clone)]
 pub(crate) struct WorkerSettings {
@@ -28,15 +25,6 @@ pub(crate) struct WorkerSettings {
     pub(crate) git_segment_store: GitSegmentStoreConfig,
     pub(crate) data_dir: PathBuf,
     pub(crate) git_compaction_concurrency: usize,
-    pub(crate) execution: Option<CloudExecutionSettings>,
-}
-
-#[derive(Clone)]
-pub(crate) struct CloudExecutionSettings {
-    pub(crate) aws_region: String,
-    pub(crate) dispatch_broker_function_arn: String,
-    pub(crate) runtime_version: String,
-    pub(crate) max_concurrency: usize,
 }
 
 impl WorkerSettings {
@@ -71,48 +59,8 @@ impl WorkerSettings {
             git_segment_store,
             data_dir,
             git_compaction_concurrency,
-            execution: cloud_execution_from_env()?,
         })
     }
-}
-
-fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> {
-    let Some(dispatch_broker_function_arn) = nonempty_env(DISPATCH_BROKER_FUNCTION_ARN_ENV) else {
-        return Ok(None);
-    };
-    let aws_region = required_env("AWS_REGION")?;
-    let dispatch_broker_function_arn =
-        parse_broker_function_arn(&dispatch_broker_function_arn, &aws_region)?;
-    Ok(Some(CloudExecutionSettings {
-        aws_region,
-        dispatch_broker_function_arn,
-        runtime_version: env!("CARGO_PKG_VERSION").to_string(),
-        max_concurrency: parse_usize_env(CLOUD_RUN_MAX_CONCURRENCY_ENV, CLOUD_RUN_MAX_CONCURRENCY)?,
-    }))
-}
-
-fn parse_broker_function_arn(value: &str, aws_region: &str) -> anyhow::Result<String> {
-    let fields = value.split(':').collect::<Vec<_>>();
-    if !(fields.len() == 7 || fields.len() == 8)
-        || fields[0] != "arn"
-        || !matches!(fields[1], "aws" | "aws-us-gov" | "aws-cn")
-        || fields[2] != "lambda"
-        || fields[3] != aws_region
-        || fields[4].len() != 12
-        || !fields[4].bytes().all(|byte| byte.is_ascii_digit())
-        || fields[5] != "function"
-        || fields[6..].iter().any(|field| {
-            field.is_empty()
-                || !field
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        })
-    {
-        anyhow::bail!(
-            "SCOPE_DISPATCH_BROKER_FUNCTION_ARN must be an exact Lambda function ARN in AWS_REGION"
-        );
-    }
-    Ok(value.to_owned())
 }
 
 fn git_storage_limits_from_env() -> anyhow::Result<GitStorageLimits> {
@@ -137,24 +85,4 @@ fn default_worker_id() -> String {
         .or_else(|_| std::env::var("HOSTNAME"))
         .unwrap_or_else(|_| "local".to_string());
     format!("scope-worker-{host}-{}", std::process::id())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn broker_function_must_be_exact_and_region_bound() {
-        let arn = "arn:aws:lambda:us-east-1:123456789012:function:scope-dispatch";
-        assert_eq!(parse_broker_function_arn(arn, "us-east-1").unwrap(), arn);
-        assert!(parse_broker_function_arn(&format!("{arn}:live"), "us-east-1").is_ok());
-        for invalid in [
-            "scope-dispatch",
-            "arn:aws:lambda:us-east-1:123456789012:function:*",
-            "arn:aws:lambda:us-east-1:123456789012:function:",
-        ] {
-            assert!(parse_broker_function_arn(invalid, "us-east-1").is_err());
-        }
-        assert!(parse_broker_function_arn(arn, "us-west-2").is_err());
-    }
 }

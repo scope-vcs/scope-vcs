@@ -19,7 +19,6 @@ pub(crate) mod request_merge_tree;
 pub(crate) mod request_ref_view_safety;
 pub(crate) mod request_refs;
 pub(crate) mod restore;
-pub(crate) mod run_source;
 pub(crate) mod staging;
 pub(crate) mod storage;
 #[cfg(test)]

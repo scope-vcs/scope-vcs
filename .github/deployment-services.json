@@ -207,28 +207,6 @@
       ],
       "prefixes": []
     },
-    "runner-image": {
-      "files": [
-        "Cargo.lock",
-        "Cargo.toml",
-        "rust-toolchain.toml",
-        "dev/tool-versions.json",
-        "dev/install-git.sh",
-        ".github/workflows/scope-runner-image.yml",
-        "deploy/scripts/push-image-tags.sh",
-        ".github/scripts/scan-image.sh",
-        ".github/scripts/scan-report.mjs",
-        "dev/checks/runner-runtime-container"
-      ],
-      "prefixes": [
-        "runner-runtime/",
-        "crates/scope-api-contract/",
-        "crates/scope-cache-domain/",
-        "crates/scope-domain/",
-        "crates/scope-git-process/",
-        "crates/scope-service-runtime/"
-      ]
-    },
     "run-worker": {
       "files": [
         "Cargo.lock",

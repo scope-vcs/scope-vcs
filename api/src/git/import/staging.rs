@@ -3,7 +3,6 @@ use scope_domain::repo_config::RepoConfig;
 use scope_domain::reviewed_updates::content::{
     ReviewedContentChange, ReviewedUpdateInput, apply_reviewed_update_to_repo,
 };
-use scope_domain::runs::catalog::RepositoryWorkflowCatalog;
 use scope_domain::views::ViewId;
 use scope_domain::{error::DomainError, repo_actions::reviewed_update_domain_error};
 use scope_domain::{
@@ -37,7 +36,6 @@ pub(crate) struct ReceivePackUpdate {
     pub(crate) message: String,
     pub(crate) git_head: GitHead,
     pub(crate) main_pack: GitPoolPack,
-    pub(crate) workflow_catalog: RepositoryWorkflowCatalog,
     pub(crate) landing_file_mutation: RepositoryLandingFileMutation,
     pub(crate) changes: Vec<ReviewedContentChange>,
     pub(crate) previous_config: Option<RepoConfig>,

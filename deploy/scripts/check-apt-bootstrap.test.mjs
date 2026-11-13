@@ -24,16 +24,11 @@ function verifyBootstrap(layer, version, distro, label) {
   ], label);
   assert.equal(version, distro.version, `${label}: pin the vendor-fixed APT release`);
   assert.match(layer, new RegExp(`'URIs: ${distro.uri}' 'Suites: ${distro.suite}-security'`), label);
-  if (label === 'runner-runtime/Dockerfile:final') {
-    assert.match(layer, /mv \/etc\/apt\/sources\.list\.d\/debian\.sources \/tmp\/debian\.sources/, label);
-    assert.match(layer, /mv \/tmp\/debian\.sources \/etc\/apt\/sources\.list\.d\/debian\.sources/, label);
-  } else {
-    assert.match(layer, /mv \/etc\/apt\/sources\.list\.d \/tmp\/apt-sources\.list\.d/, label);
-    assert.match(layer, /mv \/etc\/apt\/sources\.list \/tmp\/apt-sources\.list/, label);
-    assert.match(layer, /mv \/tmp\/apt-sources\.list\.d \/etc\/apt\/sources\.list\.d/, label);
-    assert.match(layer, /mv \/tmp\/apt-sources\.list \/etc\/apt\/sources\.list/, label);
-    assert.ok(layer.indexOf('rm -rf /var/lib/apt/lists/*') < layer.indexOf('apt-get'), `${label}: discard inherited package indexes`);
-  }
+  assert.match(layer, /mv \/etc\/apt\/sources\.list\.d \/tmp\/apt-sources\.list\.d/, label);
+  assert.match(layer, /mv \/etc\/apt\/sources\.list \/tmp\/apt-sources\.list/, label);
+  assert.match(layer, /mv \/tmp\/apt-sources\.list\.d \/etc\/apt\/sources\.list\.d/, label);
+  assert.match(layer, /mv \/tmp\/apt-sources\.list \/etc\/apt\/sources\.list/, label);
+  assert.ok(layer.indexOf('rm -rf /var/lib/apt/lists/*') < layer.indexOf('apt-get'), `${label}: discard inherited package indexes`);
 }
 
 test('image stages bootstrap fixed APT from security with retries disabled before other package downloads', () => {

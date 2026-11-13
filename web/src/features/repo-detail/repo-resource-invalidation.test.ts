@@ -10,7 +10,7 @@ import { historyFeedResource } from '../history/history-resource-cache'
 import { repoContentCacheKey, repoContentResource } from './repo-content-cache'
 import { repoFileCacheKey, repoFileResource } from './repo-file-cache'
 import { requestDiscussionReferenceIdentity, requestDiscussionReferenceResource } from '../requests/request-changes-discussion-references'
-import { runWorkflowsResource } from '../runs/run-workflows-resource'
+import { runsPageResource } from '../runs/runs-page-resource'
 import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
 import { githubWorkflowNamesResource } from '../runs/github-workflow-names-resource'
 import {
@@ -60,15 +60,15 @@ test('account deletions refresh history, whose authors carry no content version'
   assert.equal(historyFeedResource.getSnapshot('viewer-a\0public\0all').stale, true)
 })
 
-test('allowlist changes refresh the retained Runs page workflows and their availability', () => {
-  runWorkflowsResource.clear()
-  for (const scope of ['viewer-a', 'viewer-b']) runWorkflowsResource.write(scope, { workflows: [], native_runs_available: true })
-  invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'StatusChanged' } }))
-  assert.equal(runWorkflowsResource.getSnapshot('viewer-a').stale, false)
-  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'native-runs-changed' } }))
-  assert.equal(runWorkflowsResource.getSnapshot('viewer-a').stale, true)
-  assert.equal(runWorkflowsResource.peek('viewer-a')?.native_runs_available, true)
-  assert.equal(runWorkflowsResource.getSnapshot('viewer-b').stale, false)
+test('repository changes refresh the retained Runs page so a new GitHub connection replaces the offer', () => {
+  runsPageResource.clear()
+  for (const scope of ['viewer-a', 'viewer-b']) runsPageResource.write(scope, { kind: 'not-connected', configured: true })
+  invalidateRepoResources('viewer-a', event('DependenciesChanged'))
+  assert.equal(runsPageResource.getSnapshot('viewer-a').stale, false)
+  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'github-connected' } }))
+  assert.equal(runsPageResource.getSnapshot('viewer-a').stale, true)
+  assert.deepEqual(runsPageResource.peek('viewer-a'), { kind: 'not-connected', configured: true })
+  assert.equal(runsPageResource.getSnapshot('viewer-b').stale, false)
 })
 
 test('request changes target one request and leave latest repository activity reusable', () => {
@@ -119,24 +119,6 @@ test('dependency completion invalidates only the retained dependency report', ()
   assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, false)
-})
-
-test('run changes refresh request-owned state without invalidating repository resources', () => {
-  seed()
-  invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'LogsAppended' } }))
-  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
-  invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'StatusChanged' } }))
-  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
-  assert.equal(
-    requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale,
-    true,
-  )
-  assert.equal(
-    requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'two')).stale,
-    true,
-  )
-  assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
-  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
 })
 
 test('GitHub workflow runs refresh the retained GitHub run lists and request queues', () => {

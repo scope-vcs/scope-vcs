@@ -151,9 +151,7 @@ pub(crate) async fn delete_repo(
         .repositories()
         .delete_repo(&owner, &repo_name, &incarnation, &user.id, unix_now()?)
         .await?;
-    state
-        .publish_repo_change(&incarnation, delete_version, RepoChangeReason::RepoDeleted)
-        .await;
+    state.publish_repo_change(&incarnation, delete_version, RepoChangeReason::RepoDeleted);
 
     crate::use_cases::content_cleanup::best_effort_drain_pending_repo_storage_deletions(&state)
         .await;
@@ -401,13 +399,11 @@ async fn apply_reviewed_config_before_push(
             .git_push_state(owner, repo_name, user_id)
             .await?
             .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
-        state
-            .publish_repo_change(
-                &repo.incarnation,
-                repo.change_version,
-                RepoChangeReason::ConfigApplied,
-            )
-            .await;
+        state.publish_repo_change(
+            &repo.incarnation,
+            repo.change_version,
+            RepoChangeReason::ConfigApplied,
+        );
     }
     Ok(())
 }

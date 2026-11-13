@@ -24,8 +24,6 @@ pub(crate) async fn start_request(
             view,
             author_role,
         ));
-    state
-        .publish_request_summary_refresh(incarnation, RepoChangeReason::RequestStarted)
-        .await;
+    state.publish_request_summary_refresh(incarnation, RepoChangeReason::RequestStarted);
     Ok(mutation)
 }

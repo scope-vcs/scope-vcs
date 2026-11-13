@@ -215,12 +215,10 @@ pub(crate) async fn refresh_github_visibility(
             .apply_github_repository_visibility(connection.github_repository_id, repository.private)
             .await?
     {
-        state
-            .publish_request_summary_refresh(
-                &incarnation,
-                RepoChangeReason::GitHubConnectionChanged,
-            )
-            .await;
+        state.publish_request_summary_refresh(
+            &incarnation,
+            RepoChangeReason::GitHubConnectionChanged,
+        );
     }
     Ok(Some(refreshed))
 }
@@ -529,20 +527,16 @@ async fn publish_push_change(state: &AppState, push: &GitHubPush) {
                 .await;
         }
         (Ok(Some(incarnation)), GitHubBranch::Main) => {
-            state
-                .publish_request_summary_refresh(
-                    &incarnation,
-                    RepoChangeReason::GitHubConnectionChanged,
-                )
-                .await;
+            state.publish_request_summary_refresh(
+                &incarnation,
+                RepoChangeReason::GitHubConnectionChanged,
+            );
         }
         (Ok(Some(incarnation)), GitHubBranch::SetupCheck) => {
-            state
-                .publish_request_summary_refresh(
-                    &incarnation,
-                    RepoChangeReason::RequestChecksUpdated,
-                )
-                .await;
+            state.publish_request_summary_refresh(
+                &incarnation,
+                RepoChangeReason::RequestChecksUpdated,
+            );
         }
         (Ok(None), _) => {}
         (Err(error), _) => tracing::warn!(

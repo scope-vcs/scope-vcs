@@ -1,5 +1,3 @@
-#[path = "contribution_flow/checks.rs"]
-mod checks;
 #[path = "../src/test_support/git.rs"]
 mod git;
 #[path = "cli/support/git_output.rs"]
@@ -70,7 +68,7 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
     )
     .unwrap();
     commit_all(&maintainer.repo, "Exercise explicit main publication");
-    let published = maintainer.json(["push", "--main", "--no-review", "--wait"]);
+    let published = maintainer.json(["push", "--main", "--no-review"]);
     assert_command(&published, "push");
     assert_eq!(published["result"]["applied"], true);
     assert_eq!(published["result"]["tracking_updated"], true);
@@ -80,7 +78,6 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         string_at(&published, "/result/commit"),
         git_stdout(&maintainer.repo, ["rev-parse", "HEAD"])
     );
-    assert!(published["result"]["workflows"].is_array());
     let pulled = contributor.json(["pull"]);
     assert_command(&pulled, "pull");
     assert_eq!(pulled["result"]["branch_moved"], true);
@@ -95,13 +92,6 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         unchanged["result"]["head"],
         unchanged["result"]["previous_head"]
     );
-
-    let workflows = maintainer.json(["run", "workflows"]);
-    assert_command(&workflows, "run.workflows");
-    assert!(workflows["result"]["workflows"].is_array());
-    let runs = maintainer.json(["run", "list", "--limit", "5"]);
-    assert_command(&runs, "run.list");
-    assert!(runs["result"]["runs"].as_array().unwrap().len() <= 5);
 
     let started = contributor.json(["request", "start", request_name.as_str()]);
     assert_command(&started, "request.start");
@@ -407,7 +397,6 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
     public_stacks::exercise(&contributor, &maintainer, &suffix);
     private_stacks::exercise(&contributor, &maintainer, &suffix);
     private_auto_merge::exercise(&contributor, &maintainer, &suffix);
-    checks::exercise(&contributor, &maintainer, &suffix);
 }
 
 fn assert_error<const N: usize>(actor: &Actor, args: [&str; N], code: &str) -> Value {

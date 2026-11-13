@@ -481,8 +481,7 @@ pub(crate) async fn leave_request(
         .await?;
     let invitee = request_invitee_response(invitee);
     state
-        .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestInviteeLeft)
-        .await;
+        .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestInviteeLeft);
     Ok(Json(LeaveRequestResponse { invitee }))
 }
 

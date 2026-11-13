@@ -1,18 +1,3 @@
-import type {
-  RunState,
-  RepositoryRunTrigger,
-} from '@/api/types.generated'
-import { runCanChange } from './repository-run-detail-model'
-
-export function runDisplayState(run: {
-  cancellation_requested: boolean
-  state: RunState
-}): RunState | 'canceling' {
-  return run.cancellation_requested && runCanChange(run.state)
-    ? 'canceling'
-    : run.state
-}
-
 export function formatDuration(seconds: number) {
   const safe = Math.max(0, Math.round(seconds))
   if (safe < 60) return `${safe}s`
@@ -37,15 +22,4 @@ export function elapsedDuration(
 ) {
   if (start === null) return null
   return formatDuration((end ?? nowUnix) - start)
-}
-
-export function runTriggerLabel(trigger: RepositoryRunTrigger) {
-  switch (trigger) {
-    case 'push-main':
-      return 'push'
-    case 'request':
-      return 'request'
-    case 'manual':
-      return 'manual'
-  }
 }

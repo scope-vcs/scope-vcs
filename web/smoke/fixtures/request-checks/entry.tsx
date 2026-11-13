@@ -6,9 +6,8 @@ import { RequestChecksSection } from '@/features/requests/request-checks-section
 import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
 import '../shared/styles.css'
 
-type GitHubCheck = Extract<RequestCheckResponse, { provider: 'github' }>
-const github = (name: string, status: GitHubCheck['status'], conclusion: GitHubCheck['conclusion'] = null, run: GitHubCheck['run'] = null): RequestCheckResponse => ({
-  provider: 'github', name, status, conclusion, run,
+const github = (name: string, status: RequestCheckResponse['status'], conclusion: RequestCheckResponse['conclusion'] = null, run: RequestCheckResponse['run'] = null): RequestCheckResponse => ({
+  name, status, conclusion, run,
   details_url: status ? 'https://github.com/octo/demo/actions/runs/1/job/2' : null,
 })
 const ciRun = (job_id: string) => ({ run_id: '9001', workflow_name: 'CI', job_id })
@@ -35,21 +34,22 @@ const running: RequestChecksResponse = {
     github(`${S} / Web validation`, 'completed', 'skipped', ciRun('42')),
   ],
 }
-const native = {
-  ...running, private_request_on_public_github: false, github_push: null,
+const lintRun = (job_id: string) => ({ run_id: '9003', workflow_name: 'Lint', job_id })
+const failing: RequestChecksResponse = {
+  ...running, private_request_on_public_github: false,
   checks: [
-    { provider: 'native', workflow_path: '/.scope/runs/checks.yml', workflow_name: 'checks', run_id: 'run_checks', run_state: 'failed' },
-    { provider: 'native', workflow_path: '/.scope/runs/lint.yml', workflow_name: 'lint', run_id: 'run_lint', run_state: 'succeeded' },
+    github('checks', 'completed', 'failure', lintRun('51')),
+    github('lint', 'completed', 'success', lintRun('52')),
   ],
-} as RequestChecksResponse
+}
 
 function Request() {
   const { owner, repo } = useParams({ strict: false })
   const [checks, setChecks] = useState(running)
   Object.assign(window, {
-    showNative: () => setChecks(native),
+    showFailing: () => setChecks(failing),
     showPassed: () => setChecks({
-      ...native, checks: native.checks.slice(1), private_request_on_public_github: true,
+      ...failing, checks: failing.checks.slice(1), private_request_on_public_github: true,
       github_pull_request: { state: 'open', number: 12, url: 'https://github.com/octo/demo/pull/12', error: null },
       review_bots: [{ login: 'octo-reviewer[bot]', required: true, state: 'clear' }],
     }),
@@ -66,7 +66,7 @@ function Request() {
     pushRevision: () => setChecks((current) => ({ ...current, head_oid: 'b'.repeat(40) })),
     refresh: () => setChecks((current) => ({
       ...current,
-      checks: current.checks.map((check, index) => index ? check : { ...check as GitHubCheck, status: 'completed', conclusion: 'success' }),
+      checks: current.checks.map((check, index) => index ? check : { ...check, status: 'completed', conclusion: 'success' }),
     })),
   })
   return (

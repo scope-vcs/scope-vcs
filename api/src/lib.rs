@@ -1,7 +1,6 @@
 pub mod app;
 mod background_work;
 pub mod maintenance_http;
-pub mod native_runs_maintenance;
 pub mod pool_pack_recovery;
 pub mod state;
 
@@ -30,8 +29,6 @@ pub(crate) mod push_intents;
 pub(crate) mod repo_access;
 pub(crate) mod repo_events;
 pub(crate) mod retention;
-pub(crate) mod run_attempt_effects;
-pub(crate) mod run_recovery;
 pub(crate) mod runtime_budgets;
 #[cfg(any(test, feature = "local-dev", feature = "smoke-seed"))]
 pub(crate) mod seed_user;
@@ -39,7 +36,6 @@ pub(crate) mod seed_user;
 pub mod smoke_seed;
 mod storage_runtime;
 pub(crate) mod use_cases;
-mod workflow_catalog_validation;
 
 #[cfg(test)]
 mod workflow_tests;
@@ -47,7 +43,6 @@ mod workflow_tests;
 pub use app::router;
 pub use background_work::BackgroundWork;
 pub use state::AppState;
-pub use workflow_catalog_validation::validate_repository_workflow_catalogs_for_maintenance;
 
 #[cfg(feature = "type-export")]
 pub fn export_api_contract(output_path: &std::path::Path, schema_output_path: &std::path::Path) {

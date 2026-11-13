@@ -19,10 +19,6 @@ const REQUEST_REF: &str = "refs/heads/request-branch";
 const PRIVATE_REQUEST_ID: &str = "req_private";
 const PRIVATE_REQUEST_REF: &str = "refs/heads/private-request";
 
-fn request_workflow() -> String {
-    WORKFLOW.replacen("  manual: true", "  manual: true\n  request: true", 1)
-}
-
 mod cache;
 mod checks;
 mod code_reads;
@@ -38,7 +34,6 @@ mod merge;
 mod policy;
 mod pool;
 mod privacy;
-mod public_checks;
 mod refs;
 mod review;
 mod rewrites;

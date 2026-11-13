@@ -207,69 +207,6 @@ else:
             'arn:${AWS::Partition}:signin:us-east-1:${AWS::AccountId}:oauth2/public-client/remote',
         })
 
-    def test_ci_cannot_change_its_permissions_or_unrelated_stacks(self):
-        role = load('cloud-runner.yaml')['Resources']['GitHubInfrastructureRole']['Properties']
-        self.assertNotIn('ManagedPolicyArns', role)
-        trust = role['AssumeRolePolicyDocument']['Statement'][0]['Condition']['StringEquals']
-        self.assertIn(':environment:AWS-infrastructure', trust['token.actions.githubusercontent.com:sub']['Fn::Sub'][0])
-        self.assertEqual(trust['token.actions.githubusercontent.com:ref'], 'refs/heads/main')
-        self.assertEqual(trust['token.actions.githubusercontent.com:job_workflow_ref']['Fn::Sub'], '${GitHubRepository}/.github/workflows/scope-aws-infrastructure-execute.yml@refs/heads/main')
-        statements = role['Policies'][0]['PolicyDocument']['Statement']
-        allowed = [action for statement in statements for action in actions(statement)]
-        self.assertFalse(any(action.startswith('iam:') and action != 'iam:PassRole' for action in allowed))
-        for statement in statements:
-            if statement['Resource'] == '*':
-                self.assertEqual(actions(statement), ['cloudformation:ValidateTemplate'])
-
-    def test_protected_workflow_uses_exact_reusable_execution(self):
-        workflow_root = ROOT.parent.parent / '.github' / 'workflows'
-        caller = (workflow_root / 'scope-aws-infrastructure.yml').read_text()
-        execution = (workflow_root / 'scope-aws-infrastructure-execute.yml').read_text()
-        self.assertIn("if: github.ref == 'refs/heads/main'", caller)
-        self.assertIn('uses: ./.github/workflows/scope-aws-infrastructure-execute.yml', caller)
-        self.assertIn('environment: AWS-infrastructure', execution)
-        self.assertIn('SCOPE_AWS_EXECUTION_ROLE_ARN: ${{ vars.SCOPE_AWS_EXECUTION_ROLE_ARN }}', execution)
-        self.assertIn('deploy/aws/apply-cloud-runner.sh "$COMMAND" "$CHANGE_SET_ARN"', execution)
-
-    def test_broker_code_versions_are_private_retained_and_readable_by_execution(self):
-        resources = load('security-deployment-role.yaml')['Resources']
-        bucket = resources['BrokerArtifactBucket']
-        self.assertEqual(bucket['DeletionPolicy'], 'Retain')
-        self.assertEqual(bucket['UpdateReplacePolicy'], 'Retain')
-        props = bucket['Properties']
-        self.assertTrue(all(props['PublicAccessBlockConfiguration'].values()))
-        self.assertEqual(props['VersioningConfiguration'], {'Status': 'Enabled'})
-        self.assertEqual(props['OwnershipControls']['Rules'], [{'ObjectOwnership': 'BucketOwnerEnforced'}])
-        self.assertTrue(props['BucketEncryption']['ServerSideEncryptionConfiguration'])
-        tls = resources['BrokerArtifactBucketPolicy']['Properties']['PolicyDocument']['Statement'][0]
-        self.assertEqual(tls['Effect'], 'Deny')
-        self.assertEqual(tls['Condition'], {'Bool': {'aws:SecureTransport': 'false'}})
-        statements = resources['InfrastructureExecutionRole']['Properties']['Policies'][0]['PolicyDocument']['Statement']
-        readers = [statement for statement in statements if 's3:GetObjectVersion' in actions(statement)]
-        self.assertEqual(len(readers), 1)
-        self.assertEqual(readers[0]['Resource']['Fn::Sub'], 'arn:${AWS::Partition}:s3:::scope-dispatch-broker-artifacts-${AWS::AccountId}-${AWS::Region}/*')
-        self.assertFalse(any(statement['Effect'] == 'Allow' and any(action.startswith('s3:Put') for action in actions(statement)) for statement in statements))
-
-    def test_runtime_boundary_cannot_be_removed_or_changed_by_execution(self):
-        resources = load('security-deployment-role.yaml')['Resources']
-        statements = resources['InfrastructureExecutionRole']['Properties']['Policies'][0]['PolicyDocument']['Statement']
-        self.assertTrue(any(s['Effect'] == 'Deny' and 'iam:DeleteRolePermissionsBoundary' in actions(s) for s in statements))
-        for statement in statements:
-            if statement['Effect'] == 'Allow' and 'iam:CreateRole' in actions(statement):
-                self.assertIn('scope-runtime-boundary', json.dumps(statement['Condition']))
-            if statement['Effect'] == 'Allow' and 'iam:PassRole' in actions(statement):
-                self.assertNotEqual(statement['Resource'], '*')
-                self.assertIn('iam:PassedToService', statement['Condition']['StringEquals'])
-        protected = next(s for s in statements if s.get('Sid') == 'ProtectTrustAndPermissionOwners')
-        for name in ['scope-infrastructure-execution', 'scope-security-', 'github', 'oidc-provider', 'scope-runtime-boundary']:
-            self.assertIn(name, json.dumps(protected['Resource']))
-        boundary = resources['RuntimeBoundary']['Properties']['PolicyDocument']['Statement']
-        for statement in boundary:
-            if 'Fn::If' in statement:
-                continue
-            self.assertEqual(statement['Effect'], 'Allow')
-            self.assertFalse(any(a.startswith('iam:') and a != 'iam:PassRole' for a in actions(statement)))
-
 
 if __name__ == '__main__':
     unittest.main()

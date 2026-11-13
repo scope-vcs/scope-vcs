@@ -18,12 +18,6 @@ async fn merge_route_persists_git_content_once() {
         &bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL),
     );
     fs::write(owner_source.join("README.md"), "upstream public change\n").unwrap();
-    fs::create_dir_all(owner_source.join(".scope/runs")).unwrap();
-    fs::write(
-        owner_source.join(".scope/runs/merged.yml"),
-        workflow_named("Merged checks"),
-    )
-    .unwrap();
     run_git(
         Some(&owner_source),
         &["add", "."],
@@ -170,10 +164,6 @@ async fn merge_route_persists_git_content_once() {
     assert_eq!(merged["request"]["state"], "Merged");
     assert_eq!(merged["request"]["merged_head_oid"], request_head);
     assert_ne!(merged["request"]["merged_main_oid"], request_head);
-    let merged_main_oid = merged["request"]["merged_main_oid"]
-        .as_str()
-        .unwrap()
-        .to_string();
     assert_eq!(
         merged["request"]["mergeability"]["current_main_oid"],
         merged["request"]["merged_main_oid"]
@@ -211,38 +201,6 @@ async fn merge_route_persists_git_content_once() {
         landing.content_bytes,
         b"<h1>Merged request landing page</h1>\n"
     );
-    let workflows = app
-        .clone()
-        .oneshot(
-            axum::http::Request::builder()
-                .uri(scope_api_contract::routes::repo_run_workflows(
-                    TEST_REPO_OWNER,
-                    TEST_REPO_NAME,
-                ))
-                .header(
-                    AUTHORIZATION,
-                    bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL),
-                )
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(workflows.status(), StatusCode::OK);
-    let workflows = response_json(workflows).await;
-    assert_eq!(workflows["workflows"][0]["key"], "merged");
-    assert_eq!(workflows["workflows"][0]["name"], "Merged checks");
-    assert!(
-        state
-            .metadata
-            .runs()
-            .push_trigger_evaluation(TEST_REPO_ID, &merged_main_oid)
-            .await
-            .unwrap()
-            .is_none(),
-        "request merges must update the catalog without gaining push-trigger behavior"
-    );
-
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();

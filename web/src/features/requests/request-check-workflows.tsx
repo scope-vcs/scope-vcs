@@ -17,9 +17,7 @@ export function RequestCheckWorkflows({ id, params, rows }: {
   const named = groups.length > 1
   return (
     <div className="mt-2 grid min-w-0 gap-2" id={id}>
-      {groups.map((group) => group.kind === 'native' ? (
-        <ResultRow key={group.key} params={params} row={group.row} />
-      ) : (
+      {groups.map((group) => (
         <section aria-label={group.kind === 'workflow' ? `${group.name} workflow` : 'Other results'} key={group.key}>
           {named ? (
             <h3 className="min-w-0 break-words text-xs text-muted-foreground">

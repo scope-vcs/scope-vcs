@@ -12,27 +12,21 @@ pub(crate) async fn delete_account(state: &AppState, user: &UserAccount) -> Resu
         .await?;
     state.wakeups.clerk_user_deletion.notify_one();
     for repo in &deleted.deleted_repositories {
-        state
-            .publish_repo_change(
-                &repo.incarnation,
-                repo.change_version,
-                RepoChangeReason::RepoDeleted,
-            )
-            .await;
+        state.publish_repo_change(
+            &repo.incarnation,
+            repo.change_version,
+            RepoChangeReason::RepoDeleted,
+        );
     }
     for repo in &deleted.changed_repositories {
-        state
-            .publish_repo_change(
-                &repo.incarnation,
-                repo.change_version,
-                RepoChangeReason::MemberRemoved,
-            )
-            .await;
+        state.publish_repo_change(
+            &repo.incarnation,
+            repo.change_version,
+            RepoChangeReason::MemberRemoved,
+        );
     }
     for incarnation in &deleted.contributed_repositories {
-        state
-            .publish_request_summary_refresh(incarnation, RepoChangeReason::ContributorDeleted)
-            .await;
+        state.publish_request_summary_refresh(incarnation, RepoChangeReason::ContributorDeleted);
     }
     best_effort_drain_pending_repo_storage_deletions(state).await;
     Ok(())

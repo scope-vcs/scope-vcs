@@ -65,19 +65,19 @@ test('browser geography counts scoped pageviews and retains missing location cov
   ])
 })
 
-test('run log timing reports percentiles and stored share per trigger and provider for the last week', () => {
-  const timing = (trigger, provider, durationMs, source = 'stored', properties = {}) => ({
-    event: 'run_log_timing', trigger, provider, duration_ms: durationMs, log_source: source, ...properties,
+test('run log timing reports percentiles and stored share per trigger for the last week', () => {
+  const timing = (trigger, durationMs, source = 'stored', properties = {}) => ({
+    event: 'run_log_timing', trigger, duration_ms: durationMs, log_source: source, ...properties,
   })
   assert.deepEqual(queryReport('run-log-timing', [
-    ...[100, 200, 300, 400].map((duration, index) => timing('job_click', 'github', duration, index === 0 ? 'fetched' : 'stored')),
-    timing('page_load', 'native', 900),
-    timing('job_click', 'github', 9000, 'stored', { timestamp: '2026-10-14 11:59:59' }),
-    timing('job_click', 'github', 9000, 'stored', { environment: 'test' }),
-    timing('job_click', 'github', 9000, 'stored', { event: 'web_vital' }),
+    ...[100, 200, 300, 400].map((duration, index) => timing('job_click', duration, index === 0 ? 'fetched' : 'stored')),
+    timing('page_load', 900),
+    timing('job_click', 9000, 'stored', { timestamp: '2026-10-14 11:59:59' }),
+    timing('job_click', 9000, 'stored', { environment: 'test' }),
+    timing('job_click', 9000, 'stored', { event: 'web_vital' }),
   ]), [
-    { trigger: 'job_click', provider: 'github', samples: 4, p50_ms: 200, p75_ms: 300, p95_ms: 400, stored_percent: 75 },
-    { trigger: 'page_load', provider: 'native', samples: 1, p50_ms: 900, p75_ms: 900, p95_ms: 900, stored_percent: 100 },
+    { trigger: 'job_click', samples: 4, p50_ms: 200, p75_ms: 300, p95_ms: 400, stored_percent: 75 },
+    { trigger: 'page_load', samples: 1, p50_ms: 900, p75_ms: 900, p95_ms: 900, stored_percent: 100 },
   ])
 })
 
@@ -165,6 +165,4 @@ test('cohort exclusions reject SQL fragments and apply to every query before agg
   }
   const completion = reports.find((item) => item.key === 'request-completion').query.source.query
   assert.match(completion, /s.request_id = e.properties.request_id/)
-  const runs = reports.find((item) => item.key === 'workflow-runs').query.source.query
-  assert.match(runs, /notEmpty\(properties.run_result\)/)
 })

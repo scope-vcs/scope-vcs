@@ -113,10 +113,6 @@ case "${1:-}" in
     touch "$FAKE_RAILWAY_STATE/writers-drained"
     echo '{"terminated":1}'
     ;;
-  validate-workflow-catalogs)
-    [[ "${FAKE_FAIL_WORKFLOW_VALIDATION:-0}" != "1" ]]
-    echo '{"workflowCatalogsValidated":1}'
-    ;;
   verify)
     [[ -f "$FAKE_RAILWAY_STATE/exact" ]]
     echo '{"exact":true}'
@@ -298,7 +294,7 @@ success() {
   assert_evidence_components success run-worker,media-api,media-worker,api,git-router,web
   refute success "--path-as-root" "maintenance activation must not upload a build context"
   assert_in_order success "$m plan" "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
-    "$m fence" "$m validate-workflow-catalogs" "$m apply" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
+    "$m fence" "$m apply" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
 }
 
 parallel_activation() {
@@ -328,15 +324,7 @@ draining_writer() {
   FAKE_STUCK_FENCE=1 run_cutover pass draining-writer
   assert_count draining-writer 2 "$m fence" -x
   assert_in_order draining-writer "graphql stop scope-worker old-scope-worker" "$m fence" "$m drain-writers" "$m fence" \
-    "$m validate-workflow-catalogs" "$m apply"
-}
-
-invalid_workflow_catalog() {
-  FAKE_FAIL_WORKFLOW_VALIDATION=1 run_cutover fail invalid-workflow-catalog
-  assert_in_order invalid-workflow-catalog "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
-    "$m fence" "$m validate-workflow-catalogs"
-  refute invalid-workflow-catalog "graphql restart " "gate replacement requires pinned forward recovery even before schema apply"
-  refute invalid-workflow-catalog "$m apply" "invalid workflow catalogs must fail before migration"
+    "$m apply"
 }
 
 degraded() {
@@ -554,7 +542,7 @@ scenarios=(
   disabled_maintenance missing_prepared_worker schema_drift changed_plan
   history_failure_media history_failure_bootstrap history_failure_stopped_media
   success parallel_activation delayed_teardown migration_router_selected stale_stop_status
-  draining_writer invalid_workflow_catalog degraded degraded_media wrong_api_region
+  draining_writer degraded degraded_media wrong_api_region
   degraded_during_shutdown crashed_worker evidence_promotion rollback unknown
   rolling rolling_teardown_barrier rolling_worker carried_worker_drift rolling_worker_unhealthy
   router_bootstrap router_instance_refused router_drift_refused router_domain_invalid

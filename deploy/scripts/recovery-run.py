@@ -54,7 +54,7 @@ class Railway:
             values[decoded] = value.decode()
         return values
 
-    def snapshot(self, service, destination, include_cache=False):
+    def snapshot(self, service, destination):
         query = (ROOT / "deploy/aws/recovery/references.sql").read_text().rstrip().rstrip(";")
         files = {
             "remote-snapshot.sh": (ROOT / "deploy/aws/recovery/remote-snapshot.sh").read_bytes(),
@@ -95,7 +95,7 @@ bash "$directory/remote-snapshot.sh" "$directory"
             if set(contents) != {"database.dump", "references.jsonl", "captured-at.txt"}:
                 raise Incomplete("snapshot transfer is missing a component")
         rows = [json.loads(line) for line in contents["references.jsonl"].splitlines() if line]
-        return metadata(rows, contents["captured-at.txt"].decode().strip(), destination, include_cache)
+        return metadata(rows, contents["captured-at.txt"].decode().strip(), destination)
 
 
 def main():
@@ -112,13 +112,11 @@ def main():
         media_names = {PREFIXES["media"] + "_" + suffix for suffix in SUFFIXES} | {"SCOPE_MEDIA_ENCRYPTION_KEY"}
         values = railway.collect(maintenance, object_names)
         values.update(railway.collect(manifest["services"]["media-api"]["id"], media_names))
-        if os.environ.get("SCOPE_RECOVERY_INCLUDE_CACHE", "").lower() == "true":
-            values.update(railway.collect(manifest["services"]["api"]["id"], {PREFIXES["cache"] + "_" + suffix for suffix in SUFFIXES}))
         write_json(root / "keys.json", {name: values.pop(name) for name in KEYS})
         os.environ.update(values)
         os.environ["SCOPE_RECOVERY_KEYS_FILE"] = str(root / "keys.json")
         os.environ["SCOPE_RECOVERY_RECIPIENT"] = required("SCOPE_RECOVERY_AGE_RECIPIENT")
-        return capture.main(snapshot_provider=lambda destination, include_cache: railway.snapshot(maintenance, destination, include_cache))
+        return capture.main(snapshot_provider=lambda destination: railway.snapshot(maintenance, destination))
 
 
 if __name__ == "__main__":

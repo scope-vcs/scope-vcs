@@ -474,7 +474,6 @@ fn request_ci_reads_the_server_evaluation_for_the_head() {
         1,
         "{seen:?}"
     );
-    assert!(!seen.iter().any(|uri| uri.contains("/runs")), "{seen:?}");
 }
 
 #[test]
@@ -498,11 +497,7 @@ fn approving_request_ci_starts_it_and_prints_the_refreshed_evaluation() {
     let result = success(output);
     assert_eq!(result["command"], "request.ci");
     assert_eq!(result["result"]["checks"]["state"], "started");
-    assert_eq!(result["result"]["checks"]["checks"][0]["run_id"], "run_one");
-    assert_eq!(
-        result["result"]["checks"]["checks"][0]["run_state"],
-        "queued"
-    );
+    assert_eq!(result["result"]["checks"]["checks"][0]["status"], "queued");
     assert_eq!(result["result"]["checks"]["can_approve"], false);
     let seen = server.seen.lock().unwrap();
     assert!(
@@ -650,7 +645,7 @@ impl FixtureServer {
                         let seen = approval_seen.clone();
                         async move {
                             seen.lock().unwrap().push(uri.to_string());
-                            Json(checks_evaluation("started", Some(("run_one", "queued"))))
+                            Json(checks_evaluation("started", Some("queued")))
                         }
                     }))
                     .route("/v1/repos/owner/repo/requests/req_one/auto-merge", get(move |OriginalUri(uri): OriginalUri| {
@@ -817,13 +812,12 @@ fn auto_merge_response(status: Option<&str>) -> Value {
     })
 }
 
-fn checks_evaluation(state: &str, run: Option<(&str, &str)>) -> Value {
+fn checks_evaluation(state: &str, status: Option<&str>) -> Value {
     let awaiting = state == "awaiting-approval";
     json!({
         "request_id":"req_one","head_oid":OID,"state":state,"message":null,
         "outcome": if awaiting { "awaiting-approval" } else { "pending" },
-        "checks":[{"provider":"native","workflow_path":"/.scope/runs/checks.yml","workflow_name":"Checks",
-            "run_id":run.map(|(id, _)| id),"run_state":run.map(|(_, state)| state)}],
+        "checks":[{"name":"Checks","status":status,"conclusion":null,"details_url":null,"run":null}],
         "can_approve":awaiting,"github_push":null,"changes_github_workflows":false,"private_request_on_public_github":false,"review_bots":[],"review_bots_enforced":false,
         "mergeability":{
             "status": if awaiting { "ChecksAwaitingApproval" } else { "ChecksPending" },
