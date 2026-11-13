@@ -59,7 +59,7 @@ test('repository components retain drafts, previews and pending actions across r
   await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
   await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
   await page.evaluate(() => window.calls.splice(0))
-  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: [], review_bots: [], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null }
+  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: [], review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
   await checks.getByText('This GitHub repository became public, so Scope stopped sending requests outside the Public view there.', { exact: false }).waitFor()
   const blockedSwitch = checks.getByRole('switch', { name: 'Publish main to GitHub', exact: false })
@@ -72,7 +72,7 @@ test('repository components retain drafts, previews and pending actions across r
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },
   ])
-  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: ['ci / test'], review_bots: [], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null }
+  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: ['ci / test'], review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), github)
   await checks.getByText('ci / test', { exact: true }).waitFor()
   const publishMain = checks.getByRole('switch', { name: 'Publish main to GitHub', exact: false })
@@ -124,15 +124,21 @@ test('repository components retain drafts, previews and pending actions across r
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [])
 
   await checks.getByText("branches: ['scope/**']", { exact: false }).waitFor()
+  await checks.getByText('1 of 2 workflows on main run on Scope requests.', { exact: true }).waitFor()
+  await checks.getByRole('list', { name: 'Workflows that may not run on requests' }).getByText('.github/workflows/release.yml', { exact: true }).waitFor()
   const testConnection = checks.getByRole('button', { name: 'Test connection', exact: true })
   await testConnection.click()
   assert.equal(await testConnection.isDisabled(), true)
-  await page.evaluate(() => window.finishAction('setup-check'))
-  await checks.getByText('Workflows ran on main (abcdef1). Select the results required before merge.').waitFor()
+  await page.evaluate(() => window.finishAction('connection-test'))
+  const tested = checks.getByRole('list', { name: 'Connection test results' })
+  await tested.getByText('The Scope GitHub App is missing checks (read).', { exact: false }).waitFor()
+  assert.equal(await tested.getByRole('listitem').count(), 3)
+  assert.equal(await testConnection.isDisabled(), false)
   const results = checks.getByRole('list', { name: 'Results required before merge' })
   const absent = results.getByRole('checkbox', { name: 'ci / test', exact: false })
   assert.equal(await absent.isChecked(), true)
-  await absent.locator('..').getByText('Not observed in latest test', { exact: true }).waitFor()
+  await absent.locator('..').getByText('Not found in workflows or on GitHub', { exact: true }).waitFor()
+  await results.getByText('Runs only when its condition holds, required on GitHub', { exact: true }).waitFor()
   const lint = results.getByRole('checkbox', { name: 'lint', exact: false })
   assert.equal(await lint.isChecked(), true)
   const longName = 'test / unit and integration on every supported platform'
@@ -149,7 +155,7 @@ test('repository components retain drafts, previews and pending actions across r
   await checks.getByText('Requirements saved for future pushes.', { exact: true }).waitFor()
   assert.equal(await saveRequirements.isDisabled(), true)
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
-    { startGitHubSetupCheck: { owner: 'owner', repo: 'demo' } },
+    { testGitHubConnection: { owner: 'owner', repo: 'demo' } },
     { setGitHubRequiredChecks: ['ci / test', 'lint', longName] },
     { setGitHubRequiredChecks: ['ci / test', 'lint', longName] },
   ])

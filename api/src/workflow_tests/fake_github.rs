@@ -1,5 +1,6 @@
 use super::*;
 
+mod check_sources;
 mod pulls;
 use crate::github::{GitHubApp, config::GitHubAppConfig};
 use axum::{
@@ -85,6 +86,7 @@ pub(super) struct FakeGitHub {
     pub(super) permission_reads: AtomicUsize,
     review_threads: Mutex<HashMap<String, serde_json::Value>>,
     pub(super) pulls: pulls::FakePulls,
+    pub(super) check_sources: check_sources::FakeCheckSources,
     git_root: GitRoot,
 }
 
@@ -429,10 +431,14 @@ impl FakeGitHub {
                             }
                             Some(InstallationState::Suspended) => Json(serde_json::json!({
                                 "id": id, "suspended_at": "2026-10-01T00:00:00Z",
+                                "permissions": fake.check_sources.permissions.lock().unwrap().clone(),
                             }))
                             .into_response(),
-                            None => Json(serde_json::json!({ "id": id, "suspended_at": null }))
-                                .into_response(),
+                            None => Json(serde_json::json!({
+                                "id": id, "suspended_at": null,
+                                "permissions": fake.check_sources.permissions.lock().unwrap().clone(),
+                            }))
+                            .into_response(),
                         }
                     },
                 ),
@@ -647,6 +653,7 @@ impl FakeGitHub {
             )
             .merge(reviews::routes())
             .merge(pulls::routes())
+            .merge(check_sources::routes())
             .with_state(self);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());

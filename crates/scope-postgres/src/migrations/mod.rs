@@ -55,6 +55,8 @@ mod m0109_main_advanced_by;
 mod m0110_request_diff_renames;
 #[expect(unreachable_pub)]
 mod m0111_remove_native_runs;
+#[expect(unreachable_pub)]
+mod m0112_remove_github_setup_checks;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -216,6 +218,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         RegisteredMigration {
             migration: Box::new(m0111_remove_native_runs::Migration),
             metadata_restore_safe: false,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0112_remove_github_setup_checks::Migration),
+            metadata_restore_safe: true,
         },
     ]
 }

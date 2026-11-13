@@ -64,6 +64,7 @@ tower-http = { workspace = true, features = ["cors"] }
 tracing.workspace = true
 ts-rs = { workspace = true, optional = true }
 tikv-jemallocator = "0.7.0"
+yaml-rust2 = { version = "0.13.0", default-features = false }
 
 [dev-dependencies]
 scope_product_analytics = { workspace = true, features = ["test-support"] }

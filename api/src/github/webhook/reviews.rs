@@ -206,10 +206,6 @@ mod tests {
             ("pull_request_review", payload("submitted", 42, "feature/x")),
             (
                 "pull_request_review",
-                payload("submitted", 42, "scope/setup-check"),
-            ),
-            (
-                "pull_request_review",
                 payload("submitted", 42, "scope/requests/a/b"),
             ),
             ("pull_request_review", payload("dismissed", 42, branch)),

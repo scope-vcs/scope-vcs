@@ -254,7 +254,7 @@ async fn send(
                 .ok_or_else(gone)?;
             Some((request, evaluation))
         }
-        GitHubBranch::SetupCheck | GitHubBranch::Main => None,
+        GitHubBranch::Main => None,
     };
     let view = Some(
         tested
@@ -323,9 +323,6 @@ async fn send(
             .repository_engine
             .materialize_repository(state, &incarnation, &head)
             .await?;
-        if push.branch == GitHubBranch::SetupCheck {
-            record_setup_check_baseline(state, &app, push).await?;
-        }
         let retained = if push.branch == GitHubBranch::Main {
             requests
                 .terminal_requests_with_pushed_branches(
@@ -468,44 +465,6 @@ fn publish_failure(failure: GitHubPublishFailure) -> JobFailure {
     }
 }
 
-async fn record_setup_check_baseline(
-    state: &AppState,
-    app: &GitHubApp,
-    push: &GitHubPush,
-) -> Result<(), JobFailure> {
-    let destination = &push.destination;
-    let target_oid = push.target_oid.as_deref().unwrap_or_default();
-    let runs = app
-        .branch_workflow_runs(
-            destination.installation_id,
-            &destination.github_full_name,
-            &push.branch.name(),
-            target_oid,
-        )
-        .await?
-        .ok_or_else(|| {
-            JobFailure::GiveUp(
-                "The Scope GitHub App can no longer reach this GitHub repository.".to_string(),
-            )
-        })?;
-    let recorded = state
-        .metadata
-        .repositories()
-        .record_github_setup_check_baseline(
-            &push.repo_id,
-            &push.id,
-            runs.iter().map(|run| run.github_run_id).collect(),
-        )
-        .await?;
-    if recorded {
-        Ok(())
-    } else {
-        Err(JobFailure::GiveUp(
-            "The connection test this push belonged to has ended.".to_string(),
-        ))
-    }
-}
-
 async fn installation_token(app: &GitHubApp, installation_id: u64) -> Result<String, JobFailure> {
     app.installation_token(installation_id)
         .await?
@@ -530,12 +489,6 @@ async fn publish_push_change(state: &AppState, push: &GitHubPush) {
             state.publish_request_summary_refresh(
                 &incarnation,
                 RepoChangeReason::GitHubConnectionChanged,
-            );
-        }
-        (Ok(Some(incarnation)), GitHubBranch::SetupCheck) => {
-            state.publish_request_summary_refresh(
-                &incarnation,
-                RepoChangeReason::RequestChecksUpdated,
             );
         }
         (Ok(None), _) => {}

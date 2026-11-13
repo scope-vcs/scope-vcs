@@ -5,7 +5,7 @@ const PUSH_COLUMNS: &str = "id,repo_id,request_id,ref,sequence,installation_id,\
     next_attempt_at_unix,created_at_unix,updated_at_unix";
 
 #[tokio::test]
-async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape() {
+async fn github_pushes_and_workflow_runs_need_a_known_shape() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
     db.execute_unprepared(&format!(
@@ -15,18 +15,15 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
             change_version,content_version,repo_config,policy,incarnation_id)
             VALUES ('owner/one','owner','one','owner','Ready',0,0,'{{}}','{{}}','repoi_m0070_one');
         INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
-            VALUES ('push_1','owner/one',NULL,'refs/heads/scope/setup-check',1,7,42,'octo/one',
-                    repeat('a',40),'push','queued',0,10,10,10);
+            VALUES ('push_1','owner/one','req_1','refs/heads/scope/requests/req_1',1,7,42,
+                    'octo/one',repeat('a',40),'push','queued',0,10,10,10);
         INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
             VALUES ('push_main','owner/one',NULL,'refs/heads/main',1,7,42,'octo/one',
                     repeat('a',40),'push','queued',0,10,10,10);
-        INSERT INTO scope_github_setup_checks (repo_id,github_repository_id,commit_oid,state,
-            started_at_unix)
-            VALUES ('owner/one',42,repeat('a',40),'waiting',10);
         INSERT INTO scope_github_workflow_runs (github_run_id,repo_id,github_repository_id,
             workflow_name,head_branch,head_oid,event,status,conclusion,html_url,check_suite_id,
             run_started_at_unix,run_attempt,stage,github_updated_at_unix)
-            VALUES (1,'owner/one',42,'ci','scope/setup-check',repeat('a',40),'push','completed',
+            VALUES (1,'owner/one',42,'ci','scope/requests/req_1',repeat('a',40),'push','completed',
                     'success','https://github.com/octo/one/actions/runs/1',5,10,1,2,20);
         INSERT INTO scope_github_check_runs (github_check_run_id,repo_id,github_repository_id,
             commit_oid,name,status,conclusion,details_url,updated_at_unix,check_suite_id)
@@ -54,13 +51,15 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
             .to_string(),
         format!(
             "INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
-                VALUES ('push_2','owner/one','req_1','refs/heads/scope/setup-check',2,7,42,
+                VALUES ('push_2','owner/one',NULL,'refs/heads/scope/setup-check',2,7,42,
+                        'octo/one',repeat('a',40),'push','queued',0,10,10,10)"
+        ),
+        format!(
+            "INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
+                VALUES ('push_2','owner/one','req_2','refs/heads/scope/requests/req_1',2,7,42,
                         'octo/one',repeat('a',40),'push','queued',0,10,10,10)"
         ),
         "UPDATE scope_github_pushes SET github_repository_id = 0".to_string(),
-        "UPDATE scope_github_setup_checks SET state = 'finished'".to_string(),
-        "UPDATE scope_github_setup_checks SET state = 'failed', finished_at_unix = 20".to_string(),
-        "UPDATE scope_github_setup_checks SET last_error = 'refused'".to_string(),
         "UPDATE scope_github_workflow_runs SET status = 'in_progress'".to_string(),
         "UPDATE scope_github_workflow_runs SET conclusion = NULL".to_string(),
         "UPDATE scope_github_workflow_runs SET status = 'unknown'".to_string(),
@@ -76,7 +75,6 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
         .unwrap();
     for (table, kept) in [
         ("scope_github_pushes", 2),
-        ("scope_github_setup_checks", 0),
         ("scope_github_workflow_runs", 0),
         ("scope_github_check_runs", 0),
     ] {

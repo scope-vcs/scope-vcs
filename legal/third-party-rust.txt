@@ -180,6 +180,16 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 0f1d575cfca3c627f4678f5730c3904c164f5ef8ef551697b5aa12beba8a0f77
 
 ==============================================================================
+arraydeque 0.5.1
+Declared license: MIT/Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/arraydeque/arraydeque-0.5.1.crate
+
+Published author metadata: ["andylokandy"]
+Repository: "https://github.com/andylokandy/arraydeque"
+LICENSE: text ef85cca721cb65d188c1ff6c13d2fefd0a8036cc25f506a74ad17cd88140df0f
+
+==============================================================================
 arrayvec 0.7.8
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -1844,6 +1854,16 @@ hashlink 0.11.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
 Source: https://static.crates.io/crates/hashlink/hashlink-0.11.1.crate
+
+Repository: "https://github.com/djc/hashlink"
+LICENSE-APACHE: text 7e1b38c60796dd9949d6f26bd124e353a4a709b70e90810e2608f30195454da0
+LICENSE-MIT: text e915669a595b11a200873df8286561881b0e04932f6412a585db6297ba0bc97c
+
+==============================================================================
+hashlink 0.12.2
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/hashlink/hashlink-0.12.2.crate
 
 Repository: "https://github.com/djc/hashlink"
 LICENSE-APACHE: text 7e1b38c60796dd9949d6f26bd124e353a4a709b70e90810e2608f30195454da0
@@ -5862,6 +5882,18 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text c1ecaa7721a2ce5c512d14da71c6526581ca6ff7e3d54aeeb54f874b2db3c5c2
 
 ==============================================================================
+yaml-rust2 0.13.0
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/yaml-rust2/yaml-rust2-0.13.0.crate
+
+Published author metadata: ["Yuheng Chen <yuhengchen@sensetime.com>", "Ethiraric <ethiraric@gmail.com>", "David Aguilar <davvid@gmail.com>"]
+Repository: "https://github.com/Ethiraric/yaml-rust2"
+MIT branch selected. The checksum-verified published archive ships its license texts as MIT-LICENSE and Apache-LICENSE; preserve the archive's MIT text with its copyright notices.
+
+MIT-LICENSE (license section): text a9abbb16e8a807dd6c9b18d088403f94f00633d07f7db8c06e73778ede030f9a
+
+==============================================================================
 yansi 1.0.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -9452,6 +9484,14 @@ Copyright (c) 2015 Markus Westerlind
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text a9abbb16e8a807dd6c9b18d088403f94f00633d07f7db8c06e73778ede030f9a ---
+The MIT License (MIT)
+
+Copyright (c) 2015 Chen Yuheng
+Copyright (c) 2023 Ethiraric
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text aa62629b3907025b9c8da658a3a572aad4bf888fb2e617d1db5f858796016d8e ---
 The MIT License (MIT)
 Copyright (c) 2017 Sergio Benitez
@@ -11429,6 +11469,13 @@ objc2-web-kit = { path = "framework-crates/objc2-web-kit" }
 objc2-xc-test = { path = "framework-crates/objc2-xc-test" }
 objc2-xc-ui-automation = { path = "framework-crates/objc2-xc-ui-automation" }
 objc2-itunes-library = { path = "framework-crates/objc2-itunes-library" }
+
+--- text ef85cca721cb65d188c1ff6c13d2fefd0a8036cc25f506a74ad17cd88140df0f ---
+The MIT License (MIT)
+
+Copyright (c) 2018 Andy Lok <andylokandy@hotmail.com>
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text efbbbcefb4b8588630bec285cd7372a4dc3eb208a6c457d4313f62cb10f87aa3 ---
 SPDX-License-Identifier: ISC AND (Apache-2.0 OR ISC)

@@ -4,10 +4,14 @@ use crate::{error::ApiError, persistence::unix_now};
 use jsonwebtoken::{Algorithm, Header};
 use reqwest::{Method, RequestBuilder, StatusCode};
 use scope_domain::{
+    github_connection_test::{
+        GitHubInstallationFacts, GitHubInstallationState, GitHubPermissionLevel,
+    },
     github_workflow_runs::GitHubWorkflowRun,
     requests::{GitHubCheckConclusion, GitHubCheckRun, GitHubCheckStatus},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::collections::BTreeMap;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
@@ -87,13 +91,8 @@ struct InstallationSummary {
 #[derive(Deserialize)]
 struct InstallationDetail {
     suspended_at: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum InstallationStatus {
-    Active,
-    Suspended,
-    Uninstalled,
+    #[serde(default)]
+    permissions: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -353,30 +352,43 @@ impl GitHubApp {
             .unwrap_or_default())
     }
 
-    pub(crate) async fn installation_status(
+    pub(crate) async fn installation(
         &self,
         installation_id: u64,
-    ) -> Result<InstallationStatus, ApiError> {
+    ) -> Result<GitHubInstallationFacts, ApiError> {
         let request = self
             .request(
                 Method::GET,
                 &format!("/app/installations/{installation_id}"),
             )
             .bearer_auth(self.app_jwt(unix_now()?)?);
-        let status =
+        let installation =
             match send::<InstallationDetail>(request, "/app/installations/{installation_id}")
                 .await?
             {
-                None => InstallationStatus::Uninstalled,
-                Some(InstallationDetail {
-                    suspended_at: Some(_),
-                }) => InstallationStatus::Suspended,
-                Some(_) => InstallationStatus::Active,
+                None => GitHubInstallationFacts {
+                    state: GitHubInstallationState::Uninstalled,
+                    permissions: Vec::new(),
+                },
+                Some(detail) => GitHubInstallationFacts {
+                    state: if detail.suspended_at.is_some() {
+                        GitHubInstallationState::Suspended
+                    } else {
+                        GitHubInstallationState::Active
+                    },
+                    permissions: detail
+                        .permissions
+                        .into_iter()
+                        .filter_map(|(name, level)| {
+                            GitHubPermissionLevel::parse(&level).map(|level| (name, level))
+                        })
+                        .collect(),
+                },
             };
-        if status != InstallationStatus::Active {
+        if installation.state != GitHubInstallationState::Active {
             self.installation_tokens().remove(&installation_id);
         }
-        Ok(status)
+        Ok(installation)
     }
 
     pub(crate) async fn commit_check_runs(
@@ -414,33 +426,6 @@ impl GitHubApp {
             )
             .await?
             .and_then(WorkflowRun::into_domain))
-    }
-
-    pub(crate) async fn branch_workflow_runs(
-        &self,
-        installation_id: u64,
-        full_name: &str,
-        branch: &str,
-        commit_oid: &str,
-    ) -> Result<Option<Vec<GitHubWorkflowRun>>, ApiError> {
-        let query = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("branch", branch)
-            .append_pair("head_sha", commit_oid)
-            .finish();
-        let path = format!("/repos/{full_name}/actions/runs?{query}");
-        Ok(self
-            .installation_pages::<WorkflowRunsPage, _>(
-                installation_id,
-                &path,
-                "/repos/{owner}/{repo}/actions/runs",
-                |page| page.workflow_runs,
-            )
-            .await?
-            .map(|runs| {
-                runs.into_iter()
-                    .filter_map(WorkflowRun::into_domain)
-                    .collect()
-            }))
     }
 
     pub(crate) async fn recent_workflow_runs(

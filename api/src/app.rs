@@ -115,8 +115,12 @@ pub fn router(state: AppState) -> Router {
             post(http::github::confirm_public_github_repository),
         )
         .route(
-            routes::REPO_GITHUB_SETUP_CHECK,
-            post(http::github::start_github_setup_check),
+            routes::REPO_GITHUB_CONNECTION_TEST,
+            post(http::github_checks::test_github_connection),
+        )
+        .route(
+            routes::REPO_GITHUB_CHECKS,
+            get(http::github_checks::get_github_checks),
         )
         .route(
             routes::REPO_GITHUB_MAIN_PUBLICATION,

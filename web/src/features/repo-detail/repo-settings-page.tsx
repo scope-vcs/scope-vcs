@@ -14,7 +14,9 @@ import type {
 } from '@/api/types'
 import type {
   DeleteRepoResponse,
+  GitHubChecksResponse,
   GitHubConnectionResponse,
+  GitHubConnectionTestResponse,
   GitHubAuthorizeResponse,
   RepositoryCollaborationResponse,
   RepositoryInviteLinkResponse,
@@ -26,7 +28,7 @@ import { PageErrorAlert } from '@/components/page-error-alert'
 import { SectionRow, SectionRows } from '@/components/section-rows'
 import { TypedConfirmationDialog } from '@/components/typed-confirmation-dialog'
 import { storeHomeFlash } from '@/lib/home-flash'
-import { resourceErrorMessage } from '@/lib/use-cached-resource'
+import { resourceErrorMessage, type CachedResource } from '@/lib/use-cached-resource'
 import { ShieldCheck } from 'lucide-react'
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useReducer, useState, type ReactNode } from 'react'
@@ -58,6 +60,7 @@ export function RepoSettingsPage({
   confirmPublicGitHub,
   disconnectGitHub,
   github,
+  githubChecks,
   params,
   setGitHubMainPublication,
   setGitHubRequiredChecks,
@@ -67,7 +70,7 @@ export function RepoSettingsPage({
   setGitHubRunImportCount,
   startGitHubAuthorization,
   startGitHubRunImport,
-  startGitHubSetupCheck,
+  testGitHubConnection,
   updateMember,
   updateMetadata,
   visibilityLog,
@@ -86,6 +89,7 @@ export function RepoSettingsPage({
   confirmPublicGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
   disconnectGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
+  githubChecks: CachedResource<GitHubChecksResponse>
   params: RepoParams
   setGitHubMainPublication: (
     input: SetRepoGitHubMainPublicationInput,
@@ -107,7 +111,7 @@ export function RepoSettingsPage({
   ) => Promise<GitHubConnectionResponse>
   startGitHubAuthorization: (params: RepoParams) => Promise<GitHubAuthorizeResponse>
   startGitHubRunImport: (params: RepoParams) => Promise<GitHubConnectionResponse>
-  startGitHubSetupCheck: (params: RepoParams) => Promise<GitHubConnectionResponse>
+  testGitHubConnection: (params: RepoParams) => Promise<GitHubConnectionTestResponse>
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
   visibilityLog?: ReactNode
@@ -204,6 +208,7 @@ export function RepoSettingsPage({
 
       {readsFullView && (
         <RepoCiSection
+          checks={githubChecks}
           confirmPublic={() => confirmPublicGitHub(params)}
           disconnect={() => disconnectGitHub(params)}
           github={github}
@@ -215,7 +220,7 @@ export function RepoSettingsPage({
           setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}
           startAuthorization={() => startGitHubAuthorization(params)}
           startRunImport={() => startGitHubRunImport(params)}
-          startSetupCheck={() => startGitHubSetupCheck(params)}
+          testConnection={() => testGitHubConnection(params)}
         />
       )}
 

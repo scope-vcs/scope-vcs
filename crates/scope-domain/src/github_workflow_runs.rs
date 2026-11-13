@@ -31,7 +31,7 @@ impl GitHubWorkflowRun {
     pub fn request_id(&self) -> Option<String> {
         match self.scope_branch()? {
             GitHubBranch::Request(request_id) => Some(request_id),
-            GitHubBranch::SetupCheck | GitHubBranch::Main => None,
+            GitHubBranch::Main => None,
         }
     }
 
@@ -79,12 +79,7 @@ mod tests {
             run(Some("scope/requests/req_1")).request_id().as_deref(),
             Some("req_1")
         );
-        assert_eq!(
-            run(Some("scope/setup-check")).scope_branch(),
-            Some(GitHubBranch::SetupCheck)
-        );
         for branch in [
-            Some("scope/setup-check"),
             Some("main"),
             Some("scope/requests/"),
             Some("scope/requests/a/b"),
