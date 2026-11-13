@@ -267,7 +267,7 @@ test('a maintainer closes a contributed request in the browser', async () => {
   const maintainerCli = cli.maintainer
 
   await openRequest(maintainer.page, id)
-  await maintainer.page.getByRole('button', { name: 'More request actions' }).click()
+  await clickAfterHydration(maintainer.page.getByRole('button', { name: 'More request actions' }))
   await maintainer.page.getByRole('button', { name: 'Close request' }).click()
   await maintainer.page.getByRole('alertdialog').getByRole('button', { name: 'Close request' }).click()
   await waitForLifecycleBadge(maintainer.page, 'Closed')
