@@ -155,7 +155,7 @@ pub fn projection_preview(
 
     Ok(ProjectionPreviewView {
         repo_id: source.repo_id.to_string(),
-        view: projection.view_key.clone(),
+        view: projection.view_key,
         files,
         commits,
         summary: ProjectionPreviewSummary {

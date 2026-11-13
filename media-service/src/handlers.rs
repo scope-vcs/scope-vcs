@@ -19,7 +19,9 @@ use axum::{
 use scope_api_contract::{RequestAttachmentMediaTarget, RequestAttachmentPartReceiptResponse};
 use scope_domain::requests::attachments::RequestMediaObject;
 use scope_media_storage::{MAX_CHUNK_BYTES, MEDIA_PUT_TIMEOUT, WriteAttempt};
-use scope_postgres::db::{RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult};
+use scope_postgres::db::{
+    AttachmentUploadSession, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+};
 use scope_service_runtime::{http::ServiceError, random_hex, unix_now};
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
@@ -98,9 +100,11 @@ pub(crate) async fn put_upload_part(
         .metadata
         .media()
         .reserve_upload_part(
-            &claims.attachment_id,
-            &claims.upload_id,
-            &claims.uploader_user_id,
+            AttachmentUploadSession {
+                attachment_id: &claims.attachment_id,
+                upload_id: &claims.upload_id,
+                uploader_user_id: &claims.uploader_user_id,
+            },
             planned,
             &write_token,
             write_started_at_unix,
@@ -141,9 +145,11 @@ pub(crate) async fn put_upload_part(
         .metadata
         .media()
         .mark_upload_part_stored(
-            &claims.attachment_id,
-            &claims.upload_id,
-            &claims.uploader_user_id,
+            AttachmentUploadSession {
+                attachment_id: &claims.attachment_id,
+                upload_id: &claims.upload_id,
+                uploader_user_id: &claims.uploader_user_id,
+            },
             part_number,
             &reserved.object_key,
             &write_token,
@@ -293,10 +299,9 @@ async fn serve_media(
         permit,
         original_filename.as_deref(),
     )
-    .await
 }
 
-async fn media_response(
+fn media_response(
     storage: &scope_media_storage::MediaStorage,
     object: &RequestMediaObject,
     requested: RequestedRange,
@@ -304,28 +309,37 @@ async fn media_response(
     permit: Option<OwnedSemaphorePermit>,
     download_filename: Option<&str>,
 ) -> Result<Response, ServiceError> {
-    let (status, start, end) = match requested {
-        RequestedRange::Full if object.plaintext_bytes == 0 => (StatusCode::OK, 0, None),
-        RequestedRange::Full => (StatusCode::OK, 0, Some(object.plaintext_bytes - 1)),
+    let (status, range, content_range) = match requested {
+        RequestedRange::Full if object.plaintext_bytes == 0 => (StatusCode::OK, None, None),
+        RequestedRange::Full => (StatusCode::OK, Some(0..=object.plaintext_bytes - 1), None),
         RequestedRange::Partial(range) => (
             StatusCode::PARTIAL_CONTENT,
-            *range.start(),
-            Some(*range.end()),
+            Some(range.clone()),
+            Some(format!(
+                "bytes {}-{}/{}",
+                range.start(),
+                range.end(),
+                object.plaintext_bytes
+            )),
         ),
     };
-    let length = end.map_or(0, |end| end - start + 1);
-    let body = if method == Method::HEAD || length == 0 {
-        Body::empty()
-    } else {
-        let stream = storage
-            .read_range(object, start..=end.expect("nonempty media range"))
-            .await
-            .map_err(media_storage_error)?;
-        let permit = permit.expect("GET read permit");
-        Body::from_stream(stream.map(move |bytes| {
-            let _held = &permit;
-            bytes
-        }))
+    let length = range
+        .as_ref()
+        .map_or(0, |range| range.end() - range.start() + 1);
+    let body = match range {
+        Some(range) if method != Method::HEAD => {
+            let stream = storage
+                .read_range(object, range)
+                .map_err(media_storage_error)?;
+            #[expect(clippy::expect_used)]
+            let permit =
+                permit.expect("GET reads of nonempty media are admitted with a read permit");
+            Body::from_stream(stream.map(move |bytes| {
+                let _held = &permit;
+                bytes
+            }))
+        }
+        Some(_) | None => Body::empty(),
     };
     let mut response = Response::new(body);
     *response.status_mut() = status;
@@ -347,15 +361,11 @@ async fn media_response(
         HeaderValue::from_str(&format!("\"{}\"", object.sha256))
             .map_err(|_| ServiceError::internal("invalid media etag"))?,
     );
-    if status == StatusCode::PARTIAL_CONTENT {
+    if let Some(content_range) = content_range {
         response_headers.insert(
             CONTENT_RANGE,
-            HeaderValue::from_str(&format!(
-                "bytes {start}-{}/{}",
-                end.expect("partial range end"),
-                object.plaintext_bytes
-            ))
-            .map_err(|_| ServiceError::internal("invalid media content range"))?,
+            HeaderValue::from_str(&content_range)
+                .map_err(|_| ServiceError::internal("invalid media content range"))?,
         );
     }
     if let Some(filename) = download_filename {
@@ -455,7 +465,6 @@ mod tests {
             Some(permit),
             Some("recording.mov"),
         )
-        .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[ACCEPT_RANGES], "bytes");
@@ -482,7 +491,6 @@ mod tests {
             Some(permit),
             None,
         )
-        .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.headers()[CONTENT_RANGE], "bytes 3-6/10");
@@ -501,7 +509,6 @@ mod tests {
             None,
             None,
         )
-        .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.headers()[CONTENT_RANGE], "bytes 3-6/10");

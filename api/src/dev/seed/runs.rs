@@ -19,7 +19,7 @@ use scope_domain::{
             observation::{CacheFinalState, CachePreparation},
         },
         log::RunLogChunk,
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
         step::{AttemptConclusion, StepConclusion},
         workflow::{

@@ -116,10 +116,11 @@ test('cancelled work is not reported as a frontend error', (t) => {
   }))
   const controller = new AbortController()
   controller.abort()
+  const abortReason: unknown = controller.signal.reason
   const rejection = new Event('unhandledrejection')
-  Object.assign(rejection, { reason: controller.signal.reason })
+  Object.assign(rejection, { reason: abortReason })
   browser.dispatchEvent(rejection)
-  reportFrontendError(controller.signal.reason, 'route')
+  reportFrontendError(abortReason, 'route')
   reportFrontendError(Object.assign(new Error('stopped'), { name: 'AbortError' }), 'promise')
 
   assert.deepEqual(captures, [])

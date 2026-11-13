@@ -9,7 +9,7 @@ export function MarkdownLink({
   onClick,
   target,
   ...props
-}: ComponentProps<'a'>) {
+}: Omit<ComponentProps<'a'>, 'download'> & { download?: boolean | string }) {
   const router = useRouter()
 
   if (!href) return <span className={props.className}>{children}</span>

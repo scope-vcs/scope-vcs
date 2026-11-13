@@ -12,9 +12,8 @@ pub(super) fn database_url() -> anyhow::Result<String> {
     SERVER
         .get_or_init(|| {
             let server = ProcessServer::start()?;
-            let registered = unsafe { libc::atexit(stop_server_at_exit) };
-            if registered != 0 {
-                bail!("registering PostgreSQL test server shutdown failed with {registered}");
+            if let Err(code) = super::process_os::register_exit_hook(stop_server_at_exit) {
+                bail!("registering PostgreSQL test server shutdown failed with {code}");
             }
             Ok(server)
         })

@@ -4,6 +4,7 @@ import {
   use,
   useLayoutEffect,
   useRef,
+  useState,
 } from 'react'
 
 type StoredPreview = {
@@ -20,16 +21,16 @@ export function RepositoryHtmlPreviewProvider({
 }: {
   children: ReactNode
 }) {
-  const storeRef = useRef<PreviewStore | null>(null)
-  storeRef.current ??= createPreviewStore()
+  const [store] = useState(createPreviewStore)
+  const { setParkingHost } = store
 
   return (
-    <RepositoryHtmlPreviewContext.Provider value={storeRef.current}>
+    <RepositoryHtmlPreviewContext.Provider value={store}>
       {children}
       <div
         aria-hidden="true"
         className="pointer-events-none invisible fixed top-0 left-[-200vw]"
-        ref={storeRef.current.setParkingHost}
+        ref={setParkingHost}
       />
     </RepositoryHtmlPreviewContext.Provider>
   )
@@ -49,7 +50,7 @@ export function PersistentRepositoryHtmlPreview({
   const store = useRepositoryHtmlPreviewStore()
   const hostRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
-  const renderFrame = useRef(!store.has(identity)).current
+  const [renderFrame] = useState(() => !store.has(identity))
 
   useLayoutEffect(() => {
     const host = hostRef.current
@@ -84,17 +85,15 @@ function createPreviewStore() {
   let preview: StoredPreview | null = null
 
   return {
-    has(identity: string) {
-      return preview?.identity === identity
-    },
-    setParkingHost(host: HTMLDivElement | null) {
+    has: (identity: string) => preview?.identity === identity,
+    setParkingHost: (host: HTMLDivElement | null) => {
       parkingHost = host
     },
-    show(
+    show: (
       identity: string,
       host: HTMLDivElement,
       renderedFrame: HTMLIFrameElement | null,
-    ) {
+    ) => {
       if (preview?.identity !== identity) {
         preview?.frame.remove()
         if (!renderedFrame) {

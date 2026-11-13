@@ -24,10 +24,10 @@ pub(crate) use live_files::{
     LiveFileRow, file_rules, load_live_file_rules, load_live_files_at, policy_without_file_rules,
     save_live_files,
 };
-pub use live_files::{LiveFiles, insert_repository_live_files};
+pub(super) use live_files::{LiveFiles, insert_repository_live_files};
 use live_files::{load_repositories_live_files, replace_live_files};
 
-pub struct RepositoryHistory {
+pub(super) struct RepositoryHistory {
     pub graph: SourceGraph,
     pub visibility_change_sets: Vec<VisibilityChangeSet>,
     pub live_files: LiveFiles,
@@ -45,7 +45,7 @@ impl RepositoryProjectionSource {
     }
 }
 
-pub async fn insert_repository_history<C>(
+pub(super) async fn insert_repository_history<C>(
     conn: &C,
     graph: &SourceGraph,
     visibility_change_sets: &[VisibilityChangeSet],
@@ -57,7 +57,7 @@ where
     insert_visibility_change_sets(conn, &graph.repo_id, 0, visibility_change_sets).await
 }
 
-pub struct RepositoryHistoryDelta<'a> {
+pub(super) struct RepositoryHistoryDelta<'a> {
     pub before_graph: &'a SourceGraph,
     pub after_graph: &'a SourceGraph,
     pub before_visibility_change_sets: &'a [VisibilityChangeSet],
@@ -69,7 +69,7 @@ pub struct RepositoryHistoryDelta<'a> {
     pub history_rewritten: bool,
 }
 
-pub async fn save_repository_history_delta<C>(
+pub(super) async fn save_repository_history_delta<C>(
     conn: &C,
     delta: RepositoryHistoryDelta<'_>,
 ) -> Result<(), PostgresError>
@@ -243,7 +243,7 @@ pub(super) fn visibility_change_set_from_row(
     })
 }
 
-pub async fn load_repository_histories<C>(
+pub(super) async fn load_repository_histories<C>(
     conn: &C,
     repo_ids: &[String],
 ) -> Result<BTreeMap<String, RepositoryHistory>, PostgresError>

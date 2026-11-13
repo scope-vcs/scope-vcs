@@ -57,12 +57,22 @@ struct CachedDiscovery {
     refresh: Option<AbortHandle>,
 }
 
+impl DiscoveryState {
+    #[expect(clippy::expect_used)]
+    fn cached(&self) -> std::sync::MutexGuard<'_, CachedDiscovery> {
+        self.cached
+            .lock()
+            .expect("discovery cache holders do not panic, so the lock is never poisoned")
+    }
+}
+
 impl Drop for DiscoveryState {
+    #[expect(clippy::expect_used)]
     fn drop(&mut self) {
         if let Some(task) = self
             .cached
             .get_mut()
-            .expect("discovery lock")
+            .expect("discovery cache holders do not panic, so the lock is never poisoned")
             .refresh
             .take()
         {
@@ -107,7 +117,7 @@ impl BackendDiscovery {
             tokio::pin!(refreshed);
             refreshed.as_mut().enable();
             {
-                let mut cached = self.state.cached.lock().expect("discovery lock");
+                let mut cached = self.state.cached();
                 let now = Instant::now();
                 let due = cached.last_attempt_at.is_none_or(|attempt| {
                     now.saturating_duration_since(attempt) >= self.refresh_after
@@ -162,7 +172,7 @@ impl BackendDiscovery {
             };
             let Some(state) = state.upgrade() else { return; };
             {
-                let mut cached = state.cached.lock().expect("discovery lock");
+                let mut cached = state.cached();
                 cached.refresh = None;
                 cached.last_attempt_at = Some(Instant::now());
                 match result {
@@ -288,7 +298,7 @@ mod tests {
         )
     }
 
-    async fn age_snapshot(discovery: &BackendDiscovery, age: Duration) {
+    fn age_snapshot(discovery: &BackendDiscovery, age: Duration) {
         let mut cached = discovery.state.cached.lock().unwrap();
         let current = cached.snapshot.as_mut().expect("discovery snapshot");
         current.resolved_at = Instant::now() - age;
@@ -330,13 +340,13 @@ mod tests {
             DiscoveryFreshness::Fresh
         );
 
-        age_snapshot(&discovery, Duration::from_secs(11)).await;
+        age_snapshot(&discovery, Duration::from_secs(11));
         let stale = discovery.backends().await.unwrap();
         assert_eq!(stale.freshness, DiscoveryFreshness::Stale);
         assert_eq!(stale.backends[0].address, address);
 
         wait_for_refresh(&discovery).await;
-        age_snapshot(&discovery, Duration::from_secs(31)).await;
+        age_snapshot(&discovery, Duration::from_secs(31));
         let error = discovery.backends().await.unwrap_err().to_string();
         assert!(error.contains("expired"));
         assert!(error.contains("still down"));
@@ -353,7 +363,7 @@ mod tests {
         let second = "127.0.0.2:8080".parse().unwrap();
         let discovery = scripted(vec![Ok(vec![first]), Ok(vec![second])]);
         discovery.backends().await.unwrap();
-        age_snapshot(&discovery, Duration::from_secs(31)).await;
+        age_snapshot(&discovery, Duration::from_secs(31));
 
         let refreshed = discovery.backends().await.unwrap();
 
@@ -375,7 +385,7 @@ mod tests {
             discovery.backends().await.unwrap().backends[0].address,
             first
         );
-        age_snapshot(&discovery, Duration::from_secs(11)).await;
+        age_snapshot(&discovery, Duration::from_secs(11));
         assert_eq!(
             discovery.backends().await.unwrap().backends[0].address,
             first
@@ -408,7 +418,7 @@ mod tests {
             resolver,
         );
         discovery.backends().await.unwrap();
-        age_snapshot(&discovery, Duration::from_secs(11)).await;
+        age_snapshot(&discovery, Duration::from_secs(11));
         assert_eq!(
             discovery.backends().await.unwrap().freshness,
             DiscoveryFreshness::Stale
@@ -457,7 +467,7 @@ mod tests {
             resolver,
         );
         discovery.backends().await.unwrap();
-        age_snapshot(&discovery, Duration::from_secs(11)).await;
+        age_snapshot(&discovery, Duration::from_secs(11));
         let mut readers = tokio::task::JoinSet::new();
         for _ in 0..20 {
             let discovery = discovery.clone();

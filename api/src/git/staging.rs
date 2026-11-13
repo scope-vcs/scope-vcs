@@ -69,7 +69,7 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
     crate::git::blocking::run(move || {
         let repo_root = staging_repo_from_seed(&state, &incarnation, &seed, known_head)?;
         if let Err(error) = install_ready_pre_receive_hook(&repo_root) {
-            let _ = fs::remove_dir_all(&repo_root);
+            crate::git::storage::discard_dir(&repo_root);
             return Err(error);
         }
         Ok(ReceivePackStagingRepo {
@@ -155,7 +155,7 @@ fn staging_repo_from_seed(
             main_head: main_head.as_deref(),
         }),
     ) {
-        let _ = fs::remove_dir_all(&repo_root);
+        crate::git::storage::discard_dir(&repo_root);
         return Err(error);
     }
     Ok(repo_root)

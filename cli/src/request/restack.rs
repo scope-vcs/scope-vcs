@@ -284,7 +284,11 @@ pub(super) fn recovery(
     step: &str,
     message: &str,
 ) -> anyhow::Error {
-    crate::error::CliError::partial(message, serde_json::json!({
+    crate::error::CliError::partial(message, recovery_receipt(repo, pending, step)).into()
+}
+
+fn recovery_receipt(repo: &GitRepo, pending: &PendingRestack, step: &str) -> serde_json::Value {
+    serde_json::json!({
         "request_id": pending.request_id,
         "branch": pending.branch,
         "failed_step": step,
@@ -297,7 +301,7 @@ pub(super) fn recovery(
         "abort_command": ["scope", "request", "restack", "--abort"],
         "discard_selection_command": ["scope", "request", "restack", "--discard-selection"],
         "publish_command": ["scope", "request", "push", "--remote", pending.remote, "--request", pending.request_id],
-    })).into()
+    })
 }
 
 pub(super) fn publication_failure(
@@ -305,13 +309,6 @@ pub(super) fn publication_failure(
     pending: &PendingRestack,
     cause: anyhow::Error,
 ) -> anyhow::Error {
-    let recovery = crate::error::json_response(&recovery(
-        repo,
-        pending,
-        "publish_restack",
-        &cause.to_string(),
-    ))
-    .recovery
-    .expect("restack recovery receipt");
+    let recovery = recovery_receipt(repo, pending, "publish_restack");
     crate::error::CliError::with_recovery(crate::error::response(&cause), recovery).into()
 }

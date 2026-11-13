@@ -64,43 +64,50 @@ export async function runRepoEventStream({
 }) {
   let reconnectAttempt = 0
   let consecutiveTransportFailures = 0
-  let delivered = false
+  let deliveredEvents = 0
   const deliver = (event: RepoChangeEvent) => {
-    delivered = true
+    deliveredEvents += 1
     reconnectAttempt = 0
     consecutiveTransportFailures = 0
     onEvent(event)
   }
 
-  while (!signal.aborted) {
-    delivered = false
-    let outcome: RepoStreamEnd
-    try {
-      outcome = await connect(deliver, signal)
-    } catch {
-      outcome = { type: 'transport' }
-    }
-    if (signal.aborted) return
-    if (delivered && outcome.type === 'stream-error' && outcome.error.code === 'unauthorized') continue
-
-    onInterrupted()
-    if (outcome.type === 'stream-error' && !outcome.error.retryable && outcome.error.code !== 'unauthorized') return
-
-    if (outcome.type === 'protocol-error') {
-      consecutiveTransportFailures = 0
-      onDiagnostic(outcome)
-    } else if (outcome.type === 'transport') {
-      consecutiveTransportFailures += 1
-      if (consecutiveTransportFailures === 3) {
-        onDiagnostic({ type: 'transport', consecutiveFailures: 3 })
+  try {
+    for (;;) {
+      signal.throwIfAborted()
+      const deliveredBefore = deliveredEvents
+      let outcome: RepoStreamEnd
+      try {
+        outcome = await connect(deliver, signal)
+      } catch {
+        outcome = { type: 'transport' }
       }
-    } else {
-      consecutiveTransportFailures = 0
-    }
+      signal.throwIfAborted()
+      const delivered = deliveredEvents > deliveredBefore
+      if (delivered && outcome.type === 'stream-error' && outcome.error.code === 'unauthorized') continue
 
-    const milliseconds = reconnectDelay(reconnectAttempt, random())
-    reconnectAttempt += 1
-    await wait(milliseconds, signal)
+      onInterrupted()
+      if (outcome.type === 'stream-error' && !outcome.error.retryable && outcome.error.code !== 'unauthorized') return
+
+      if (outcome.type === 'protocol-error') {
+        consecutiveTransportFailures = 0
+        onDiagnostic(outcome)
+      } else if (outcome.type === 'transport') {
+        consecutiveTransportFailures += 1
+        if (consecutiveTransportFailures === 3) {
+          onDiagnostic({ type: 'transport', consecutiveFailures: 3 })
+        }
+      } else {
+        consecutiveTransportFailures = 0
+      }
+
+      const milliseconds = reconnectDelay(reconnectAttempt, random())
+      reconnectAttempt += 1
+      await wait(milliseconds, signal)
+    }
+  } catch (error) {
+    if (signal.aborted) return
+    throw error
   }
 }
 
@@ -143,23 +150,8 @@ export async function streamRepoEvents(
   }
 
   const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
   try {
-    while (!signal.aborted) {
-      const chunk = await reader.read()
-      if (chunk.done) return { type: 'transport' }
-      buffer += decoder.decode(chunk.value, { stream: true })
-      buffer = normalizeSseLineEndings(buffer)
-      const taken = takeSseMessages(buffer)
-      buffer = taken.rest
-      for (const message of taken.messages) {
-        const outcome = parseRepoStreamMessage(message)
-        if (outcome.type === 'event') onEvent(outcome.event)
-        else if (outcome.type !== 'ignored') return outcome
-      }
-    }
-    return { type: 'transport' }
+    return await readRepoStream(reader, onEvent, signal)
   } catch {
     return { type: 'transport' }
   } finally {
@@ -168,6 +160,29 @@ export async function streamRepoEvents(
     } catch {}
     reader.releaseLock()
   }
+}
+
+async function readRepoStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  onEvent: (event: RepoChangeEvent) => void,
+  signal: AbortSignal,
+): Promise<RepoStreamEnd> {
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (!signal.aborted) {
+    const chunk = await reader.read()
+    if (chunk.done) return { type: 'transport' }
+    buffer += decoder.decode(chunk.value, { stream: true })
+    buffer = normalizeSseLineEndings(buffer)
+    const taken = takeSseMessages(buffer)
+    buffer = taken.rest
+    for (const message of taken.messages) {
+      const outcome = parseRepoStreamMessage(message)
+      if (outcome.type === 'event') onEvent(outcome.event)
+      else if (outcome.type !== 'ignored') return outcome
+    }
+  }
+  return { type: 'transport' }
 }
 
 export function parseRepoStreamMessage(message: string): RepoStreamParseOutcome {
@@ -241,14 +256,14 @@ export function takeSseMessages(buffer: string) {
   return { messages, rest }
 }
 
-function isEventStream(contentType: string | null) {
-  return contentType?.split(';', 1)[0]?.trim().toLowerCase() === 'text/event-stream'
-}
-
 async function cancelBody(body: ReadableStream<Uint8Array>) {
   try {
     await body.cancel()
   } catch {}
+}
+
+function isEventStream(contentType: string | null) {
+  return contentType?.split(';', 1)[0]?.trim().toLowerCase() === 'text/event-stream'
 }
 
 export function normalizeSseLineEndings(buffer: string) {

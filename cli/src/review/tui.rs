@@ -18,13 +18,13 @@ use std::{io, time::Duration};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TuiOutcome {
+pub(super) enum TuiOutcome {
     Exit,
     Cancel,
     ContinuePush,
 }
 
-pub fn run_review_tui(
+pub(super) fn run_review_tui(
     mut state: ReviewState,
     mut analysis_job: Option<AnalysisJob>,
     mut save_config: impl FnMut(&RepoConfig) -> anyhow::Result<()>,
@@ -517,7 +517,29 @@ fn key_to_input(state: &ReviewState, key: KeyEvent) -> Option<ReviewInput> {
             KeyCode::Esc | KeyCode::Enter => Some(ReviewInput::Escape),
             KeyCode::Backspace => Some(ReviewInput::Backspace),
             KeyCode::Char(value) => Some(ReviewInput::Char(value)),
-            _ => None,
+            KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::PageUp
+            | KeyCode::PageDown
+            | KeyCode::Tab
+            | KeyCode::BackTab
+            | KeyCode::Delete
+            | KeyCode::Insert
+            | KeyCode::F(_)
+            | KeyCode::Null
+            | KeyCode::CapsLock
+            | KeyCode::ScrollLock
+            | KeyCode::NumLock
+            | KeyCode::PrintScreen
+            | KeyCode::Pause
+            | KeyCode::Menu
+            | KeyCode::KeypadBegin
+            | KeyCode::Media(_)
+            | KeyCode::Modifier(_) => None,
         };
     }
 
@@ -534,7 +556,28 @@ fn key_to_input(state: &ReviewState, key: KeyEvent) -> Option<ReviewInput> {
         KeyCode::Char('?') => Some(ReviewInput::Help),
         KeyCode::Char('d') | KeyCode::Char('D') => Some(ReviewInput::Dependencies),
         KeyCode::Esc => Some(ReviewInput::Escape),
-        _ => None,
+        KeyCode::Backspace
+        | KeyCode::Enter
+        | KeyCode::Home
+        | KeyCode::End
+        | KeyCode::PageUp
+        | KeyCode::PageDown
+        | KeyCode::Tab
+        | KeyCode::BackTab
+        | KeyCode::Delete
+        | KeyCode::Insert
+        | KeyCode::F(_)
+        | KeyCode::Char(_)
+        | KeyCode::Null
+        | KeyCode::CapsLock
+        | KeyCode::ScrollLock
+        | KeyCode::NumLock
+        | KeyCode::PrintScreen
+        | KeyCode::Pause
+        | KeyCode::Menu
+        | KeyCode::KeypadBegin
+        | KeyCode::Media(_)
+        | KeyCode::Modifier(_) => None,
     }
 }
 
@@ -542,8 +585,8 @@ struct TerminalRestoreGuard;
 
 impl Drop for TerminalRestoreGuard {
     fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        disable_raw_mode().ok();
+        execute!(io::stdout(), LeaveAlternateScreen).ok();
     }
 }
 

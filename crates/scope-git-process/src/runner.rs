@@ -216,29 +216,22 @@ where
     let started_at = Instant::now();
     let mut status = None;
     let mut value = None;
-    loop {
-        if stdout_consumer
-            .as_ref()
-            .is_some_and(thread::JoinHandle::is_finished)
-        {
-            match stdout_consumer
-                .take()
-                .expect("finished stdout consumer must exist")
-                .join()
-            {
+    let (status, value) = loop {
+        if let Some(finished) = stdout_consumer.take_if(|consumer| consumer.is_finished()) {
+            match finished.join() {
                 Ok(Ok(consumed)) => value = Some(consumed),
                 Ok(Err(error)) => {
                     cancellation.cancel();
                     child.terminate_and_reap();
-                    let _ = join_writer(stdin_writer, action);
-                    let _ = join_reader(stderr_reader, action);
+                    join_writer(stdin_writer, action).ok();
+                    join_reader(stderr_reader, action).ok();
                     return Err(StreamingProcessError::Consumer(error));
                 }
                 Err(_) => {
                     cancellation.cancel();
                     child.terminate_and_reap();
-                    let _ = join_writer(stdin_writer, action);
-                    let _ = join_reader(stderr_reader, action);
+                    join_writer(stdin_writer, action).ok();
+                    join_reader(stderr_reader, action).ok();
                     return Err(ProcessError::ThreadPanicked {
                         action: action.to_string(),
                     }
@@ -252,11 +245,11 @@ where
                 Err(source) => {
                     cancellation.cancel();
                     child.terminate_and_reap();
-                    let _ = join_writer(stdin_writer, action);
+                    join_writer(stdin_writer, action).ok();
                     if let Some(stdout_consumer) = stdout_consumer {
-                        let _ = stdout_consumer.join();
+                        stdout_consumer.join().ok();
                     }
-                    let _ = join_reader(stderr_reader, action);
+                    join_reader(stderr_reader, action).ok();
                     return Err(ProcessError::Io {
                         action: action.to_string(),
                         source,
@@ -268,15 +261,19 @@ where
         let stdin_done = stdin_writer
             .as_ref()
             .is_none_or(thread::JoinHandle::is_finished);
-        if value.is_some() && stderr_reader.is_finished() && stdin_done && status.is_some() {
-            break;
+        if stderr_reader.is_finished()
+            && stdin_done
+            && let Some(exit_status) = status
+            && let Some(consumed) = value.take()
+        {
+            break (exit_status, consumed);
         }
         if started_at.elapsed() >= limits.timeout {
             cancellation.cancel();
             child.terminate_and_reap();
-            let _ = join_writer(stdin_writer, action);
+            join_writer(stdin_writer, action).ok();
             if let Some(stdout_consumer) = stdout_consumer {
-                let _ = stdout_consumer.join();
+                stdout_consumer.join().ok();
             }
             let stderr = join_reader(stderr_reader, action).unwrap_or_default();
             return Err(ProcessError::TimedOut {
@@ -288,14 +285,14 @@ where
         }
         let remaining = limits.timeout.saturating_sub(started_at.elapsed());
         thread::sleep(remaining.min(Duration::from_millis(1)));
-    }
+    };
 
     child.disarm();
     join_writer(stdin_writer, action)?;
     let stderr = join_reader(stderr_reader, action)?;
     Ok(StreamedOutput {
-        status: status.expect("completed child must have an exit status"),
-        value: value.expect("completed stdout consumer must return a value"),
+        status,
+        value,
         stderr,
     })
 }
@@ -395,23 +392,21 @@ fn wait_for_output(
     let status = loop {
         if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
             child.terminate_and_reap();
-            let _ = join_writer(stdin_writer, action);
-            let _ = join_reader(stdout_reader, action);
-            let _ = join_reader(stderr_reader, action);
+            join_writer(stdin_writer, action).ok();
+            join_reader(stdout_reader, action).ok();
+            join_reader(stderr_reader, action).ok();
             return Err(ProcessError::Cancelled {
                 action: action.to_string(),
             });
         }
-        if stdout_limit_receiver.try_recv().is_ok() {
+        if let Ok(max_stdout_bytes) = stdout_limit_receiver.try_recv() {
             child.terminate_and_reap();
-            let _ = join_writer(stdin_writer, action);
-            let _ = join_reader(stdout_reader, action);
+            join_writer(stdin_writer, action).ok();
+            join_reader(stdout_reader, action).ok();
             let stderr = join_reader(stderr_reader, action).unwrap_or_default();
             return Err(ProcessError::StdoutLimitExceeded {
                 action: action.to_string(),
-                max_stdout_bytes: limits
-                    .max_stdout_bytes
-                    .expect("stdout limit signal requires a configured limit"),
+                max_stdout_bytes,
                 diagnostic: diagnostic_suffix(&stderr, STDERR_DIAGNOSTIC_BYTES),
             });
         }
@@ -433,8 +428,8 @@ fn wait_for_output(
         }
         if started_at.elapsed() >= limits.timeout {
             child.terminate_and_reap();
-            let _ = join_writer(stdin_writer, action);
-            let _ = join_reader(stdout_reader, action);
+            join_writer(stdin_writer, action).ok();
+            join_reader(stdout_reader, action).ok();
             let stderr = join_reader(stderr_reader, action).unwrap_or_default();
             return Err(ProcessError::TimedOut {
                 action: action.to_string(),

@@ -19,7 +19,7 @@ test('temporary rejection is retried, while permanent rejection is dropped', asy
     fetcher: async (_url, init) => {
       attempts.push(statuses.shift()!)
       assert.equal(init?.credentials, 'omit')
-      assert.equal(init?.referrerPolicy, 'no-referrer')
+      assert.equal(init.referrerPolicy, 'no-referrer')
       return new Response(null, { status: attempts.at(-1) })
     },
   })
@@ -88,7 +88,7 @@ test('page hide offers active and queued events to sendBeacon with their origina
   delivery.enqueue(queued)
   delivery.flushOnPageHide()
   assert.equal(aborted, true)
-  assert.deepEqual(await Promise.all(sent.map(async payload => JSON.parse(await payload.text()))), [active, queued])
+  assert.deepEqual(await Promise.all(sent.map(parseBlob)), [active, queued])
   assert.equal(delivery.enqueue(event), false)
   delivery.resume()
   assert.equal(delivery.enqueue(event), true)
@@ -114,4 +114,8 @@ async function until(condition: () => boolean) {
     assert.ok(Date.now() < deadline, 'delivery did not reach expected state')
     await new Promise(resolve => setTimeout(resolve, 10))
   }
+}
+
+async function parseBlob(payload: Blob): Promise<unknown> {
+  return JSON.parse(await payload.text())
 }

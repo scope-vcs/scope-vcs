@@ -104,16 +104,17 @@ where
     )
     .all(conn)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|row| LoadedRepoStorageCleanup {
-            generation: row.generation.clone(),
-            cleanup: row.into_domain(),
+    rows.into_iter()
+        .map(|row| {
+            Ok(LoadedRepoStorageCleanup {
+                generation: row.generation.clone(),
+                cleanup: row.try_into_domain()?,
+            })
         })
-        .collect())
+        .collect()
 }
 
-pub async fn claim_pending_repo_storage_cleanup<C>(
+pub(crate) async fn claim_pending_repo_storage_cleanup<C>(
     conn: &C,
     cleanup_repo_id: &str,
     now_unix: u64,
@@ -140,7 +141,7 @@ where
         .checked_add(CLEANUP_CLAIM_SECONDS)
         .ok_or_else(|| PostgresError::internal_message("cleanup claim time exceeds i64 range"))?;
     let generation = generate_id(GeneratedIdKind::CleanupGeneration)?;
-    let cleanup = row.clone().into_domain();
+    let cleanup = row.clone().try_into_domain()?;
     let mut active = row.into_active_model();
     active.generation = Set(generation.clone());
     active.next_run_at_unix = Set(claim_until);

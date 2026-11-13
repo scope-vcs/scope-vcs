@@ -74,7 +74,7 @@ export function InvitationList({
         itemId={(invite) => invite.id}
         items={invites}
         onRemove={(invite) => deleteInvite(invite.id)}
-        row={(invite, actions) => (
+        renderRow={(invite, actions) => (
           <>
             <div className="min-w-0">
               <div className="break-all font-medium leading-5">

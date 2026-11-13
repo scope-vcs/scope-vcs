@@ -48,15 +48,15 @@ fn line_position(
     }
 }
 
-fn path() -> Option<ScopePath> {
-    Some(ScopePath::parse("/src/lib.rs").unwrap())
+fn path() -> ScopePath {
+    ScopePath::parse("/src/lib.rs").unwrap()
 }
 
-fn lines(side: RequestDiffSide, start: u32, end: u32) -> Option<RequestDiscussionLines> {
-    Some(RequestDiscussionLines {
+fn lines(side: RequestDiffSide, start: u32, end: u32) -> RequestDiscussionLines {
+    RequestDiscussionLines {
         side,
         range: RequestLineRange::new(start, end).unwrap(),
-    })
+    }
 }
 
 fn anchor(
@@ -100,8 +100,12 @@ fn line_comments_anchor_to_the_newest_revision_with_that_head_on_their_side() {
             &revisions()
         ),
         vec![
-            anchor("revision_3", path(), lines(RequestDiffSide::New, 8, 8)),
-            anchor("revision_3", path(), None),
+            anchor(
+                "revision_3",
+                Some(path()),
+                Some(lines(RequestDiffSide::New, 8, 8))
+            ),
+            anchor("revision_3", Some(path()), None),
             anchor("revision_3", None, None),
         ]
     );
@@ -110,7 +114,11 @@ fn line_comments_anchor_to_the_newest_revision_with_that_head_on_their_side() {
             &line_position(RequestDiffSide::Old, Some(2), Some(5)),
             &revisions()
         )[0],
-        anchor("revision_3", path(), lines(RequestDiffSide::Old, 2, 5))
+        anchor(
+            "revision_3",
+            Some(path()),
+            Some(lines(RequestDiffSide::Old, 2, 5))
+        )
     );
 }
 
@@ -121,7 +129,11 @@ fn outdated_comments_use_their_original_commit_and_lines() {
             &line_position(RequestDiffSide::New, None, None),
             &revisions()
         )[0],
-        anchor("revision_1", path(), lines(RequestDiffSide::New, 4, 6))
+        anchor(
+            "revision_1",
+            Some(path()),
+            Some(lines(RequestDiffSide::New, 4, 6))
+        )
     );
 }
 
@@ -132,7 +144,7 @@ fn file_comments_and_unusable_lines_fall_back_to_file_then_revision() {
     assert_eq!(
         github_comment_anchors(&file, &revisions()),
         vec![
-            anchor("revision_3", path(), None),
+            anchor("revision_3", Some(path()), None),
             anchor("revision_3", None, None)
         ]
     );
@@ -142,7 +154,7 @@ fn file_comments_and_unusable_lines_fall_back_to_file_then_revision() {
             &revisions()
         ),
         vec![
-            anchor("revision_3", path(), None),
+            anchor("revision_3", Some(path()), None),
             anchor("revision_3", None, None)
         ]
     );
@@ -217,7 +229,7 @@ fn only_open_full_view_requests_accept_github_reviews() {
     let mut draft = request.clone();
     draft.submitted_at_unix = None;
     assert!(!accepts_github_reviews(&draft, &views));
-    let mut closed = request.clone();
+    let mut closed = request;
     closed.closed_at_unix = Some(70);
     assert!(!accepts_github_reviews(&closed, &views));
     assert_eq!(

@@ -22,6 +22,7 @@ pub(crate) fn signature_matches(secret: &[u8], signature: Option<&str>, body: &[
     else {
         return false;
     };
+    #[expect(clippy::expect_used)]
     let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts keys of any length");
     mac.update(body);
     mac.verify_slice(&signature).is_ok()

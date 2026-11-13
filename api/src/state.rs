@@ -107,7 +107,7 @@ impl Integrations {
 impl AppState {
     pub async fn from_env() -> anyhow::Result<Self> {
         let git_public_url = git_public_url_from_env(None)?;
-        let storage = StorageRuntime::from_env(StorageSource::S3).await?;
+        let storage = StorageRuntime::from_env(StorageSource::S3)?;
         crate::git::request_refs::sweep_revision_jobs(&storage.data_dir)?;
         let metadata = MetadataStore::connect_with_max_connections(
             database_url_from_env()?,
@@ -119,7 +119,7 @@ impl AppState {
             metadata,
             run_caches: RunCacheStorage::from_env()?,
             media_grants: MediaGrantIssuer::from_env()?,
-            product_analytics: ProductAnalytics::from_env(EventSource::Api).await?,
+            product_analytics: ProductAnalytics::from_env(EventSource::Api)?,
             git_public_url,
         })
         .await?;
@@ -128,7 +128,7 @@ impl AppState {
     }
 
     pub(crate) async fn for_pool_pack_recovery(data_dir: PathBuf) -> anyhow::Result<Self> {
-        let storage = StorageRuntime::from_env_at(StorageSource::S3, data_dir).await?;
+        let storage = StorageRuntime::from_env_at(StorageSource::S3, data_dir)?;
         let metadata =
             MetadataStore::connect_with_max_connections(database_url_from_env()?, 2).await?;
         Ok(Self::assemble(

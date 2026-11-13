@@ -22,15 +22,15 @@ pub(super) async fn load<C: ConnectionTrait>(
 }
 
 impl StateRow {
-    pub fn request(&self) -> Result<Request, PostgresError> {
+    pub(super) fn request(&self) -> Result<Request, PostgresError> {
         entities::request::Model::from_query_result(&self.0, "r_")?.try_into_domain()
     }
 
-    pub fn is_invitee(&self) -> Result<bool, PostgresError> {
+    pub(super) fn is_invitee(&self) -> Result<bool, PostgresError> {
         Ok(self.0.try_get("", "is_invitee")?)
     }
 
-    pub fn evaluation(&self) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
+    pub(super) fn evaluation(&self) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
         if !joined(&self.0, "e_id")? {
             return Ok(None);
         }
@@ -39,7 +39,7 @@ impl StateRow {
             .map(Some)
     }
 
-    pub fn revision(&self) -> Result<Option<RequestRevision>, PostgresError> {
+    pub(super) fn revision(&self) -> Result<Option<RequestRevision>, PostgresError> {
         if !joined(&self.0, "v_id")? {
             return Ok(None);
         }
@@ -48,7 +48,7 @@ impl StateRow {
             .map(Some)
     }
 
-    pub fn auto_merge(&self) -> Result<Option<RequestAutoMergeIntent>, PostgresError> {
+    pub(super) fn auto_merge(&self) -> Result<Option<RequestAutoMergeIntent>, PostgresError> {
         if !joined(&self.0, "a_id")? {
             return Ok(None);
         }
@@ -57,7 +57,7 @@ impl StateRow {
             .map(Some)
     }
 
-    pub fn auto_merge_actor_access(
+    pub(super) fn auto_merge_actor_access(
         &self,
         repository: &RepositoryAccessContext,
         intent: Option<&RequestAutoMergeIntent>,
@@ -82,19 +82,18 @@ impl StateRow {
         )))
     }
 
-    pub fn users(&self) -> Result<BTreeMap<String, UserAccount>, PostgresError> {
+    pub(super) fn users(&self) -> Result<BTreeMap<String, UserAccount>, PostgresError> {
         let mut users = BTreeMap::new();
         for prefix in ["viewer_", "actor_"] {
             if joined(&self.0, &format!("{prefix}id"))? {
-                let user =
-                    entities::user::Model::from_query_result(&self.0, prefix)?.try_into_domain()?;
+                let user = entities::user::Model::from_query_result(&self.0, prefix)?.into_domain();
                 users.insert(user.id.clone(), user);
             }
         }
         Ok(users)
     }
 
-    pub fn canonical_main_oid(&self) -> Result<Option<String>, PostgresError> {
+    pub(super) fn canonical_main_oid(&self) -> Result<Option<String>, PostgresError> {
         Ok(self.0.try_get("", "canonical_main_oid")?)
     }
 }

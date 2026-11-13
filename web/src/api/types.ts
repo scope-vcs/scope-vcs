@@ -23,7 +23,7 @@ import type {
   UpdateRepoMetadataRequest,
 } from './types.generated'
 
-export type VisibilityState = ViewId | 'Mixed'
+export type VisibilityState = ViewId
 
 export type CommitSummary = {
   projected_id: string

@@ -21,10 +21,10 @@ pub(crate) async fn publish_run_change(
             return;
         }
     };
-    publish_run_change_for(metadata, origin_id, &incarnation, run_id, change).await;
+    publish_run_change_for(metadata, origin_id, &incarnation, run_id, change);
 }
 
-pub(crate) async fn publish_run_change_for(
+pub(crate) fn publish_run_change_for(
     metadata: &MetadataStore,
     origin_id: &str,
     incarnation: &RepositoryIncarnation,

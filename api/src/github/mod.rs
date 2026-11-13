@@ -31,6 +31,7 @@ pub(crate) struct GitHubApp {
     http: reqwest::Client,
     api_url: String,
     web_url: String,
+    oauth_authorize_url: reqwest::Url,
     git_url: String,
     installation_tokens: Mutex<HashMap<u64, client::InstallationToken>>,
 }
@@ -57,6 +58,8 @@ impl GitHubApp {
                     config::SCOPE_GITHUB_APP_PRIVATE_KEY_ENV
                 )
             })?;
+        let web_url = web_url.trim_end_matches('/').to_string();
+        let oauth_authorize_url = reqwest::Url::parse(&format!("{web_url}/login/oauth/authorize"))?;
         Ok(Self {
             app_id: config.app_id,
             setup_tokens: SetupTokenSigner::from_client_secret(&config.client_secret),
@@ -70,7 +73,8 @@ impl GitHubApp {
                 .user_agent("Scope")
                 .build()?,
             api_url: api_url.trim_end_matches('/').to_string(),
-            web_url: web_url.trim_end_matches('/').to_string(),
+            web_url,
+            oauth_authorize_url,
             git_url: git_url.trim_end_matches('/').to_string(),
             installation_tokens: Mutex::default(),
         })
@@ -81,8 +85,7 @@ impl GitHubApp {
     }
 
     pub(crate) fn authorize_url(&self, state: &str, redirect_uri: &str) -> String {
-        let mut url = reqwest::Url::parse(&format!("{}/login/oauth/authorize", self.web_url))
-            .expect("GitHub authorize URL must be valid");
+        let mut url = self.oauth_authorize_url.clone();
         url.query_pairs_mut()
             .append_pair("client_id", &self.client_id)
             .append_pair("state", state)

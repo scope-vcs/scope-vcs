@@ -26,11 +26,12 @@ export function MarketingLandingPage({
     page: createRef(), privateLayer: createRef(), ring: createRef(), edge: createRef(), grip: createRef(), minorTicks: createRef(),
     majorTicks: createRef(), ticks: createRef(), label: createRef(), cursor: createRef(), tally: createRef(),
   }))
+  const { cursor, page, privateLayer, tally } = elements
   const lens = useLens(elements)
   const stopConfetti = useRef<() => void>(undefined)
   const celebrate = useCallback(() => { stopConfetti.current = fireConfetti() }, [])
   useEffect(() => () => stopConfetti.current?.(), [])
-  const progress = useNoteFinder(elements.page, lens.frame, celebrate)
+  const progress = useNoteFinder(page, lens.frame, celebrate)
   const [installCall, setInstallCall] = useState(0)
   const callInstall = useCallback(() => setInstallCall(Date.now()), [])
   useEffect(() => {
@@ -44,12 +45,12 @@ export function MarketingLandingPage({
   }
 
   return (
-    <div className={cn('marketing-page landing relative min-h-dvh overflow-clip bg-background font-sans text-base leading-normal text-foreground antialiased', lens.ready && 'lens-ready', lens.on ? 'lens-on' : 'lens-off', lens.holding && 'lens-holding')} data-scope-page="landing" ref={elements.page}>
+    <div className={cn('marketing-page landing relative min-h-dvh overflow-clip bg-background font-sans text-base leading-normal text-foreground antialiased', lens.ready && 'lens-ready', lens.on ? 'lens-on' : 'lens-off', lens.holding && 'lens-holding')} data-scope-page="landing" ref={page}>
       <a className="fixed top-2.5 left-2.5 z-40 -translate-y-[160%] bg-foreground px-4 py-2.5 text-background focus:translate-y-0" href="#main-content">Skip to content</a>
       <div className="landing-layer" data-view="public">
         <LandingContent {...content} view="public" />
       </div>
-      <div aria-hidden className={cn('landing-layer landing-private', inverseTheme)} data-view="private" inert ref={elements.privateLayer}>
+      <div aria-hidden className={cn('landing-layer landing-private', inverseTheme)} data-view="private" inert ref={privateLayer}>
         <LandingContent {...content} view="private" />
       </div>
       <LensRing
@@ -59,8 +60,8 @@ export function MarketingLandingPage({
         label={progress.justFound ? progress.found === progress.total ? 'found them all' : `found ${progress.found} of ${progress.total}` : lens.touch ? 'drag' : 'hold'}
         showLabel={progress.justFound || lens.hint}
       />
-      <LensCursor ref={elements.cursor} />
-      <FoundTally found={progress.found} inverseTheme={inverseTheme} moreBelow={progress.moreBelow} ref={elements.tally} total={progress.total} visible={lens.holding} />
+      <LensCursor ref={cursor} />
+      <FoundTally found={progress.found} inverseTheme={inverseTheme} moreBelow={progress.moreBelow} ref={tally} total={progress.total} visible={lens.holding} />
       <p className={cn('landing-toast pointer-events-none fixed bottom-5 left-6 z-[21] font-mono text-xs text-muted-foreground', lens.message && 'is-visible')} role="status">{lens.message}</p>
     </div>
   )

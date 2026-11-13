@@ -65,7 +65,6 @@ async fn run_service() -> anyhow::Result<()> {
 
     let storage = scope_media_storage::MediaStorageSettings::from_env()?
         .connect(4)
-        .await
         .context("configuring encrypted media storage")?;
     let health = WorkerHealth::new(settings.poll_interval);
     health.mark_codecs_ready();

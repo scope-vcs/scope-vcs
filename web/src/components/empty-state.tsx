@@ -62,7 +62,7 @@ export function PanelState({
 }) {
   return (
     <div
-      aria-busy={busy || undefined}
+      aria-busy={busy ? true : undefined}
       className={cn(
         'flex h-full min-h-[220px] flex-col items-center justify-center gap-3 px-6 py-10 text-center text-sm leading-5',
         tone === 'error' ? 'text-danger-strong' : 'text-muted-foreground',

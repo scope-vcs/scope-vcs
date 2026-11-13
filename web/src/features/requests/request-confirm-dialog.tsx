@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { LoaderCircle } from 'lucide-react'
-import type { FormEvent, ReactNode, RefObject } from 'react'
+import type { SubmitEvent, ReactNode, RefObject } from 'react'
 
 export function RequestConfirmDialog({
   children,
@@ -32,7 +32,7 @@ export function RequestConfirmDialog({
   returnFocus?: RefObject<HTMLElement | null>
   title: string
 }) {
-  async function confirm(event: FormEvent<HTMLFormElement>) {
+  async function confirm(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!pending && await onConfirm()) onOpenChange(false)
   }

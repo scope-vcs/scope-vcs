@@ -9,7 +9,8 @@ use crate::{
     git::{
         cache::{
             GitDerivedCacheCoordinator, GitDerivedCacheNamespace, GitRepoHandle,
-            RepositoryGitCache, sanitize_repository_git_cache_repo,
+            RepositoryGitCache, applied_push_sequence, note_applied_push,
+            sanitize_repository_git_cache_repo,
         },
         command::run_git,
         pool_install::{install_main_head, present_commits},
@@ -188,18 +189,16 @@ impl RepositoryEngine {
         let repo = self.cache.lease(incarnation)?;
         let repo_path = repo.as_ref().to_path_buf();
         let cache_root = self.cache_root();
-        let cache_for_ready = self.cache.clone();
         let incarnation_for_ready = incarnation.clone();
         let repo_path_for_ready = repo_path.clone();
         let requested_sequence = head.push_sequence;
         let is_ready = move || {
             repository_cache_is_ready(&repo_path_for_ready)
-                && cache_for_ready
-                    .applied_sequence(&incarnation_for_ready, &repo_path_for_ready)
+                && applied_push_sequence(&incarnation_for_ready, &repo_path_for_ready)
                     .is_some_and(|applied| applied >= requested_sequence)
         };
         let started_at = Instant::now();
-        let applied_before = self.cache.applied_sequence(incarnation, &repo_path);
+        let applied_before = applied_push_sequence(incarnation, &repo_path);
         let cache_hit = is_ready();
         let built = Arc::new(AtomicBool::new(false));
         let materialization_path = Arc::new(AtomicU8::new(MATERIALIZATION_PATH_HIT));
@@ -216,9 +215,7 @@ impl RepositoryEngine {
             let _build_repo_lease = build_repo_lease;
             built_for_build.store(true, Ordering::Relaxed);
             let _permit = state_for_build.runtime_budgets.try_git_materialization()?;
-            match engine_for_build
-                .cache
-                .applied_sequence(&incarnation_for_build, &repo_path_for_build)
+            match applied_push_sequence(&incarnation_for_build, &repo_path_for_build)
             {
                 Some(applied)
                     if applied < head_for_build.push_sequence
@@ -234,7 +231,7 @@ impl RepositoryEngine {
                             &repo_path_for_build,
                         )
                         .await?;
-                    engine_for_build.cache.note_applied(
+                    note_applied_push(
                         &incarnation_for_build,
                         &repo_path_for_build,
                         head_for_build.push_sequence,
@@ -263,10 +260,10 @@ impl RepositoryEngine {
                     )
                     .await
                     {
-                        let _ = fs::remove_dir_all(&temp_path);
+                        crate::git::storage::discard_dir(&temp_path);
                         return Err(error);
                     }
-                    engine_for_build.cache.note_applied(
+                    note_applied_push(
                         &incarnation_for_build,
                         &temp_path,
                         head_for_build.push_sequence,
@@ -274,16 +271,14 @@ impl RepositoryEngine {
                     if repo_path_for_build.exists()
                         && let Err(error) = fs::remove_dir_all(&repo_path_for_build)
                     {
-                        let _ = fs::remove_dir_all(&temp_path);
+                        crate::git::storage::discard_dir(&temp_path);
                         return Err(ApiError::internal(error));
                     }
                     match fs::rename(&temp_path, &repo_path_for_build) {
                         Ok(()) => Ok(()),
                         Err(error)
                             if repository_cache_is_ready(&repo_path_for_build)
-                                && engine_for_build
-                                    .cache
-                                    .applied_sequence(
+                                && applied_push_sequence(
                                         &incarnation_for_build,
                                         &repo_path_for_build,
                                     )
@@ -291,12 +286,12 @@ impl RepositoryEngine {
                                         applied >= head_for_build.push_sequence
                                     }) =>
                         {
-                            let _ = fs::remove_dir_all(&temp_path);
+                            crate::git::storage::discard_dir(&temp_path);
                             tracing::debug!(%error, path = %repo_path_for_build.display(), "using externally-created repository Git cache");
                             Ok(())
                         }
                         Err(error) => {
-                            let _ = fs::remove_dir_all(&temp_path);
+                            crate::git::storage::discard_dir(&temp_path);
                             Err(ApiError::internal(error))
                         }
                     }
@@ -311,7 +306,7 @@ impl RepositoryEngine {
             elapsed_us = started_at.elapsed().as_micros(),
             requested_sequence = head.push_sequence,
             applied_sequence_before = applied_before,
-            applied_sequence_after = self.cache.applied_sequence(incarnation, &repo_path),
+            applied_sequence_after = applied_push_sequence(incarnation, &repo_path),
             success = result.is_ok(),
             "repository Git replica materialization completed"
         );
@@ -371,8 +366,7 @@ impl RepositoryEngine {
         let repo = self.cache.lease(incarnation)?;
         let target = repo.as_ref().to_path_buf();
         let is_ready = || {
-            self.cache
-                .applied_sequence(incarnation, &target)
+            applied_push_sequence(incarnation, &target)
                 .is_some_and(|applied| applied >= push_sequence)
                 && target.is_dir()
         };
@@ -405,7 +399,7 @@ impl RepositoryEngine {
                     context,
                 )?;
                 sanitize_repository_git_cache_repo(repo, expected_head)?;
-                self.cache.note_applied(incarnation, repo, push_sequence)
+                note_applied_push(incarnation, repo, push_sequence)
             };
             if target.is_dir() {
                 return install_into(
@@ -427,7 +421,7 @@ impl RepositoryEngine {
             let build = install_into(&temp, "seeding repository Git cache head")
                 .and_then(|()| fs::rename(&temp, &target).map_err(ApiError::internal));
             if build.is_err() {
-                let _ = fs::remove_dir_all(&temp);
+                crate::git::storage::discard_dir(&temp);
             }
             build
         });
@@ -437,7 +431,7 @@ impl RepositoryEngine {
             cache_outcome = materialization_outcome(cache_hit, built.load(Ordering::Relaxed)),
             elapsed_us = started_at.elapsed().as_micros(),
             requested_sequence = push_sequence,
-            applied_sequence = self.cache.applied_sequence(incarnation, &target),
+            applied_sequence = applied_push_sequence(incarnation, &target),
             missing_prerequisites,
             success = result.is_ok(),
             "repository Git replica post-push synchronization completed"

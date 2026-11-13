@@ -501,7 +501,7 @@ async fn a_draft_revision_is_pooled_only_for_its_author() {
     assert!(pooled_heads(&state, &draft_id).await.contains(&draft_head));
     let author_staging = prepare_owner_push(&state, request_ref).await;
     assert!(has_commit(&author_staging, &draft_head));
-    let _ = fs::remove_dir_all(author_staging);
+    crate::git::storage::remove_dir_if_exists(&author_staging).unwrap();
     assert!(!has_commit(&repos.authored, &draft_head));
     assert!(!has_commit(&repos.shared, &draft_head));
     insert_member_user(&state).await;
@@ -526,7 +526,7 @@ async fn a_draft_revision_is_pooled_only_for_its_author() {
     assert_eq!(member_request.status(), StatusCode::OK);
     let member_staging = prepare_push(&state, &member_user_id(), "refs/heads/member-work").await;
     assert!(!has_commit(&member_staging, &draft_head));
-    let _ = fs::remove_dir_all(member_staging);
+    crate::git::storage::remove_dir_if_exists(&member_staging).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

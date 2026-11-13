@@ -36,7 +36,7 @@ const requireSettingsAuth = createServerFn({ method: 'GET' }).handler(async () =
   const { auth } = await import('@clerk/tanstack-react-start/server')
   const { isAuthenticated } = await auth()
   if (!isAuthenticated) {
-    throw redirect({ params: { _splat: '' }, to: '/sign-in/$' })
+    redirect({ params: { _splat: '' }, throw: true, to: '/sign-in/$' })
   }
 })
 
@@ -103,7 +103,7 @@ function SettingsRoute() {
   }
 
   return (
-    <AppShell header={() => <ApplicationTopbar contextLabel="Settings" />}>
+    <AppShell header={<ApplicationTopbar contextLabel="Settings" />}>
       <PageContent>
         <SettingsLayout>
           <ProfileSection />

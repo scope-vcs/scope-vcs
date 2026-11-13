@@ -384,7 +384,10 @@ async fn merge_route_persists_git_content_once() {
                 Some(&request_head)
             );
         }
-        origin => panic!("expected public request merge origin, got {origin:?}"),
+        origin @ (LogicalCommitOrigin::CanonicalPush { .. }
+        | LogicalCommitOrigin::PrivateRequestMerge { .. }) => {
+            panic!("expected public request merge origin, got {origin:?}")
+        }
     }
     let replay = app.oneshot(merge_request()).await.unwrap();
     assert_eq!(replay.status(), StatusCode::CONFLICT);

@@ -33,10 +33,11 @@ impl GitTreePath {
     }
 
     pub fn from_scope_path(path: &ScopePath) -> Result<Self, GitTreePathError> {
-        let relative = path
-            .as_str()
-            .strip_prefix('/')
-            .expect("Scope paths are absolute");
+        let Some(relative) = path.as_str().strip_prefix('/') else {
+            return Err(GitTreePathError::Unrepresentable {
+                path: path.as_str().to_string(),
+            });
+        };
         Self::parse(relative)
     }
 
@@ -44,6 +45,7 @@ impl GitTreePath {
         &self.0
     }
 
+    #[expect(clippy::expect_used)]
     pub fn to_scope_path(&self) -> ScopePath {
         ScopePath::parse(format!("/{}", self.0))
             .expect("Git tree paths are canonical Scope file paths")

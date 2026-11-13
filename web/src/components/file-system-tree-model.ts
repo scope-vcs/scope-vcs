@@ -46,8 +46,7 @@ export function buildFileSystemTree<TFile extends FileSystemTreeFileBase>(
     }
 
     let current = root
-    for (let index = 0; index < parts.length; index += 1) {
-      const part = parts[index]
+    for (const [index, part] of parts.entries()) {
       const folderPath = `/${parts.slice(0, index + 1).join('/')}`
       const last = index === parts.length - 1
       if (last) {

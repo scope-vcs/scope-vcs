@@ -14,10 +14,10 @@ export function DependencyCheckDetailsBody({
     <>
       {report.findings.length > 0 && (
         <ul aria-label="Public files importing private files" className="max-w-4xl">
-          {report.findings.map((finding, index) => (
+          {report.findings.map((finding) => (
             <li
               className="grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1fr)] items-center gap-2 border-t border-border py-2.5 sm:gap-4"
-              key={`${finding.source_path}\0${finding.target_path}\0${index}`}
+              key={`${finding.source_path}\0${finding.target_path}`}
             >
               <DependencyPath
                 visibility="public"
@@ -40,8 +40,8 @@ export function DependencyCheckDetailsBody({
         <div className={report.findings.length > 0 ? 'mt-3' : undefined}>
           <p className="font-medium text-foreground">Coverage gaps</p>
           <ul aria-label="Dependency check coverage gaps" className="mt-1 max-w-4xl">
-            {report.gaps.map((gap, index) => (
-              <li className="border-t border-border py-2 text-muted-foreground" key={`${gap.path}\0${index}`}>
+            {report.gaps.map((gap) => (
+              <li className="border-t border-border py-2 text-muted-foreground" key={`${gap.path}\0${gap.reason}`}>
                 {gap.path === '.' ? (
                   <span className="mr-2 font-medium text-foreground">Repository</span>
                 ) : (

@@ -371,7 +371,7 @@ async fn complete_agent_main_push(
         std::time::Duration::ZERO,
     )
     .await;
-    let _ = fs::remove_dir_all(staging_repo);
+    crate::git::storage::remove_dir_if_exists(&staging_repo).unwrap();
     completion
 }
 

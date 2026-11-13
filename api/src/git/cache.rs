@@ -85,7 +85,7 @@ impl RepositoryGitCache {
         self: &Arc<Self>,
         incarnation: &RepositoryIncarnation,
     ) -> Result<GitRepoHandle, ApiError> {
-        self.lease_path(self.path_for(incarnation))
+        lease_path(self.path_for(incarnation))
     }
 
     pub(crate) fn lease_derived(
@@ -102,51 +102,7 @@ impl RepositoryGitCache {
                 "derived Git cache path is outside the managed cache root",
             ));
         }
-        self.lease_path(path)
-    }
-
-    fn lease_path(self: &Arc<Self>, path: PathBuf) -> Result<GitRepoHandle, ApiError> {
-        {
-            let mut users = cache_users().lock().map_err(|_| {
-                ApiError::internal_message("repository Git cache registry is poisoned")
-            })?;
-            touch_if_materialized(&path)?;
-            *users.entry(path.clone()).or_default() += 1;
-        }
-        Ok(GitRepoHandle {
-            path: path.clone(),
-            _lease: RepositoryGitCacheLease { path },
-            temporary: None,
-            dependencies: Vec::new(),
-        })
-    }
-
-    pub(crate) fn note_applied(
-        &self,
-        incarnation: &RepositoryIncarnation,
-        path: &Path,
-        push_sequence: u64,
-    ) -> Result<(), ApiError> {
-        let frontier = AppliedRepositoryFrontier {
-            version: 1,
-            incarnation: incarnation.clone(),
-            push_sequence,
-        };
-        let bytes = serde_json::to_vec(&frontier).map_err(ApiError::internal)?;
-        fs::write(path.join(APPLIED_FRONTIER_FILE), bytes).map_err(ApiError::internal)?;
-        touch_if_materialized(path)
-    }
-
-    pub(crate) fn applied_sequence(
-        &self,
-        incarnation: &RepositoryIncarnation,
-        path: &Path,
-    ) -> Option<u64> {
-        fs::read(path.join(APPLIED_FRONTIER_FILE))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<AppliedRepositoryFrontier>(&bytes).ok())
-            .filter(|frontier| frontier.version == 1 && &frontier.incarnation == incarnation)
-            .map(|frontier| frontier.push_sequence)
+        lease_path(path)
     }
 
     pub(crate) fn remove(&self, incarnation: &RepositoryIncarnation) -> Result<bool, ApiError> {
@@ -292,6 +248,48 @@ fn prune_stale_materializations(
         }
     }
     Ok(())
+}
+
+fn lease_path(path: PathBuf) -> Result<GitRepoHandle, ApiError> {
+    {
+        let mut users = cache_users()
+            .lock()
+            .map_err(|_| ApiError::internal_message("repository Git cache registry is poisoned"))?;
+        touch_if_materialized(&path)?;
+        *users.entry(path.clone()).or_default() += 1;
+    }
+    Ok(GitRepoHandle {
+        path: path.clone(),
+        _lease: RepositoryGitCacheLease { path },
+        temporary: None,
+        dependencies: Vec::new(),
+    })
+}
+
+pub(crate) fn note_applied_push(
+    incarnation: &RepositoryIncarnation,
+    path: &Path,
+    push_sequence: u64,
+) -> Result<(), ApiError> {
+    let frontier = AppliedRepositoryFrontier {
+        version: 1,
+        incarnation: incarnation.clone(),
+        push_sequence,
+    };
+    let bytes = serde_json::to_vec(&frontier).map_err(ApiError::internal)?;
+    fs::write(path.join(APPLIED_FRONTIER_FILE), bytes).map_err(ApiError::internal)?;
+    touch_if_materialized(path)
+}
+
+pub(crate) fn applied_push_sequence(
+    incarnation: &RepositoryIncarnation,
+    path: &Path,
+) -> Option<u64> {
+    fs::read(path.join(APPLIED_FRONTIER_FILE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<AppliedRepositoryFrontier>(&bytes).ok())
+        .filter(|frontier| frontier.version == 1 && &frontier.incarnation == incarnation)
+        .map(|frontier| frontier.push_sequence)
 }
 
 impl std::fmt::Debug for GitRepoHandle {

@@ -23,7 +23,7 @@ export const loadHistoryEntry = createServerFn({ method: 'GET' })
       const [{ userId }, entry] = await Promise.all([auth(), loadHistoryEntryForRequest(data)])
       return { entry, viewerId: userId }
     } catch (error) {
-      if (isNotFoundError(error)) throw notFound()
+      if (isNotFoundError(error)) notFound({ throw: true })
       throw error
     }
   })

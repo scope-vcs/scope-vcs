@@ -232,17 +232,10 @@ impl RepositoryWorkflowCatalog {
         self.source_change_version
     }
 
-    pub fn files(&self) -> Option<&[RepositoryWorkflowFile]> {
+    pub fn contents(&self) -> Result<&[RepositoryWorkflowFile], &str> {
         match &self.state {
-            RepositoryWorkflowCatalogState::Captured(files) => Some(files),
-            RepositoryWorkflowCatalogState::Rejected(_) => None,
-        }
-    }
-
-    pub fn configuration_error(&self) -> Option<&str> {
-        match &self.state {
-            RepositoryWorkflowCatalogState::Captured(_) => None,
-            RepositoryWorkflowCatalogState::Rejected(error) => Some(error),
+            RepositoryWorkflowCatalogState::Captured(files) => Ok(files),
+            RepositoryWorkflowCatalogState::Rejected(error) => Err(error),
         }
     }
 
@@ -357,7 +350,7 @@ mod tests {
 
         catalog.validate_integrity().unwrap();
         let paths = catalog
-            .files()
+            .contents()
             .unwrap()
             .iter()
             .map(|file| file.path().as_str())
@@ -366,7 +359,6 @@ mod tests {
             paths,
             ["/.scope/runs/a-first.yaml", "/.scope/runs/z-last.yml"]
         );
-        assert!(catalog.configuration_error().is_none());
         catalog.verify_source("repo-1", HEAD, 7).unwrap();
         assert!(matches!(
             catalog.verify_source("repo-1", HEAD, 8),
@@ -459,10 +451,9 @@ mod tests {
         )
         .unwrap();
 
-        assert!(catalog.files().is_none());
         assert_eq!(
-            catalog.configuration_error(),
-            Some("repository contains too many workflows")
+            catalog.contents(),
+            Err("repository contains too many workflows")
         );
         catalog.validate_integrity().unwrap();
     }

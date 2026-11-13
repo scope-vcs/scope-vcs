@@ -30,7 +30,7 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
         false,
         EditRequestIdentityInput {
             description_markdown: Some("Focused description".to_string()),
-            expected_description_markdown: Some(original_description.clone()),
+            expected_description_markdown: Some(original_description),
             now_unix: 21,
             ..identity_input()
         },
@@ -72,7 +72,7 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
 fn open_request_identity_edits_preserve_submission() {
     let request = open_request();
     let mutation = edit_request_identity(
-        request.clone(),
+        request,
         false,
         EditRequestIdentityInput {
             description_markdown: Some("Changed while open".to_string()),

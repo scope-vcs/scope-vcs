@@ -1,11 +1,11 @@
 use super::*;
 
-pub mod user {
+pub(crate) mod user {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_users")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         #[sea_orm(unique)]
@@ -16,12 +16,12 @@ pub mod user {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(user: &UserAccount) -> Self {
+        pub(crate) fn from_domain(user: &UserAccount) -> Self {
             Self {
                 id: user.id.clone(),
                 handle: user.handle.clone(),
@@ -30,22 +30,22 @@ pub mod user {
             }
         }
 
-        pub fn try_into_domain(self) -> Result<UserAccount, PostgresError> {
-            Ok(UserAccount {
+        pub(crate) fn into_domain(self) -> UserAccount {
+            UserAccount {
                 id: self.id,
                 handle: self.handle,
                 email: self.email,
                 email_verified: self.email_verified,
-            })
+            }
         }
     }
 }
-pub mod auth_identity {
+pub(crate) mod auth_identity {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_auth_identities")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub provider: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -54,16 +54,16 @@ pub mod auth_identity {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-pub mod clerk_user_deletion {
+pub(crate) mod clerk_user_deletion {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_clerk_user_deletions")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub clerk_user_id: String,
         pub attempts: i32,
@@ -76,16 +76,16 @@ pub mod clerk_user_deletion {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-pub mod cli_device_login {
+pub(crate) mod cli_device_login {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_cli_device_logins")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub device_code_hash: String,
         #[sea_orm(unique)]
@@ -98,16 +98,16 @@ pub mod cli_device_login {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-pub mod cli_browser_login {
+pub(crate) mod cli_browser_login {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_cli_browser_logins")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub request_id: String,
         pub request_secret_hash: String,
@@ -121,16 +121,16 @@ pub mod cli_browser_login {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-pub mod cli_exchange_grant {
+pub(crate) mod cli_exchange_grant {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_cli_exchange_grants")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub grant_hash: String,
         pub user_id: String,
@@ -140,16 +140,16 @@ pub mod cli_exchange_grant {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-pub mod cli_session {
+pub(crate) mod cli_session {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_cli_sessions")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         #[sea_orm(unique)]
@@ -163,7 +163,7 @@ pub mod cli_session {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }

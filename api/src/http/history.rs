@@ -86,7 +86,7 @@ pub(crate) async fn get_history_page(
         next_cursor,
         page.head_oid,
         &users,
-    )?))
+    )))
 }
 
 async fn history_entry_page(

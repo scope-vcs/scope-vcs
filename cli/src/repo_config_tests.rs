@@ -26,7 +26,11 @@ fn write_and_create_reject_symlinked_state_paths() {
             symlink(&outside, &paths.directory).unwrap();
         } else {
             fs::create_dir(&paths.directory).unwrap();
-            fs::write(&outside, default_repo_config_json()).unwrap();
+            fs::write(
+                &outside,
+                canonical_repo_config_json(&default_scope_repo_config()).unwrap(),
+            )
+            .unwrap();
             symlink(&outside, &paths.config).unwrap();
         }
 

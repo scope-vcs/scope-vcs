@@ -7,7 +7,7 @@ use {
     scope_domain::repo_actions::{RepoEffect, RepoEffects},
 };
 
-pub async fn save_repo_effects<C>(
+pub(super) async fn save_repo_effects<C>(
     conn: &C,
     effects: &RepoEffects,
     now_unix: u64,

@@ -323,7 +323,8 @@ function SearchRow({
     )
   }
   const { entry } = row
-  const title = entry.message.split('\n', 1)[0] || 'Repository updated'
+  const [firstLine = ''] = entry.message.split('\n', 1)
+  const title = firstLine === '' ? 'Repository updated' : firstLine
   const body = (
     <RowBody icon={historyEntryOpensCode(entry) ? <History /> : <Eye />} title={title}>
       {historyKindLabel(entry.kind)}

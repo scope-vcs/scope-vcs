@@ -386,8 +386,8 @@ fn write_browser_callback_response(stream: &mut TcpStream, status: &str, message
         "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
-    let _ = stream.write_all(response.as_bytes());
-    let _ = stream.flush();
+    stream.write_all(response.as_bytes()).ok();
+    stream.flush().ok();
 }
 
 fn format_user_code(code: &str) -> String {

@@ -9,7 +9,6 @@ use crate::{
 };
 
 impl RunAttempt {
-    #[allow(clippy::too_many_arguments)]
     pub fn reject_capacity(
         &mut self,
         run: &Run,

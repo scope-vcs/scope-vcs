@@ -45,6 +45,7 @@ pub async fn send_traced(
 fn with_span_until_body_ends(response: Response, span: tracing::Span) -> Response {
     let url = response.url().clone();
     let (mut parts, body) = http::Response::<Body>::from(response).into_parts();
+    #[expect(clippy::expect_used)]
     let (url_parts, ()) = http::Response::builder()
         .url(url)
         .body(())

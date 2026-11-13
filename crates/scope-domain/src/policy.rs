@@ -240,6 +240,7 @@ impl Policy {
                 .extend([old_label, new_label]);
         }
         let rules = paths.iter().map(|path| {
+            #[expect(clippy::expect_used)]
             let view = if history.live_paths.contains(path) || self.rule_at(path.as_str()).is_some()
             {
                 self.label(path, config.views())
@@ -248,7 +249,7 @@ impl Policy {
                     .iter()
                     .find(|label| !config.views().shows(reader, path, label))
                     .or_else(|| labels.first())
-                    .expect("accepted path history has labels"))
+                    .expect("historical label sets are created with at least one label"))
                 .clone()
             } else {
                 config.label_for_path(path)

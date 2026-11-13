@@ -2,7 +2,7 @@ use super::{ReviewItem, ReviewState};
 use scope_domain::dependency_analysis::StoredDependencyAnalysis;
 
 impl ReviewState {
-    pub fn complete_dependency_analysis(
+    pub(crate) fn complete_dependency_analysis(
         &mut self,
         result: Result<StoredDependencyAnalysis, String>,
     ) {

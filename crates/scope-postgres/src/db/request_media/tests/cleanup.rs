@@ -26,13 +26,15 @@ async fn abandon_first_part_write(fixture: &Fixture, attachment_id: &str) {
                 .store
                 .media()
                 .reserve_upload_part(
-                    attachment_id,
-                    &prepared.upload_id,
-                    OWNER_ID,
+                    AttachmentUploadSession {
+                        attachment_id,
+                        upload_id: &prepared.upload_id,
+                        uploader_user_id: OWNER_ID
+                    },
                     staged.clone(),
                     &format!("write_{suffix}"),
                     now_unix,
-                    now_unix + 1,
+                    now_unix + 1
                 )
                 .await
                 .unwrap(),
@@ -184,13 +186,15 @@ async fn upload_after_abandoning_a_part(fixture: &Fixture, attachment_id: &str) 
     assert_eq!(
         media
             .mark_upload_part_stored(
-                attachment_id,
-                &format!("upload_{attachment_id}"),
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id,
+                    upload_id: &format!("upload_{attachment_id}"),
+                    uploader_user_id: OWNER_ID
+                },
                 1,
                 &replacement.object_key,
                 "write_replacement",
-                12,
+                12
             )
             .await
             .unwrap(),

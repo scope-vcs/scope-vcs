@@ -3,7 +3,7 @@ import type { LogLine } from './run-log-lines'
 
 export type LogMatch = { line: number; start: number; end: number }
 
-export type LogPiece = { text: string; style: LogStyle | null; match: 'current' | 'other' | null }
+export type LogPiece = { start: number; text: string; style: LogStyle | null; match: 'current' | 'other' | null }
 
 export function findLogMatches(lines: readonly LogLine[], query: string): LogMatch[] {
   if (!query) return []
@@ -23,9 +23,15 @@ export function logLinePieces(
   current: LogMatch | null,
 ): LogPiece[] {
   const spans: readonly (LogSpan | { text: string; style: null })[] = line.spans ?? [{ text: line.text, style: null }]
-  if (matches.length === 0) return spans.map((span) => ({ ...span, match: null }))
   const pieces: LogPiece[] = []
   let offset = 0
+  if (matches.length === 0) {
+    return spans.map((span) => {
+      const piece: LogPiece = { ...span, start: offset, match: null }
+      offset += span.text.length
+      return piece
+    })
+  }
   for (const span of spans) {
     const spanEnd = offset + span.text.length
     let cursor = offset
@@ -33,11 +39,20 @@ export function logLinePieces(
       if (match.end <= cursor || match.start >= spanEnd) continue
       const start = Math.max(match.start, cursor)
       const end = Math.min(match.end, spanEnd)
-      if (start > cursor) pieces.push({ text: span.text.slice(cursor - offset, start - offset), style: span.style, match: null })
-      pieces.push({ text: span.text.slice(start - offset, end - offset), style: span.style, match: match === current ? 'current' : 'other' })
+      if (start > cursor) {
+        pieces.push({ start: cursor, text: span.text.slice(cursor - offset, start - offset), style: span.style, match: null })
+      }
+      pieces.push({
+        start,
+        text: span.text.slice(start - offset, end - offset),
+        style: span.style,
+        match: match === current ? 'current' : 'other',
+      })
       cursor = end
     }
-    if (cursor < spanEnd) pieces.push({ text: span.text.slice(cursor - offset), style: span.style, match: null })
+    if (cursor < spanEnd) {
+      pieces.push({ start: cursor, text: span.text.slice(cursor - offset), style: span.style, match: null })
+    }
     offset = spanEnd
   }
   return pieces

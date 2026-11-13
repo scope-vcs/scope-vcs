@@ -25,7 +25,6 @@ pub(super) async fn lock_admission(tx: &DatabaseTransaction) -> Result<(), Postg
 }
 
 impl RunStore {
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "admit_next_job"))]
     pub async fn admit_next_job(
         &self,
@@ -116,11 +115,13 @@ impl RunStore {
                 &tx,
                 &run_id,
                 &job_key,
-                attempt_id,
-                token_hash,
-                runtime_version,
+                scope_domain::runs::job::AttemptDispatch {
+                    attempt_id: attempt_id.to_string(),
+                    token_hash: token_hash.to_string(),
+                    runtime_version: runtime_version.to_string(),
+                    lease_expires_at_unix,
+                },
                 now_unix,
-                lease_expires_at_unix,
             )
             .await?;
         tx.commit().await?;

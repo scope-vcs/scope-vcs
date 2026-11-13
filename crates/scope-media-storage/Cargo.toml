@@ -1,5 +1,6 @@
 [package]
 name = "scope-media-storage"
+publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -21,3 +22,6 @@ async-trait.workspace = true
 serde_json.workspace = true
 scope_storage = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread", "test-util"] }
+
+[lints]
+workspace = true

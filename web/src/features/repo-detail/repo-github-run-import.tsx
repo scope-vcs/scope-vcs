@@ -45,7 +45,7 @@ export function RepoGitHubRunImport({
         className="flex flex-wrap items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault()
-          if (canSave && count !== null) void act('save', 'The count was not saved', () => saveCount(count))
+          if (canSave) void act('save', 'The count was not saved', () => saveCount(count))
         }}
       >
         <Input

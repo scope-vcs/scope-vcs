@@ -413,7 +413,7 @@ mod tests {
             (
                 RepoLifecycleState::Ready,
                 "member",
-                Some((false, agent.clone())),
+                Some((false, agent)),
                 MainPushMode::Denied,
             ),
         ] {

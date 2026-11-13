@@ -338,7 +338,7 @@ impl TemporaryPack {
 
 impl Drop for TemporaryPack {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        std::fs::remove_file(&self.path).ok();
     }
 }
 

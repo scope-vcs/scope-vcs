@@ -17,7 +17,7 @@ async fn navigation_get(fixture: &PrivateStackFixture, suffix: &str) -> serde_js
 async fn stack_navigation_keeps_real_queue_rows_and_current_parent_separate_from_pin() {
     let fixture = PrivateStackFixture::create("stack-navigation-current-parent").await;
     let pinned_revision = fixture.latest_child_revision().await;
-    let extension = fixture.extend_parent().await;
+    let extension = fixture.extend_parent();
     let detail = navigation_get(&fixture, &fixture.child_id).await;
     let parent = &detail["stack_navigation"]["parent"];
     assert_eq!(parent["kind"], "available");

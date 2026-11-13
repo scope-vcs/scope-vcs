@@ -249,7 +249,7 @@ fn save_journal(path: &Path, journal: &mut ReceiptJournal) -> anyhow::Result<()>
         Ok(())
     })();
     if result.is_err() {
-        let _ = fs::remove_file(&temp_path);
+        fs::remove_file(&temp_path).ok();
     }
     result
 }

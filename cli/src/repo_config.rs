@@ -161,12 +161,13 @@ pub fn ensure_scope_repo_config_exists(git_root: &Path) -> anyhow::Result<bool> 
             Ok(false)
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let json = canonical_repo_config_json(&default_scope_repo_config())?;
             let mut file = OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&paths.config)
                 .context("create Scope repo config")?;
-            file.write_all(default_repo_config_json().as_bytes())
+            file.write_all(json.as_bytes())
                 .context("write Scope repo config")?;
             Ok(true)
         }
@@ -271,10 +272,6 @@ pub fn canonical_repo_config_json(config: &RepoConfig) -> anyhow::Result<String>
     let mut json = serde_json::to_string_pretty(config).context("serialize Scope repo config")?;
     json.push('\n');
     Ok(json)
-}
-
-fn default_repo_config_json() -> String {
-    canonical_repo_config_json(&default_scope_repo_config()).expect("default repo config is valid")
 }
 
 fn repo_state_paths(git_root: &Path) -> anyhow::Result<RepoStatePaths> {
@@ -382,7 +379,7 @@ fn write_config_atomically(path: &Path, contents: &str, label: &str) -> anyhow::
     })();
 
     if result.is_err() {
-        let _ = fs::remove_file(&temp_path);
+        fs::remove_file(&temp_path).ok();
     }
     result
 }

@@ -12,7 +12,7 @@ const loadOwnerProfile = createServerFn({ method: 'GET' })
     try {
       return await loadOwnerProfileForRequest(data.owner)
     } catch (error) {
-      if (isNotFoundError(error)) throw notFound()
+      if (isNotFoundError(error)) notFound({ throw: true })
       throw error
     }
   })

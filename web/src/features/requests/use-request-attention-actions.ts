@@ -24,15 +24,17 @@ export function useRequestAttentionActions(
   const navigate = useNavigate()
   const inFlight = useRef(false)
   const selectedRef = useRef(selectedId)
-  selectedRef.current = selectedId
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [moves, setMoves] = useState<RequestAttentionMove[]>([])
 
   useEffect(() => {
-    if (!loadedPages || !moves.some((move) => queueReflectsMove(loadedPages, move))) return
-    setMoves((current) => current.filter((move) => !queueReflectsMove(loadedPages, move)))
-  }, [loadedPages, moves])
+    selectedRef.current = selectedId
+  }, [selectedId])
+
+  if (loadedPages && moves.some((move) => queueReflectsMove(loadedPages, move))) {
+    setMoves(moves.filter((move) => !queueReflectsMove(loadedPages, move)))
+  }
 
   function open(requestId?: string) {
     return requestId

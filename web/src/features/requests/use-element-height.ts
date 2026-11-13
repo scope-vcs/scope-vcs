@@ -1,15 +1,14 @@
-import { useLayoutEffect, useState } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 
 export function useElementHeight(element: HTMLElement | null) {
-  const [height, setHeight] = useState(0)
-  useLayoutEffect(() => {
-    if (!element) return
-    setHeight(element.getBoundingClientRect().height)
-    const observer = new ResizeObserver(([entry]) => {
-      setHeight(entry.borderBoxSize[0]?.blockSize ?? entry.target.getBoundingClientRect().height)
-    })
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [element])
-  return element ? height : 0
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      if (!element) return () => {}
+      const observer = new ResizeObserver(notify)
+      observer.observe(element)
+      return () => observer.disconnect()
+    },
+    [element],
+  )
+  return useSyncExternalStore(subscribe, () => element?.getBoundingClientRect().height ?? 0, () => 0)
 }

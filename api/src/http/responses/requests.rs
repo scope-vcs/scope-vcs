@@ -173,7 +173,16 @@ pub(crate) fn request_event_response(
             | scope_api_contract::RequestEventPayload::AutoMergeFulfilled { main_oid, .. } => {
                 *main_oid = None;
             }
-            _ => {}
+            scope_api_contract::RequestEventPayload::Started { .. }
+            | scope_api_contract::RequestEventPayload::Submitted { .. }
+            | scope_api_contract::RequestEventPayload::RevisionPushed { .. }
+            | scope_api_contract::RequestEventPayload::Closed { .. }
+            | scope_api_contract::RequestEventPayload::IdentityEdited { .. }
+            | scope_api_contract::RequestEventPayload::DiscussionResolved { .. }
+            | scope_api_contract::RequestEventPayload::DiscussionReopened { .. }
+            | scope_api_contract::RequestEventPayload::AutoMergeEnabled { .. }
+            | scope_api_contract::RequestEventPayload::AutoMergeCancelled { .. }
+            | scope_api_contract::RequestEventPayload::AutoMergeStopped { .. } => {}
         }
     }
     Ok(RequestEventResponse {

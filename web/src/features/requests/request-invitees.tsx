@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { LoaderCircle, UserMinus, UserPlus } from 'lucide-react'
-import type { FormEvent } from 'react'
+import type { SubmitEvent } from 'react'
 import { useId, useState } from 'react'
 import type { RequestActionController } from './use-request-actions'
 import type { RequestSummaryResponse } from '@/api/types.generated'
@@ -22,7 +22,7 @@ export function RequestInvitees({
   const atCapacity = request.invitees.length >= REQUEST_ACTIVE_INVITEE_LIMIT
   const adding = actions.pending === 'add_invitee'
 
-  async function addInvitee(event: FormEvent<HTMLFormElement>) {
+  async function addInvitee(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!normalizedHandle || atCapacity || adding) return
     if (await actions.run({ action: 'add_invitee', handle: normalizedHandle })) {

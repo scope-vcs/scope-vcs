@@ -385,7 +385,7 @@ async fn evaluate_request_checks(
     let result = async {
         let (mut plan, revisions) = match RequestCheckProvider::for_repository(connection.as_ref())
         {
-            RequestCheckProvider::GitHub => {
+            RequestCheckProvider::GitHub(connection) => {
                 let required = repositories
                     .github_required_checks(&request.repo_id)
                     .await?;
@@ -399,10 +399,7 @@ async fn evaluate_request_checks(
                         &context,
                         views,
                         GitHubRequestChecks {
-                            github_repository_id: connection
-                                .as_ref()
-                                .expect("GitHub provider has a connection")
-                                .github_repository_id,
+                            github_repository_id: connection.github_repository_id,
                             tested,
                             required_check_names: &required,
                         },

@@ -201,7 +201,7 @@ pub(super) fn publish_context(
 pub(super) fn publication_headers(
     request: &RequestSummaryResponse,
     selection: &SelectedBase,
-) -> Vec<String> {
+) -> anyhow::Result<Vec<String>> {
     let mut headers = vec![format!(
         "Scope-Request-Base-Version: {}",
         request.base_version
@@ -221,13 +221,13 @@ pub(super) fn publication_headers(
                     "Scope-Request-Parent-Base-Version: {}",
                     selection
                         .parent_base_version
-                        .expect("request selection has parent version")
+                        .context("request base selection has no parent base version")?
                 ),
                 format!("Scope-Request-Parent-Head: {head_oid}"),
             ]);
         }
     }
-    headers
+    Ok(headers)
 }
 
 pub(super) fn accepted_base(

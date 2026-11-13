@@ -52,13 +52,13 @@ impl RepositoryStore {
             else {
                 return Ok(None);
             };
-            let Some(public_files_visible) = read.public_files_visible() else {
-                self.ensure_live_projection_read_models(
-                    &read.context.incarnation(),
-                    read.context.views.anyone().expect("public view exists"),
-                )
-                .await?;
-                continue;
+            let public_files_visible = match read.public_files_visible() {
+                PublicFilesVisibility::Known(visible) => visible,
+                PublicFilesVisibility::ProjectionMissing(view) => {
+                    self.ensure_live_projection_read_models(&read.context.incarnation(), view)
+                        .await?;
+                    continue;
+                }
             };
             return Ok(read
                 .context
@@ -129,14 +129,14 @@ impl RepositoryStore {
                 tx.commit().await?;
                 return Ok(None);
             }
-            let Some(public_files_visible) = read.public_files_visible() else {
-                tx.commit().await?;
-                self.ensure_live_projection_read_models(
-                    &read.context.incarnation(),
-                    read.context.views.anyone().expect("public view exists"),
-                )
-                .await?;
-                continue;
+            let public_files_visible = match read.public_files_visible() {
+                PublicFilesVisibility::Known(visible) => visible,
+                PublicFilesVisibility::ProjectionMissing(view) => {
+                    tx.commit().await?;
+                    self.ensure_live_projection_read_models(&read.context.incarnation(), view)
+                        .await?;
+                    continue;
+                }
             };
             let context = read.context;
             return Ok(Some((tx, context, public_files_visible)));
@@ -270,14 +270,17 @@ pub(super) struct RepositoryAccessRead {
 }
 
 impl RepositoryAccessRead {
-    pub fn request_view_mains(&self) -> scope_domain::requests::RequestViewMains {
+    pub(super) fn request_view_mains(&self) -> scope_domain::requests::RequestViewMains {
         super::projection_read_models::live_request_view_mains(
             &self.projections,
             self.context.record.content_version,
         )
     }
 
-    pub fn projection(&self, view: &ViewId) -> Option<&entities::projection_read_model::Model> {
+    pub(super) fn projection(
+        &self,
+        view: &ViewId,
+    ) -> Option<&entities::projection_read_model::Model> {
         self.projections.iter().find(|row| {
             row.audience == view.as_str()
                 && row.current()
@@ -285,19 +288,26 @@ impl RepositoryAccessRead {
         })
     }
 
-    fn public_files_visible(&self) -> Option<bool> {
+    fn public_files_visible(&self) -> PublicFilesVisibility<'_> {
         if self.context.access.actor != scope_domain::repository::access::RepositoryActor::Public
             || self.context.record.lifecycle_state
                 != scope_domain::repository::RepoLifecycleState::Ready
         {
-            return Some(false);
+            return PublicFilesVisibility::Known(false);
         }
         let Some(view) = self.context.views.anyone() else {
-            return Some(false);
+            return PublicFilesVisibility::Known(false);
         };
-        self.projection(view)
-            .map(|projection| projection.visible_files)
+        self.projection(view).map_or(
+            PublicFilesVisibility::ProjectionMissing(view),
+            |projection| PublicFilesVisibility::Known(projection.visible_files),
+        )
     }
+}
+
+enum PublicFilesVisibility<'a> {
+    Known(bool),
+    ProjectionMissing(&'a ViewId),
 }
 
 pub(super) async fn load_access<C: ConnectionTrait>(

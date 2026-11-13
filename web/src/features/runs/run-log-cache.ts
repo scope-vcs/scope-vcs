@@ -266,9 +266,9 @@ export async function refreshRunLogsAfterInFlight(
   const step = stepKey(options.target)
   const existing = inFlight.get(JSON.stringify([options.key, step]))
   if (existing) await existing
-  do {
+  for (;;) {
     if (!await refreshRunLogs({ ...options, detail: options.getDetail() })) return false
     const state = runLogsResource.peek(options.key)?.[step]
     if (state?.viewingEarlier || !state?.hasMore) return true
-  } while (true)
+  }
 }

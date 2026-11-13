@@ -62,9 +62,11 @@ async fn finish(
         .metadata
         .media()
         .reserve_upload_part(
-            &prepared.attachment.id,
-            &prepared.transfer.upload_id,
-            &test_owner_id(),
+            scope_postgres::db::AttachmentUploadSession {
+                attachment_id: &prepared.attachment.id,
+                upload_id: &prepared.transfer.upload_id,
+                uploader_user_id: &test_owner_id(),
+            },
             RequestAttachmentStagedPart {
                 receipt: receipt.clone(),
                 object_key: "encrypted-test-part".into(),
@@ -79,9 +81,11 @@ async fn finish(
         .metadata
         .media()
         .mark_upload_part_stored(
-            &prepared.attachment.id,
-            &prepared.transfer.upload_id,
-            &test_owner_id(),
+            scope_postgres::db::AttachmentUploadSession {
+                attachment_id: &prepared.attachment.id,
+                upload_id: &prepared.transfer.upload_id,
+                uploader_user_id: &test_owner_id(),
+            },
             1,
             "encrypted-test-part",
             "api-test-part-write",

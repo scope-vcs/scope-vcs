@@ -7,7 +7,7 @@ import { formatBytes } from '@/lib/format-bytes'
 import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
 import * as Dialog from '@radix-ui/react-dialog'
 import { CircleAlert, Download, Expand, LoaderCircle, RotateCcw, X } from 'lucide-react'
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useRequestAttachments } from './request-attachment-context'
 import {
   initialMediaRecovery,
@@ -333,8 +333,8 @@ function useAttachmentMediaGrant(
     if (identity && expiredAtMount) requestAttachmentMediaGrantResource.invalidate(identity)
   }, [expiredAtMount, identity])
   const recoveryRef = useRef(initialMediaRecovery)
-  const [, rerender] = useReducer((count: number) => count + 1, 0)
-  const recovery = settledMediaRecovery(recoveryRef.current, media.value)
+  const [renderedRecovery, setRenderedRecovery] = useState(initialMediaRecovery)
+  const recovery = settledMediaRecovery(renderedRecovery, media.value)
   const renewalFailed = media.error !== null && (expiredAtMount || recovery.renewingFrom !== null)
   const unavailable = media.status !== 'loaded' || expiredAtMount || recovery.failed || renewalFailed
   const error = media.status !== 'loaded' || renewalFailed
@@ -342,7 +342,7 @@ function useAttachmentMediaGrant(
     : recovery.failed && !media.refreshing ? 'The media could not be loaded.' : null
   const apply = (next: { recovery: typeof recovery; renew: boolean }) => {
     recoveryRef.current = next.recovery
-    rerender()
+    setRenderedRecovery(next.recovery)
     if (next.renew) media.retry()
   }
   const handleMediaEvent = (transition: typeof recoverFromMediaError) =>

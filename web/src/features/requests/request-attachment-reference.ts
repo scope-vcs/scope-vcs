@@ -8,7 +8,7 @@ export function requestAttachmentIdFromUrl(url: string | undefined) {
   if (!match?.[1]) return null
   try {
     const id = decodeURIComponent(match[1])
-    return id && !/[\/\s\u0000-\u001f\u007f]/u.test(id) ? id : null
+    return id && !/[/\s\p{Cc}]/u.test(id) ? id : null
   } catch {
     return null
   }

@@ -68,7 +68,7 @@ export function parseSetRepoGitHubReviewRequestCommentInput(
   const params = parseRepoParams(input)
   const comment = (input as Partial<SetRepoGitHubReviewRequestCommentInput>).comment
   if (typeof comment !== 'string') throw new Error('Enter a comment or leave it empty.')
-  if ([...comment.trim()].length > REVIEW_REQUEST_COMMENT_MAX_CHARS) {
+  if (unicodeScalarCount(comment.trim()) > REVIEW_REQUEST_COMMENT_MAX_CHARS) {
     throw new Error(`The comment can be at most ${REVIEW_REQUEST_COMMENT_MAX_CHARS} characters.`)
   }
   return { ...params, comment }
@@ -138,11 +138,7 @@ export function parseSetRepoGitHubRequiredChecksInput(
 export function parseSetRepoGitHubReviewBotsInput(input: unknown): SetRepoGitHubReviewBotsInput {
   const params = parseRepoParams(input)
   const bots = (input as Partial<SetRepoGitHubReviewBotsInput>).bots
-  if (
-    !Array.isArray(bots)
-    || bots.some((bot) => typeof bot !== 'object' || bot === null
-      || typeof bot.login !== 'string' || typeof bot.required !== 'boolean')
-  ) {
+  if (!Array.isArray(bots) || !bots.every(isReviewBot)) {
     throw new Error('Review bots must be a list of GitHub logins.')
   }
   return { ...params, bots: bots.map(({ login, required }) => ({ login, required })) }
@@ -159,4 +155,14 @@ function positiveId(value: unknown, message: string) {
     throw new Error(message)
   }
   return value
+}
+
+function isReviewBot(value: unknown): value is SetRepoGitHubReviewBotsInput['bots'][number] {
+  return typeof value === 'object' && value !== null
+    && 'login' in value && typeof value.login === 'string'
+    && 'required' in value && typeof value.required === 'boolean'
+}
+
+function unicodeScalarCount(value: string) {
+  return Array.from(value).length
 }

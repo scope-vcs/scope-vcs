@@ -30,7 +30,7 @@ pub enum StepLogCursor {
     After(u64),
 }
 
-pub const STEP_LOG_PAGE_BYTES: u64 = 512 * 1024;
+pub(super) const STEP_LOG_PAGE_BYTES: u64 = 512 * 1024;
 
 #[derive(Clone, Debug, FromQueryResult)]
 struct RunLogReadRow {

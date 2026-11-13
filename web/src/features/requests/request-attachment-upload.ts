@@ -193,7 +193,7 @@ async function uploadParts({
   const abortParts = () => partsController.abort()
   controller.signal.addEventListener('abort', abortParts, { once: true })
   if (controller.signal.aborted) partsController.abort()
-  let failure: unknown = null
+  const failures: unknown[] = []
 
   async function worker() {
     try {
@@ -230,8 +230,8 @@ async function uploadParts({
         })
       }
     } catch (error) {
-      if (failure === null) {
-        failure = error
+      if (failures.length === 0) {
+        failures.push(error)
         partsController.abort()
       }
     }
@@ -243,7 +243,7 @@ async function uploadParts({
   } finally {
     controller.signal.removeEventListener('abort', abortParts)
   }
-  if (failure !== null) throw failure
+  if (failures.length > 0) throw failures[0]
   return [...receipts.values()].sort((left, right) => left.part_number - right.part_number)
 }
 
@@ -346,16 +346,9 @@ function putPart({
         reject(partFailure(request.status, partNumber))
         return
       }
-      try {
-        const value: unknown = JSON.parse(request.responseText)
-        if (!isPartReceipt(value)) throw new Error('The media service returned an invalid part receipt.')
-        if (value.part_number !== partNumber || value.size_bytes !== part.size) {
-          throw new Error('The media service acknowledged a different upload part.')
-        }
-        resolve(value)
-      } catch (error) {
-        reject(error)
-      }
+      const receipt = parsePartReceipt(request.responseText, partNumber, part.size)
+      if (receipt instanceof Error) reject(receipt)
+      else resolve(receipt)
     })
     request.addEventListener('error', () => {
       signal.removeEventListener('abort', abort)
@@ -386,6 +379,20 @@ class TransferAuthorizationExpired extends Error {
     super('The upload authorization expired.')
     this.name = 'TransferAuthorizationExpired'
   }
+}
+
+function parsePartReceipt(text: string, partNumber: number, size: number) {
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return new Error('The media service returned an invalid part receipt.')
+  }
+  if (!isPartReceipt(value)) return new Error('The media service returned an invalid part receipt.')
+  if (value.part_number !== partNumber || value.size_bytes !== size) {
+    return new Error('The media service acknowledged a different upload part.')
+  }
+  return value
 }
 
 function isPartReceipt(value: unknown): value is RequestAttachmentPartReceiptResponse {

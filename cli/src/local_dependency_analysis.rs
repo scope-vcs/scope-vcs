@@ -35,7 +35,7 @@ impl AnalysisJob {
         let worker = thread::spawn(move || {
             let result = analyze_cached(&root, &commit, &worker_cancellation, analyze_snapshot)
                 .map_err(|error| format!("{error:#}"));
-            let _ = sender.send(result);
+            sender.send(result).ok();
         });
         Self {
             receiver,
@@ -67,7 +67,7 @@ impl Drop for AnalysisJob {
     fn drop(&mut self) {
         self.cancellation.cancel();
         if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
+            worker.join().ok();
         }
     }
 }
@@ -93,7 +93,7 @@ fn analyze_cached(
     let analysis = StoredDependencyAnalysis::from_output(commit, output)?;
     cancellation.check()?;
     if let Some(path) = cache_path {
-        let _ = cache::write(&path, &analysis);
+        cache::write(&path, &analysis).ok();
     }
     Ok(analysis)
 }

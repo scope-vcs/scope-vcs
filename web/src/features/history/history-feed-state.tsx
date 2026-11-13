@@ -1,18 +1,9 @@
-import type { RepoParams } from '@/api/types'
 import { PanelState } from '@/components/empty-state'
-import { MENU_LIST_ROW_CLASS } from '@/components/menu-list-panel'
 import { PendingSurface } from '@/components/pending-surface'
-import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
-import { historyEntryLabels } from '@/features/history/history-row-labels'
-import { Link } from '@tanstack/react-router'
-import { LoaderCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
-import type { HistoryEntrySummaryResponse, ViewId } from '@/api/types.generated'
 import type { useHistoryFeed } from './history-feed'
-import { useRepoLayout, useRepoViews } from '@/features/repo-detail/repo-layout-context'
-import { viewingAsSearch } from '@/features/repo-detail/viewing-as'
 
 type HistoryFeedResource = ReturnType<typeof useHistoryFeed>['resource']
 type HistoryFeedPage = NonNullable<HistoryFeedResource['value']>

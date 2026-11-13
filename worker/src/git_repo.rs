@@ -287,7 +287,9 @@ fn object_id_input(object_ids: &BTreeSet<ObjectId>) -> Vec<u8> {
     for object_id in object_ids {
         let start = input.len();
         input.resize(start + 40, 0);
-        hex::encode_to_slice(object_id, &mut input[start..]).expect("SHA-1 output size is fixed");
+        #[expect(clippy::expect_used)]
+        hex::encode_to_slice(object_id, &mut input[start..])
+            .expect("a 20-byte object id encodes into exactly 40 hex bytes");
         input.push(b'\n');
     }
     input
@@ -422,8 +424,10 @@ async fn terminate_git_child(child: &mut tokio::process::Child, process_id: Opti
     if let Some(process_id) = process_id {
         scope_git_process::kill_process_group(process_id);
     }
-    let _ = child.kill().await;
-    let _ = child.wait().await;
+    child.kill().await.ok();
+    if let Err(error) = child.wait().await {
+        tracing::warn!(%error, "failed to reap cancelled Git process");
+    }
 }
 
 async fn ingest_compacted_pack(
@@ -542,7 +546,11 @@ impl TemporaryGitRepo {
 
 impl Drop for TemporaryGitRepo {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        if let Err(error) = fs::remove_dir_all(&self.path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(%error, path = %self.path.display(), "failed to remove temporary Git repository");
+        }
     }
 }
 

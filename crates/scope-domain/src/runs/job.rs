@@ -3,7 +3,7 @@ use super::{
     image::PinnedContainerImage,
     run::{Run, RunState},
     step::RunAttemptStep,
-    validation::{required, validate_sha256_hash},
+    validation::{ensure_present, required, validate_sha256_hash},
     workflow::{
         definition::{WorkflowJob, WorkflowJobId},
         revision::WorkflowRevision,
@@ -12,6 +12,14 @@ use super::{
 use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttemptDispatch {
+    pub attempt_id: String,
+    pub token_hash: String,
+    pub runtime_version: String,
+    pub lease_expires_at_unix: u64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -106,46 +114,25 @@ impl RunJob {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        run_id: impl Into<String>,
-        key: WorkflowJobId,
-        pinned_container_image: PinnedContainerImage,
-        state: RunJobState,
-        last_attempt_number: u32,
-        current_attempt_id: Option<String>,
-        created_at_unix: u64,
-        updated_at_unix: u64,
-        completed_at_unix: Option<u64>,
-        capacity_retry: Option<CapacityRetry>,
-    ) -> Result<Self, DomainError> {
-        let job = Self {
-            run_id: required("run job run id", run_id.into())?,
-            key,
-            pinned_container_image,
-            state,
-            last_attempt_number,
-            current_attempt_id,
-            created_at_unix,
-            updated_at_unix,
-            completed_at_unix,
-            capacity_retry,
-        };
+    pub fn restore(job: Self) -> Result<Self, DomainError> {
+        ensure_present("run job run id", &job.run_id)?;
         job.validate_facts()?;
         Ok(job)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn dispatch(
         &mut self,
         run: &Run,
         definition: &WorkflowJob,
-        attempt_id: impl Into<String>,
-        token_hash: impl Into<String>,
-        runtime_version: impl Into<String>,
+        dispatch: AttemptDispatch,
         now_unix: u64,
-        lease_expires_at_unix: u64,
     ) -> Result<(RunAttempt, Vec<RunAttemptStep>), DomainError> {
+        let AttemptDispatch {
+            attempt_id,
+            token_hash,
+            runtime_version,
+            lease_expires_at_unix,
+        } = dispatch;
         if self.run_id != run.id || self.key != *definition.id() {
             return Err(DomainError::invariant_violation(
                 "run job does not match its run or workflow definition",
@@ -176,8 +163,7 @@ impl RunJob {
                 "capacity retry is not due or its window expired",
             ));
         }
-        let attempt_id = required("run attempt id", attempt_id.into())?;
-        let token_hash = token_hash.into();
+        let attempt_id = required("run attempt id", attempt_id)?;
         validate_sha256_hash("attempt token hash", &token_hash)?;
         let number = self
             .last_attempt_number
@@ -192,7 +178,7 @@ impl RunJob {
             job_key: self.key.clone(),
             number,
             external_run_id: None,
-            runtime_version: required("runtime version", runtime_version.into())?,
+            runtime_version: required("runtime version", runtime_version)?,
             token_hash,
             state: super::attempt::AttemptState::Dispatching,
             lease_expires_at_unix,
@@ -257,7 +243,7 @@ impl RunJob {
     }
 
     pub fn expire_capacity_retry(&mut self, now_unix: u64) -> Result<bool, DomainError> {
-        let Some(retry) = self.capacity_retry.as_ref() else {
+        let Some(retry) = self.capacity_retry.clone() else {
             return Ok(false);
         };
         if self.state != RunJobState::Queued
@@ -269,7 +255,10 @@ impl RunJob {
             return Ok(false);
         }
         self.ensure_time_not_before_update(now_unix)?;
-        self.capacity_retry.as_mut().unwrap().next_attempt_at_unix = None;
+        self.capacity_retry = Some(CapacityRetry {
+            next_attempt_at_unix: None,
+            ..retry
+        });
         self.state = RunJobState::Failed;
         self.updated_at_unix = now_unix;
         self.completed_at_unix = Some(now_unix);

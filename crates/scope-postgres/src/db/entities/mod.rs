@@ -47,7 +47,11 @@ use sea_orm::entity::prelude::*;
 pub(super) fn encode_enum<T: serde::Serialize>(value: T) -> Result<String, PostgresError> {
     match serde_json::to_value(value).map_err(PostgresError::internal)? {
         serde_json::Value::String(value) => Ok(value),
-        _ => Err(PostgresError::internal_message(
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::Array(_)
+        | serde_json::Value::Object(_) => Err(PostgresError::internal_message(
             "enum did not serialize to string",
         )),
     }
@@ -60,7 +64,7 @@ pub(super) fn decode_enum<T: serde::de::DeserializeOwned>(
 }
 
 #[derive(Default)]
-pub struct RepositoryFacts {
+pub(super) struct RepositoryFacts {
     pub first_push_token: Option<FirstPushToken>,
     pub git_push_token: Option<GitPushToken>,
     pub git_head: Option<GitHead>,
@@ -77,35 +81,35 @@ mod request_auto_merge;
 mod requests;
 mod runs;
 
-pub use auth::{
+pub(super) use auth::{
     auth_identity, clerk_user_deletion, cli_browser_login, cli_device_login, cli_exchange_grant,
     cli_session, user,
 };
-pub use collaboration::{
+pub(super) use collaboration::{
     repository_invite, repository_invite_email, repository_invite_link, repository_member,
 };
-pub use github_accounts::{AuthorColumns, discussion_author, github_account};
-pub use history::{
+pub(super) use github_accounts::{AuthorColumns, discussion_author, github_account};
+pub(super) use history::{
     file_change, live_file, logical_commit, object_reference, visibility_change,
     visibility_change_set,
 };
-pub use jobs::{
+pub(super) use jobs::{
     git_compaction_job, metadata_lock, outbox_job, repo_storage_cleanup_job,
     source_blob_cleanup_job,
 };
-pub use read_models::{projection_file, projection_read_model};
-pub use repositories::{
+pub(super) use read_models::{projection_file, projection_read_model};
+pub(super) use repositories::{
     git_head, git_segment_upload, repository, repository_first_push_token,
     repository_git_push_token, repository_landing_file, repository_workflow_catalog,
     repository_workflow_file,
 };
-pub use request_auto_merge::request_auto_merge_intent;
-pub use requests::{
+pub(super) use request_auto_merge::request_auto_merge_intent;
+pub(super) use requests::{
     request, request_attention_state, request_check_evaluation, request_claim, request_discussion,
     request_discussion_read_state, request_discussion_reply, request_event, request_invitee,
     request_rating, request_revision, revision_context_receipt,
 };
-pub use runs::{
+pub(super) use runs::{
     push_trigger_evaluation, run, run_attempt, run_attempt_cache, run_attempt_cache_setup,
     run_attempt_step, run_job, run_log, workflow_revision,
 };

@@ -145,7 +145,7 @@ pub(crate) async fn prepare(
                     true,
                 ),
                 Err(error) => {
-                    let _ = crate::git::storage::remove_dir_if_exists(&staging.path);
+                    crate::git::storage::discard_dir(&staging.path);
                     return Err(error);
                 }
             }
@@ -190,7 +190,7 @@ pub(crate) async fn prepare(
         match crate::git::blocking::run(move || receive_pack_refs(&path)).await {
             Ok(refs) => Some(refs),
             Err(error) => {
-                let _ = crate::git::storage::remove_dir_if_exists(&staging_repo);
+                crate::git::storage::discard_dir(&staging_repo);
                 return Err(error);
             }
         }

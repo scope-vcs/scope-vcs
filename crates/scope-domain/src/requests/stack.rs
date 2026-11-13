@@ -76,7 +76,13 @@ impl RequestStackStatus {
             Self::NeedsMainUpdate => {
                 Some("Request view main moved. Run scope request restack, then scope request push.")
             }
-            _ => self.blocking_reason(),
+            Self::Main
+            | Self::WaitingForParent
+            | Self::ParentExtended
+            | Self::ParentRewritten
+            | Self::ParentClosed
+            | Self::AncestorBlocked
+            | Self::IntegrationConflict => self.blocking_reason(),
         }
     }
 }

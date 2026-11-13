@@ -17,7 +17,7 @@ use {
 
 mod fold;
 
-pub use fold::fold_live_projection_read_models;
+pub(super) use fold::fold_live_projection_read_models;
 pub(super) use fold::{build_projection_read_model, eager_views};
 
 pub(super) enum ProjectionFileLookup {

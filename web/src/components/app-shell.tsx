@@ -7,7 +7,7 @@ export function AppShell({
   header,
 }: {
   children: ReactNode
-  header?: () => ReactNode
+  header?: ReactNode
 }) {
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
@@ -17,7 +17,7 @@ export function AppShell({
       >
         Skip to content
       </a>
-      {header?.()}
+      {header}
       <main
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [scrollbar-gutter:stable] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         data-scroll-restoration-id={MAIN_CONTENT_ID}

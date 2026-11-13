@@ -2,7 +2,7 @@ use crate::{
     error::ApiError,
     git::{
         cache::GitRepoHandle,
-        http_backend::{CgiResponse, git_http_backend_streaming},
+        http_backend::{CgiResponse, git_receive_pack_streaming},
         request_refs::{DeferredRequestObjects, receive_pack_refs},
     },
     state::AppState,
@@ -27,16 +27,7 @@ pub(super) struct ReceivePackRun<'a> {
 
 impl ReceivePackRun<'_> {
     async fn run(&self, body: Body) -> Result<CgiResponse, ApiError> {
-        git_http_backend_streaming(
-            self.staging_repo,
-            "git-receive-pack",
-            body,
-            self.content_length,
-            self.max_bytes,
-            self.content_type.clone(),
-            self.remote_user,
-        )
-        .await
+        git_receive_pack_streaming(self, body).await
     }
 }
 

@@ -40,7 +40,8 @@ test('a settled row leaves active at once and heads set aside', () => {
   const shown = applyAttentionMoves(loaded, [{ item: a, command: { action: 'settle' }, atUnix: 500, confirmed: null }])
   assert.deepEqual(ids(shown.active.requests), ['b'])
   assert.deepEqual(ids(shown.set_aside.requests), ['a', 'c'])
-  const moved = shown.set_aside.requests[0].attention
+  const [moved] = shown.set_aside.requests.map(({ attention }) => attention)
+  assert.ok(moved)
   assert.equal(moved.reason, 'settled')
   assert.equal(moved.group, 'set_aside')
   assert.equal(moved.can_restore, true)
@@ -61,8 +62,10 @@ test('a restored row returns to active and can be set aside again', () => {
   const shown = applyAttentionMoves(pages({ set_aside: [a] }), [{ item: a, command: { action: 'restore' }, atUnix: 500, confirmed: null }])
   assert.deepEqual(ids(shown.set_aside.requests), [])
   assert.deepEqual(ids(shown.active.requests), ['a'])
-  assert.equal(shown.active.requests[0].attention.can_set_aside, true)
-  assert.equal(shown.active.requests[0].attention.group, 'needs_you')
+  const [restored] = shown.active.requests
+  assert.ok(restored)
+  assert.equal(restored.attention.can_set_aside, true)
+  assert.equal(restored.attention.group, 'needs_you')
 })
 
 test('a move holds even when a stale refresh still lists the row in its old section', () => {

@@ -80,7 +80,7 @@ fn a_github_repository_serves_one_scope_repository_at_a_time() {
         "octo/repo-42 is already connected to another Scope repository."
     );
 
-    let mut uninstalled = elsewhere.clone();
+    let mut uninstalled = elsewhere;
     assert!(uninstalled.apply_installation_change(7, &GitHubInstallationChange::Uninstalled, NOW));
     connect_github_repository(owner(), None, Some(&uninstalled), command("owner/repo", 42))
         .unwrap();

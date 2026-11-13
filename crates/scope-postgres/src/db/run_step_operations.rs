@@ -1,6 +1,9 @@
 use super::{AttemptMutation, DispatchClaim, RunStore};
 use crate::error::PostgresError;
-use scope_domain::runs::{attempt::RunAttempt, step::StepConclusion};
+use scope_domain::runs::{
+    attempt::RunAttempt,
+    step::{StepCompletion, StepConclusion},
+};
 
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_attempt_step"))]
@@ -17,7 +20,6 @@ impl RunStore {
         .await
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_attempt_step"))]
     pub async fn complete_attempt_step(
         &self,
@@ -33,9 +35,11 @@ impl RunStore {
                 job,
                 steps,
                 token_hash,
-                step_index,
-                conclusion,
-                logs_truncated,
+                StepCompletion {
+                    step_index,
+                    conclusion,
+                    logs_truncated,
+                },
                 now_unix,
             )
         };

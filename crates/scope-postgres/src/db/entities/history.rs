@@ -1,11 +1,11 @@
 use super::*;
 
-pub mod logical_commit {
+pub(crate) mod logical_commit {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_logical_commits")]
-    pub struct Model {
+    pub(crate) struct Model {
         pub occurred_at_unix: Option<i64>,
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
@@ -18,16 +18,16 @@ pub mod logical_commit {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod file_change {
+pub(crate) mod file_change {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_file_changes")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -41,16 +41,16 @@ pub mod file_change {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod visibility_change_set {
+pub(crate) mod visibility_change_set {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_visibility_change_sets")]
-    pub struct Model {
+    pub(crate) struct Model {
         pub occurred_at_unix: Option<i64>,
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
@@ -65,16 +65,16 @@ pub mod visibility_change_set {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod visibility_change {
+pub(crate) mod visibility_change {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_visibility_changes")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -88,16 +88,16 @@ pub mod visibility_change {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod live_file {
+pub(crate) mod live_file {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_live_files")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -107,16 +107,16 @@ pub mod live_file {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod object_reference {
+pub(crate) mod object_reference {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_object_references")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub object_key: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -126,7 +126,7 @@ pub mod object_reference {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }

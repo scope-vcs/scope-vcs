@@ -36,6 +36,17 @@ pub struct CacheUploadRecord {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestedCacheUpload<'a> {
+    pub repository_id: &'a str,
+    pub identity_digest: &'a str,
+    pub compatibility_group_digest: &'a str,
+    pub checksum_sha256: &'a str,
+    pub size_bytes: u64,
+    pub storage_backend: &'a str,
+    pub upload_id: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CacheUploadState {
     Active,
     Deleting,

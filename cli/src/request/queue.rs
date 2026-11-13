@@ -169,7 +169,24 @@ fn queue_row_line(row: &QueueRow, now_unix: u64) -> String {
         | RequestMergeabilityStatus::ReviewFindingsOpen => {
             format!(" · {}", render::mergeability_label(&request.mergeability))
         }
-        _ => String::new(),
+        RequestMergeabilityStatus::WaitingForParent
+        | RequestMergeabilityStatus::ParentRewritten
+        | RequestMergeabilityStatus::ParentClosed
+        | RequestMergeabilityStatus::AncestorBlocked
+        | RequestMergeabilityStatus::IntegrationConflict
+        | RequestMergeabilityStatus::NeedsMainUpdate
+        | RequestMergeabilityStatus::Ready
+        | RequestMergeabilityStatus::RepositoryNotReady
+        | RequestMergeabilityStatus::Draft
+        | RequestMergeabilityStatus::Closed
+        | RequestMergeabilityStatus::Merged
+        | RequestMergeabilityStatus::NotMaintainer
+        | RequestMergeabilityStatus::MissingRequestBranch
+        | RequestMergeabilityStatus::ChecksNotEvaluated
+        | RequestMergeabilityStatus::ChecksAwaitingApproval
+        | RequestMergeabilityStatus::ChecksPending
+        | RequestMergeabilityStatus::ChecksFailed
+        | RequestMergeabilityStatus::ChecksConfigurationError => String::new(),
     };
     let changes = request
         .diff_stat

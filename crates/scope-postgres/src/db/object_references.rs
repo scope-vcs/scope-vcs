@@ -13,7 +13,7 @@ pub(in crate::db) fn decode_content_ref(encoded: &str) -> Result<ContentRef, Pos
     serde_json::from_str(encoded).map_err(PostgresError::internal)
 }
 
-pub async fn insert_object_reference<C>(
+pub(super) async fn insert_object_reference<C>(
     conn: &C,
     ref_kind: &str,
     ref_id: &str,
@@ -33,7 +33,7 @@ where
     Ok(())
 }
 
-pub async fn delete_repository_object_references<C>(
+pub(super) async fn delete_repository_object_references<C>(
     conn: &C,
     repo_id: &str,
 ) -> Result<(), PostgresError>
@@ -54,7 +54,7 @@ where
 }
 
 #[cfg(test)]
-pub async fn referenced_content_refs<C>(
+pub(super) async fn referenced_content_refs<C>(
     conn: &C,
 ) -> Result<std::collections::BTreeSet<ContentRef>, PostgresError>
 where

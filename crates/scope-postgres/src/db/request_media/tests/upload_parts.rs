@@ -8,9 +8,11 @@ async fn releasing_a_failed_part_write_lets_the_next_retry_write_immediately() {
     let media = fixture.store.media();
     let reserve = |suffix: &str, write_token: &'static str, now_unix: u64| {
         media.reserve_upload_part(
-            "release_attachment",
-            &prepared.upload_id,
-            OWNER_ID,
+            AttachmentUploadSession {
+                attachment_id: "release_attachment",
+                upload_id: &prepared.upload_id,
+                uploader_user_id: OWNER_ID,
+            },
             part("release_attachment", suffix),
             write_token,
             now_unix,

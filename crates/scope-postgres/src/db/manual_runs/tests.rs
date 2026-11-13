@@ -239,11 +239,13 @@ async fn uploaded_enqueue_replay_preserves_dispatch_and_terminal_execution() {
     runs.dispatch_job(
         &first.run.id,
         "checks",
-        "replay-attempt",
-        &token,
-        "runtime",
+        scope_domain::runs::job::AttemptDispatch {
+            attempt_id: "replay-attempt".to_string(),
+            token_hash: token.clone(),
+            runtime_version: "runtime".to_string(),
+            lease_expires_at_unix: 100,
+        },
         12,
-        100,
     )
     .await
     .unwrap();

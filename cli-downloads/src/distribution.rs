@@ -10,7 +10,7 @@ struct RawManifest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct DistributionTarget {
+pub(crate) struct DistributionTarget {
     pub triple: String,
     pub artifact: String,
     pub os: String,
@@ -18,19 +18,20 @@ pub struct DistributionTarget {
 }
 
 #[derive(Clone, Debug)]
-pub struct DistributionManifest {
+pub(crate) struct DistributionManifest {
     targets: Vec<DistributionTarget>,
 }
 
 impl DistributionManifest {
-    pub fn bundled() -> &'static Self {
+    #[expect(clippy::expect_used)]
+    pub(crate) fn bundled() -> &'static Self {
         static MANIFEST: OnceLock<DistributionManifest> = OnceLock::new();
         MANIFEST.get_or_init(|| {
             Self::from_json(TARGET_MANIFEST_JSON).expect("bundled distribution manifest is valid")
         })
     }
 
-    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+    pub(crate) fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         let raw: RawManifest = serde_json::from_str(json)?;
         assert_eq!(raw.schema_version, 2, "unsupported distribution manifest");
         Ok(Self {
@@ -38,11 +39,11 @@ impl DistributionManifest {
         })
     }
 
-    pub fn targets(&self) -> &[DistributionTarget] {
+    pub(crate) fn targets(&self) -> &[DistributionTarget] {
         &self.targets
     }
 
-    pub fn download(&self, requested: &str) -> Option<Download<'_>> {
+    pub(crate) fn download(&self, requested: &str) -> Option<Download<'_>> {
         self.targets.iter().find_map(|target| {
             if target.artifact == requested {
                 Some(Download::Archive(target))
@@ -54,7 +55,7 @@ impl DistributionManifest {
         })
     }
 
-    pub fn required_downloads(&self) -> impl Iterator<Item = String> + '_ {
+    pub(crate) fn required_downloads(&self) -> impl Iterator<Item = String> + '_ {
         self.targets
             .iter()
             .flat_map(|target| [target.artifact.clone(), target.checksum_artifact()])
@@ -62,13 +63,13 @@ impl DistributionManifest {
 }
 
 impl DistributionTarget {
-    pub fn checksum_artifact(&self) -> String {
+    pub(crate) fn checksum_artifact(&self) -> String {
         format!("{}.sha256", self.artifact)
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum Download<'a> {
+pub(crate) enum Download<'a> {
     Archive(&'a DistributionTarget),
     Checksum,
 }

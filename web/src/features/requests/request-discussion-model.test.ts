@@ -24,7 +24,7 @@ test('includes an explicitly focused discussion beyond the first page', () => {
     discussionPage([discussion('focused', 2)], 10),
   )
   assert.deepEqual(result?.discussions.map(({ id }) => id), ['newest', 'focused'])
-  assert.equal(result?.next_cursor, 'older')
+  assert.equal(result.next_cursor, 'older')
 })
 
 test('open discussion replies expand by default and explicit thread state wins', () => {

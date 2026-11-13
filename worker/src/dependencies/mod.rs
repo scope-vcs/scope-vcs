@@ -226,7 +226,9 @@ async fn cancel_analysis(
     task: tokio::task::JoinHandle<anyhow::Result<AnalyzerOutput>>,
 ) {
     cancellation.cancel();
-    let _ = task.await;
+    if let Err(error) = task.await {
+        tracing::warn!(%error, "dependency analysis task failed while cancelling");
+    }
 }
 
 async fn analyze(

@@ -120,7 +120,7 @@ fn push_to_main(
         let local_config_hash = repo_config_fingerprint(&config)?;
         match load_worktree_scope_repo_config_base_hash(&git_repo.root) {
             Ok(hash) if hash == push_context.config_hash => {}
-            Ok(_) if local_config_hash == push_context.config_hash => {
+            Ok(_) | Err(_) if local_config_hash == push_context.config_hash => {
                 mark_worktree_scope_repo_config_synced(&git_repo.root, &config)?;
             }
             Ok(hash) if hash == local_config_hash => {
@@ -135,9 +135,6 @@ fn push_to_main(
             Ok(_) => return Err(CliError::conflict(format!(
                 "Scope repo config changed, and local {} has unsynced edits. Run scope visibility edit, resolve the config, then retry scope push --main.", config_path.display()
             )).into()),
-            Err(_) if local_config_hash == push_context.config_hash => {
-                mark_worktree_scope_repo_config_synced(&git_repo.root, &config)?;
-            }
             Err(error) => return Err(CliError::conflict(format!(
                 "{error}. Local {} has unsynced edits, so Scope will not overwrite it.", config_path.display()
             )).into()),

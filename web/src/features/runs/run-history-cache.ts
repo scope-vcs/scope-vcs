@@ -46,12 +46,12 @@ export async function refreshRunHistory({ key, input, loadHistory, loadPage }: H
   const current = snapshot.value
   if (!current?.history) return
   const load = (signal: AbortSignal) => loadRunPageSnapshot({ key, input, loadHistory, loadPage, signal })
-  if (snapshot.pending) {
+  if (snapshot.pending && snapshot.version !== null) {
     if (snapshot.version === 'refresh') {
       await runHistoryResource.load(key, 'refresh', load)
       return
     }
-    await runHistoryResource.ensure(key, snapshot.version!, load)
+    await runHistoryResource.ensure(key, snapshot.version, load)
     return refreshRunHistory({ key, input, loadHistory, loadPage })
   }
   runHistoryResource.invalidate(key)
@@ -61,8 +61,9 @@ export async function refreshRunHistory({ key, input, loadHistory, loadPage }: H
 export async function loadMoreRunHistory({ key, input, loadHistory }: HistoryRequest): Promise<void> {
   const snapshot = runHistoryResource.getSnapshot(key)
   const current = snapshot.value
-  if (snapshot.pending || !current?.history?.next_cursor) return
-  const after = current.history.next_cursor
+  const history = current?.history
+  if (snapshot.pending || !current || !history?.next_cursor) return
+  const after = history.next_cursor
   runHistoryResource.invalidate(key)
   await runHistoryResource.ensure(key, 'more', async (signal) => {
     const next = await loadHistory({ ...input, after }, AbortSignal.any([signal, AbortSignal.timeout(15_000)]))
@@ -70,7 +71,7 @@ export async function loadMoreRunHistory({ key, input, loadHistory }: HistoryReq
       ...current,
       history: next ? {
         next_cursor: next.next_cursor,
-        runs: mergeRunHistory(current.history!.runs, next.runs),
+        runs: mergeRunHistory(history.runs, next.runs),
       } : null,
       pageCount: current.pageCount + (next ? 1 : 0),
     }

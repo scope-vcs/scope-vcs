@@ -43,10 +43,7 @@ pub struct AppState {
 impl AppState {
     pub async fn from_settings(settings: Settings) -> anyhow::Result<Self> {
         let metadata = MetadataStore::connect(settings.database_url).await?;
-        let storage = settings
-            .storage
-            .connect(settings.max_storage_operations)
-            .await?;
+        let storage = settings.storage.connect(settings.max_storage_operations)?;
         Ok(Self {
             metadata,
             storage,

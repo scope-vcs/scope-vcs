@@ -46,10 +46,7 @@ impl MediaStorageSettings {
         })
     }
 
-    pub async fn connect(
-        self,
-        max_storage_operations: usize,
-    ) -> Result<MediaStorage, MediaStorageError> {
+    pub fn connect(self, max_storage_operations: usize) -> Result<MediaStorage, MediaStorageError> {
         let encryption_key = self.encryption_key;
         MediaStorage::encrypted(self.backend()?, encryption_key, max_storage_operations)
     }

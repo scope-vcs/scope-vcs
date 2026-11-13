@@ -19,7 +19,7 @@ enum Ended {
 fn invite(id: &str, ended: Ended) -> RepositoryInvite {
     let expires_at_unix = match ended {
         Ended::Expired(at) => at,
-        _ => NOW + 1,
+        Ended::Accepted(_) | Ended::Revoked(_) | Ended::Pending => NOW + 1,
     };
     let created_at_unix = expires_at_unix - REPOSITORY_INVITE_TTL_SECS;
     let email = format!("{id}@example.com");
@@ -37,11 +37,11 @@ fn invite(id: &str, ended: Ended) -> RepositoryInvite {
         accepted_by_user_id: matches!(ended, Ended::Accepted(_)).then(|| "user_public".into()),
         accepted_at_unix: match ended {
             Ended::Accepted(at) => Some(at),
-            _ => None,
+            Ended::Revoked(_) | Ended::Expired(_) | Ended::Pending => None,
         },
         revoked_at_unix: match ended {
             Ended::Revoked(at) => Some(at),
-            _ => None,
+            Ended::Accepted(_) | Ended::Expired(_) | Ended::Pending => None,
         },
     }
 }

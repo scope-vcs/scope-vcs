@@ -100,7 +100,7 @@ test('concurrent navigation loads the initial discussion page once and reopening
   const reopened = await loadRequestDiscussionSession(options)
   assert.equal(load.mock.callCount(), 1)
   assert.equal(reopened?.next_cursor, null)
-  assert.deepEqual(reopened?.discussions.map(({ id }) => id), ['discussion-0', 'old'])
+  assert.deepEqual(reopened.discussions.map(({ id }) => id), ['discussion-0', 'old'])
 })
 
 test('focused navigation that joins an initial load still fetches its missing discussion', async () => {
@@ -140,7 +140,7 @@ for (const [failure, load] of [
     await session.sync.paginate('older', async () => ({ discussions: [discussion('old', 0)], next_cursor: null, snapshot_version: 1 }))
     const retained = await loadRequestDiscussionSession({ key: 'request', focusedDiscussionId: 'missing', load, loadChanges: noChanges })
     assert.deepEqual(retained?.discussions.map(({ id }) => id), ['discussion-0', 'old'])
-    assert.equal(retained?.next_cursor, null)
+    assert.equal(retained.next_cursor, null)
   })
 }
 

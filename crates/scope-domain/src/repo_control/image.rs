@@ -13,7 +13,10 @@ pub enum ImageContextPathError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImageContextPath(String);
+pub struct ImageContextPath {
+    path: String,
+    image_name_end: usize,
+}
 
 impl ImageContextPath {
     pub fn parse(path: impl Into<String>) -> Result<Self, ImageContextPathError> {
@@ -32,26 +35,23 @@ impl ImageContextPath {
         {
             return Err(ImageContextPathError::InvalidPath);
         }
-        Ok(Self(path))
+        let image_name_end = REPO_IMAGE_CONTEXT_PREFIX.len() + image_name.len();
+        Ok(Self {
+            path,
+            image_name_end,
+        })
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.path
     }
 
     pub fn image_name(&self) -> &str {
-        self.relative_parts().0
+        &self.path[REPO_IMAGE_CONTEXT_PREFIX.len()..self.image_name_end]
     }
 
     pub fn context_path(&self) -> &str {
-        self.relative_parts().1
-    }
-
-    fn relative_parts(&self) -> (&str, &str) {
-        self.0
-            .strip_prefix(REPO_IMAGE_CONTEXT_PREFIX)
-            .and_then(|relative| relative.split_once('/'))
-            .expect("validated image context paths contain an image name and context path")
+        &self.path[self.image_name_end + 1..]
     }
 }
 

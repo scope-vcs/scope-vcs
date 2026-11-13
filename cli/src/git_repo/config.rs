@@ -58,8 +58,8 @@ pub fn scope_api_url_from_git_config(repo_root: &Path) -> anyhow::Result<Option<
 
 pub(super) fn transport_origin(value: &str) -> anyhow::Result<String> {
     let mut url = Url::parse(value).context("parse Scope transport URL")?;
-    let _ = url.set_username("");
-    let _ = url.set_password(None);
+    url.set_username("").ok();
+    url.set_password(None).ok();
     url.set_path("");
     url.set_query(None);
     url.set_fragment(None);

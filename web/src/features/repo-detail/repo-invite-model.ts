@@ -39,7 +39,7 @@ export function invitationDetail(invite: RepositoryInviteResponse): string {
       return `Email sent · ${expiry}`
     case 'failed':
       return `Delivery failed · Invitation still valid · ${expiry}`
-    default:
+    case undefined:
       return `Not emailed · ${expiry}`
   }
 }
@@ -52,7 +52,7 @@ export function emailActionLabel(invite: RepositoryInviteResponse): string {
       return 'Retry email'
     case 'sent':
       return 'Resend'
-    default:
+    case undefined:
       return 'Send email'
   }
 }

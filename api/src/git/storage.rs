@@ -84,6 +84,26 @@ pub(crate) fn delete_repo_storage(
     Ok(())
 }
 
+pub(crate) fn discard_dir(path: &FsPath) {
+    match fs::remove_dir_all(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "failed to remove temporary Git directory");
+        }
+    }
+}
+
+pub(crate) fn discard_file(path: &FsPath) {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "failed to remove temporary Git file");
+        }
+    }
+}
+
 pub(crate) fn remove_dir_if_exists(path: &FsPath) -> Result<(), ApiError> {
     match fs::remove_dir_all(path) {
         Ok(()) => Ok(()),

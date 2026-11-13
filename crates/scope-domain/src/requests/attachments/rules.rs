@@ -798,8 +798,8 @@ fn validate_target_matches_binding(
     binding: &RequestAttachmentBindingTarget,
 ) -> Result<(), DomainError> {
     let matches = match (prepared, binding) {
-        (RequestAttachmentTarget::Description, RequestAttachmentBindingTarget::Description) => true,
-        (
+        (RequestAttachmentTarget::Description, RequestAttachmentBindingTarget::Description)
+        | (
             RequestAttachmentTarget::Discussion {
                 discussion_id: None,
             },
@@ -810,8 +810,8 @@ fn validate_target_matches_binding(
                 discussion_id: Some(prepared),
             },
             RequestAttachmentBindingTarget::Discussion { discussion_id },
-        ) => prepared == discussion_id,
-        (
+        )
+        | (
             RequestAttachmentTarget::Reply {
                 discussion_id: prepared,
             },

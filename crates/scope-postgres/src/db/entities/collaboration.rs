@@ -1,11 +1,11 @@
 use super::*;
 
-pub mod repository_member {
+pub(crate) mod repository_member {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_members")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -16,12 +16,12 @@ pub mod repository_member {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(member: &RepositoryMember) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(member: &RepositoryMember) -> Result<Self, PostgresError> {
             Ok(Self {
                 repo_id: member.repo_id.clone(),
                 user_id: member.user_id.clone(),
@@ -37,7 +37,7 @@ pub mod repository_member {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RepositoryMember, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RepositoryMember, PostgresError> {
             Ok(RepositoryMember {
                 repo_id: self.repo_id,
                 user_id: self.user_id,
@@ -51,12 +51,12 @@ pub mod repository_member {
         }
     }
 }
-pub mod repository_invite {
+pub(crate) mod repository_invite {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_invites")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub repo_id: String,
@@ -73,12 +73,12 @@ pub mod repository_invite {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(invite: &RepositoryInvite) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(invite: &RepositoryInvite) -> Result<Self, PostgresError> {
             Ok(Self {
                 id: invite.id.clone(),
                 repo_id: invite.repo_id.clone(),
@@ -110,7 +110,7 @@ pub mod repository_invite {
             })
         }
 
-        pub fn try_into_domain(
+        pub(crate) fn try_into_domain(
             self,
             link_hashes: Vec<String>,
         ) -> Result<RepositoryInvite, PostgresError> {
@@ -141,29 +141,29 @@ pub mod repository_invite {
         }
     }
 }
-pub mod repository_invite_link {
+pub(crate) mod repository_invite_link {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_invite_links")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub token_hash: String,
         pub invite_id: String,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-pub mod repository_invite_email {
+pub(crate) mod repository_invite_email {
     use super::*;
     use scope_domain::repo_invite_email::{RepositoryInviteEmail, RepositoryInviteEmailState};
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_invite_emails")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub invite_id: Option<String>,
@@ -180,11 +180,11 @@ pub mod repository_invite_email {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
-    pub fn state_name(state: RepositoryInviteEmailState) -> &'static str {
+    pub(crate) fn state_name(state: RepositoryInviteEmailState) -> &'static str {
         match state {
             RepositoryInviteEmailState::Queued => "Queued",
             RepositoryInviteEmailState::Sent => "Sent",
@@ -193,7 +193,7 @@ pub mod repository_invite_email {
     }
 
     impl Model {
-        pub fn try_into_domain(self) -> Result<RepositoryInviteEmail, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RepositoryInviteEmail, PostgresError> {
             let state = match self.state.as_str() {
                 "Queued" => RepositoryInviteEmailState::Queued,
                 "Sent" => RepositoryInviteEmailState::Sent,

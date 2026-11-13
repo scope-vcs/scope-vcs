@@ -19,7 +19,7 @@ pub struct ProductAnalytics {
 }
 
 impl ProductAnalytics {
-    pub async fn from_env(source: EventSource) -> anyhow::Result<Self> {
+    pub fn from_env(source: EventSource) -> anyhow::Result<Self> {
         let Some(context) = ProductEventContext::from_env(source) else {
             return Ok(Self::disabled());
         };
@@ -146,8 +146,7 @@ impl ProductEventContext {
         let environment = match configured_environment {
             Some("production") => AnalyticsEnvironment::Production,
             Some("test") => AnalyticsEnvironment::Test,
-            Some(_) => return None,
-            None => return None,
+            Some(_) | None => return None,
         };
         let mismatched_deployment = match environment {
             AnalyticsEnvironment::Production => {
@@ -206,23 +205,22 @@ pub struct RecordingProductAnalytics {
 
 #[cfg(any(test, feature = "test-support"))]
 impl RecordingProductAnalytics {
+    fn recorded(&self) -> std::sync::MutexGuard<'_, Vec<ProductEvent>> {
+        self.events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     pub fn events(&self) -> Vec<ProductEvent> {
-        self.events.lock().unwrap().clone()
+        self.recorded().clone()
     }
 
     pub fn event_names(&self) -> Vec<&'static str> {
-        self.events
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|event| event.name)
-            .collect()
+        self.recorded().iter().map(|event| event.name).collect()
     }
 
     pub fn property(&self, event_index: usize, name: &str) -> Option<Value> {
-        self.events
-            .lock()
-            .unwrap()
+        self.recorded()
             .get(event_index)
             .and_then(|event| event.properties.get(name))
             .cloned()
@@ -232,7 +230,7 @@ impl RecordingProductAnalytics {
 #[cfg(any(test, feature = "test-support"))]
 impl ProductAnalyticsSink for RecordingProductAnalytics {
     fn capture(&self, event: ProductEvent) -> Result<(), ProductAnalyticsError> {
-        self.events.lock().unwrap().push(event);
+        self.recorded().push(event);
         Ok(())
     }
 }

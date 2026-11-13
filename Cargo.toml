@@ -28,6 +28,25 @@ resolver = "3"
 sqlx-core = { git = "https://github.com/transact-rs/sqlx", rev = "f1e94ec34dd5f11ad6488a3a8ac7988439a3f757" }
 sqlx-postgres = { git = "https://github.com/transact-rs/sqlx", rev = "f1e94ec34dd5f11ad6488a3a8ac7988439a3f757" }
 
+[workspace.lints.rust]
+unreachable_pub = "warn"
+unsafe_code = "warn"
+
+[workspace.lints.clippy]
+allow_attributes = "warn"
+dbg_macro = "warn"
+expect_used = "warn"
+let_underscore_must_use = "warn"
+match_same_arms = "warn"
+redundant_clone = "warn"
+todo = "warn"
+unimplemented = "warn"
+unnecessary_wraps = "warn"
+unused_async = "warn"
+unused_self = "warn"
+unwrap_used = "warn"
+wildcard_enum_match_arm = "warn"
+
 [profile.dev]
 debug = "line-tables-only"
 
@@ -83,7 +102,6 @@ tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 ts-rs = "12.0.1"
 url = "2.5.8"
-xmlparser = "0.13.6"
 
 scope_api_contract = { package = "scope-api-contract", path = "crates/scope-api-contract" }
 scope_cache_domain = { package = "scope-cache-domain", path = "crates/scope-cache-domain" }

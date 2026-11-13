@@ -40,8 +40,8 @@ struct ProjectionBuildArtifacts {
 
 impl Drop for ProjectionBuildArtifacts {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.repo);
-        let _ = fs::remove_file(&self.index);
+        crate::git::storage::discard_dir(&self.repo);
+        crate::git::storage::discard_file(&self.index);
     }
 }
 
@@ -134,15 +134,10 @@ pub(crate) fn projection_bare_repo_with_loader(
     }
 
     for projected in projection.commits.iter().skip(reused_commits) {
-        if native_range
-            .as_ref()
-            .is_some_and(|range| range.logical_commit_id != projected.logical_commit_id)
+        if let Some(range) =
+            native_range.take_if(|range| range.logical_commit_id != projected.logical_commit_id)
         {
-            finish_native_range(
-                &temp_path,
-                &index,
-                native_range.take().expect("native range checked"),
-            )?;
+            finish_native_range(&temp_path, &index, range)?;
         }
 
         index.apply(&projected.changes, &load_content)?;
@@ -176,7 +171,9 @@ pub(crate) fn projection_bare_repo_with_loader(
                         "native public projection identity does not match projected identity",
                     ));
                 }
-                if native_range.is_none() {
+                let range = if let Some(range) = native_range.as_mut() {
+                    range
+                } else {
                     let base_oid = parent_commit
                         .as_deref()
                         .map(str::trim)
@@ -186,14 +183,13 @@ pub(crate) fn projection_bare_repo_with_loader(
                             )
                         })?
                         .to_string();
-                    native_range = Some(NativeRangeState {
+                    native_range.insert(NativeRangeState {
                         logical_commit_id: projected.logical_commit_id.clone(),
                         base_oid,
                         seen_oids: BTreeSet::new(),
                         head_oid: oid.clone(),
-                    });
-                }
-                let range = native_range.as_mut().expect("native range initialized");
+                    })
+                };
                 copy_and_verify_native_commit(
                     source_repo,
                     &temp_path,
@@ -243,7 +239,7 @@ pub(crate) fn projection_bare_repo_with_loader(
     match fs::rename(&temp_path, &repo_path) {
         Ok(()) => Ok(repo_path),
         Err(error) if repo_path.exists() => {
-            let _ = fs::remove_dir_all(&temp_path);
+            crate::git::storage::discard_dir(&temp_path);
             tracing::debug!(%error, path = %repo_path.display(), "using concurrently-created Git projection cache");
             Ok(repo_path)
         }
@@ -517,27 +513,35 @@ fn projection_cache_key(
     labels: &[ViewId],
     projection: &Projection,
 ) -> Result<String, ApiError> {
-    Ok(projection_cache_keys(incarnation, projection, labels)?
-        .pop()
-        .expect("empty projection has a cache key"))
+    Ok(projection_cache_keys(incarnation, projection, labels)?.latest)
 }
 
 fn view_labels(views: &Views, view: &ViewId) -> Vec<ViewId> {
     views.labels(view).into_iter().collect()
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct ProjectionCacheKeys {
+    by_commit_count: Vec<String>,
+    latest: String,
+}
+
 fn projection_cache_keys(
     incarnation: &RepositoryIncarnation,
     projection: &Projection,
     labels: &[ViewId],
-) -> Result<Vec<String>, ApiError> {
+) -> Result<ProjectionCacheKeys, ApiError> {
     let commit_oids = scope_git::projection_commit_oids(projection).map_err(ApiError::internal)?;
-    Ok(std::iter::once(None)
-        .chain(commit_oids.iter().map(|oid| Some(oid.as_str())))
-        .map(|head_oid| {
-            projection_cache_key_for_head(incarnation, &projection.repo_id, labels, head_oid)
-        })
-        .collect())
+    let key_for_head = |head_oid| {
+        projection_cache_key_for_head(incarnation, &projection.repo_id, labels, head_oid)
+    };
+    Ok(ProjectionCacheKeys {
+        latest: key_for_head(commit_oids.last().map(String::as_str)),
+        by_commit_count: std::iter::once(None)
+            .chain(commit_oids.iter().map(|oid| Some(oid.as_str())))
+            .map(key_for_head)
+            .collect(),
+    })
 }
 
 pub(crate) fn projection_cache_key_for_head(
@@ -598,7 +602,7 @@ fn cached_projection_prefix(
         {
             continue;
         }
-        let name = format!("{}.git", keys[count]);
+        let name = format!("{}.git", keys.by_commit_count[count]);
         if let Some(root) = verified_root
             && projection_cache_is_ready(&root.join(&name))
         {

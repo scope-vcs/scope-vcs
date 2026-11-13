@@ -45,7 +45,12 @@ pub(super) mod fixtures;
 pub(super) mod read_budget;
 
 #[cfg(any(test, feature = "test-support"))]
+#[expect(clippy::expect_used)]
 mod database_templates;
+
+#[cfg(any(test, feature = "test-support"))]
+#[expect(unsafe_code)]
+mod process_os;
 
 #[cfg(any(test, feature = "test-support"))]
 mod process_server;
@@ -54,6 +59,7 @@ mod process_server;
 mod stale_cleanup;
 
 #[cfg(any(test, feature = "test-support"))]
+#[expect(clippy::expect_used)]
 mod runtime;
 #[cfg(any(test, feature = "test-support"))]
 use runtime::{run_test_future, test_runtime};
@@ -111,7 +117,11 @@ impl Drop for TestSchemaLease {
                     database_url,
                     schema_name,
                 } => {
-                    let _ = database.close_by_ref().await;
+                    if let Err(error) = database.close_by_ref().await {
+                        eprintln!(
+                            "closing test schema connection failed for {schema_name}: {error}"
+                        );
+                    }
                     let dropped = async {
                         let db = Database::connect(database_url).await?;
                         let dropped = db
@@ -160,7 +170,9 @@ impl TestDatabaseTarget {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-pub fn connect_postgres_test_store(target: &TestDatabaseTarget) -> anyhow::Result<MetadataStore> {
+pub(super) fn connect_postgres_test_store(
+    target: &TestDatabaseTarget,
+) -> anyhow::Result<MetadataStore> {
     let target = target.clone();
     run_test_future(async move { database_templates::connect_store(&target).await })
 }
@@ -300,14 +312,14 @@ impl CleanupStore {
         &self,
     ) -> Result<Vec<RepoStorageCleanup>, PostgresError> {
         use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
-        Ok(entities::repo_storage_cleanup_job::Entity::find()
+        entities::repo_storage_cleanup_job::Entity::find()
             .filter(entities::repo_storage_cleanup_job::Column::CompletedAtUnix.is_null())
             .order_by_asc(entities::repo_storage_cleanup_job::Column::RepoId)
             .all(self.db.as_ref())
             .await?
             .into_iter()
-            .map(|cleanup| cleanup.into_domain())
-            .collect())
+            .map(entities::repo_storage_cleanup_job::Model::try_into_domain)
+            .collect()
     }
 
     pub async fn pending_source_blob_cleanups_for_tests(
@@ -341,11 +353,10 @@ impl AuthStore {
         &self,
         user_id: &str,
     ) -> Result<Option<UserAccount>, PostgresError> {
-        entities::user::Entity::find_by_id(user_id.to_string())
+        Ok(entities::user::Entity::find_by_id(user_id.to_string())
             .one(self.db.as_ref())
             .await?
-            .map(entities::user::Model::try_into_domain)
-            .transpose()
+            .map(entities::user::Model::into_domain))
     }
 
     pub async fn user_count_for_tests(&self) -> Result<u64, PostgresError> {

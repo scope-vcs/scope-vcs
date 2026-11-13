@@ -4,9 +4,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const WORK_ROOT: &str = "/scope/work";
+pub(crate) const WORK_ROOT: &str = "/scope/work";
 
-pub struct RuntimeSettings {
+pub(crate) struct RuntimeSettings {
     pub api_url: String,
     pub attempt_id: String,
     pub bootstrap_token: String,
@@ -14,7 +14,7 @@ pub struct RuntimeSettings {
 }
 
 impl RuntimeSettings {
-    pub fn from_env() -> anyhow::Result<Self> {
+    pub(crate) fn from_env() -> anyhow::Result<Self> {
         let api_url =
             scope_service_runtime::http::ServiceEndpoint::parse(&required("SCOPE_API_URL")?)
                 .context("SCOPE_API_URL")?
@@ -32,7 +32,7 @@ impl RuntimeSettings {
     }
 }
 
-pub fn prepare_work_directory(work_root: &Path) -> anyhow::Result<PathBuf> {
+pub(crate) fn prepare_work_directory(work_root: &Path) -> anyhow::Result<PathBuf> {
     let root = work_root.join("job");
     std::fs::create_dir_all(work_root).context("create runtime work root")?;
     std::fs::create_dir(&root).context("create fresh attempt work directory")?;

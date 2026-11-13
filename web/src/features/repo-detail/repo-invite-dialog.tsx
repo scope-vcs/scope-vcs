@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import * as Dialog from '@radix-ui/react-dialog'
 import { LoaderCircle, Send } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useState, type SubmitEvent } from 'react'
 import { toast } from 'sonner'
 import { notEmailedNotice } from './repo-invite-model'
 import { defaultPermissions } from './repo-member-permission-model'
@@ -45,7 +45,7 @@ export function InviteMemberDialog({
     onOpenChange(next)
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (pending) return
 

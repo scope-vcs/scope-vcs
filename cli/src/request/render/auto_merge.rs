@@ -98,6 +98,16 @@ pub(super) fn activity_line(payload: &RequestEventPayload) -> String {
         RequestEventPayload::AutoMergeFulfilled {
             head_oid, main_oid, ..
         } => super::landed_activity_line("Fulfilled auto-merge", head_oid, main_oid.as_deref()),
-        _ => unreachable!("only auto-merge activity is rendered here"),
+        RequestEventPayload::BaseRetargeted { .. }
+        | RequestEventPayload::Started { .. }
+        | RequestEventPayload::Submitted { .. }
+        | RequestEventPayload::RevisionPushed { .. }
+        | RequestEventPayload::Merged { .. }
+        | RequestEventPayload::Closed { .. }
+        | RequestEventPayload::IdentityEdited { .. }
+        | RequestEventPayload::DiscussionResolved { .. }
+        | RequestEventPayload::DiscussionReopened { .. } => {
+            unreachable!("only auto-merge activity is rendered here")
+        }
     }
 }

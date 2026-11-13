@@ -128,7 +128,7 @@ impl PrivateStackFixture {
         }
     }
 
-    async fn extend_parent(&self) -> String {
+    fn extend_parent(&self) -> String {
         reset_stack_source(&self.source, &self.parent_pin);
         commit_file(&self.source, "parent-fixup.txt", "parent extension\n");
         assert_git_push(
@@ -294,7 +294,7 @@ async fn private_stack_extension_lands_parent_then_child_without_rewriting_child
     assert_child_layer(&fixture, &fixture.parent_pin).await;
     let blocked = merge_stack_request(&fixture.state, &fixture.child_id, &fixture.child_head).await;
     assert_eq!(blocked.status(), StatusCode::CONFLICT);
-    let parent_extension = fixture.extend_parent().await;
+    let parent_extension = fixture.extend_parent();
     let extended_child = stack_request(&fixture.state, &fixture.child_id).await;
     assert_eq!(
         extended_child.stack_status,
@@ -467,7 +467,7 @@ async fn private_stack_rewrite_requires_current_explicit_pin_and_closed_parent_r
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn same_head_repin_receipt_replays_once_and_rejects_another_payload() {
     let mut fixture = PrivateStackFixture::create("private-stack-same-head-receipt").await;
-    let parent_extension = fixture.extend_parent().await;
+    let parent_extension = fixture.extend_parent();
     reset_stack_source(&fixture.source, &fixture.child_head);
     run_git(
         Some(&fixture.source),

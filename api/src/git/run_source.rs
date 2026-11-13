@@ -780,7 +780,7 @@ impl TemporarySourceDirectory {
 
 impl Drop for TemporarySourceDirectory {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        crate::git::storage::discard_dir(&self.path);
     }
 }
 

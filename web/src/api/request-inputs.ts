@@ -1,4 +1,4 @@
-import { parseRepoParams, parseRepoVersionViewInput, parseRepoViewInput } from './repo-params'
+import { parseRepoParams, parseRepoVersionViewInput } from './repo-params'
 import { parseFilePath } from './file-path-input'
 import { parseReviewDiffRenderBudget } from './review-diff-budget-input'
 import type { ApproveRequestChecksInput, RequestParams } from './types'
@@ -49,7 +49,7 @@ function text(value: unknown, field: string, maxBytes: number, allowEmpty = fals
 
 function id(value: unknown, field: string): string {
   const result = text(value, field, 128).trim()
-  if (/[\s/\\\u0000-\u001f\u007f]/u.test(result)) throw new Error(`${field} is invalid.`)
+  if (/[\s/\\\p{Cc}]/u.test(result)) throw new Error(`${field} is invalid.`)
   return result
 }
 

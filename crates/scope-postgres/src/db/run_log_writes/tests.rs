@@ -22,11 +22,13 @@ async fn fixture() -> MetadataStore {
         runs.dispatch_job(
             "run",
             job,
-            &format!("attempt-{job}"),
-            &token,
-            "runtime",
+            scope_domain::runs::job::AttemptDispatch {
+                attempt_id: format!("attempt-{job}"),
+                token_hash: token.clone(),
+                runtime_version: "runtime".to_string(),
+                lease_expires_at_unix: 100,
+            },
             11,
-            100,
         )
         .await
         .unwrap();

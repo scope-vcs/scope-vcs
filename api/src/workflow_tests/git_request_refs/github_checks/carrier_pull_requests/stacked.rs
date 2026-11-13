@@ -74,7 +74,7 @@ impl Stack {
         self.deliver_change_of(&self.parent.branch()).await;
     }
 
-    async fn github_squash_merges_parent(&self) -> String {
+    fn github_squash_merges_parent(&self) -> String {
         let source = &self.parent.source;
         run_git(
             Some(source),
@@ -393,7 +393,7 @@ async fn a_squash_merged_parent_lands_and_its_child_waits_on_main_for_a_restack(
         let (parent, state) = (&stack.parent, &stack.parent.state);
         stack.settle_pushes().await;
         stack.settle_pull_requests().await;
-        let squash = stack.github_squash_merges_parent().await;
+        let squash = stack.github_squash_merges_parent();
         if main_arrives_before_the_merge_is_seen {
             push_main(parent).await;
         }

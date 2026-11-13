@@ -240,13 +240,13 @@ impl AsRef<FsPath> for TempGitRepo {
 
 impl Drop for TempGitRepo {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        crate::git::storage::discard_dir(&self.0);
     }
 }
 
 fn temp_git_repo(label: &str) -> TempGitRepo {
     let repo = unique_test_path(label);
-    let _ = fs::remove_dir_all(&repo);
+    crate::git::storage::remove_dir_if_exists(&repo).unwrap();
     fs::create_dir_all(&repo).unwrap();
     run_git(
         None,
@@ -267,7 +267,7 @@ fn unique_test_path(label: &str) -> PathBuf {
 
 fn clone_test_repo(source: &FsPath, label: &str, bare: bool) -> TempGitRepo {
     let repo = unique_test_path(label);
-    let _ = fs::remove_dir_all(&repo);
+    crate::git::storage::remove_dir_if_exists(&repo).unwrap();
     let mut args = vec!["clone"];
     if bare {
         args.push("--bare");

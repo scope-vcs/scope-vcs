@@ -4,12 +4,12 @@ use scope_domain::requests::{
 };
 use sea_orm::{IntoActiveModel, Set};
 
-pub mod request_auto_merge_intent {
+pub(crate) mod request_auto_merge_intent {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_auto_merge_intents")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub repo_id: String,
@@ -31,11 +31,11 @@ pub mod request_auto_merge_intent {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(
+        pub(crate) fn from_domain(
             value: &RequestAutoMergeIntent,
             created_position: u64,
         ) -> Result<Self, PostgresError> {
@@ -64,7 +64,7 @@ pub mod request_auto_merge_intent {
             })
         }
 
-        pub fn try_into_domain(&self) -> Result<RequestAutoMergeIntent, PostgresError> {
+        pub(crate) fn try_into_domain(&self) -> Result<RequestAutoMergeIntent, PostgresError> {
             let value = RequestAutoMergeIntent {
                 id: self.id.clone(),
                 repo_id: self.repo_id.clone(),
@@ -86,7 +86,7 @@ pub mod request_auto_merge_intent {
             Ok(value)
         }
 
-        pub fn with_transition(
+        pub(crate) fn with_transition(
             self,
             value: &RequestAutoMergeIntent,
         ) -> Result<ActiveModel, PostgresError> {

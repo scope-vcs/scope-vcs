@@ -33,8 +33,7 @@ export function CopyableCodeBlock({
   async function copyToClipboard() {
     try {
       await navigator.clipboard.writeText(value)
-    } catch (error) {
-      console.error('copy failed', error)
+    } catch {
       toast.error('Copy failed')
       return
     }

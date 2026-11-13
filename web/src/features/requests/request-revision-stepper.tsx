@@ -23,9 +23,9 @@ export function RequestRevisionStepper({
 }) {
   const list = revisions.revisions
   const index = list.findIndex(({ id }) => id === selectedRevisionId)
-  const selected = index < 0 ? null : list[index]
+  const selected = list[index]
   if (!selected) return null
-  const older = index > 0 ? list[index - 1] : null
+  const older = list[index - 1] ?? null
   const newer = list[index + 1] ?? null
 
   return (
@@ -36,7 +36,7 @@ export function RequestRevisionStepper({
       <Popover
         className="w-[min(20rem,calc(100vw-2rem))] p-0"
         label="Request revisions"
-        panel={(close) => (
+        renderPanel={(close) => (
           <ul className="max-h-[min(24rem,60vh)] divide-y divide-border overflow-y-auto text-xs">
             {[...list].reverse().map((revision) => (
               <li key={revision.id}>
@@ -60,7 +60,7 @@ export function RequestRevisionStepper({
             ))}
           </ul>
         )}
-        trigger={(props) => (
+        renderTrigger={(props) => (
           <button
             className={cn(STEP_CLASS, 'font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring aria-expanded:bg-muted')}
             type="button"

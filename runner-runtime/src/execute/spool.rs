@@ -4,7 +4,7 @@ use std::{
     io,
     os::unix::fs::FileExt as _,
     sync::{
-        Condvar, Mutex,
+        Condvar, Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
         mpsc::RecvTimeoutError,
     },
@@ -49,8 +49,23 @@ impl LogSpool {
         })
     }
 
+    #[expect(clippy::expect_used)]
+    fn lock_state(&self) -> MutexGuard<'_, State> {
+        self.state
+            .lock()
+            .expect("a panic while holding the log spool lock is a fatal runtime bug")
+    }
+
+    #[expect(clippy::expect_used)]
+    fn wait<'a>(&self, state: MutexGuard<'a, State>, timeout: Duration) -> MutexGuard<'a, State> {
+        self.changed
+            .wait_timeout(state, timeout)
+            .expect("a panic while holding the log spool lock is a fatal runtime bug")
+            .0
+    }
+
     pub(super) fn send(&self, event: ReaderEvent, stop: &AtomicBool) -> bool {
-        let mut state = self.state.lock().expect("log spool mutex poisoned");
+        let mut state = self.lock_state();
         let ReaderEvent::Chunk { stream, bytes } = event else {
             state.failure = Some(event);
             self.changed.notify_all();
@@ -68,11 +83,7 @@ impl LogSpool {
             if stop.load(Ordering::Acquire) || state.failure.is_some() {
                 return false;
             }
-            state = self
-                .changed
-                .wait_timeout(state, Duration::from_millis(10))
-                .expect("log spool mutex poisoned")
-                .0;
+            state = self.wait(state, Duration::from_millis(10));
         }
         if state.discarding {
             return true;
@@ -107,7 +118,7 @@ impl LogSpool {
     }
 
     pub(super) fn discard_output(&self) {
-        let mut state = self.state.lock().expect("log spool mutex poisoned");
+        let mut state = self.lock_state();
         state.discarding = true;
         state.used = 0;
         state.read_at = state.write_at;
@@ -115,14 +126,14 @@ impl LogSpool {
     }
 
     pub(super) fn close_reader(&self) {
-        let mut state = self.state.lock().expect("log spool mutex poisoned");
+        let mut state = self.lock_state();
         state.readers -= 1;
         self.changed.notify_all();
     }
 
     pub(super) fn recv_timeout(&self, timeout: Duration) -> Result<ReaderEvent, RecvTimeoutError> {
         let deadline = Instant::now() + timeout;
-        let mut state = self.state.lock().expect("log spool mutex poisoned");
+        let mut state = self.lock_state();
         loop {
             if state.used > 0 {
                 break;
@@ -137,16 +148,13 @@ impl LogSpool {
             if remaining.is_zero() {
                 return Err(RecvTimeoutError::Timeout);
             }
-            state = self
-                .changed
-                .wait_timeout(state, remaining)
-                .expect("log spool mutex poisoned")
-                .0;
+            state = self.wait(state, remaining);
         }
         let mut header = [0; HEADER_BYTES];
         let event = (|| {
             self.read(&state.file, state.read_at, &mut header)?;
-            let length = u32::from_le_bytes(header[1..].try_into().expect("log length")) as usize;
+            let [_, length_bytes @ ..] = header;
+            let length = u32::from_le_bytes(length_bytes) as usize;
             if length > super::output::LOG_READ_BYTES {
                 return Err(io::Error::other("invalid log spool record length"));
             }

@@ -224,7 +224,7 @@ async fn start_view_landing_request(
 async fn main_carrying_a_child_defers_completion_until_extended_parent_lands() {
     let fixture = PrivateStackFixture::create("private-stack-carried-main").await;
     let reviewed = fixture.latest_child_revision().await;
-    let parent_head = fixture.extend_parent().await;
+    let parent_head = fixture.extend_parent();
     let parent = stack_request(&fixture.state, &fixture.parent_id).await;
     let child = stack_request(&fixture.state, &fixture.child_id).await;
     assert_eq!(child.stack_status, RequestStackStatus::ParentExtended);

@@ -89,10 +89,10 @@ test('session restore keeps text, completed ids, and an incomplete operation for
     assert.equal(beginRequestAttachmentSubmission(key, 'payload'), submissionId)
     finishRequestAttachmentSubmission(submissionId!, false)
     assert.equal(restored.attachments[0]?.file, null)
-    assert.equal(restored.attachments[0]?.operationId, pending.operationId)
+    assert.equal(restored.attachments[0].operationId, pending.operationId)
     const [resumed] = addRequestAttachmentDraftFiles(key, [new File(['same'], 'same.mov', { type: 'video/quicktime' })])
     assert.equal(resumed?.localId, pending.localId)
-    assert.equal(resumed?.operationId, pending.operationId)
+    assert.equal(resumed.operationId, pending.operationId)
   } finally {
     resetRequestAttachmentDraftManager()
     if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
