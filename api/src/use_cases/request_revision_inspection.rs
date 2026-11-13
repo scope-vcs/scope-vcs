@@ -1,6 +1,9 @@
 use crate::{
     error::ApiError,
-    git::command::{git_is_ancestor, run_git_output},
+    git::{
+        command::{git_is_ancestor, run_git_output},
+        reader::{GitReader, MergeBases},
+    },
 };
 use scope_domain::{
     history::FileChangeKind,
@@ -356,16 +359,24 @@ pub(crate) fn request_comparison_base_oid(
         .base_oid
         .as_deref()
         .ok_or_else(|| ApiError::internal_message("request comparison has no recorded base"))?;
+    const ACTION: &str = "resolving request comparison base";
+    let no_merge_base =
+        || ApiError::infrastructure_unavailable("request comparison has no merge base");
+    if let Some(reader) = GitReader::open(raw_repo) {
+        match reader.merge_bases(base_oid, &identity.head_oid, ACTION)? {
+            Some(MergeBases::Unique(base)) => return Ok(Some(base)),
+            Some(MergeBases::Unrelated) => return Err(no_merge_base()),
+            Some(MergeBases::Several) | None => {}
+        }
+    }
     let output = crate::git::command::run_git_output_bounded(
         Some(raw_repo),
         &["merge-base", base_oid, &identity.head_oid],
-        "resolving request comparison base",
+        ACTION,
         130,
     )?;
     if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(
-            "request comparison has no merge base",
-        ));
+        return Err(no_merge_base());
     }
     Ok(Some(
         String::from_utf8(output.stdout)
@@ -412,6 +423,11 @@ pub(crate) fn request_commit_membership_facts(
 }
 
 fn git_commit_exists(raw_repo: &FsPath, commit_oid: &str) -> Result<bool, ApiError> {
+    if let Some(exists) =
+        GitReader::open(raw_repo).and_then(|reader| reader.peels_to_commit(commit_oid))
+    {
+        return Ok(exists);
+    }
     let commit_object = format!("{commit_oid}^{{commit}}");
     let output = run_git_output(
         Some(raw_repo),

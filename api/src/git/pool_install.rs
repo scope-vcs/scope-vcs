@@ -3,7 +3,7 @@ pub(crate) use locking::write_shelf;
 
 use crate::{
     error::ApiError,
-    git::{command::git_command_output, restore::install_verified_git_pack},
+    git::{command::git_command_output, reader::GitReader, restore::install_verified_git_pack},
     state::AppState,
 };
 use futures_util::{StreamExt as _, stream};
@@ -227,10 +227,20 @@ pub(crate) fn present_commits<'a>(
     repo: &FsPath,
     oids: impl Iterator<Item = &'a str>,
 ) -> Result<BTreeSet<String>, ApiError> {
-    let input = oids.map(|oid| format!("{oid}\n")).collect::<String>();
-    if input.is_empty() || !repo.join("objects").is_dir() {
+    let oids = oids.collect::<Vec<_>>();
+    if oids.is_empty() || !repo.join("objects").is_dir() {
         return Ok(BTreeSet::new());
     }
+    if let Some(reader) = GitReader::open(repo)
+        && let Some(present) =
+            reader.present_commits(&oids, "checking which commits are present")?
+    {
+        return Ok(present);
+    }
+    let input = oids
+        .iter()
+        .map(|oid| format!("{oid}\n"))
+        .collect::<String>();
     let output = git_command_output(
         Command::new("git")
             .arg("-C")

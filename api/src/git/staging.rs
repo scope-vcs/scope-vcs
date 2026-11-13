@@ -1,8 +1,9 @@
 use crate::{
     error::ApiError,
     git::{
-        cache::GitRepoHandle, command::run_git_output, repository_git::RepositoryGit,
-        request_refs::REQUEST_REF_COMMIT_ERROR, storage::receive_pack_staging_repo_path,
+        cache::GitRepoHandle, command::run_git_output, reader::GitReader,
+        repository_git::RepositoryGit, request_refs::REQUEST_REF_COMMIT_ERROR,
+        storage::receive_pack_staging_repo_path,
     },
     persistence::ensure_private_dir,
     state::AppState,
@@ -186,14 +187,14 @@ pub(crate) fn add_receive_pack_alternate(
 }
 
 fn seed_main_head(seed: &FsPath) -> Result<Option<String>, ApiError> {
+    let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
+    if let Some(head) = GitReader::open(seed).and_then(|reader| reader.reference_target(&main_ref))
+    {
+        return Ok(head);
+    }
     let output = run_git_output(
         Some(seed),
-        &[
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
-        ],
+        &["rev-parse", "--verify", "--quiet", &main_ref],
         "reading the receive-pack seed head",
     )?;
     if !output.status.success() {

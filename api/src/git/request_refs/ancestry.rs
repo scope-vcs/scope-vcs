@@ -1,6 +1,9 @@
 use crate::{
     error::ApiError,
-    git::command::{git_is_ancestor, run_git_output},
+    git::{
+        command::{git_is_ancestor, run_git_output},
+        reader::{GitReader, MergeBases},
+    },
 };
 use scope_domain::requests::RequestRevisionGitFacts;
 use std::{collections::BTreeSet, path::Path as FsPath};
@@ -93,6 +96,13 @@ pub(super) fn revision_git_facts(
 
 fn git_merge_base(repo: &FsPath, left: &str, right: &str) -> Result<Option<String>, ApiError> {
     const ACTION: &str = "reading the request head's merge base with main";
+    if let Some(reader) = GitReader::open(repo) {
+        match reader.merge_bases(left, right, ACTION)? {
+            Some(MergeBases::Unrelated) => return Ok(None),
+            Some(MergeBases::Unique(base)) => return Ok(Some(base)),
+            Some(MergeBases::Several) | None => {}
+        }
+    }
     let output = run_git_output(Some(repo), &["merge-base", left, right], ACTION)?;
     match output.status.code() {
         Some(0) => Ok(Some(
@@ -110,6 +120,9 @@ fn git_merge_base(repo: &FsPath, left: &str, right: &str) -> Result<Option<Strin
 }
 
 pub(super) fn request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<bool, ApiError> {
+    if let Some(is_commit) = GitReader::open(repo).and_then(|reader| reader.is_commit(oid)) {
+        return Ok(is_commit);
+    }
     let output = run_git_output(
         Some(repo),
         &["cat-file", "-t", oid],

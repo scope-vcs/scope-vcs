@@ -42,6 +42,8 @@ hmac.workspace = true
 http = "1.4.0"
 jsonwebtoken.workspace = true
 getrandom.workspace = true
+gix = { version = "0.90.0", default-features = false, features = ["sha1"] }
+gix-revision = { version = "0.52.0", default-features = false, features = ["merge_base"] }
 reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
