@@ -121,6 +121,114 @@ fn main_import_ref_listing_ignores_seeded_named_requests() {
     assert_eq!(refs[0].0, "refs/heads/main");
 }
 
+struct AncestryRepo {
+    repo: TestRepo,
+    root: String,
+    main: String,
+    side: String,
+    head: String,
+    main_tag: String,
+}
+
+fn ancestry_repo() -> AncestryRepo {
+    let repo = TestRepo::init();
+    let commit = |message: &str| {
+        run_git(
+            Some(&repo),
+            &["commit", "--allow-empty", "-m", message],
+            "create ancestry commit",
+        )
+        .unwrap();
+        repo.oid("HEAD")
+    };
+    let root = commit("root");
+    let main = commit("main");
+    let head = commit("head");
+    let side = git_stdout(
+        &repo,
+        &[
+            "commit-tree",
+            &format!("{root}^{{tree}}"),
+            "-p",
+            &root,
+            "-m",
+            "side",
+        ],
+    )
+    .trim()
+    .to_string();
+    run_git(
+        Some(&repo),
+        &["tag", "-a", "main-tag", &main, "-m", "tag"],
+        "create annotated main tag",
+    )
+    .unwrap();
+    let main_tag = repo.oid("main-tag");
+    AncestryRepo {
+        repo,
+        root,
+        main,
+        side,
+        head,
+        main_tag,
+    }
+}
+
+#[test]
+fn request_head_must_descend_from_both_main_ancestor_and_review_base() {
+    let AncestryRepo {
+        repo,
+        root,
+        main,
+        side,
+        head,
+        ..
+    } = ancestry_repo();
+
+    ensure_request_ref_descends_from_bases(&repo, &main, &main, &head).unwrap();
+    ensure_request_ref_descends_from_bases(&repo, &root, &main, &head).unwrap();
+    for (main_ancestor, review_base) in [(&root, &side), (&side, &root), (&side, &side)] {
+        let error =
+            ensure_request_ref_descends_from_bases(&repo, main_ancestor, review_base, &head)
+                .unwrap_err();
+        assert!(
+            error
+                .public_message()
+                .contains("must descend from its recorded base")
+        );
+    }
+}
+
+#[test]
+fn revision_facts_answer_each_question_from_the_staged_history() {
+    let AncestryRepo {
+        repo,
+        root,
+        main,
+        side,
+        head,
+        main_tag,
+    } = ancestry_repo();
+    let missing = "f".repeat(40);
+    let facts = |base: &str, old: &str, main: &str| {
+        let facts = request_revision_git_facts(&repo, base, old, &head, Some(main)).unwrap();
+        (
+            facts.contains_old_head,
+            facts.contained_main_oid,
+            facts.contained_main_descends_from_base,
+        )
+    };
+
+    assert_eq!(facts(&main, &main, &main), (true, Some(main.clone()), true));
+    assert_eq!(facts(&root, &main, &main), (true, Some(main.clone()), true));
+    assert_eq!(
+        facts(&side, &side, &main),
+        (false, Some(main.clone()), false)
+    );
+    assert_eq!(facts(&main, &main, &missing), (true, None, false));
+    assert_eq!(facts(&main, &main, &main_tag), (true, None, false));
+}
+
 fn git_stdout(repo: &FsPath, args: &[&str]) -> String {
     let output = run_git_output(Some(repo), args, "read test git stdout").unwrap();
     assert!(output.status.success());

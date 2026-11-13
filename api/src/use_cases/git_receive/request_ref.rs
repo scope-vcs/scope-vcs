@@ -311,7 +311,7 @@ async fn seed_editable_request_refs_for_repo(
         let view_bases = request_view_bases(state, &git, views, &unreachable, address_view).await?;
         let staging_path = staging_repo.to_path_buf();
         crate::git::blocking::run(move || {
-            attach_visible_request_refs(&unreachable, &staging_path, &view_bases)
+            attach_visible_request_refs(&unreachable, &staging_path, &view_bases, &BTreeSet::new())
         })
         .await?;
     }

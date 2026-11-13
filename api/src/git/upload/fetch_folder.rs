@@ -121,15 +121,11 @@ async fn new_folder(
                 "init",
                 "--bare",
                 "--quiet",
+                "--initial-branch=main",
                 path.to_str()
                     .ok_or_else(|| ApiError::internal_message("invalid fetch path"))?,
             ],
             "initializing fetch folder",
-        )?;
-        run_git(
-            Some(&path),
-            &["symbolic-ref", "HEAD", "refs/heads/main"],
-            "setting fetch head",
         )
     })
     .await?;
