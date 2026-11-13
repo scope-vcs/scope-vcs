@@ -177,14 +177,12 @@ pub(crate) async fn git_info_refs(
                     upload::fetch_folder::capabilities(&state, &headers, &org, &repo, &view).await
                 }
                 GitProtocol::V0 => {
-                    upload::fetch_folder::prepare(
-                        &state,
-                        &headers,
-                        &org,
-                        &repo,
-                        &view,
-                        &GitFetchAsk::listing(),
-                    )
+                    async {
+                        let read =
+                            authorized_git_read(&state, &headers, &org, &repo, &view).await?;
+                        upload::fetch_folder::prepare(&state, read, &view, &GitFetchAsk::listing())
+                            .await
+                    }
                     .await
                 }
             };
@@ -367,9 +365,10 @@ pub(crate) async fn git_upload_pack_rpc(
         Ok(view) => view,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
-    if let Err(error) = authorized_git_read(&state, &headers, &org, &repo_name, &view).await {
-        return git_error_response(error);
-    }
+    let read = match authorized_git_read(&state, &headers, &org, &repo_name, &view).await {
+        Ok(read) => read,
+        Err(error) => return git_error_response(error),
+    };
     let permit = match state.runtime_budgets.admit_upload_pack().await {
         Ok(permit) => permit,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
@@ -402,11 +401,7 @@ pub(crate) async fn git_upload_pack_rpc(
         Ok(ask) => ask,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
-    let repo_path = match upload::fetch_folder::prepare(
-        &state, &headers, &org, &repo_name, &view, &ask,
-    )
-    .await
-    {
+    let repo_path = match upload::fetch_folder::prepare(&state, read, &view, &ask).await {
         Ok(repo) => repo,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };

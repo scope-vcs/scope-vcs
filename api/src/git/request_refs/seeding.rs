@@ -16,7 +16,7 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     requests::{Request, canonical_request_ref},
 };
-use std::path::Path as FsPath;
+use std::{collections::BTreeSet, path::Path as FsPath};
 
 pub(crate) struct AttachedRequestRefs {
     pub(crate) leases: Vec<GitRepoHandle>,
@@ -49,13 +49,14 @@ impl DeferredRequestObjects {
             staging_repo,
         )
         .await?;
+        let missing = missing_request_heads(staging_repo, self.requests.clone()).await?;
         provide_request_objects(
             state,
             &self.incarnation,
             &self.config,
             &repos,
             &self.actor_user_id,
-            &self.requests,
+            &missing,
             staging_repo,
         )
         .await
@@ -72,21 +73,31 @@ pub(crate) async fn attach_request_refs_from_pool(
     view_bases: RequestViewBases,
 ) -> Result<AttachedRequestRefs, ApiError> {
     let repos = object_repos(state, incarnation, config, actor_user_id, staging_repo).await?;
-
+    let missing = missing_request_heads(staging_repo, refs_for.clone()).await?;
+    let missing_heads = missing
+        .iter()
+        .map(|request| request.head_oid.as_str())
+        .collect::<BTreeSet<_>>();
+    let present_heads = refs_for
+        .iter()
+        .map(|request| request.head_oid.as_str())
+        .filter(|head| !missing_heads.contains(head))
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
     let leases = provide_request_objects(
         state,
         incarnation,
         config,
         &repos,
         actor_user_id,
-        &refs_for,
+        &missing,
         staging_repo,
     )
     .await?;
     let (deferred, unreachable) = {
         let staging_repo = staging_repo.to_path_buf();
         crate::git::blocking::run(move || {
-            attach_visible_request_refs(&refs_for, &staging_repo, &view_bases)?;
+            attach_visible_request_refs(&refs_for, &staging_repo, &view_bases, &present_heads)?;
             let present = present_commits(
                 &staging_repo,
                 objects_for.iter().map(|request| request.head_oid.as_str()),
@@ -205,10 +216,9 @@ async fn provide_request_objects(
     config: &RepoConfig,
     repos: &RequestObjectRepos,
     actor_user_id: &str,
-    requests: &[Request],
+    missing: &[Request],
     staging_repo: &FsPath,
 ) -> Result<Vec<GitRepoHandle>, ApiError> {
-    let missing = missing_request_heads(staging_repo, requests.to_vec()).await?;
     if missing.is_empty() {
         return Ok(Vec::new());
     }
@@ -217,7 +227,7 @@ async fn provide_request_objects(
         config,
         repos: PoolRepos::Full(repos, actor_user_id, staging_repo),
     };
-    let leases = install_request_pool_packs(state, &install, &missing).await;
+    let leases = install_request_pool_packs(state, &install, missing).await;
     consolidate_pool_repos(
         incarnation.repository_id(),
         vec![repos.shared.clone(), repos.authored.clone()],

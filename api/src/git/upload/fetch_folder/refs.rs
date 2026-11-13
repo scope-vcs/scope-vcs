@@ -31,7 +31,7 @@ pub(super) async fn attach_refs(
             if present.contains(&request.head_oid) {
                 continue;
             }
-            match attach_visible_request_refs(std::slice::from_ref(request), &folder, &bases) {
+            match attach_visible_request_refs(std::slice::from_ref(request), &folder, &bases, &BTreeSet::new()) {
                 Ok(()) => {
                     if request_ref_head(&folder, &canonical_request_ref(&request.name))?.as_deref()
                         == Some(request.head_oid.as_str()) {

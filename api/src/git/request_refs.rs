@@ -3,6 +3,7 @@ use crate::{
     git::{
         command::{git_ref_listing, run_git, run_git_output},
         import::validate_pushed_commit_range,
+        pool_install::present_commits,
         pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
@@ -35,7 +36,9 @@ mod seeding;
 mod view_bases;
 pub(super) mod view_pool;
 pub(crate) use ancestry::request_revision_git_facts;
-use ancestry::{ensure_request_ref_descends_from_base, request_ref_oid_is_commit};
+use ancestry::{
+    ensure_request_ref_descends_from_bases, request_ref_oid_is_commit, revision_git_facts,
+};
 #[cfg(test)]
 pub(crate) use pool::request_object_repos;
 pub(crate) use pool::retain_staged_pool_pack;
@@ -179,11 +182,12 @@ pub(crate) fn attach_visible_request_refs(
     requests: &[Request],
     target_repo: &FsPath,
     view_bases: &RequestViewBases,
+    present_heads: &BTreeSet<String>,
 ) -> Result<(), ApiError> {
     for request in requests {
-        if !request_ref_oid_is_commit(target_repo, &request.head_oid)?
-            && let Some(view_base) = view_bases.get(&request.view)
-        {
+        let mut is_commit = present_heads.contains(&request.head_oid)
+            || request_ref_oid_is_commit(target_repo, &request.head_oid)?;
+        if !is_commit && let Some(view_base) = view_bases.get(&request.view) {
             run_git(
                 Some(target_repo),
                 &[
@@ -195,8 +199,9 @@ pub(crate) fn attach_visible_request_refs(
                 ],
                 "attaching request base objects",
             )?;
+            is_commit = request_ref_oid_is_commit(target_repo, &request.head_oid)?;
         }
-        if request_ref_oid_is_commit(target_repo, &request.head_oid)? {
+        if is_commit {
             run_git(
                 Some(target_repo),
                 &[
@@ -273,8 +278,7 @@ pub(crate) async fn persist_request_ref(
     let head_oid = update.new_head_oid.clone();
     crate::git::blocking::run(move || {
         ensure_request_ref_oid_is_commit(&path, &head_oid)?;
-        ensure_request_ref_descends_from_base(&path, &main_ancestor_oid, &head_oid)?;
-        ensure_request_ref_descends_from_base(&path, &base_oid, &head_oid)
+        ensure_request_ref_descends_from_bases(&path, &main_ancestor_oid, &base_oid, &head_oid)
     })
     .await?;
     let accepted_main_oid = git.git_head.as_ref().map(|head| head.head_oid.clone());
@@ -304,25 +308,32 @@ pub(crate) async fn persist_request_ref(
                 .as_deref()
                 .unwrap_or(request.head_oid.as_str());
             validate_pushed_commit_range(&path, Some(logical_old_head), &update.new_head_oid)?;
-            let git_facts = request_revision_git_facts(
+            let pool_main = match scope {
+                RequestPackScope::Full => accepted_main_oid.as_deref(),
+                RequestPackScope::View(_) => main_oid.as_deref(),
+            };
+            let present = present_commits(
                 &path,
+                [Some(logical_old_head), main_oid.as_deref(), pool_main]
+                    .into_iter()
+                    .flatten()
+                    .filter(|oid| *oid != EMPTY_GIT_OID),
+            )?;
+            let git_facts = revision_git_facts(
+                &path,
+                &present,
                 &request.main_ancestor_oid,
                 logical_old_head,
                 &update.new_head_oid,
                 main_oid.as_deref(),
             )?;
-            let pool_main = match scope {
-                RequestPackScope::Full => accepted_main_oid.as_deref(),
-                RequestPackScope::View(_) => main_oid.as_deref(),
-            };
             let pool_prerequisites = [Some(logical_old_head), pool_main]
                 .into_iter()
                 .flatten()
-                .filter(|oid| *oid != EMPTY_GIT_OID)
+                .filter(|oid| present.contains(*oid))
                 .map(str::to_string)
                 .collect::<BTreeSet<_>>()
                 .into_iter()
-                .filter(|oid| request_ref_oid_is_commit(&path, oid).unwrap_or(false))
                 .collect();
             Ok((git_facts, pool_prerequisites))
         })

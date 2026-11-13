@@ -13,7 +13,9 @@ async fn git_projection_for_request(
     repo_name: &str,
     view: &ViewId,
 ) -> Result<Projection, ApiError> {
-    let (source, _) = authorized_git_read(state, headers, owner, repo_name, view).await?;
+    let source = authorized_git_read(state, headers, owner, repo_name, view)
+        .await?
+        .source;
     let projection_source = state
         .metadata
         .repositories()
