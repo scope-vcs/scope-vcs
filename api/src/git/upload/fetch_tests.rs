@@ -1,5 +1,6 @@
 use super::*;
 use crate::git::command::{git_stdout_text, run_git};
+use crate::runtime_budgets::RuntimeBudgets;
 
 fn folder() -> GitRepoHandle {
     let source = crate::git::test_repo::TestRepo::init();
@@ -70,4 +71,36 @@ async fn fetch_folder_is_removed_after_stream_success_error_and_disconnect() {
         .await
         .unwrap();
     }
+}
+
+#[test]
+fn v2_capabilities_match_a_fresh_advertisement_from_an_empty_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let timeout = RuntimeBudgets::default_git_command_timeout();
+    let first = v2_capabilities(root.path(), timeout).unwrap();
+    let folder = root.path().join("fresh.git");
+    run_git(
+        None,
+        &[
+            "init",
+            "--bare",
+            "--quiet",
+            "--initial-branch=main",
+            folder.to_str().unwrap(),
+        ],
+        "init",
+    )
+    .unwrap();
+    let fresh = git_command_output_with_timeout(
+        git_upload_pack_command(GitProtocol::V2)
+            .args(["--stateless-rpc", "--advertise-refs"])
+            .arg(&folder),
+        None,
+        timeout,
+    )
+    .unwrap();
+    assert_eq!(first, fresh);
+    assert!(String::from_utf8_lossy(&first).contains("version 2"));
+    assert_eq!(v2_capabilities(root.path(), timeout).unwrap(), first);
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
 }
