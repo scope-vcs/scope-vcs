@@ -529,3 +529,23 @@ fn oversized_tags_leave_peeling_to_git() {
         git_answer
     );
 }
+
+#[test]
+fn walks_that_reach_an_oversized_commit_leave_the_answer_to_git() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_ok(repo, &["init", "-q", "-b", "main"]);
+    let first = commit(repo, "first");
+    let message = "x".repeat(1024 * 1024 + 1);
+    pinned_identity_git(
+        repo,
+        &["commit", "-q", "--allow-empty", "-F", "-"],
+        Some(&message),
+    );
+    let tip = commit(repo, "tip");
+
+    let reader = GitReader::open(repo).unwrap();
+    assert_eq!(reader.is_ancestor(&first, &tip, "checking").unwrap(), None);
+    assert_eq!(reader.merge_bases(&first, &tip, "checking").unwrap(), None);
+    assert!(git_is_ancestor(repo, &first, &tip, "checking").unwrap());
+}

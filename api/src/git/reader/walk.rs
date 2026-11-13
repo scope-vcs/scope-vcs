@@ -3,6 +3,8 @@ use crate::error::ApiError;
 use gix::ObjectId;
 use std::{cell::Cell, time::Instant};
 
+const MAX_COMMIT_BYTES: u64 = 1024 * 1024;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MergeBases {
     Unrelated,
@@ -43,6 +45,13 @@ impl gix::objs::Find for DeadlineObjects<'_> {
             return Err(gix::Error::from_error(std::io::Error::from(
                 std::io::ErrorKind::TimedOut,
             )));
+        }
+        match gix::odb::Header::try_header(self.objects, id)? {
+            Some(header) if header.size() <= MAX_COMMIT_BYTES => {}
+            _ => {
+                self.outcome.missing.set(true);
+                return Ok(None);
+            }
         }
         let found = self.objects.try_find(id, buffer)?;
         if found.is_none() {
