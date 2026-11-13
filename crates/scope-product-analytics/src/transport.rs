@@ -71,10 +71,6 @@ impl ProductAnalytics {
         }
     }
 
-    pub fn is_enabled(&self) -> bool {
-        self.context.is_some()
-    }
-
     pub async fn shutdown(&self) {
         self.sink.shutdown().await;
     }

@@ -208,19 +208,6 @@ pub(super) async fn connect_isolated_test_database(
 
 impl AdminStore {
     #[cfg(any(test, feature = "test-support"))]
-    pub async fn lock_repository_history_and_invites_for_tests(
-        &self,
-    ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
-        self.lock_tables_for_tests(&[
-            "scope_logical_commits",
-            "scope_file_changes",
-            "scope_live_files",
-            "scope_repository_invites",
-        ])
-        .await
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
     pub async fn lock_repository_history_for_tests(
         &self,
     ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
