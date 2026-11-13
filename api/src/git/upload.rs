@@ -8,6 +8,7 @@ use crate::{
             record_git_exit, truncated_git_stderr,
         },
         git_read_scope_user,
+        reader::GitReader,
     },
     runtime_budgets::{RuntimeBudgets, RuntimePermit},
     state::AppState,
@@ -273,14 +274,20 @@ fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec
     if required.is_empty() && haves.is_empty() {
         return Ok(request.to_vec());
     }
-    let tips = git_command_output(
-        Command::new("git")
-            .arg("--git-dir")
-            .arg(repo_path)
-            .args(["for-each-ref", "--format=%(objectname)"]),
-        None,
-    )?;
-    for tip in tips.split(|byte| *byte == b'\n') {
+    let tips = match GitReader::open(repo_path).and_then(|reader| reader.references(&[])) {
+        Some(refs) => refs.into_iter().map(|(_, oid)| oid.into_bytes()).collect(),
+        None => git_command_output(
+            Command::new("git")
+                .arg("--git-dir")
+                .arg(repo_path)
+                .args(["for-each-ref", "--format=%(objectname)"]),
+            None,
+        )?
+        .split(|byte| *byte == b'\n')
+        .map(<[u8]>::to_vec)
+        .collect::<Vec<_>>(),
+    };
+    for tip in &tips {
         required.remove(tip);
         haves.remove(tip);
     }

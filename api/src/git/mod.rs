@@ -9,6 +9,7 @@ pub(crate) mod import;
 pub(crate) mod pool_install;
 pub(crate) mod pool_pack;
 pub(crate) mod projection_repo;
+pub(crate) mod reader;
 mod receive_pack;
 pub(crate) mod receive_protocol;
 pub(crate) mod repository_engine;
