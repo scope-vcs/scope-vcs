@@ -398,16 +398,6 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 99afaa30c17801207692138b8a7d9f7522b52711dabb4cde25855dadc950e4c8
 
 ==============================================================================
-aws-config 1.13.0
-Declared license: Apache-2.0
-Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-config/aws-config-1.13.0.crate
-
-Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
-Repository: "https://github.com/smithy-lang/smithy-rs"
-LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
-
-==============================================================================
 aws-credential-types 1.3.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
@@ -450,17 +440,6 @@ Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-sdk-lambda 1.152.0
-Declared license: Apache-2.0
-Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-sdk-lambda/aws-sdk-lambda-1.152.0.crate
-
-Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
-Repository: "https://github.com/awslabs/aws-sdk-rust"
-LICENSE: text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e
-tests/blns/LICENSE: text 5d4c9a3b2f328ddc76394c48bb0c54d6169480c661778628372f40b582f95943
-
-==============================================================================
 aws-sdk-s3 1.153.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
@@ -470,16 +449,6 @@ Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russ
 Repository: "https://github.com/awslabs/aws-sdk-rust"
 LICENSE: text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e
 tests/blns/LICENSE: text 5d4c9a3b2f328ddc76394c48bb0c54d6169480c661778628372f40b582f95943
-
-==============================================================================
-aws-sdk-sts 1.120.0
-Declared license: Apache-2.0
-Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-sdk-sts/aws-sdk-sts-1.120.0.crate
-
-Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
-Repository: "https://github.com/awslabs/aws-sdk-rust"
-LICENSE: text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e
 
 ==============================================================================
 aws-sigv4 1.6.2
@@ -559,16 +528,6 @@ Source: https://static.crates.io/crates/aws-smithy-observability/aws-smithy-obse
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>"]
 Repository: "https://github.com/awslabs/smithy-rs"
-LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
-
-==============================================================================
-aws-smithy-query 0.64.0
-Declared license: Apache-2.0
-Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-query/aws-smithy-query-0.64.0.crate
-
-Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "John DiSanti <jdisanti@amazon.com>"]
-Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
@@ -1588,17 +1547,6 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-filetime 0.2.29
-Declared license: MIT/Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/filetime/filetime-0.2.29.crate
-
-Published author metadata: ["Alex Crichton <alex@alexcrichton.com>"]
-Repository: "https://github.com/alexcrichton/filetime"
-LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
-LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
-
-==============================================================================
 find-msvc-tools 0.1.15
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -2533,16 +2481,6 @@ Published author metadata: ["The rusqlite developers"]
 Repository: "https://github.com/rusqlite/rusqlite"
 LICENSE: text 6061b8ea5b16d94a796c9837aadc73a8e72a11b3045c98d3a0712d2a0fef84ac
 sqlcipher/LICENSE: text 40fa3316ba3262118acdeab7deb6406bf42b3f3a65598b8ab4ceb25659f8db17
-
-==============================================================================
-libyaml-rs 0.3.0
-Declared license: MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/libyaml-rs/libyaml-rs-0.3.0.crate
-
-Published author metadata: ["David Tolnay <dtolnay@gmail.com>", "YAML Organization <noreply@yaml.org>"]
-Repository: "https://github.com/yaml/libyaml-rs"
-LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
 line-clipping 0.3.8
@@ -4783,17 +4721,6 @@ Repository: "https://github.com/mystor/synstructure"
 LICENSE: text 3a036676ec8c0dba1c24b96f83595456280b7a754ddee64585dd8048ed2b087f
 
 ==============================================================================
-tar 0.4.46
-Declared license: MIT OR Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/tar/tar-0.4.46.crate
-
-Published author metadata: ["Alex Crichton <alex@alexcrichton.com>"]
-Repository: "https://github.com/composefs/tar-rs"
-LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
-LICENSE-MIT: text e6e853531994cb4721d5fa84d5b27bc408720ade2204ff307c76c778b7108bc5
-
-==============================================================================
 tempfile 3.27.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -5342,16 +5269,6 @@ Published author metadata: ["The rust-url developers"]
 Repository: "https://github.com/servo/rust-url"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 LICENSE-MIT: text 7a8093fb4a93f23e2bc9081b53b6187ea14a1c9303e513184726d8cdcbfa418a
-
-==============================================================================
-urlencoding 2.1.3
-Declared license: MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/urlencoding/urlencoding-2.1.3.crate
-
-Published author metadata: ["Kornel <kornel@geekhood.net>", "Bertram Truong <b@bertramtruong.com>"]
-Repository: "https://github.com/kornelski/rust_urlencoding"
-LICENSE: text 5df9b8726f15e8bc9bace81e0ed3e8d9945f0582f0de6c9833d97c67086d2a3b
 
 ==============================================================================
 utf8_iter 1.0.4
@@ -5934,17 +5851,6 @@ Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-xattr 1.6.1
-Declared license: MIT OR Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/xattr/xattr-1.6.1.crate
-
-Published author metadata: ["Steven Allen <steven@stebalien.com>"]
-Repository: "https://github.com/Stebalien/xattr"
-LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
-LICENSE-MIT: text 7bdd5c5e8ad0c973e00ae0cc281ad93c5991cae17dcee281198a625475beb3dc
-
-==============================================================================
 xmlparser 0.13.6
 Declared license: MIT/Apache-2.0
 Selected license: MIT
@@ -5954,17 +5860,6 @@ Published author metadata: ["Yevhenii Reizner <razrfalcon@gmail.com>"]
 Repository: "https://github.com/RazrFalcon/xmlparser"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 LICENSE-MIT: text c1ecaa7721a2ce5c512d14da71c6526581ca6ff7e3d54aeeb54f874b2db3c5c2
-
-==============================================================================
-yaml_serde 0.10.7
-Declared license: MIT OR Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/yaml_serde/yaml_serde-0.10.7.crate
-
-Published author metadata: ["YAML Organization <noreply@yaml.org>"]
-Repository: "https://github.com/yaml/yaml-serde"
-LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e38179
-LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
 yansi 1.0.1
@@ -6111,39 +6006,6 @@ Repository: "https://github.com/dtolnay/zmij"
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-zstd 0.14.3
-Declared license: BSD-3-Clause
-Selected license: BSD-3-Clause
-Source: https://static.crates.io/crates/zstd/zstd-0.14.3.crate
-
-Published author metadata: ["Alexandre Bury <alexandre.bury@gmail.com>"]
-Repository: "https://github.com/gyscos/zstd-rs"
-LICENSE: text 769153f04f135a5bc87cd68f6dcf5168ad3c136749616e8dbd9b78b0199e0b18
-
-==============================================================================
-zstd-safe 8.2.0
-Declared license: BSD-3-Clause
-Selected license: BSD-3-Clause
-Source: https://static.crates.io/crates/zstd-safe/zstd-safe-8.2.0.crate
-
-Published author metadata: ["Alexandre Bury <alexandre.bury@gmail.com>"]
-Repository: "https://github.com/gyscos/zstd-rs"
-LICENSE: text 769153f04f135a5bc87cd68f6dcf5168ad3c136749616e8dbd9b78b0199e0b18
-
-==============================================================================
-zstd-sys 2.1.2+zstd.1.5.7
-Declared license: BSD-3-Clause
-Selected license: BSD-3-Clause
-Source: https://static.crates.io/crates/zstd-sys/zstd-sys-2.1.2+zstd.1.5.7.crate
-
-Published author metadata: ["Alexandre Bury <alexandre.bury@gmail.com>"]
-Repository: "https://github.com/gyscos/zstd-rs"
-LICENSE: text 769153f04f135a5bc87cd68f6dcf5168ad3c136749616e8dbd9b78b0199e0b18
-LICENSE.BSD-3-Clause: text 08728d1c12d66320bd53177c8c026f2191e0a2e14fe0f3c143dcf49d3cd476d1
-zstd/COPYING: text 1be990a929b50ca91d815cea1cd3cebb5c49e86076ade82b1103f2b9cd71a3af
-zstd/LICENSE: text 2caa041c7859b01cfe525cdbf729bdc440b2e07e1a5273b2d01d4ef13c62ac69
-
-==============================================================================
 License and notice texts
 
 --- text 008c87afcd2e626eaf564093250bed06dd7efb5732113264bba3dda8f1c556a1 ---
@@ -6207,17 +6069,6 @@ Copyright (c) 2016 Jerome Froelich
 Copyright 2015-2025 Brian Smith.
 
 [Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
-
---- text 08728d1c12d66320bd53177c8c026f2191e0a2e14fe0f3c143dcf49d3cd476d1 ---
-The auto-generated bindings are under the 3-clause BSD license:
-
-BSD License
-
-For Zstandard software
-
-Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
-
-[Shared terms b096365d7be855abce0cd0b7979a213423deace8349c6668b63e0e5b4c9bc8ec]
 
 --- text 0d8a0aecbcbaf0573dea8de966d252874fa4b99f3e1650976dc8a0a2fc062c71 ---
 Copyright (c) The rust-url developers
@@ -7170,15 +7021,6 @@ Copyright (c) 2019 Eliza Weisman
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
---- text 2caa041c7859b01cfe525cdbf729bdc440b2e07e1a5273b2d01d4ef13c62ac69 ---
-BSD License
-
-For Zstandard software
-
-Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
-
-[Shared terms b096365d7be855abce0cd0b7979a213423deace8349c6668b63e0e5b4c9bc8ec]
-
 --- text 2d01145596179ab6c55eade02ee8ad2c2172de88f2232625a00f17bb254b8c3a ---
 Copyright (c) 2015-2018 The winapi-rs Developers
 
@@ -8112,12 +7954,6 @@ Copyright (c) 2015-2020 Max Woolf
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
---- text 5df9b8726f15e8bc9bace81e0ed3e8d9945f0582f0de6c9833d97c67086d2a3b ---
-© 2016 Bertram Truong
-© 2021 Kornel Lesiński
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
 --- text 5e05b024f653a5ce199e77cbbbd42fb5553562ec714b819421ed0c3e552a75d7 ---
 Copyright (c) 2017 Robert Grosse
 
@@ -8680,13 +8516,6 @@ Copyright (c) 2017-2024 oyvindln
     "Mads Marquart <mads@marquart.dk>"
   ]
 }
-
---- text 769153f04f135a5bc87cd68f6dcf5168ad3c136749616e8dbd9b78b0199e0b18 ---
-BSD 3-Clause License
-
-Copyright (c) 2026, Alexandre Bury
-
-[Shared terms 70435d703f5e4bdca9a1fa6b9291501b0dd850d2ad5457b491ce936217b1e063]
 
 --- text 76c0e37c107dd35a99628d1c9817a685668b89d1c2a465d0d898bacd7eb94475 ---
 Copyright Mozilla Foundation
@@ -10886,11 +10715,6 @@ Copyright (c) 2019 Akhil Velagapudi
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
---- text e6e853531994cb4721d5fa84d5b27bc408720ade2204ff307c76c778b7108bc5 ---
-Copyright (c) The tar-rs Project Contributors
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
 --- text e7330bf53074b4a9c5896f4a03d782be7f163381e45923d5e2369fe194a19f99 ---
 [Shared terms 2e2b94025b4c2fdb1864973c1497dd82e21bbfe3225d27d52c8c7e8792240b7a]
 
@@ -12639,32 +12463,6 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
---- shared terms b096365d7be855abce0cd0b7979a213423deace8349c6668b63e0e5b4c9bc8ec ---
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
- * Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
- * Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
- * Neither the name Facebook, nor Meta, nor the names of its contributors may
-   be used to endorse or promote products derived from this software without
-   specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --- shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5 ---
 Permission is hereby granted, free of charge, to any

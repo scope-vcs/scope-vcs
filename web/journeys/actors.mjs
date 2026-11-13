@@ -8,7 +8,7 @@ import { baseUrl } from '../smoke/browser-smoke.mjs'
 
 const run = promisify(execFile)
 
-export const apiUrl = required('SCOPE_API_URL').replace(/\/$/, '')
+const apiUrl = required('SCOPE_API_URL').replace(/\/$/, '')
 const scopeCli = required('SCOPE_CLI')
 const clerkApi = 'https://api.clerk.com/v1'
 const webDefaultTokenTemplate = 'scope_api'
@@ -165,7 +165,7 @@ export async function apiFetch(token, path) {
   return response.json()
 }
 
-export async function devSessionToken(handle) {
+async function devSessionToken(handle) {
   const response = await fetch(`${apiUrl}/v1/dev/cli-session/${handle}`, { method: 'POST' })
   assert.equal(response.status, 200, `setup: dev CLI session for ${handle} returned ${response.status}`)
   return (await response.json()).session_token

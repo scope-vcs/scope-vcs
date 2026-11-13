@@ -66,60 +66,6 @@ pub fn router(state: AppState) -> Router {
             routes::ACCOUNT_SESSION,
             get(http::account::get_account_session),
         )
-        .route(
-            routes::DISPATCH_AUTHORIZE,
-            post(http::dispatch_authorization::authorize),
-        )
-        .route(routes::ATTEMPT_CLAIM, post(http::runtime_protocol::claim))
-        .route(
-            routes::ATTEMPT_HEARTBEAT,
-            post(http::runtime_protocol::heartbeat),
-        )
-        .route(
-            routes::ATTEMPT_CACHE_PREPARATIONS,
-            post(http::runtime_protocol::report_cache_preparations),
-        )
-        .route(
-            routes::ATTEMPT_CACHE_FINALIZATIONS,
-            post(http::runtime_protocol::report_cache_finalizations),
-        )
-        .route(
-            routes::ATTEMPT_CACHE_RESTORE,
-            post(http::runtime_protocol::restore_cache),
-        )
-        .route(
-            routes::ATTEMPT_CACHE_UPLOAD_PREPARE,
-            post(http::runtime_protocol::prepare_cache_upload),
-        )
-        .route(
-            routes::ATTEMPT_CACHE_UPLOAD_COMMIT,
-            post(http::runtime_protocol::commit_cache_upload),
-        )
-        .route(
-            routes::ATTEMPT_RECOVERY_STATUS,
-            get(http::runtime_protocol::recovery_status),
-        )
-        .route(routes::ATTEMPT_SOURCE, get(http::runtime_protocol::source))
-        .route(
-            routes::ATTEMPT_LOGS,
-            post(http::runtime_protocol::append_log),
-        )
-        .route(
-            routes::ATTEMPT_COMPLETE,
-            post(http::runtime_protocol::complete),
-        )
-        .route(
-            routes::ATTEMPT_ABANDON,
-            post(http::runtime_protocol::abandon),
-        )
-        .route(
-            routes::ATTEMPT_STEP_START,
-            post(http::runtime_protocol::start_step),
-        )
-        .route(
-            routes::ATTEMPT_STEP_COMPLETE,
-            post(http::runtime_protocol::complete_step),
-        )
         .route(routes::REPOS, post(http::repos::create_repo))
         .route(
             routes::OWNER_REPOSITORIES,
@@ -204,35 +150,6 @@ pub fn router(state: AppState) -> Router {
         .route(
             routes::GITHUB_WEBHOOKS,
             post(http::github::receive_github_webhook),
-        )
-        .route(
-            routes::REPO_RUN_WORKFLOWS,
-            get(http::run_resources::get_repository_run_workflows),
-        )
-        .route(
-            routes::REPO_RUNS,
-            get(http::run_resources::get_repository_run_history)
-                .post(http::runs::create_manual_run),
-        )
-        .route(
-            routes::REPO_RUN_RESOLVE,
-            post(http::runs::resolve_manual_run),
-        )
-        .route(routes::REPO_RUN, get(http::runs::get_run))
-        .route(
-            routes::REPO_RUN_DETAIL,
-            get(http::runs::get_repository_run_detail),
-        )
-        .route(
-            routes::REPO_RUN_STEP_LOGS,
-            get(http::runs::get_repository_run_step_logs),
-        )
-        .route(routes::REPO_RUN_CANCEL, post(http::runs::cancel_run))
-        .route(routes::REPO_RUN_RETRY, post(http::runs::retry_run))
-        .route(routes::REPO_RUN_EVENTS, get(http::run_events::run_events))
-        .route(
-            routes::REPO_PUSH_TRIGGER_EVALUATION,
-            get(http::runs::get_push_trigger_evaluation),
         )
         .route(
             routes::REPO_PUSH_INTENTS,

@@ -34,9 +34,7 @@ pub(crate) async fn update_repo_metadata(
         .await?
         .result;
     if changed {
-        state
-            .publish_repo_change(&incarnation, version, RepoChangeReason::MetadataUpdated)
-            .await;
+        state.publish_repo_change(&incarnation, version, RepoChangeReason::MetadataUpdated);
     }
     let summary = state
         .metadata

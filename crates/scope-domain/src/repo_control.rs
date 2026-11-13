@@ -1,39 +1,8 @@
-mod image;
-
-pub use image::{ImageContextPath, ImageContextPathError};
-
-use crate::{
-    policy::{ScopePath, without_hfs_ignored_characters},
-    runs::workflow::identity::WorkflowPath,
-};
+use crate::policy::{ScopePath, without_hfs_ignored_characters};
 
 pub const REPO_CONTROL_ROOT: &str = "/.scope";
 pub const REPO_CONTROL_PREFIX: &str = "/.scope/";
 pub const LEGACY_REPO_RULES_PATH: &str = "/.scope/RULES.md";
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RepoControlPath {
-    Rules,
-    Workflow(WorkflowPath),
-    ImageContext(ImageContextPath),
-    Forbidden,
-}
-
-pub fn classify_repo_control_path(path: &ScopePath) -> Option<RepoControlPath> {
-    if !is_repo_control_path(path) {
-        return None;
-    }
-    if is_repo_rules_path(path) {
-        return Some(RepoControlPath::Rules);
-    }
-    if let Ok(workflow) = WorkflowPath::parse(path.as_str()) {
-        return Some(RepoControlPath::Workflow(workflow));
-    }
-    if let Ok(image_context) = ImageContextPath::parse(path.as_str()) {
-        return Some(RepoControlPath::ImageContext(image_context));
-    }
-    Some(RepoControlPath::Forbidden)
-}
 
 pub fn is_repo_control_path(path: &ScopePath) -> bool {
     path.as_str() == REPO_CONTROL_ROOT || path.as_str().starts_with(REPO_CONTROL_PREFIX)
@@ -113,34 +82,15 @@ mod tests {
     }
 
     #[test]
-    fn classifier_separates_supported_from_forbidden_control_paths() {
-        assert_eq!(classify_repo_control_path(&path("/README.md")), None);
-        assert_eq!(
-            classify_repo_control_path(&path(LEGACY_REPO_RULES_PATH)),
-            Some(RepoControlPath::Rules)
-        );
-        assert!(matches!(
-            classify_repo_control_path(&path("/.scope/runs/test.yml")),
-            Some(RepoControlPath::Workflow(workflow)) if workflow.name() == "test"
-        ));
-        assert!(matches!(
-            classify_repo_control_path(&path("/.scope/images/checks/Dockerfile")),
-            Some(RepoControlPath::ImageContext(image))
-                if image.image_name() == "checks" && image.context_path() == "Dockerfile"
-        ));
-        for forbidden in [
+    fn only_rules_are_a_public_control_path() {
+        assert!(!is_private_control_path(&path("/README.md")));
+        for private in [
             "/.scope",
             "/.scope/repo.json",
-            "/.scope/runs",
-            "/.scope/runs/Test.yml",
-            "/.scope/runs/nested/test.yml",
-            "/.scope/other.yml",
+            "/.scope/runs/test.yml",
+            "/.scope/images/checks/Dockerfile",
         ] {
-            assert_eq!(
-                classify_repo_control_path(&path(forbidden)),
-                Some(RepoControlPath::Forbidden),
-                "{forbidden}"
-            );
+            assert!(is_private_control_path(&path(private)), "{private}");
         }
     }
 

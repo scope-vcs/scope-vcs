@@ -443,15 +443,13 @@ async fn publish(state: &AppState, request: &Request, discussions: &[RequestDisc
         }
     };
     for discussion in discussions {
-        state
-            .publish_request_timeline_change(
-                &incarnation,
-                request.id.clone(),
-                discussion.id.clone(),
-                discussion.last_activity_position,
-                request.view.clone(),
-            )
-            .await;
+        state.publish_request_timeline_change(
+            &incarnation,
+            request.id.clone(),
+            discussion.id.clone(),
+            discussion.last_activity_position,
+            request.view.clone(),
+        );
     }
 }
 

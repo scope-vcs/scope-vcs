@@ -34,7 +34,7 @@ export function githubJobLog(
   text: string,
   steps: readonly Pick<GitHubWorkflowStepResponse, 'number' | 'started_at_unix'>[],
 ): GitHubJobLog {
-  const lines = readLogLines(text, { stepsOf: (stamps) => githubLineSteps(stamps, steps) })
+  const lines = readLogLines(text, (stamps) => githubLineSteps(stamps, steps))
   const stepLines = new Map<number, LogLine[]>(steps.map((step) => [step.number, []]))
   for (const line of lines) stepLines.get(line.step)?.push(line)
   return { lines, stepLines }

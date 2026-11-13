@@ -6,12 +6,10 @@ use super::{
     git_segments::register_git_pool_pack,
     github_pushes::queue_main_publication,
     landing_files::apply_repository_landing_file_mutation,
-    push_triggers::enqueue_push_main_trigger_evaluation,
     repository_from_model,
     repository_rows::save_repository_delta,
     request_merge::{LandedRequestCompletion, complete_main_push},
     request_rows::open_request_counts_by_view,
-    workflow_catalogs::apply_repository_workflow_catalog,
 };
 use sea_orm::{DatabaseTransaction, EntityTrait, TransactionTrait};
 use std::{collections::BTreeMap, fmt};
@@ -19,7 +17,6 @@ use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
     scope_domain::repository::{Repository, git::GitPoolPack, repo_id},
-    scope_domain::runs::catalog::RepositoryWorkflowCatalog,
     scope_domain::views::ViewId,
     scope_domain::{error::DomainError, landing_file::RepositoryLandingFileMutation},
 };
@@ -62,9 +59,7 @@ pub struct RepositoryMutationResult<R> {
 pub struct RepositoryMutation<R> {
     pub result: R,
     pub orphan_objects: Vec<SourceBlob>,
-    pub push_trigger_input: Option<scope_domain::runs::trigger::PushTriggerInput>,
     pub landing_file_mutation: RepositoryLandingFileMutation,
-    pub workflow_catalog: Option<RepositoryWorkflowCatalog>,
     pub landed_requests: Option<LandedRequestCompletion>,
     pub main_pack: Option<GitPoolPack>,
 }
@@ -74,26 +69,20 @@ impl<R> RepositoryMutation<R> {
         Self {
             result,
             orphan_objects: Vec::new(),
-            push_trigger_input: None,
             landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
-            workflow_catalog: None,
             landed_requests: None,
             main_pack: None,
         }
     }
 
-    pub fn with_push_trigger_input(
+    pub fn with_landing_file_mutation(
         result: R,
-        push_trigger_input: scope_domain::runs::trigger::PushTriggerInput,
         landing_file_mutation: RepositoryLandingFileMutation,
-        workflow_catalog: RepositoryWorkflowCatalog,
     ) -> Self {
         Self {
             result,
             orphan_objects: Vec::new(),
-            push_trigger_input: Some(push_trigger_input),
             landing_file_mutation,
-            workflow_catalog: Some(workflow_catalog),
             landed_requests: None,
             main_pack: None,
         }
@@ -163,16 +152,6 @@ where
 {
     let before = repo.clone();
     let mutation = op(&mut repo)?;
-    if let Some(catalog) = &mutation.workflow_catalog {
-        let head = repo.git_head.as_ref().ok_or_else(|| {
-            PostgresError::internal_message(
-                "repository workflow catalog requires an accepted Git head",
-            )
-        })?;
-        catalog
-            .verify_source(&repo.record.id, &head.head_oid, head.change_version)
-            .map_err(PostgresError::internal)?;
-    }
     let advanced_head = repo.git_head.as_ref().filter(|head| {
         before.git_head.as_ref().map(|head| head.frontier()) != Some(head.frontier())
     });
@@ -193,15 +172,6 @@ where
     }
     apply_repository_landing_file_mutation(&tx, &repo.record.id, mutation.landing_file_mutation)
         .await?;
-    if let Some(catalog) = &mutation.workflow_catalog {
-        apply_repository_workflow_catalog(&tx, catalog).await?;
-    }
-    if let Some(input) = mutation.push_trigger_input {
-        let head = repo.git_head.as_ref().ok_or_else(|| {
-            PostgresError::internal_message("push trigger evaluation requires an accepted Git head")
-        })?;
-        enqueue_push_main_trigger_evaluation(&tx, &repo.record.id, head, &input, now_unix).await?;
-    }
     let completed_landed_requests = if let Some(completion) = mutation.landed_requests {
         let head = repo.git_head.as_ref().ok_or_else(|| {
             PostgresError::internal_message("landed requests require an accepted Git head")

@@ -57,7 +57,7 @@ export function createRunLogTimer({
       const current = intentFor(runId)
       if (current) current.fetched = true
     },
-    commitText(runId: string, provider: RunLogTiming['provider'], text: string) {
+    commitText(runId: string, text: string) {
       const committed = text ? intentFor(runId) : null
       if (!committed) return null
       const cancelPaint = afterPaint((paintedAt) => {
@@ -66,7 +66,6 @@ export function createRunLogTimer({
         report({
           durationMs: Math.round(Math.max(0, paintedAt - committed.startedAt)),
           logBytes: new TextEncoder().encode(text).length,
-          provider,
           source: committed.fetched ? 'fetched' : 'stored',
           trigger: committed.trigger,
         })
@@ -126,12 +125,10 @@ export function useRunLogAbsence(runId: string, absent: boolean) {
 }
 
 export function useRunLogPaintTiming({
-  provider,
   runId,
   settled,
   text,
 }: {
-  provider: RunLogTiming['provider']
   runId: string
   settled: boolean
   text: string
@@ -151,6 +148,6 @@ export function useRunLogPaintTiming({
       if (settled) runLogTimer.settleWithoutText(runId)
       return
     }
-    closeView.current = runLogTimer.commitText(runId, provider, text) ?? (() => {})
-  }, [provider, runId, settled, text])
+    closeView.current = runLogTimer.commitText(runId, text) ?? (() => {})
+  }, [runId, settled, text])
 }

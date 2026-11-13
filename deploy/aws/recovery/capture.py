@@ -19,8 +19,8 @@ def capture(clients, url, escrow, recipient, destination, source_sha, max_bytes=
     with tempfile.TemporaryDirectory(prefix="scope-recovery-") as scratch:
         root = Path(scratch)
         before = inventory(clients, max_bytes, max_objects)
-        database = (snapshot_provider(root / "database.dump", include_cache="cache" in clients)
-                    if snapshot_provider else snapshot(url, root / "database.dump", include_cache="cache" in clients))
+        database = (snapshot_provider(root / "database.dump")
+                    if snapshot_provider else snapshot(url, root / "database.dump"))
         if (root / "database.dump").stat().st_size > 1024**3:
             raise Incomplete("database dump exceeds the one-GiB capture cap")
         objects = copy_objects(clients, before, root)
@@ -33,7 +33,6 @@ def capture(clients, url, escrow, recipient, destination, source_sha, max_bytes=
         write_json(root / "manifest.json", manifest)
         encrypt(root, recipient, destination)
         return {"version": 1, "captured_at": database["captured_at"], "source_sha": source_sha,
-                "excluded_rebuildable_buckets": database["excluded_rebuildable_buckets"],
                 "object_count": sum(len(values) for values in objects.values()),
                 "object_bytes": sum(item["size"] for values in objects.values() for item in values), **proof}
 

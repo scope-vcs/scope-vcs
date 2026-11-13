@@ -1,22 +1,12 @@
 use super::*;
 use crate::db::{
-    RecordRequestChecksCommand, SubmitRequestCommand, acquire_aggregate_lock,
-    locks::{backend_pid, wait_for_transaction_waiter},
+    RecordRequestChecksCommand, SubmitRequestCommand,
     requests::tests::{postgres_store, start_public_request},
-    test_support::fixtures::source_blob,
 };
-use scope_domain::{
-    requests::{
-        NativeRequestCheck, RecordRequestRevisionInput, RequestAutoMergeIntentStatus, RequestCheck,
-        RequestCheckContext, RequestCheckEvaluation, RequestCheckEvaluationState,
-        RequestRevisionGitFacts,
-    },
-    runs::{
-        run::{Run, RunRequest},
-        source::{RunSource, RunTrigger},
-    },
+use scope_domain::requests::{
+    RecordRequestRevisionInput, RequestAutoMergeIntentStatus, RequestCheckContext,
+    RequestCheckEvaluation, RequestCheckEvaluationState, RequestRevisionGitFacts,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
 #[tokio::test]
 async fn recording_configuration_error_stops_matching_active_intent_immediately() {
@@ -65,8 +55,6 @@ async fn recording_configuration_error_stops_matching_active_intent_immediately(
                 8,
             )
             .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -123,8 +111,6 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
                 7,
             )
             .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -166,8 +152,6 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
                 8,
             )
             .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -203,8 +187,6 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
                 .incarnation(),
             evaluation: RequestCheckEvaluation::no_checks(&request_check_context(&store).await, 8)
                 .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -229,8 +211,6 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
                 9,
             )
             .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -398,113 +378,6 @@ async fn lease_bookkeeping_does_not_advance_the_domain_transition_clock() {
     assert_eq!(
         cancelled.intent.status,
         RequestAutoMergeIntentStatus::Cancelled
-    );
-}
-
-#[tokio::test]
-async fn authorization_committing_first_fences_a_selected_retention_candidate() {
-    let store = postgres_store();
-    let revision = open_request_with_revision(&store).await;
-    record_terminal_check_evidence(&store, true).await;
-
-    let guard = store.db.begin().await.unwrap();
-    acquire_aggregate_lock(&guard, "request", "req_1")
-        .await
-        .unwrap();
-    let guard_pid = backend_pid(&guard).await;
-
-    let authorize_store = store.clone();
-    let authorize_revision = revision.clone();
-    let authorize_task = tokio::spawn(async move {
-        authorize_store
-            .requests()
-            .authorize_request_auto_merge(authorize(
-                "intent_retained",
-                "enabled_retained",
-                &authorize_revision,
-                7,
-            ))
-            .await
-    });
-    wait_for_transaction_waiter(&store, guard_pid).await;
-
-    let retention_store = store.clone();
-    let retention_task = tokio::spawn(async move {
-        retention_store
-            .runs()
-            .prune_terminal_runs(100, 100, 1)
-            .await
-    });
-    wait_for_blocked_transaction_count(&store, guard_pid, 2).await;
-    guard.commit().await.unwrap();
-
-    authorize_task.await.unwrap().unwrap();
-    assert_eq!(retention_task.await.unwrap().unwrap(), 0);
-    assert!(
-        store
-            .runs()
-            .run("run-check-evidence")
-            .await
-            .unwrap()
-            .is_some()
-    );
-}
-
-#[tokio::test]
-async fn retention_committing_first_makes_authorization_reject_missing_evidence() {
-    let store = postgres_store();
-    let revision = open_request_with_revision(&store).await;
-    record_terminal_check_evidence(&store, true).await;
-
-    let guard = store.db.begin().await.unwrap();
-    acquire_aggregate_lock(&guard, "request", "req_1")
-        .await
-        .unwrap();
-    let guard_pid = backend_pid(&guard).await;
-
-    let retention_store = store.clone();
-    let retention_task = tokio::spawn(async move {
-        retention_store
-            .runs()
-            .prune_terminal_runs(100, 100, 1)
-            .await
-    });
-    wait_for_transaction_waiter(&store, guard_pid).await;
-
-    let authorize_store = store.clone();
-    let authorize_task = tokio::spawn(async move {
-        authorize_store
-            .requests()
-            .authorize_request_auto_merge(authorize(
-                "intent_missing",
-                "enabled_missing",
-                &revision,
-                7,
-            ))
-            .await
-    });
-    wait_for_blocked_transaction_count(&store, guard_pid, 2).await;
-    guard.commit().await.unwrap();
-
-    assert_eq!(retention_task.await.unwrap().unwrap(), 1);
-    let error = authorize_task.await.unwrap().unwrap_err();
-    assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
-    assert_eq!(error.message, "request CI evidence is no longer available");
-    assert!(
-        store
-            .runs()
-            .run("run-check-evidence")
-            .await
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        store
-            .requests()
-            .request_auto_merge_intent("req_1")
-            .await
-            .unwrap()
-            .is_none()
     );
 }
 

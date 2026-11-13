@@ -76,12 +76,10 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
         })
         .await
         .unwrap();
-    writer
-        .publish_request_summary_refresh(
-            &test_repo_incarnation(),
-            RepoChangeReason::RequestIdentityEdited,
-        )
-        .await;
+    writer.publish_request_summary_refresh(
+        &test_repo_incarnation(),
+        RepoChangeReason::RequestIdentityEdited,
+    );
     assert_eq!(
         find_repo(&reader, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await

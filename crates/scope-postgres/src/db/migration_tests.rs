@@ -7,7 +7,6 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use sea_orm_migration::MigratorTrait;
 use std::sync::Arc;
 
-mod cache_schema;
 mod current_schema_baseline;
 mod github_connections;
 mod github_discussion_authors;
@@ -18,14 +17,12 @@ mod head_only_run_sources;
 mod live_file_views;
 mod main_pool_packs;
 mod maintenance_cutover;
+mod native_run_removal;
 mod public_check_commits;
 mod repository_invite_emails;
 mod repository_landing_files;
-mod repository_workflow_catalogs;
 mod request_review_bases;
 mod request_stacks;
-mod run_attempt_active_indexes;
-mod run_state_constraints;
 mod runtime_role_cluster;
 mod stack_auto_merge;
 
@@ -100,14 +97,6 @@ async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
                 'requests', (
                     SELECT jsonb_agg(to_jsonb(item) ORDER BY id)
                     FROM scope_requests item
-                ),
-                'workflow_revisions', (
-                    SELECT jsonb_agg(to_jsonb(item) ORDER BY digest)
-                    FROM scope_workflow_revisions item
-                ),
-                'runs', (
-                    SELECT jsonb_agg(to_jsonb(item) ORDER BY id)
-                    FROM scope_runs item
                 ),
                 'outbox', (
                     SELECT jsonb_agg(to_jsonb(item) ORDER BY id)

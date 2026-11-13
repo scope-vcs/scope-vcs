@@ -9,14 +9,10 @@ repository.workspace = true
 [dependencies]
 scope_service_runtime = { workspace = true, features = ["postgres"] }
 anyhow.workspace = true
-aws-config.workspace = true
-aws-sdk-lambda.workspace = true
 axum.workspace = true
 getrandom.workspace = true
 hex.workspace = true
-serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 scope_postgres.workspace = true
 scope_api_contract.workspace = true
 scope_dependency_analyzer.workspace = true
@@ -24,7 +20,6 @@ scope_domain.workspace = true
 scope_content_lifecycle.workspace = true
 scope_git.workspace = true
 scope_storage.workspace = true
-scope_product_analytics.workspace = true
 scope_git_process.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tracing.workspace = true
@@ -32,7 +27,6 @@ tempfile.workspace = true
 
 [dev-dependencies]
 scope_postgres = { workspace = true, features = ["test-support"] }
-scope_product_analytics = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

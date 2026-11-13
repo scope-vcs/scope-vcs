@@ -14,11 +14,9 @@ pub(crate) async fn edit_request_identity(
         .requests()
         .edit_request_identity(command)
         .await?;
-    state
-        .publish_request_summary_refresh(
-            &repo.incarnation(),
-            RepoChangeReason::RequestIdentityEdited,
-        )
-        .await;
+    state.publish_request_summary_refresh(
+        &repo.incarnation(),
+        RepoChangeReason::RequestIdentityEdited,
+    );
     Ok(mutation)
 }

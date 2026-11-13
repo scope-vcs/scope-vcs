@@ -87,8 +87,6 @@ export type RepoLiveState = {
   clerk_token_template: string
   event_stream_url: string
   repo: RepoSummaryResponse
-  githubRuns: boolean
-  githubConfigured: boolean
 }
 
 export type RepoParams = {
@@ -100,19 +98,6 @@ export type UpdateRepoMetadataInput = RepoParams & UpdateRepoMetadataRequest
 
 export type RunActionInput = RepoParams & {
   run_id: string
-}
-
-export type RepoRunHistoryInput = RepoParams & {
-  after?: string
-  limit?: number
-  workflow?: string
-}
-
-export type RunStepLogsInput = RunActionInput & {
-  after?: number
-  before?: number
-  attempt_id: string
-  step_index: number
 }
 
 export type ProfileState = CliInstallState & {

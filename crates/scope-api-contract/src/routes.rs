@@ -71,25 +71,6 @@ routes! {
         REPO_DEPENDENCIES = "/v1/repos/{owner}/{repo}/dependencies"
             => "repoDependencies",
             repo_dependencies(owner: &str, repo: &str);
-        REPO_RUN_WORKFLOWS = "/v1/repos/{owner}/{repo}/run-workflows"
-            => "repoRunWorkflows",
-            repo_run_workflows(owner: &str, repo: &str);
-        REPO_RUNS = "/v1/repos/{owner}/{repo}/runs" => "repoRuns", repo_runs(owner: &str, repo: &str);
-        REPO_RUN_DETAIL = "/v1/repos/{owner}/{repo}/runs/{run_id}/detail"
-            => "repoRunDetail",
-            repo_run_detail(owner: &str, repo: &str, run_id: &str);
-        REPO_RUN_EVENTS = "/v1/repos/{owner}/{repo}/runs/{run_id}/events"
-            => "repoRunEvents",
-            repo_run_events(owner: &str, repo: &str, run_id: &str);
-        REPO_RUN_STEP_LOGS = "/v1/repos/{owner}/{repo}/runs/{run_id}/attempts/{attempt_id}/steps/{step_index}/logs"
-            => "repoRunStepLogs",
-            repo_run_step_logs(owner: &str, repo: &str, run_id: &str, attempt_id: &str, step_index: u32);
-        REPO_RUN_CANCEL = "/v1/repos/{owner}/{repo}/runs/{run_id}/cancel"
-            => "repoRunCancel",
-            repo_run_cancel(owner: &str, repo: &str, run_id: &str);
-        REPO_RUN_RETRY = "/v1/repos/{owner}/{repo}/runs/{run_id}/retry"
-            => "repoRunRetry",
-            repo_run_retry(owner: &str, repo: &str, run_id: &str);
         REPO_PUSH_INTENTS = "/v1/repos/{owner}/{repo}/push-intents"
             => "repoPushIntents",
             repo_push_intents(owner: &str, repo: &str);
@@ -235,41 +216,7 @@ routes! {
             cli_device_login_poll(device_code: &str);
         CLI_EXCHANGE_GRANTS_EXCHANGE = "/v1/cli/exchange-grants/exchange";
         CLI_SESSION = "/v1/cli/session";
-        DISPATCH_AUTHORIZE = "/internal/cloud-dispatch/authorize";
         GITHUB_WEBHOOKS = "/v1/github/webhooks";
-        ATTEMPT_CLAIM = "/v1/runtime-protocol/attempts/{attempt_id}/claim",
-            attempt_claim(attempt_id: &str);
-        ATTEMPT_HEARTBEAT = "/v1/runtime-protocol/attempts/{attempt_id}/heartbeat",
-            attempt_heartbeat(attempt_id: &str);
-        ATTEMPT_CACHE_PREPARATIONS = "/v1/runtime-protocol/attempts/{attempt_id}/cache-observations/preparations",
-            attempt_cache_preparations(attempt_id: &str);
-        ATTEMPT_CACHE_FINALIZATIONS = "/v1/runtime-protocol/attempts/{attempt_id}/cache-observations/finalizations",
-            attempt_cache_finalizations(attempt_id: &str);
-        ATTEMPT_CACHE_RESTORE = "/v1/runtime-protocol/attempts/{attempt_id}/caches/restore",
-            attempt_cache_restore(attempt_id: &str);
-        ATTEMPT_CACHE_UPLOAD_PREPARE = "/v1/runtime-protocol/attempts/{attempt_id}/caches/uploads/prepare",
-            attempt_cache_upload_prepare(attempt_id: &str);
-        ATTEMPT_CACHE_UPLOAD_COMMIT = "/v1/runtime-protocol/attempts/{attempt_id}/caches/uploads/commit",
-            attempt_cache_upload_commit(attempt_id: &str);
-        ATTEMPT_RECOVERY_STATUS = "/v1/runtime-protocol/attempts/{attempt_id}/recovery-status",
-            attempt_recovery_status(attempt_id: &str);
-        ATTEMPT_SOURCE = "/v1/runtime-protocol/attempts/{attempt_id}/source",
-            attempt_source(attempt_id: &str);
-        ATTEMPT_LOGS = "/v1/runtime-protocol/attempts/{attempt_id}/logs", attempt_logs(attempt_id: &str);
-        ATTEMPT_COMPLETE = "/v1/runtime-protocol/attempts/{attempt_id}/complete",
-            attempt_complete(attempt_id: &str);
-        ATTEMPT_ABANDON = "/v1/runtime-protocol/attempts/{attempt_id}/abandon",
-            attempt_abandon(attempt_id: &str);
-        ATTEMPT_STEP_START = "/v1/runtime-protocol/attempts/{attempt_id}/steps/{step_index}/start",
-            attempt_step_start(attempt_id: &str, step_index: u32);
-        ATTEMPT_STEP_COMPLETE = "/v1/runtime-protocol/attempts/{attempt_id}/steps/{step_index}/complete",
-            attempt_step_complete(attempt_id: &str, step_index: u32);
-        REPO_RUN_RESOLVE = "/v1/repos/{owner}/{repo}/runs/resolve",
-            repo_run_resolve(owner: &str, repo: &str);
-        REPO_RUN = "/v1/repos/{owner}/{repo}/runs/{run_id}",
-            repo_run(owner: &str, repo: &str, run_id: &str);
-        REPO_PUSH_TRIGGER_EVALUATION = "/v1/repos/{owner}/{repo}/push-trigger-evaluations/{head_oid}",
-            repo_push_trigger_evaluation(owner: &str, repo: &str, head_oid: &str);
         MEDIA_UPLOAD_PART = "/v1/uploads/{upload_id}/parts/{part_number}",
             media_upload_part(upload_id: &str, part_number: u32);
         MEDIA_ATTACHMENT_ORIGINAL = "/v1/attachments/{attachment_id}/original",
@@ -346,22 +293,6 @@ mod tests {
     fn dynamic_routes_encode_each_path_segment() {
         let routes = [
             (
-                attempt_cache_preparations("attempt/with space"),
-                "/v1/runtime-protocol/attempts/attempt%2Fwith%20space/cache-observations/preparations",
-            ),
-            (
-                attempt_cache_finalizations("attempt/with space"),
-                "/v1/runtime-protocol/attempts/attempt%2Fwith%20space/cache-observations/finalizations",
-            ),
-            (
-                attempt_cache_upload_commit("attempt/with space"),
-                "/v1/runtime-protocol/attempts/attempt%2Fwith%20space/caches/uploads/commit",
-            ),
-            (
-                attempt_step_complete("attempt/with space", 3),
-                "/v1/runtime-protocol/attempts/attempt%2Fwith%20space/steps/3/complete",
-            ),
-            (
                 repo_request("an owner", "r/name", "request?#1"),
                 "/v1/repos/an%20owner/r%2Fname/requests/request%3F%231",
             ),
@@ -417,10 +348,6 @@ mod tests {
             (
                 cli_device_login_poll("code/with space"),
                 "/v1/cli/device-login/code%2Fwith%20space/poll",
-            ),
-            (
-                repo_run_step_logs("an owner", "r/name", "run?#1", "attempt/#1", 3),
-                "/v1/repos/an%20owner/r%2Fname/runs/run%3F%231/attempts/attempt%2F%231/steps/3/logs",
             ),
             (
                 git_repo("agent", "an owner", "r/name"),

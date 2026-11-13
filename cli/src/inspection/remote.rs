@@ -125,22 +125,13 @@ pub(super) fn inspect_remote(
     let request_context = checkout.map(|checkout| {
         crate::request::RequestContext::new(Some(checkout.clone()), target.clone(), summary.clone())
     });
-    let (server_config, request, history) = thread::scope(|scope| {
+    let (server_config, request) = thread::scope(|scope| {
         let server_config = reads_full_view
             .then(|| scope.spawn(|| api::get_repo_config(session, &target.owner, &target.repo)));
         let request = request_context.map(|context| {
             scope.spawn(move || crate::request::inspect_current_request(session, &context?))
         });
-        let history = reads_full_view.then(|| {
-            scope.spawn(|| {
-                api::run_history(session, &target.owner, &target.repo, None, None, 20, None)
-            })
-        });
-        (
-            server_config.map(joined),
-            request.map(joined),
-            history.map(joined),
-        )
+        (server_config.map(joined), request.map(joined))
     });
     match server_config {
         Some(Ok(server)) => {
@@ -191,52 +182,6 @@ pub(super) fn inspect_remote(
             None,
         ),
         None => {}
-    }
-    let Some(history) = history else {
-        record(
-            report,
-            "runs",
-            DiagnosticState::NotChecked,
-            "Workflow runs are available to repository maintainers".into(),
-            None,
-        );
-        return;
-    };
-    match history {
-        Ok(history) => {
-            let head = report
-                .request
-                .as_ref()
-                .map(|request| request.head_oid.as_str())
-                .or_else(|| {
-                    report
-                        .local
-                        .as_ref()
-                        .and_then(|local| local.head_oid.as_deref())
-                });
-            report.recent_matching_runs = history
-                .runs
-                .into_iter()
-                .filter(|run| head.is_none_or(|head| run.git_oid == head))
-                .collect();
-            record(
-                report,
-                "runs",
-                DiagnosticState::Ok,
-                format!(
-                    "{} matching runs in the 20 most recent repository runs",
-                    report.recent_matching_runs.len()
-                ),
-                None,
-            );
-        }
-        Err(error) => record(
-            report,
-            "runs",
-            DiagnosticState::Unavailable,
-            error.to_string(),
-            None,
-        ),
     }
 }
 

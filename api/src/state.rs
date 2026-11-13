@@ -3,10 +3,7 @@ use crate::{
     auth::clerk::ClerkVerifier,
     background_work::BackgroundWakeups,
     clerk_backend::ClerkBackend,
-    config::{
-        SCOPE_DISPATCH_BROKER_TOKEN_ENV, database_max_connections_from_env, database_url_from_env,
-        git_public_url_from_env, non_empty_env,
-    },
+    config::{database_max_connections_from_env, database_url_from_env, git_public_url_from_env},
     git::repository_engine::RepositoryEngine,
     github::GitHubApp,
     http::merge_routing::MergeRouting,
@@ -14,10 +11,7 @@ use crate::{
     media_grants::MediaGrantIssuer,
     repo_events::RepoChangeBus,
     runtime_budgets::RuntimeBudgets,
-    use_cases::{
-        content_cleanup::best_effort_drain_pending_repo_storage_deletions,
-        run_caches::RunCacheStorage,
-    },
+    use_cases::content_cleanup::best_effort_drain_pending_repo_storage_deletions,
 };
 use scope_postgres::db::{MetadataStore, RepoChangeListener};
 use scope_product_analytics::{EventSource, ProductAnalytics};
@@ -37,10 +31,8 @@ pub struct AppState {
     pub(crate) clerk: ClerkVerifier,
     pub(crate) object_store: Arc<dyn ObjectStore>,
     pub(crate) git_segment_store: Arc<GitSegmentStore>,
-    pub(crate) run_caches: RunCacheStorage,
     pub(crate) media_grants: MediaGrantIssuer,
     pub(crate) runtime_budgets: Arc<RuntimeBudgets>,
-    pub(crate) dispatch_broker_token: Option<Arc<str>>,
     pub(crate) product_analytics: ProductAnalytics,
     pub(crate) repo_events: RepoChangeBus,
     pub(crate) repo_change_listener: Option<Arc<RepoChangeListener>>,
@@ -57,7 +49,6 @@ pub struct AppState {
 pub(crate) struct AppServices {
     pub(crate) storage: StorageRuntime,
     pub(crate) metadata: MetadataStore,
-    pub(crate) run_caches: RunCacheStorage,
     pub(crate) media_grants: MediaGrantIssuer,
     pub(crate) product_analytics: ProductAnalytics,
     pub(crate) git_public_url: String,
@@ -68,7 +59,6 @@ struct Integrations {
     clerk_backend: ClerkBackend,
     github: Option<Arc<GitHubApp>>,
     invite_mailer: InviteMailer,
-    dispatch_broker_token: Option<Arc<str>>,
     merge_routing: Option<Arc<MergeRouting>>,
 }
 
@@ -79,7 +69,6 @@ impl Integrations {
             clerk_backend: ClerkBackend::from_env(),
             github: GitHubApp::from_env()?.map(Arc::new),
             invite_mailer: InviteMailer::from_env(),
-            dispatch_broker_token: non_empty_env(SCOPE_DISPATCH_BROKER_TOKEN_ENV).map(Arc::from),
             merge_routing: MergeRouting::from_env()?.map(Arc::new),
         })
     }
@@ -98,7 +87,6 @@ impl Integrations {
             clerk_backend: ClerkBackend::Scripted(Default::default()),
             github: None,
             invite_mailer: InviteMailer::Recording(Default::default()),
-            dispatch_broker_token: None,
             merge_routing: None,
         }
     }
@@ -117,7 +105,6 @@ impl AppState {
         let state = Self::connect(AppServices {
             storage,
             metadata,
-            run_caches: RunCacheStorage::from_env()?,
             media_grants: MediaGrantIssuer::from_env()?,
             product_analytics: ProductAnalytics::from_env(EventSource::Api)?,
             git_public_url,
@@ -135,7 +122,6 @@ impl AppState {
             AppServices {
                 storage,
                 metadata,
-                run_caches: RunCacheStorage::from_env()?,
                 media_grants: MediaGrantIssuer::from_env()?,
                 product_analytics: ProductAnalytics::disabled(),
                 git_public_url: git_public_url_from_env(None)?,
@@ -196,7 +182,6 @@ impl AppState {
         let AppServices {
             storage,
             metadata,
-            run_caches,
             media_grants,
             product_analytics,
             git_public_url,
@@ -212,10 +197,8 @@ impl AppState {
             clerk: integrations.clerk,
             object_store: storage.object_store,
             git_segment_store: storage.git_segment_store,
-            run_caches,
             media_grants,
             runtime_budgets: storage.runtime_budgets,
-            dispatch_broker_token: integrations.dispatch_broker_token,
             product_analytics,
             repo_events,
             repo_change_listener,
@@ -245,7 +228,6 @@ impl AppState {
             AppServices {
                 storage: StorageRuntime::for_tests(),
                 metadata: MetadataStore::connect_fresh_for_tests(&target).unwrap(),
-                run_caches: RunCacheStorage::unreachable(),
                 media_grants: MediaGrantIssuer::test(),
                 product_analytics: ProductAnalytics::disabled(),
                 git_public_url: crate::config::LOCAL_API_ORIGIN.to_string(),

@@ -68,120 +68,7 @@ pub(super) fn authorize(
     }
 }
 
-pub(super) async fn record_terminal_check_evidence(
-    store: &crate::db::MetadataStore,
-    succeeded: bool,
-) {
-    store
-        .native_runs()
-        .add_account("owner", None, 1)
-        .await
-        .unwrap();
-    let revision = scope_run_config::parse_workflow(
-        "/.scope/runs/check.yml",
-        br#"
-name: Check
-on:
-  manual: true
-container:
-  image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-timeout: 5m
-jobs:
-  check:
-    steps:
-      - name: Check
-        run: echo ok
-"#,
-    )
-    .unwrap()
-    .into_revision("owner/repo")
-    .unwrap();
-    let run = Run::new(
-        RunRequest {
-            id: "run-check-evidence".into(),
-            idempotency_key: "run-check-evidence".into(),
-            workflow: revision.workflow().clone(),
-            workflow_revision_digest: revision.digest().to_string(),
-            trigger: RunTrigger::Manual,
-            requested_by_user_id: Some("user_owner".into()),
-            source: RunSource::ephemeral_git_bundle(source_blob(
-                &"a".repeat(40),
-                &"b".repeat(64),
-                1,
-            ))
-            .unwrap(),
-        },
-        5,
-    )
-    .unwrap();
-    store
-        .runs()
-        .enqueue_run(run, revision.clone())
-        .await
-        .unwrap();
-    store
-        .native_runs()
-        .add_account("owner", None, 5)
-        .await
-        .unwrap();
-    let token = "c".repeat(64);
-    let claim = store
-        .runs()
-        .dispatch_job(
-            "run-check-evidence",
-            "check",
-            scope_domain::runs::job::AttemptDispatch {
-                attempt_id: "attempt-evidence".to_string(),
-                token_hash: token.clone(),
-                runtime_version: "runtime".to_string(),
-                lease_expires_at_unix: 20,
-            },
-            5,
-        )
-        .await
-        .unwrap();
-    store
-        .runs()
-        .start_attempt_step(&claim.attempt.id, &token, 0, 5)
-        .await
-        .unwrap();
-    store
-        .runs()
-        .complete_attempt_step(
-            &claim.attempt.id,
-            &token,
-            0,
-            if succeeded {
-                scope_domain::runs::step::StepConclusion::Succeeded
-            } else {
-                scope_domain::runs::step::StepConclusion::Failed { exit_code: 1 }
-            },
-            false,
-            6,
-        )
-        .await
-        .unwrap();
-    if succeeded {
-        store
-            .runs()
-            .complete_attempt(
-                &claim.attempt.id,
-                &token,
-                scope_domain::runs::step::AttemptConclusion::Succeeded,
-                false,
-                6,
-            )
-            .await
-            .unwrap();
-    }
-    store
-        .runs()
-        .complete_cloud_task_absence(&claim.attempt.id, 6)
-        .await
-        .unwrap();
-
-    let mut check = NativeRequestCheck::for_revision(&revision);
-    check.run_id = Some("run-check-evidence".into());
+pub(super) async fn record_configuration_error(store: &crate::db::MetadataStore) {
     store
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
@@ -197,51 +84,14 @@ jobs:
                 .unwrap()
                 .unwrap()
                 .incarnation(),
-            evaluation: RequestCheckEvaluation::started(
+            evaluation: RequestCheckEvaluation::configuration_error(
                 &request_check_context(store).await,
-                vec![RequestCheck::Native(check)],
+                "invalid request workflow",
                 6,
             )
             .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
         .unwrap();
-}
-
-pub(super) async fn wait_for_blocked_transaction_count(
-    store: &crate::db::MetadataStore,
-    blocker_pid: i32,
-    expected: i64,
-) {
-    tokio::time::timeout(std::time::Duration::from_secs(60), async {
-        loop {
-            let count = store
-                .db
-                .query_one_raw(Statement::from_sql_and_values(
-                    DatabaseBackend::Postgres,
-                    "WITH RECURSIVE blocked(pid) AS ( \
-                         SELECT pid FROM pg_stat_activity \
-                          WHERE $1 = ANY(pg_blocking_pids(pid)) \
-                         UNION \
-                         SELECT activity.pid FROM pg_stat_activity activity \
-                           JOIN blocked ON blocked.pid = ANY(pg_blocking_pids(activity.pid)) \
-                     ) SELECT count(*) AS count FROM blocked",
-                    [blocker_pid.into()],
-                ))
-                .await
-                .unwrap()
-                .unwrap()
-                .try_get::<i64>("", "count")
-                .unwrap();
-            if count >= expected {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("expected transactions blocked by the request guard");
 }

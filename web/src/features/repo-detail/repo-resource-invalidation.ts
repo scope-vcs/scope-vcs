@@ -1,10 +1,6 @@
-import { invalidateRunHistoryScope } from '../runs/run-history-cache'
-import { runDetailResource } from '../runs/run-detail-resource'
-import { runLogCacheKey } from '../runs/run-log-cache'
-import { runResourceNeedsRecovery } from '../runs/run-resource'
 import { invalidateRequestQueues } from '../requests/request-queue-cache'
 import { requestChangesResource } from '../requests/request-changes-resource'
-import { refreshRequestState, requestStateResource } from '../requests/request-state-resource'
+import { refreshRequestState } from '../requests/request-state-resource'
 import { requestRatingsResource } from '../requests/request-ratings-resource'
 import { refreshRequestDiscussionReferences, requestDiscussionReferenceResource } from '../requests/request-changes-discussion-references'
 import type { RepoChangeEvent } from '../../api/types.generated'
@@ -17,8 +13,8 @@ import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
 import { repositoryVersionKey } from './repository-version'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
-import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { invalidateGitHubWorkflowRuns } from '../runs/github-workflow-runs-resource'
+import { runsPageResource } from '../runs/runs-page-resource'
 import { githubWorkflowNamesResource } from '../runs/github-workflow-names-resource'
 import { invalidateGitHubWorkflowRunDetails } from '../runs/github-workflow-run-detail-resource'
 
@@ -36,21 +32,9 @@ export function invalidateRepoResources(
   event?: RepoChangeEvent,
   { summaryPending = false, versioned = false }: RepoResourceInvalidation = {},
 ) {
-  const changed = event && typeof event.kind === 'object' && 'RunChanged' in event.kind ? event.kind.RunChanged : null
-  if (changed?.change === 'LogsAppended') return
   const repositoryChanged = event && typeof event.kind === 'object' && 'RepositoryChanged' in event.kind
-  const recovery = !event || event.kind === 'Connected'
-  const prefix = `${JSON.stringify([scope]).slice(0, -1)},`
   const inScope = (identity: string) => identity.startsWith(`${scope}\0`)
-  if (repositoryChanged || recovery || event.kind === 'Lagged' || changed) {
-    invalidateRunHistoryScope(scope, recovery)
-  }
-  if (repositoryChanged || recovery || event.kind === 'Lagged' || changed?.change === 'StatusChanged') {
-    runDetailResource.invalidateMatching((key) => key.startsWith(prefix) &&
-      (!changed || key === runLogCacheKey(scope, changed.run_id)) &&
-      (!recovery || runResourceNeedsRecovery(runDetailResource, key)))
-  }
-  if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
+  if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || repositoryChanged) {
     if (!summaryPending) invalidateRequestQueues(scope)
     repoSettingsResource.invalidate(scope)
     requestChangesResource.invalidateMatching(inScope)
@@ -64,7 +48,7 @@ export function invalidateRepoResources(
       repositoryActivityResource.invalidateMatching(inScope)
       repositoryDependencyResource.invalidate(scope)
     }
-    runWorkflowsResource.invalidate(scope)
+    runsPageResource.invalidate(scope)
     requestActivityResource.invalidateMatching(inScope)
     refreshRequestState(scope)
     invalidateGitHubWorkflowRuns(scope)
@@ -98,16 +82,6 @@ export function invalidateRepoResources(
     refreshRequestState(scope, timeline.request_id)
     requestRatingsResource.invalidate(`${scope}\0${timeline.request_id}`)
     requestAttachmentResource.invalidate(requestAttachmentResourceIdentity(scope, timeline.request_id))
-  } else if (typeof event.kind === 'object' && 'RunChanged' in event.kind) {
-    if (event.kind.RunChanged.change === 'StatusChanged') {
-      invalidateRequestQueues(scope)
-      requestActivityResource.invalidateMatching(inScope)
-    }
-    const runId = event.kind.RunChanged.run_id
-    requestStateResource.invalidateMatching((identity) => inScope(identity) &&
-      (requestStateResource.getSnapshot(identity).pending ||
-        Boolean(requestStateResource.peek(identity)?.state?.checks.checks.some((check) =>
-          check.provider === 'native' && check.run_id === runId))))
   } else if (typeof event.kind === 'object' && 'RequestAttachmentChanged' in event.kind) {
     requestAttachmentResource.invalidate(requestAttachmentResourceIdentity(scope, event.kind.RequestAttachmentChanged.request_id))
   }

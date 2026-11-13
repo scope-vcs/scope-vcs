@@ -574,8 +574,7 @@ async fn publish_pull_request_change(state: &AppState, carrier: &GitHubPullReque
         Ok(Some(incarnation)) => {
             if landed {
                 state
-                    .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
-                    .await;
+                    .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged);
             }
             state
                 .publish_request_state_refresh(&incarnation, &carrier.request_id)

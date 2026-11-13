@@ -28,7 +28,7 @@ test('a pending repository survives storage and malformed values are ignored', (
 
 test('connecting returns to the page it started from within the same repository', () => {
   assert.equal(githubReturnPath('/owner/repo/runs', target), '/owner/repo/runs')
-  assert.equal(githubReturnPath('/owner/repo/runs/workflows/ci', target), '/owner/repo/runs/workflows/ci')
+  assert.equal(githubReturnPath('/owner/repo/runs/1234', target), '/owner/repo/runs/1234')
   assert.equal(githubReturnPath('/owner/repo', target), '/owner/repo')
   for (const stored of [
     null,

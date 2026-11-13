@@ -8,10 +8,7 @@ use crate::{
     runtime_budgets::RuntimeBudgets,
 };
 use scope_domain::content::is_supported_git_file_mode;
-use scope_domain::{
-    policy::ScopePath,
-    repo_control::{RepoControlPath, classify_repo_control_path},
-};
+use scope_domain::{policy::ScopePath, repo_control::is_private_control_path};
 use scope_git::GitTreePath;
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use std::{
@@ -25,28 +22,15 @@ pub(super) fn git_tree_entries(
     staging_repo: &FsPath,
     head_oid: &str,
 ) -> Result<Vec<GitTreeFile>, ApiError> {
-    git_tree_entries_for_path(staging_repo, head_oid, None, true, None)
-}
-
-pub(super) fn git_tree_entries_under(
-    staging_repo: &FsPath,
-    head_oid: &str,
-    path: &str,
-) -> Result<Vec<GitTreeFile>, ApiError> {
-    git_tree_entries_for_path(staging_repo, head_oid, Some(path), false, None)
+    git_tree_entries_for_path(staging_repo, head_oid, None)
 }
 
 fn git_tree_entries_for_path(
     staging_repo: &FsPath,
     head_oid: &str,
-    path: Option<&str>,
-    enforce_import_limits: bool,
     deadline: Option<Instant>,
 ) -> Result<Vec<GitTreeFile>, ApiError> {
-    let mut args = vec!["ls-tree", "-rz", "-r", "-l", head_oid];
-    if let Some(path) = path {
-        args.extend(["--", path]);
-    }
+    let args = ["ls-tree", "-rz", "-r", "-l", head_oid];
     let output = match deadline {
         Some(deadline) => {
             run_git_output_until(Some(staging_repo), &args, "reading pushed tree", deadline)?
@@ -95,7 +79,7 @@ fn git_tree_entries_for_path(
         let blob_size = size
             .parse::<u64>()
             .map_err(|_| ApiError::internal_message("invalid Git blob size"))?;
-        if enforce_import_limits && blob_size > MAX_PENDING_IMPORT_BLOB_BYTES as u64 {
+        if blob_size > MAX_PENDING_IMPORT_BLOB_BYTES as u64 {
             return Err(ApiError::bad_request(format!(
                 "blob {path} is larger than {MAX_PENDING_IMPORT_BLOB_BYTES} bytes"
             )));
@@ -131,7 +115,7 @@ pub(crate) fn git_changed_tree_entries_until(
     deadline: Instant,
 ) -> Result<Vec<(ScopePath, Option<GitTreeFile>)>, ApiError> {
     let Some(base_oid) = base_oid else {
-        return git_tree_entries_for_path(staging_repo, head_oid, None, true, Some(deadline))?
+        return git_tree_entries_for_path(staging_repo, head_oid, Some(deadline))?
             .into_iter()
             .map(|entry| Ok((entry.path.to_scope_path(), Some(entry))))
             .collect();
@@ -184,7 +168,6 @@ fn raw_delta_record(
 ) -> Result<(ScopePath, Option<GitTreeFile>), ApiError> {
     let header = std::str::from_utf8(header).map_err(ApiError::bad_request)?;
     let path = std::str::from_utf8(path).map_err(ApiError::bad_request)?;
-    let path = validate_pushed_file_path(path)?;
     let values = header.split_whitespace().collect::<Vec<_>>();
     if values.len() != 5 || !values[0].starts_with(':') {
         return Err(ApiError::internal_message("invalid Git delta record"));
@@ -192,10 +175,11 @@ fn raw_delta_record(
     let new_mode = values[1];
     let new_oid = values[3];
     let status = values[4];
-    let scope_path = path.to_scope_path();
     if status == "D" {
-        return Ok((scope_path, None));
+        return Ok((parse_pushed_file_path(path)?.to_scope_path(), None));
     }
+    let path = validate_pushed_file_path(path)?;
+    let scope_path = path.to_scope_path();
     if !is_supported_git_file_mode(new_mode) {
         return Err(ApiError::bad_request(format!(
             "unsupported Git file mode {path}: {new_mode}"
@@ -365,13 +349,13 @@ pub(crate) struct GitTreeFile {
     pub(crate) size_bytes: u64,
 }
 
+fn parse_pushed_file_path(path: &str) -> Result<GitTreePath, ApiError> {
+    GitTreePath::parse(path).map_err(ApiError::bad_request)
+}
+
 pub(crate) fn validate_pushed_file_path(path: &str) -> Result<GitTreePath, ApiError> {
-    let path = GitTreePath::parse(path).map_err(ApiError::bad_request)?;
-    let scope_path = path.to_scope_path();
-    if matches!(
-        classify_repo_control_path(&scope_path),
-        Some(RepoControlPath::Forbidden)
-    ) {
+    let path = parse_pushed_file_path(path)?;
+    if is_private_control_path(&path.to_scope_path()) {
         return Err(ApiError::bad_request(format!(
             "Scope control path {:?} is not a supported tracked control file",
             path.as_str()
@@ -384,71 +368,23 @@ pub(crate) fn validate_pushed_file_path(path: &str) -> Result<GitTreePath, ApiEr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::command::run_git;
-    use std::{
-        fs,
-        time::{SystemTime, UNIX_EPOCH},
-    };
 
     #[test]
-    fn workflow_tree_listing_is_scoped_to_the_runs_directory() {
-        let root = std::env::temp_dir().join(format!(
-            "scope-workflow-tree-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(root.join(".scope/runs")).unwrap();
-        run_git(Some(&root), &["init", "-q"], "initializing test repository").unwrap();
-        fs::write(root.join("README.md"), "unrelated\n").unwrap();
-        fs::write(root.join(".scope/runs/test.yml"), "name: Test\n").unwrap();
-        run_git(Some(&root), &["add", "."], "staging test repository").unwrap();
-        run_git(
-            Some(&root),
-            &[
-                "-c",
-                "user.name=Scope Tests",
-                "-c",
-                "user.email=scope@example.com",
-                "commit",
-                "-qm",
-                "test",
-            ],
-            "committing test repository",
-        )
-        .unwrap();
-        let head = git_stdout_text(&root, &["rev-parse", "HEAD"], "reading test head")
-            .unwrap()
-            .trim()
-            .to_string();
-
-        let entries = git_tree_entries_under(&root, &head, ".scope/runs").unwrap();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].path.as_str(), ".scope/runs/test.yml");
-
-        let invalid = git_tree_entries_under(&root, "invalid-object", ".scope/runs").unwrap_err();
-        assert_eq!(
-            invalid.status(),
-            axum::http::StatusCode::SERVICE_UNAVAILABLE
-        );
-        let subtree =
-            git_stdout_text(&root, &["rev-parse", "HEAD:.scope/runs"], "reading subtree").unwrap();
-        let subtree = subtree.trim();
-        fs::remove_file(
-            root.join(".git/objects")
-                .join(&subtree[..2])
-                .join(&subtree[2..]),
-        )
-        .unwrap();
-        let missing = git_tree_entries_under(&root, &head, ".scope/runs").unwrap_err();
-        assert_eq!(
-            missing.status(),
-            axum::http::StatusCode::SERVICE_UNAVAILABLE
-        );
-        assert!(git_tree_entries(&root, &head).is_err());
-        fs::remove_dir_all(root).unwrap();
+    fn a_push_may_delete_but_not_keep_an_unsupported_control_file() {
+        let oid = "a".repeat(40);
+        let zero = "0".repeat(40);
+        let path = b".scope/runs/checks.yml";
+        let (deleted, entry) =
+            raw_delta_record(format!(":100644 000000 {oid} {zero} D").as_bytes(), path).unwrap();
+        assert_eq!(deleted.as_str(), "/.scope/runs/checks.yml");
+        assert!(entry.is_none());
+        for status in ["A", "M"] {
+            let error = raw_delta_record(
+                format!(":100644 100644 {oid} {oid} {status}").as_bytes(),
+                path,
+            )
+            .unwrap_err();
+            assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
+        }
     }
 }

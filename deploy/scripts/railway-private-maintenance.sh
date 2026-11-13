@@ -5,7 +5,7 @@ environment="${1:?Maintenance environment is required}"
 command="${2:?Maintenance command is required}"
 [[ "$#" == 2 ]]
 case "$command" in
-  preflight|plan|verify|validate-workflow-catalogs) private_command=railway_private_read ;;
+  preflight|plan|verify) private_command=railway_private_read ;;
   fence|drain-writers|apply) private_command=railway_private_write ;;
   *) echo 'Unsupported private maintenance command.' >&2; exit 2 ;;
 esac

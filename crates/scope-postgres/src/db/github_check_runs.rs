@@ -183,7 +183,7 @@ impl RequestStore {
              JOIN scope_request_check_evaluations evaluation
                ON request.id = evaluation.request_id AND request.current_check_evaluation_id = evaluation.id
              WHERE request.repo_id = $1 AND evaluation.tested_oid = $2
-               AND evaluation.checks @> '[{\"provider\":\"github\"}]'::jsonb
+               AND jsonb_array_length(evaluation.checks) > 0
              ORDER BY request.id",
             [repo_id.into(), commit_oid.into()],
         ))
@@ -212,7 +212,7 @@ impl RequestStore {
              WHERE request.repo_id = $1
                AND evaluation.tested_oid = $2
                AND evaluation.state = 'started'
-               AND evaluation.checks @? '$[*] ? (@.provider == "github")'
+               AND jsonb_array_length(evaluation.checks) > 0
                AND request.merged_at_unix IS NULL
                AND request.closed_at_unix IS NULL
             "#,
@@ -248,7 +248,7 @@ impl RequestStore {
                       JOIN scope_github_connections connection ON connection.repo_id = request.repo_id
                         AND connection.github_repository_id = evaluation.github_repository_id
                      WHERE evaluation.tested_oid = $2 AND request.repo_id = $1
-                       AND evaluation.checks @? '$[*] ? (@.provider == \"github\")'
+                       AND jsonb_array_length(evaluation.checks) > 0
                  ) AS tested",
                 [repo_id.into(), commit_oid.into()],
             ))
@@ -282,7 +282,7 @@ impl RequestStore {
                AND refresh.github_repository_id = connection.github_repository_id
                AND refresh.commit_oid = evaluation.tested_oid
              WHERE evaluation.state = 'started'
-               AND evaluation.checks @? '$[*] ? (@.provider == "github")'
+               AND jsonb_array_length(evaluation.checks) > 0
                AND request.merged_at_unix IS NULL
                AND request.closed_at_unix IS NULL
                AND coalesce(refresh.next_read_at_unix, 0) <= $1

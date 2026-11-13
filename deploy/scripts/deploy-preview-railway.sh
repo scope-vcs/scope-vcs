@@ -31,7 +31,6 @@ run_maintenance() {
   bash deploy/scripts/railway-private-maintenance.sh "$preview_environment_id" "$1"
 }
 run_maintenance plan >/dev/null
-run_maintenance validate-workflow-catalogs
 run_maintenance apply
 run_maintenance verify
 

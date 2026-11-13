@@ -480,9 +480,7 @@ pub(super) async fn persist_request_ref_revision(
                     &request.id,
                     request_view,
                 ));
-            state
-                .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised)
-                .await;
+            state.publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised);
 
             retain_staged_pool_pack(
                 state,
@@ -499,11 +497,7 @@ pub(super) async fn persist_request_ref_revision(
                 context.repo_config.views(),
                 &mutation.request,
                 &mutation.revision,
-                RequestCheckReviewer::for_actor(
-                    actor_user_id,
-                    &context.access,
-                    context.repo_config.views(),
-                ),
+                RequestCheckReviewer::for_actor(&context.access, context.repo_config.views()),
                 staging_repo,
             )
             .await;

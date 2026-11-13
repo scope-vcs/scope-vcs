@@ -91,21 +91,13 @@ impl Case {
             && self.template.matches('{').count() > repository_level
     }
 
-    fn value_key<'a>(&self, name: &'a str) -> &'a str {
-        match (self.template.contains("/github/workflow-runs/"), name) {
-            (true, "run_id") => "github_run_id",
-            (true, "job_id") => "github_job_id",
-            _ => name,
-        }
-    }
-
     fn uri(&self, params: &BTreeMap<&'static str, String>) -> String {
         let mut uri = String::new();
         let mut rest = self.template;
         while let Some(start) = rest.find('{') {
             let end = start + rest[start..].find('}').unwrap();
             let name = &rest[start + 1..end];
-            let value = params.get(self.value_key(name)).unwrap_or_else(|| {
+            let value = params.get(name).unwrap_or_else(|| {
                 panic!(
                     "{}: the isolation fixture has no value for {{{name}}}; map it in repo_a()",
                     self.template

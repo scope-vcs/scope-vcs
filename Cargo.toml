@@ -7,7 +7,6 @@ members = [
     "crates/scope-media-storage",
     "repo-router",
     "crates/scope-api-contract",
-    "crates/scope-cache-domain",
     "crates/scope-content-lifecycle",
     "crates/scope-dependency-analyzer",
     "crates/scope-domain",
@@ -16,9 +15,7 @@ members = [
     "crates/scope-storage",
     "crates/scope-product-analytics",
     "crates/scope-git-process",
-    "crates/scope-run-config",
     "crates/scope-service-runtime",
-    "runner-runtime",
     "worker",
 ]
 exclude = ["cli"]
@@ -62,9 +59,7 @@ repository = "https://github.com/adamblumoff/scope-vcs"
 [workspace.dependencies]
 anyhow = "1.0.104"
 async-trait = "0.1.89"
-aws-config = { version = "1.12.0", default-features = false, features = ["behavior-version-latest", "default-https-client", "rt-tokio"] }
 aws-credential-types = "1.3.0"
-aws-sdk-lambda = { version = "1.147.0", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-sdk-s3 = { version = "1.149.0", default-features = false, features = ["behavior-version-latest", "default-https-client", "rt-tokio"] }
 aws-sigv4 = "1.6.0"
 aws-smithy-http = "0.64.0"
@@ -90,7 +85,6 @@ serde_json = "1.0.147"
 schemars = "1.2.1"
 sha1 = "0.11.0"
 sha2 = "0.11.0"
-filetime = "0.2.27"
 tempfile = "3.23.0"
 thiserror = "2.0.18"
 time = { version = "0.3.44", features = ["formatting"] }
@@ -104,7 +98,6 @@ ts-rs = "12.0.1"
 url = "2.5.8"
 
 scope_api_contract = { package = "scope-api-contract", path = "crates/scope-api-contract" }
-scope_cache_domain = { package = "scope-cache-domain", path = "crates/scope-cache-domain" }
 scope_content_lifecycle = { package = "scope-content-lifecycle", path = "crates/scope-content-lifecycle" }
 scope_dependency_analyzer = { package = "scope-dependency-analyzer", path = "crates/scope-dependency-analyzer" }
 scope_domain = { package = "scope-domain", path = "crates/scope-domain" }
@@ -113,7 +106,6 @@ scope_git_process = { package = "scope-git-process", path = "crates/scope-git-pr
 scope_storage = { package = "scope-storage", path = "crates/scope-storage" }
 scope_product_analytics = { package = "scope-product-analytics", path = "crates/scope-product-analytics" }
 scope_postgres = { package = "scope-postgres", path = "crates/scope-postgres" }
-scope_run_config = { package = "scope-run-config", path = "crates/scope-run-config" }
 
 scope_media_storage = { package = "scope-media-storage", path = "crates/scope-media-storage" }
 

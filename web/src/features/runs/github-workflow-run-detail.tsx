@@ -5,6 +5,7 @@ import type {
   GitHubWorkflowRunResponse,
 } from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
+import { RouteErrorContent } from '@/components/route-error-page'
 import { SeparatedMetaItem } from '@/components/separated-meta'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { buttonVariants } from '@/components/ui/button-variants'
@@ -30,7 +31,6 @@ import { runJobLinkForHash, runJobPanelId, type RunJobLink } from './run-job-ids
 import { RunJobTree } from './run-job-tree'
 import { RUN_BODY_CLASS } from './run-layout'
 import { runDurationLead } from './run-status'
-import { RunDetailPageError } from './repository-run-detail-page'
 import { RunDetailPagePending } from './run-detail-pending'
 import { RunHeaderStatus, RunPageHeader } from './run-detail-header'
 
@@ -239,5 +239,17 @@ function GitHubWorkflowRunHeader({
         </SeparatedMetaItem>
       )}
     </RunPageHeader>
+  )
+}
+
+export function RunDetailPageError({ error }: { error: unknown }) {
+  return (
+    <WorkbenchPane>
+      <RouteErrorContent
+        error={error}
+        fallbackMessage="Unexpected run detail error"
+        title="Run unavailable"
+      />
+    </WorkbenchPane>
   )
 }

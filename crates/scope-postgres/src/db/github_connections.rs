@@ -10,7 +10,6 @@ use super::{
     integer_columns::{i64_to_u64, optional_i64_to_u64, u64_to_i64},
     locks::acquire_shared_repository_lock,
     repository_access::{load_repo_record, repository_access},
-    runs::unique_conflict,
 };
 use crate::error::PostgresError;
 use scope_domain::github_review_bots::github_review_bots_survive;
@@ -27,8 +26,8 @@ use scope_domain::{
     requests::{GitHubBranch, GitHubPushDestination},
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, FromQueryResult, Statement,
-    TransactionTrait, Value,
+    ConnectionTrait, DatabaseBackend, DatabaseTransaction, DbErr, EntityTrait, FromQueryResult,
+    Statement, TransactionTrait, Value,
 };
 
 const BY_REPO: &str = "WHERE connection.repo_id = $1";
@@ -451,7 +450,7 @@ async fn requeue_started_github_evaluations<C: ConnectionTrait>(
                AND request.closed_at_unix IS NULL
                AND evaluation.state = 'started'
                AND evaluation.github_repository_id = $2
-               AND evaluation.checks @? '$[*] ? (@.provider == "github")'
+               AND jsonb_array_length(evaluation.checks) > 0
              ORDER BY evaluation.request_id
             "#,
             [
@@ -661,6 +660,17 @@ impl ConnectionRow {
             },
             connected_by_handle: self.connected_by_handle,
         })
+    }
+}
+
+fn unique_conflict(error: DbErr, message: &str) -> PostgresError {
+    if matches!(
+        error.sql_err(),
+        Some(sea_orm::SqlErr::UniqueConstraintViolation(_))
+    ) {
+        PostgresError::conflict(message)
+    } else {
+        PostgresError::internal(error)
     }
 }
 

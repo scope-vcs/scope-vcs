@@ -1,7 +1,7 @@
-use super::{AdminStore, ExclusiveWriterFence, workflow_catalogs};
+use super::{AdminStore, ExclusiveWriterFence};
 use crate::error::PostgresError;
 use crate::migrations::{MigrationLimits, MigrationPlan};
-use sea_orm::{ConnectionTrait, Database};
+use sea_orm::Database;
 
 impl AdminStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "readiness_check"))]
@@ -23,25 +23,6 @@ pub async fn migration_preflight(
 pub async fn migration_plan(database_url: String) -> anyhow::Result<MigrationPlan> {
     let db = Database::connect(database_url).await?;
     Ok(crate::migrations::plan(&db).await?)
-}
-
-pub async fn repository_workflow_catalogs_for_maintenance(
-    database_url: String,
-) -> anyhow::Result<Vec<scope_domain::runs::catalog::RepositoryWorkflowCatalog>> {
-    let db = Database::connect(database_url).await?;
-    crate::migrations::plan(&db).await?;
-    let exists = db
-        .query_one_raw(sea_orm::Statement::from_string(
-            db.get_database_backend(),
-            "SELECT to_regclass(format('%I.scope_repository_workflow_catalogs', current_schema())) IS NOT NULL AS exists",
-        ))
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("PostgreSQL did not report workflow catalog schema state"))?
-        .try_get::<bool>("", "exists")?;
-    if !exists {
-        return Ok(Vec::new());
-    }
-    Ok(workflow_catalogs::load_repository_workflow_catalogs(&db).await?)
 }
 
 pub async fn verify_schema(database_url: String) -> anyhow::Result<()> {

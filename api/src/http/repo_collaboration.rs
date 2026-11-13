@@ -260,13 +260,11 @@ pub(crate) async fn accept_repository_invite(
     let (repo, outcome) = accept_invite(&state, &token_hash, user.clone(), now).await?;
     let member = match outcome {
         AcceptRepositoryInviteOutcome::Accepted(member) => {
-            state
-                .publish_repo_change(
-                    &repo.incarnation(),
-                    repo.record.change_version,
-                    RepoChangeReason::MemberAdded,
-                )
-                .await;
+            state.publish_repo_change(
+                &repo.incarnation(),
+                repo.record.change_version,
+                RepoChangeReason::MemberAdded,
+            );
             member
         }
         AcceptRepositoryInviteOutcome::AlreadyAccepted(member) => member,

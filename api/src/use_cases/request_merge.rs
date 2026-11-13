@@ -9,7 +9,6 @@ use scope_domain::{
     repository::updates::RequestMergeOrigin,
     repository::{RepositoryIncarnation, access::RepositoryAccess},
     requests::{Request, request_actor_role},
-    runs::catalog::RepositoryWorkflowCatalog,
 };
 use scope_postgres::db::{ExpectedRequestAutoMerge, ExpectedRequestMergeEvidence};
 use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
@@ -54,7 +53,6 @@ pub(crate) struct PreparedRequestMerge {
     pub(crate) stack_children: Vec<scope_postgres::db::RequestStackChildFacts>,
     pub(crate) origin: RequestMergeOrigin,
     pub(crate) landing_file_mutation: RepositoryLandingFileMutation,
-    pub(crate) workflow_catalog: RepositoryWorkflowCatalog,
     pub(crate) update: ReceivePackUpdate,
     pub(crate) staged_pack: StagedPoolPack,
 }
@@ -209,7 +207,6 @@ pub(crate) async fn persist_prepared_merge_for_tests(
             stack_children: prepared.stack_children,
             update: prepared.update.into_reviewed_update(),
             landing_file_mutation: prepared.landing_file_mutation,
-            workflow_catalog: prepared.workflow_catalog,
             origin: prepared.origin,
             now_unix: 10,
         })

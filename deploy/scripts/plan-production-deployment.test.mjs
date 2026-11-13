@@ -18,7 +18,6 @@ function repositoryJson(path) {
 
 function deploymentSelection(overrides = {}) {
   return {
-    "runner-image": false,
     "run-worker": false,
     "media-worker": false,
     "git-router": false,
@@ -33,7 +32,6 @@ function deploymentSelection(overrides = {}) {
 
 test("changes select the required deployment lanes", () => {
   const allLanes = {
-    "runner-image": true,
     "run-worker": true,
     "media-worker": true,
     "git-router": true,
@@ -50,15 +48,9 @@ test("changes select the required deployment lanes", () => {
     ["documentation-only changes do not deploy", ["docs/cache.md"], {}],
     ["git router changes run backend only", ["repo-router/src/main.rs"], { "git-router": true }],
     [
-      "runner changes publish the runner base image and nothing else",
-      ["runner-runtime/src/main.rs"],
-      { "runner-image": true },
-    ],
-    [
-      "toolchain changes publish the runner base image and rebuild Rust services",
+      "toolchain changes rebuild Rust services",
       ["rust-toolchain.toml"],
       {
-        "runner-image": true,
         "run-worker": true,
         "media-worker": true,
         "git-router": true,
@@ -123,15 +115,14 @@ test("changes select the required deployment lanes", () => {
       { "cli-downloads": true, "cli-distribution": true },
     ],
     [
-      "shared process lifecycle changes validate and rebuild the runner base image",
+      "shared process lifecycle changes rebuild every Rust consumer",
       ["crates/scope-git-process/src/lifecycle.rs"],
       { ...allLanes, "cli-distribution": false },
     ],
     [
       "unrelated shared crates retain broad CLI validation without rebuilding targets",
-      ["crates/scope-cache-domain/src/lib.rs"],
+      ["crates/scope-postgres/src/lib.rs"],
       {
-        "runner-image": true,
         "run-worker": true,
         "media-worker": true,
         "git-router": true,
@@ -242,7 +233,6 @@ test("an unseeded production ledger deploys every component", () => {
 
 test("skipped components remain selected across a later backend-only change", () => {
   const selection = planFromDeploymentProgress(manifest, {
-    "runner-image": [],
     "run-worker": [],
     "media-worker": [],
     "git-router": ["repo-router/src/main.rs"],
@@ -253,7 +243,6 @@ test("skipped components remain selected across a later backend-only change", ()
   });
 
   assert.deepEqual(selection, {
-    "runner-image": false,
     "run-worker": false,
     "media-worker": false,
     "git-router": true,
@@ -267,7 +256,6 @@ test("skipped components remain selected across a later backend-only change", ()
 
 test("CLI deployment progress selects distribution builds only for binary inputs", () => {
   const broadOnly = planFromDeploymentProgress(manifest, {
-    "runner-image": [],
     "run-worker": [],
     "media-worker": [],
     "git-router": [],
@@ -277,7 +265,6 @@ test("CLI deployment progress selects distribution builds only for binary inputs
     "cli-downloads": ["api/src/main.rs"],
   });
   const binaryChange = planFromDeploymentProgress(manifest, {
-    "runner-image": [],
     "run-worker": [],
     "media-worker": [],
     "git-router": [],
@@ -305,7 +292,6 @@ test("release orchestration changes redeploy every component without selecting p
 
 test("manual scopes ignore pending production components", () => {
   assert.deepEqual(planFromDeploymentProgress(manifest, {}, "web"), {
-    "runner-image": false,
     "run-worker": false,
     "media-worker": false,
     "git-router": false,
@@ -355,11 +341,10 @@ test("service config does not override Railway scaling or restart defaults", () 
   }
 });
 
-test("migration changes promote every application participant but leave the runner base image independent", () => {
+test("migration changes promote every application participant", () => {
   for (const apiChanges of [null, undefined, ["crates/scope-postgres/src/migrations/999_next.rs"]]) {
     const selected = includeMigrationParticipants(deploymentSelection({ api: true }), apiChanges);
-    assert.equal(selected["runner-image"], false);
-    for (const [component, value] of Object.entries(selected)) if (component !== "runner-image") assert.equal(value, true, component);
+    for (const [component, value] of Object.entries(selected)) assert.equal(value, true, component);
   }
   const apiOnly = deploymentSelection({ api: true });
   assert.deepEqual(includeMigrationParticipants(apiOnly, ["api/src/main.rs"]), apiOnly);

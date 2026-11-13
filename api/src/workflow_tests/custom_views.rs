@@ -351,11 +351,6 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
             "/v1/repos/owner/repo/requests/req_private_views",
             StatusCode::NOT_FOUND,
         ),
-        ("/v1/repos/owner/repo/runs", StatusCode::FORBIDDEN),
-        (
-            "/v1/repos/owner/repo/runs/run_any/attempts/attempt_any/steps/0/logs",
-            StatusCode::FORBIDDEN,
-        ),
         ("/v1/repos/owner/repo/config", StatusCode::FORBIDDEN),
         (
             "/v1/repos/owner/repo/history?view=private",
@@ -490,11 +485,9 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn run_output_needs_the_full_view_on_every_run_and_github_endpoint() {
-    let (state, head, _source) = fixture("custom-views-run-gates").await;
+async fn github_run_output_needs_the_full_view() {
+    let (state, _head, _source) = fixture("custom-views-run-gates").await;
     let listed = [
-        "/v1/repos/owner/repo/runs",
-        "/v1/repos/owner/repo/run-workflows",
         "/v1/repos/owner/repo/github",
         "/v1/repos/owner/repo/github/workflow-runs",
     ];
@@ -510,20 +503,8 @@ async fn run_output_needs_the_full_view_on_every_run_and_github_endpoint() {
         .status();
         assert_eq!(owner, StatusCode::OK, "owner {uri}");
     }
-    let push_trigger = format!("/v1/repos/owner/repo/push-trigger-evaluations/{head}");
     let refused = listed.iter().map(|uri| ("GET", *uri, None)).chain([
         ("GET", "/v1/repos/owner/repo/dependencies", None),
-        ("GET", "/v1/repos/owner/repo/runs/run_any", None),
-        ("GET", "/v1/repos/owner/repo/runs/run_any/detail", None),
-        (
-            "GET",
-            "/v1/repos/owner/repo/runs/run_any/attempts/attempt_any/steps/0/logs",
-            None,
-        ),
-        ("GET", "/v1/repos/owner/repo/runs/run_any/events", None),
-        ("POST", "/v1/repos/owner/repo/runs/run_any/cancel", None),
-        ("POST", "/v1/repos/owner/repo/runs/run_any/retry", None),
-        ("GET", push_trigger.as_str(), None),
         ("GET", "/v1/repos/owner/repo/github/workflow-runs/1", None),
         (
             "GET",

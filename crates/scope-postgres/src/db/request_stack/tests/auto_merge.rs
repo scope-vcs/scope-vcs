@@ -60,8 +60,6 @@ async fn checks(store: &MetadataStore, request: &Request, now: u64) -> RequestCh
                 .await
                 .unwrap(),
             evaluation: evaluation.clone(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -523,8 +521,6 @@ async fn failed_check_configuration_blocks_authorization_of_an_open_parent_depen
                 .unwrap(),
             evaluation: RequestCheckEvaluation::configuration_error(&context, "invalid checks", 11)
                 .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await

@@ -154,30 +154,9 @@ async fn review_context_backfill_preserves_saved_revision_bases_and_only_links_c
             expected_revision
         );
     }
-    let context = scope_domain::requests::RequestCheckContext::new(
-        "current",
-        "current-latest",
-        "d".repeat(40),
-        1,
-        "c".repeat(40),
-    )
-    .unwrap();
-    let expected_evaluation = scope_domain::requests::RequestCheckEvaluation::started(
-        &context,
-        vec![scope_domain::requests::RequestCheck::Native(
-            scope_domain::requests::NativeRequestCheck {
-                workflow_path: "/.scope/runs/checks.yml".into(),
-                workflow_name: "checks".into(),
-                workflow_revision_digest: "e".repeat(64),
-                run_id: Some("run-check".into()),
-            },
-        )],
-        3,
-    )
-    .unwrap();
     assert_eq!(
         evaluations[0].try_get::<String>("", "id").unwrap(),
-        expected_evaluation.id
+        "evaluation_00a449313f5e40976e641a937d948a84d5f350ebd4fc35acd9c3f2971f9ccc2b"
     );
     db.execute_unprepared("DELETE FROM scope_requests WHERE id = 'current'")
         .await

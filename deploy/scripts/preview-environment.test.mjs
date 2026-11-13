@@ -157,7 +157,6 @@ test('first provisioning points every service at preview domains, buckets, and f
   assert.equal(variables[ids['media-api']].SCOPE_MEDIA_ALLOWED_ORIGIN, 'https://w.up.railway.app');
   assert.equal(variables[ids.maintenance].SCOPE_BUCKET_NAME, '${{scope-blobs.BUCKET}}');
   assert.equal(variables[ids.maintenance].DATABASE_URL, '${{scope-postgres.DATABASE_URL}}');
-  assert.equal(variables[ids.api].SCOPE_CACHE_BUCKET_SECRET_ACCESS_KEY, '${{scope-cache-blobs.SECRET_ACCESS_KEY}}');
   assert.equal(variables[ids['media-api']].SCOPE_MEDIA_GRANT_PUBLIC_KEY, secrets.mediaGrant.publicKey);
   for (const component of ['api', 'run-worker', 'maintenance']) {
     assert.equal(variables[ids[component]].SCOPE_OBJECT_ENCRYPTION_KEY, secrets.objectEncryptionKey);

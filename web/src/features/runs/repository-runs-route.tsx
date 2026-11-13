@@ -1,123 +1,89 @@
-import type { RepoGitHubWorkflowRunsInput, RepoParams, RepoRunHistoryInput } from '@/api/types'
+import type { RepoGitHubWorkflowRunsInput, RepoParams } from '@/api/types'
+import { PageErrorAlert } from '@/components/page-error-alert'
+import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
+import { useCachedResource } from '@/lib/use-cached-resource'
 import { GitHubWorkflowRunsPage } from '@/features/runs/github-workflow-runs'
-import { RepositoryRunsPage } from '@/features/runs/repository-runs-page'
 import {
   loadRepoGitHubWorkflowRun,
   loadRepoGitHubWorkflowRuns,
   loadRepoGitHubWorkflowNames,
-  loadRepoRunDetail,
-  loadRepoRunHistory,
   loadRepoRunPage,
-  loadRepoRunWorkflows,
 } from '@/routes/-run-history-actions'
 import { loadRepoSettingsData, startRepoGitHubAuthorization } from '@/routes/-repo-settings-actions'
-import { useCallback, useMemo } from 'react'
-
 import { useAuth } from '@clerk/tanstack-react-start'
+import { useCallback, useMemo } from 'react'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { loadRunPageSnapshot, runPageSnapshot, runHistoryCacheKey, runHistoryResource, type RetainedRunHistory, type RunPageHandoff } from './run-history-cache'
-import { useRunResource } from './run-resource'
-import { RunsPagePending } from './runs-page-pending'
+import { RunsCiEmptyState } from './runs-ci-empty-state'
 import { RunsPageError } from './runs-page-error'
+import { RunsPagePending } from './runs-page-pending'
+import { type RunsPageHandoff, runsPageResource } from './runs-page-resource'
 
-export function RepositoryRunsRoute(props: { initialResources: RunPageHandoff | null; params: RepoParams; workflow?: string }) {
+export function RepositoryRunsRoute({ initialPage, params }: { initialPage: RunsPageHandoff | null; params: RepoParams }) {
   const { userId, isLoaded } = useAuth()
-  const { repo, githubRuns, githubConfigured } = useRepoLayout()
+  const { repo } = useRepoLayout()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
-  return <RunRouteContent {...props} githubRuns={githubRuns} githubConfigured={githubConfigured} scope={scope} key={scope ? runHistoryCacheKey(scope, githubRuns ? 'github' : 'native', props.workflow) : 'auth-pending'} />
-}
-
-function RunRouteContent({
-  initialResources,
-  params,
-  workflow,
-  scope,
-  githubRuns,
-  githubConfigured,
-}: {
-  initialResources: RunPageHandoff | null
-  scope: string | null
-  githubRuns: boolean
-  githubConfigured: boolean
-  params: RepoParams
-  workflow?: string
-}) {
-  const loadPage = useCallback((input: RepoRunHistoryInput, signal?: AbortSignal) => loadRepoRunPage({ data: { ...input, githubRuns }, signal }), [githubRuns])
-  const loadHistory = useCallback(
-    (input: RepoRunHistoryInput, signal?: AbortSignal) =>
-      loadRepoRunHistory({ data: input, signal }),
+  const { owner, repo: repoName } = params
+  const page = useCachedResource({
+    fallbackError: 'Runs are unavailable.',
+    identity: scope,
+    initialValue: scope && initialPage?.scope === scope ? initialPage.page : null,
+    load: useCallback(
+      (signal: AbortSignal) => loadRepoRunPage({ data: { owner, repo: repoName }, signal }),
+      [owner, repoName],
+    ),
+    resource: runsPageResource,
+  })
+  const loadRuns = useCallback(
+    (data: RepoGitHubWorkflowRunsInput, signal: AbortSignal) => loadRepoGitHubWorkflowRuns({ data, signal }),
     [],
   )
-  const loadGitHubRuns = useCallback(
-    (data: RepoGitHubWorkflowRunsInput, signal: AbortSignal) =>
-      loadRepoGitHubWorkflowRuns({ data, signal }),
-    [],
-  )
-  const loadGitHubNames = useCallback(
+  const loadNames = useCallback(
     (data: RepoParams, signal: AbortSignal) => loadRepoGitHubWorkflowNames({ data, signal }),
     [],
   )
-
-  const { owner, repo } = params
-  const loadGitHubRunDetail = useCallback(
-    (runId: string, signal: AbortSignal) =>
-      loadRepoGitHubWorkflowRun({ data: { owner, repo, run_id: runId }, signal }),
-    [owner, repo],
-  )
   const loadRunDetail = useCallback(
-    (runId: string, signal?: AbortSignal) => loadRepoRunDetail({ data: { owner, repo, run_id: runId }, signal }),
-    [owner, repo],
+    (runId: string, signal: AbortSignal) =>
+      loadRepoGitHubWorkflowRun({ data: { owner, repo: repoName, run_id: runId }, signal }),
+    [owner, repoName],
   )
-
-  const identity = scope ? runHistoryCacheKey(scope, githubRuns ? 'github' : 'native', workflow) : null
-  const initialValue = useMemo<RetainedRunHistory | null>(() => {
-    if (!scope || initialResources?.scope !== scope) return null
-    return runPageSnapshot(initialResources.resources)
-  }, [scope, initialResources])
-  const load = useCallback(async (signal: AbortSignal): Promise<RetainedRunHistory> => {
-    if (!identity) throw new Error('Run history scope is unavailable.')
-    return loadRunPageSnapshot({
-      key: identity, input: { owner, repo, workflow }, loadHistory, signal,
-      loadPage,
-    })
-  }, [identity, owner, repo, workflow, loadHistory, loadPage])
-  const loadWorkflows = useCallback((input: RepoParams, signal?: AbortSignal) => loadRepoRunWorkflows({ data: input, signal }), [])
-  const resource = useRunResource({ identity, initialValue, load, resource: runHistoryResource, refreshVersion: 'refresh' })
-  const page = resource.value?.page
+  const value = page.value
   const github = useMemo(() => ({
-    configured: githubConfigured,
+    configured: value?.kind === 'not-connected' && value.configured,
     loadSettings: loadRepoSettingsData,
     startAuthorization: startRepoGitHubAuthorization,
-  }), [githubConfigured])
+  }), [value])
 
-  if (!resource.value) return resource.error ? <RunsPageError error={resource.error} /> : <RunsPagePending />
+  if (!value) return page.error ? <RunsPageError error={page.error} /> : <RunsPagePending />
 
-  if (page?.kind === 'github') {
+  if (value.kind === 'github') {
     return (
       <GitHubWorkflowRunsPage
-        initialRuns={page.github}
-        initialNames={page.names}
-        key={`${params.owner}/${params.repo}`}
-        loadRuns={loadGitHubRuns}
-        loadNames={loadGitHubNames}
-        loadRunDetail={loadGitHubRunDetail}
+        initialNames={value.names}
+        initialRuns={value.github}
+        key={`${owner}/${repoName}`}
+        loadNames={loadNames}
+        loadRunDetail={loadRunDetail}
+        loadRuns={loadRuns}
         params={params}
       />
     )
   }
 
   return (
-    <RepositoryRunsPage
-      github={github}
-      initialResources={page?.kind === 'native' && resource.value.history ? page : null}
-      key={`${params.owner}/${params.repo}/${workflow ?? 'all'}/${page ? 'member' : 'denied'}`}
-      loadPage={loadPage}
-      loadHistory={loadHistory}
-      loadWorkflows={loadWorkflows}
-      loadRunDetail={loadRunDetail}
-      params={params}
-      workflow={workflow}
-    />
+    <WorkbenchPane>
+      <WorkbenchBar title="Runs" />
+      <WorkbenchBody>
+        {value.kind === 'denied' ? (
+          <PageErrorAlert title="Runs unavailable">
+            Sign in as the owner or a repository member to view runs.
+          </PageErrorAlert>
+        ) : (
+          <div className="pt-7">
+            <RunsCiEmptyState github={github} params={params} />
+          </div>
+        )}
+      </WorkbenchBody>
+    </WorkbenchPane>
   )
 }

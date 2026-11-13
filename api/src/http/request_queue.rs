@@ -316,12 +316,10 @@ pub(crate) async fn apply_attention(
             now_unix: crate::persistence::unix_now()?,
         })
         .await?;
-    state
-        .publish_request_summary_refresh(
-            &repo.incarnation(),
-            RepoChangeReason::RequestAttentionChanged,
-        )
-        .await;
+    state.publish_request_summary_refresh(
+        &repo.incarnation(),
+        RepoChangeReason::RequestAttentionChanged,
+    );
     let claimer = if let Some(claim) = &result.claim {
         let users = state
             .metadata

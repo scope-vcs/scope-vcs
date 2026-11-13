@@ -25,7 +25,7 @@ async fn only_an_evaluation_that_tests_a_check_commit_names_what_it_merges() {
             message,checks,created_at_unix,updated_at_unix,
             check_private_main_oid,check_public_base_oid)
             VALUES ('eval_1','rev_1',1,repeat('a',40),'req_1',repeat('b',40),repeat('c',40),'awaiting-approval',NULL,
-                    '[{"provider":"github","name":"ci / test"}]',2,2,
+                    '[{"name":"ci / test"}]',2,2,
                     repeat('d',40),repeat('a',40));
         "#,
     )

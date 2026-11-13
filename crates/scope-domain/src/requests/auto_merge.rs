@@ -2,13 +2,12 @@ use super::{
     Request, RequestCheckEvaluation, RequestEvent, RequestEventKind, RequestEventPayload,
     RequestRevision, RequestState, advance_request_activity, validate_required,
 };
-use crate::{error::DomainError, runs::validation::validate_git_oid};
+use crate::error::DomainError;
+use crate::requests::validate_git_oid;
 use serde::{Deserialize, Serialize};
 
 mod check_failures;
-pub use check_failures::{
-    stop_request_auto_merge_for_check_evaluation, stop_request_auto_merge_for_check_run,
-};
+pub use check_failures::stop_request_auto_merge_for_check_evaluation;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequestAutoMergeIntentStatus {

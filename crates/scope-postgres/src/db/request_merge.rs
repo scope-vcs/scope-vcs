@@ -1,6 +1,6 @@
 use super::{
     GeneratedIdKind, MergeRequestContentCommand, RequestStore, acquire_aggregate_lock,
-    content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_request_merge},
+    content_push_transactions::accept_and_persist_request_merge,
     entities,
     generated_ids::generate_id,
     repository_access::repository_access,
@@ -181,7 +181,6 @@ async fn merge_one_request(
         expected_merge_evidence,
         update,
         landing_file_mutation,
-        workflow_catalog,
         origin,
         now_unix,
     } = command;
@@ -374,10 +373,7 @@ async fn merge_one_request(
         tx,
         repo_row,
         update,
-        RepositoryContentSnapshots {
-            landing_file_mutation,
-            workflow_catalog,
-        },
+        landing_file_mutation,
         origin,
         now_unix,
     )

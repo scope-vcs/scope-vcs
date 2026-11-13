@@ -18,7 +18,6 @@ pub(super) async fn push(
     prepared: MergePreparation,
     candidates: Vec<LandedRequestCandidate>,
 ) -> Result<RepositoryMutationResult<GitHead>, String> {
-    let input = scope_domain::runs::trigger::PushTriggerInput::from(&prepared.workflow_catalog);
     match path {
         PushPath::ContentOnly => {
             let repo = store
@@ -37,8 +36,6 @@ pub(super) async fn push(
                     expected_git_frontier: prepared.expected_git_frontier,
                     update: prepared.update,
                     landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
-                    workflow_catalog: prepared.workflow_catalog,
-                    push_trigger_input: input,
                     landed_request_candidates: candidates,
                     now_unix: 8,
                 })
@@ -52,11 +49,9 @@ pub(super) async fn push(
                 let head = prepared.update.git_head.clone();
                 let main_pack = apply_reviewed_update_to_repo(repo, prepared.update)
                     .map_err(scope_domain::repo_actions::reviewed_update_domain_error)?;
-                let mut mutation = RepositoryMutation::with_push_trigger_input(
+                let mut mutation = RepositoryMutation::with_landing_file_mutation(
                     head,
-                    input,
                     RepositoryLandingFileMutation::Unchanged,
-                    prepared.workflow_catalog,
                 );
                 mutation.landed_requests = Some(LandedRequestCompletion {
                     actor_user_id: "user_owner".into(),

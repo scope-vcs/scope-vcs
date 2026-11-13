@@ -6,11 +6,6 @@ use scope_domain::{
     policy::ScopePath,
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repository::{RepoLifecycleState, Repository},
-    runs::{
-        run::{Run, RunRequest},
-        source::{RunSource, RunTrigger},
-        workflow::revision::WorkflowRevision,
-    },
     views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement};
@@ -49,23 +44,6 @@ pub(crate) fn store_with_repositories(
     })
 }
 
-pub(crate) fn store_with_native_run_repositories(
-    repositories: impl IntoIterator<Item = Repository>,
-) -> MetadataStore {
-    let repositories = repositories
-        .into_iter()
-        .map(|repo| (repo.record.id.clone(), repo))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    seeded_store(CatalogFixture {
-        native_runs_accounts: repositories
-            .values()
-            .map(|repo| repo.record.owner_user_id.clone())
-            .collect(),
-        repositories,
-        ..Default::default()
-    })
-}
-
 pub(crate) fn seeded_store(catalog: CatalogFixture) -> MetadataStore {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
@@ -89,48 +67,6 @@ pub(crate) async fn blocked_by(held: &DatabaseTransaction) {
     {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-}
-
-pub(crate) fn source_blob(git_oid: &str, sha256: &str, size_bytes: u64) -> SourceBlob {
-    SourceBlob {
-        content_ref: ContentRef::git_bundle_sha256(sha256),
-        sha256: sha256.into(),
-        git_oid: git_oid.into(),
-        git_file_mode: "100644".into(),
-        size_bytes,
-    }
-}
-
-pub(crate) fn manual_workflow(repository_id: &str) -> WorkflowRevision {
-    let image = format!("rust@sha256:{}", "a".repeat(64));
-    let yaml = format!(
-        "name: Test\non: {{ manual: true }}\ncontainer: {{ image: {image} }}\ntimeout: 10m\njobs:\n  checks:\n    steps:\n      - {{ name: Test, run: cargo test }}\n"
-    );
-    scope_run_config::parse_workflow("/.scope/runs/test.yml", yaml.as_bytes())
-        .unwrap()
-        .into_revision(repository_id)
-        .unwrap()
-}
-
-pub(crate) fn manual_run(revision: &WorkflowRevision, id: &str, requester: &str) -> Run {
-    Run::new(
-        RunRequest {
-            id: id.into(),
-            idempotency_key: id.into(),
-            workflow: revision.workflow().clone(),
-            workflow_revision_digest: revision.digest().to_string(),
-            trigger: RunTrigger::Manual,
-            requested_by_user_id: Some(requester.into()),
-            source: RunSource::ephemeral_git_bundle(source_blob(
-                &"d".repeat(40),
-                &"c".repeat(64),
-                42,
-            ))
-            .unwrap(),
-        },
-        10,
-    )
-    .unwrap()
 }
 
 pub(crate) fn canonical_commit(

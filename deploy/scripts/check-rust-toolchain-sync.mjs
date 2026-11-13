@@ -26,12 +26,6 @@ const REPLICAS = [
   workflowReplica(".github/workflows/scope-integration-ci.yml", 3),
   workflowReplica(".github/workflows/prepare-smoke-tools.yml"),
   {
-    path: "runner-runtime/Dockerfile",
-    label: "Rust base image",
-    pattern: /FROM\s+--platform=linux\/amd64\s+rust:([0-9]+\.[0-9]+\.[0-9]+)-slim-bookworm@sha256:[0-9a-f]{64}/g,
-    count: 1,
-  },
-  {
     path: "media-worker/Dockerfile",
     label: "Rust base image",
     pattern: /FROM\s+docker\.io\/library\/rust:([0-9]+\.[0-9]+\.[0-9]+)-(?:bookworm|trixie)@sha256:[0-9a-f]{64}/g,

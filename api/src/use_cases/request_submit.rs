@@ -34,9 +34,7 @@ pub(crate) async fn submit_request(
             request.view.clone(),
             request_actor_role(repo.access.clone()),
         ));
-    state
-        .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestSubmitted)
-        .await;
+    state.publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestSubmitted);
     Ok(mutation)
 }
 

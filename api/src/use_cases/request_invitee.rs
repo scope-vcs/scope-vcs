@@ -14,9 +14,10 @@ pub(crate) async fn add_request_invitee(
         .requests()
         .add_request_invitee(command)
         .await?;
-    state
-        .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestInviteeAdded)
-        .await;
+    state.publish_request_summary_refresh(
+        &repo.incarnation(),
+        RepoChangeReason::RequestInviteeAdded,
+    );
     Ok(invitee)
 }
 
@@ -30,11 +31,9 @@ pub(crate) async fn remove_request_invitee(
         .requests()
         .remove_request_invitee(command)
         .await?;
-    state
-        .publish_request_summary_refresh(
-            &repo.incarnation(),
-            RepoChangeReason::RequestInviteeRemoved,
-        )
-        .await;
+    state.publish_request_summary_refresh(
+        &repo.incarnation(),
+        RepoChangeReason::RequestInviteeRemoved,
+    );
     Ok(invitee)
 }

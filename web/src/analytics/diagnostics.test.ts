@@ -13,7 +13,7 @@ test('buffered frontend errors and run log timings retain occurrence context thr
   const captures: Array<{ event: string; properties: Record<string, number | string | null>; timestamp?: string }> = []
   Object.assign(browser, { location: { pathname: '/private-owner/private-repo/requests/private-id/changes' } })
   reportFrontendError(new Error('private hydration payload'), 'hydration')
-  captureRunLogTiming({ durationMs: 640, logBytes: 12, provider: 'github', source: 'fetched', trigger: 'page_load' })
+  captureRunLogTiming({ durationMs: 640, logBytes: 12, source: 'fetched', trigger: 'page_load' })
   const original = installBrowserDiagnostics({
     release: 'web-original',
     routeName: 'request_changes',
@@ -55,7 +55,6 @@ test('buffered frontend errors and run log timings retain occurrence context thr
     properties: {
       duration_ms: 640,
       log_bytes: 12,
-      provider: 'github',
       log_source: 'fetched',
       route_name: 'repository_run',
       trigger: 'page_load',

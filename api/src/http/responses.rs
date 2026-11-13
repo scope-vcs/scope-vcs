@@ -53,11 +53,6 @@ pub(crate) fn recorded_actor_response(
         .transpose()
 }
 
-pub(crate) use scope_api_contract::{
-    RepositoryRunHistoryPageResponse, RepositoryRunLogResponse, RepositoryRunStepLogPageResponse,
-    RepositoryRunWorkflowListResponse, RepositoryRunWorkflowResponse,
-};
-
 #[derive(Debug, Serialize)]
 pub(crate) struct HealthResponse {
     pub(crate) status: &'static str,

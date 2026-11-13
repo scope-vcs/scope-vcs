@@ -10,7 +10,7 @@ from common import Incomplete, digest, keys, required
 from verify import verify
 
 
-def restore_database(url, root, rebuild_cache):
+def restore_database(url, root):
     import psycopg
     from psycopg.conninfo import conninfo_to_dict
     parameters = conninfo_to_dict(url)
@@ -33,8 +33,6 @@ def restore_database(url, root, rebuild_cache):
     if result.returncode:
         raise Incomplete("isolated database restore failed")
     with psycopg.connect(url) as connection:
-        if rebuild_cache:
-            connection.execute(Path(__file__).with_name("rebuild-cache.sql").read_text())
         tables = connection.execute("SELECT count(*) FROM pg_tables WHERE schemaname='public'").fetchone()[0]
     return tables
 
@@ -57,9 +55,8 @@ def main():
         if manifest["version"] != 1 or digest(root / "database.dump") != manifest["database"]["dump_sha256"]:
             raise Incomplete("database snapshot checksum or recovery format failed")
         result = verify(root, manifest["inventory"], manifest["database"]["references"], keys(root / "keys.json"))
-        result["excluded_rebuildable_buckets"] = manifest["database"]["excluded_rebuildable_buckets"]
         if args.restore_database:
-            result["restored_tables"] = restore_database(required("SCOPE_RECOVERY_DRILL_DATABASE_URL"), root, "cache" in result["excluded_rebuildable_buckets"])
+            result["restored_tables"] = restore_database(required("SCOPE_RECOVERY_DRILL_DATABASE_URL"), root)
         print(json.dumps(result, sort_keys=True))
     except Exception:
         print("Recovery proof failed; do not start restored application services.", file=sys.stderr)

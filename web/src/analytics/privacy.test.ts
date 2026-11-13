@@ -178,7 +178,6 @@ test('run log timings keep a fixed contract on the run route', () => {
       distinct_id: 'anonymous-id',
       duration_ms: 412,
       log_bytes: 2048,
-      provider: 'github',
       log_source: 'fetched',
       route_name: 'repository_run',
       source: 'browser',
@@ -195,7 +194,6 @@ test('run log timings keep a fixed contract on the run route', () => {
       distinct_id: 'anonymous-id',
       duration_ms: 412,
       log_bytes: 2048,
-      provider: 'github',
       log_source: 'fetched',
       route_name: 'repository_run',
       source: 'browser',
@@ -206,7 +204,6 @@ test('run log timings keep a fixed contract on the run route', () => {
   for (const invalid of [
     { route_name: 'request_changes' },
     { trigger: 'hover' },
-    { provider: 'gitlab' },
     { log_source: 'browser' },
     { duration_ms: 12.5 },
     { duration_ms: -1 },

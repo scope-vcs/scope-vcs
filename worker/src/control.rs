@@ -1,33 +1,14 @@
 use crate::{
-    execution::CloudExecutionCoordinator,
     health::{WorkerHealth, WorkerLoop},
     settings::{CONTROL_POLL_BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
 };
 use scope_postgres::db::MetadataStore;
-use scope_product_analytics::ProductAnalytics;
-
-mod reconciliation;
-use reconciliation::CloudReconciliation;
 
 pub(crate) async fn run(
     metadata: MetadataStore,
-    product_analytics: ProductAnalytics,
     settings: WorkerSettings,
     health: WorkerHealth,
 ) -> anyhow::Result<()> {
-    let execution = match settings.execution.clone() {
-        Some(cloud) => Some(
-            CloudExecutionCoordinator::new(
-                metadata.clone(),
-                product_analytics,
-                cloud,
-                settings.worker_id.clone(),
-            )
-            .await,
-        ),
-        None => None,
-    };
-    let mut cloud_reconciliation = CloudReconciliation::default();
     loop {
         if !super::schema_ready_or_wait(&metadata, &health).await {
             return Ok(());
@@ -55,19 +36,6 @@ pub(crate) async fn run(
                 failed = summary.failed,
                 "processed outbox jobs"
             );
-        }
-        for run in &summary.created_runs {
-            crate::run_events::publish_run_change(
-                &metadata,
-                &settings.worker_id,
-                &run.repo_id,
-                &run.run_id,
-                scope_api_contract::RunChangeKind::Created,
-            )
-            .await;
-        }
-        if let Some(execution) = &execution {
-            cloud_reconciliation.poll(execution);
         }
         health.mark_poll_succeeded(WorkerLoop::Control, super::unix_now()?);
         if summary.claimed >= CONTROL_POLL_BATCH_SIZE {

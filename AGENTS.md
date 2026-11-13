@@ -37,7 +37,7 @@ GitHub delivery: the change goes out as an ordinary PR, and the failure is noted
 in the PR description.
 
 Checks on this repository's Scope requests come from its GitHub Actions
-workflows on `scope/requests/<id>`. Do not start Scope runs.
+workflows on `scope/requests/<id>`.
 
 Main on Scope only ever receives commits already on GitHub's main.
 
@@ -56,7 +56,7 @@ unrepresentable state.
 | Assert callback behavior outside the code that can catch its failures. | `pnpm check:resource-boundary` checks test sources with `callback-assertions.mjs`; use `mock.fn()` and assert `mock.callCount()` after awaiting work. |
 | Write tests that catch real breaks and stay fast. | `dev/checks/policy` runs `check-test-waits.mjs`: real-clock test waits of 5 s or more, or of a computed number of seconds, fail. Duplication, signal, and setup cost still require review with the `scope-tests` skill. |
 | Keep pull request CI fast. | `dev/checks/ops` runs `check-ci-critical-path.py` against a simulated full pull request run: at most 20 jobs at once, heavy jobs wait only for planning, no fat LTO or single codegen unit, `api` builds alone, Rust caches save only on main, and signing keys are committed. `ci-duration.yml` opens an issue when a job's median over its last 10 successful pull request samples since the latest workflow change on main exceeds 7.5 minutes. A slow new test still needs review. |
-| Keep the run page's log fast. | `run-log-budget.yml` checks production `run_log_timing` daily against p75 and stored-share budgets and opens an issue on a breach; the GitHub and native runs component specs pin the requests made before log text shows. A new slow path still needs review. |
+| Keep the run page's log fast. | `run-log-budget.yml` checks production `run_log_timing` daily against p75 and stored-share budgets and opens an issue on a breach; the GitHub runs component spec pins the requests made before log text shows. A new slow path still needs review. |
 | Keep a checkout without `deploy/` and `bench/` checkable. | Scripts that read the deployment manifest, `deploy/`, `bench/`, or a release workflow live in `deploy/scripts` and run from `dev/checks/ops`; `.github/scripts` and the other gates read none of them. `check-gates.test.mjs` rejects a gate command that names an operations file and pins `./dev/check` skipping `ops` without `deploy/scripts`. A script that reads an operations file indirectly still needs review. |
 | Audit large files and separate responsibilities. | `dev/checks/policy` runs `check-source-size.mjs`: ownership audit at 700 lines, hard cap at 1,000. |
 | Preserve generated contracts and digest-locked migrations. | `dev/checks/contract` and `check-migration-immutability.mjs`. |
@@ -68,7 +68,7 @@ unrepresentable state.
 | Avoid compatibility layers in pre-alpha; maintainer means owner or member. | Domain authorization tests cover access. Compatibility and terminology choices still require review. |
 | Do not edit root README without explicit authorization; involve the operator in new behavior. | Operator context and review; no source-only check can establish authorization. |
 | Record failed checks before retrying without a repair. | Release-flake issue workflow; no local retry interceptor. |
-| Open one PR per change from its request's branch, keep Scope main downstream, and do not start Scope runs. | `dogfood-scope` skill and contribution workflow; not enforced by compilation. |
+| Open one PR per change from its request's branch and keep Scope main downstream. | `dogfood-scope` skill and contribution workflow; not enforced by compilation. |
 | Keep releases separate from pushes and merges. | GitHub release workflows. |
 | Review with the configured timeout and verify before committing. | Autoreview and shared `dev/checks` commands; review invocation remains an agent responsibility. |
 

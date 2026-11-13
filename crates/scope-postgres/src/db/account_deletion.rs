@@ -70,7 +70,6 @@ const CONTRIBUTED_REPOSITORIES_SQL: &str = r#"
     UNION SELECT r.repo_id FROM scope_request_invitees i
         JOIN scope_requests r ON r.id = i.request_id
         WHERE $1 IN (i.user_id, i.invited_by_user_id)
-    UNION SELECT repo_id FROM scope_runs WHERE requested_by_user_id = $1
     UNION SELECT repo_id FROM scope_github_connections WHERE connected_by_user_id = $1
 "#;
 

@@ -260,7 +260,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       assert.equal(process.env.DATABASE_URL, 'postgres://scope_migrator@scope-postgres.railway.internal/railway');
       assert.ok(state.services.filter(s => ['api', 'worker', 'media', 'media-worker'].includes(s.id))
         .every(s => s.replicas.running === 0));
-      assert.ok(['plan', 'validate-workflow-catalogs', 'apply', 'verify'].includes(args[0]));
+      assert.ok(['plan', 'apply', 'verify'].includes(args[0]));
       state.maintenance.push(args[0]);
       save();
       if (args[0] === 'plan') console.log(JSON.stringify({ exact: true, applied: ['m0001_initial'], pending: [] }));

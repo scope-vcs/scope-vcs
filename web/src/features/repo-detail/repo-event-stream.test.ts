@@ -34,13 +34,13 @@ test('SSE parsing returns explicit validated outcomes', () => {
   )
   assert.deepEqual(
     parseRepoStreamMessage(
-      'event: repo-change\ndata: {"repo_id":"owner/repo","incarnation_id":"repoi-owner-repo","version":3,"kind":{"RunChanged":{"run_id":"run-1","change":"LogsAppended"}}}',
+      'event: repo-change\ndata: {"repo_id":"owner/repo","incarnation_id":"repoi-owner-repo","version":3,"kind":{"GitHubWorkflowRunChanged":{"github_run_id":7}}}',
     ),
     {
       type: 'event',
       event: {
         incarnation_id: TEST_INCARNATION_ID,
-        kind: { RunChanged: { change: 'LogsAppended', run_id: 'run-1' } },
+        kind: { GitHubWorkflowRunChanged: { github_run_id: 7 } },
         repo_id: 'owner/repo',
         version: 3,
       },

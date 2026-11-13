@@ -23,7 +23,6 @@ on:
         options:
           - changed
           - all
-          - runner-image
           - run-worker
           - media-worker
           - git-router
@@ -70,7 +69,6 @@ jobs:
       rollback: ${{ steps.release.outputs.rollback }}
       rollback_of: ${{ steps.release.outputs.rollback_of }}
       deployed_components: ${{ steps.progress.outputs.deployments }}
-      runner_image: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['runner-image'] || false) || steps.plan.outputs.runner_image }}
       backend_selected: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components).backend || false) || steps.plan.outputs.backend_selected }}
       worker: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['run-worker'] || false) || steps.plan.outputs.worker }}
       media_worker: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['media-worker'] || false) || steps.plan.outputs.media_worker }}
@@ -202,12 +200,9 @@ jobs:
     needs: plan
     permissions:
       contents: read
-      deployments: write
-      id-token: write
       packages: write
     uses: ./.github/workflows/validate.yml
     with:
-      runner_image: ${{ needs.plan.outputs.runner_image }}
       backend: ${{ needs.plan.outputs.backend_selected }}
       web: ${{ needs.plan.outputs.web }}
       cli: ${{ needs.plan.outputs.cli }}
@@ -461,7 +456,7 @@ jobs:
       !cancelled() && github.ref == 'refs/heads/main' &&
       needs.validation.result == 'success' && needs.policy.result == 'success' && needs.ops.result == 'success' &&
       (needs.readiness-preflight.result == 'success' || needs.readiness-preflight.result == 'skipped') &&
-      (needs.plan.outputs.runner_image == 'true' || needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true' || needs.plan.outputs.cli == 'true') &&
+      (needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true' || needs.plan.outputs.cli == 'true') &&
       (((needs.plan.outputs.backend_selected == 'true') &&
       needs.backend-deploy.result == 'success') ||
       ((needs.plan.outputs.backend_selected != 'true') &&
@@ -523,8 +518,7 @@ jobs:
           MAINTENANCE_WARNING: ${{ needs.backend-deploy.outputs.maintenance_warning }}
           ROLLBACK_OF: ${{ needs.plan.outputs.rollback_of }}
           RELEASE_COMPONENTS: >-
-            {"runner-image":${{ needs.plan.outputs.runner_image }},
-            "run-worker":${{ needs.plan.outputs.worker }},"media-worker":${{ needs.plan.outputs.media_worker }},
+            {"run-worker":${{ needs.plan.outputs.worker }},"media-worker":${{ needs.plan.outputs.media_worker }},
             "git-router":${{ needs.plan.outputs.router }},"media-api":${{ needs.plan.outputs.media }},
             "api":${{ needs.plan.outputs.api }},"web":${{ needs.plan.outputs.web }},"cli-downloads":${{ needs.plan.outputs.cli }}}
         run: >-

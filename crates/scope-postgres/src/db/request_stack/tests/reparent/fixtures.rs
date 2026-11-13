@@ -110,8 +110,6 @@ pub(super) async fn seed_checks(
                 .await
                 .unwrap(),
             evaluation: evaluation.clone(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await

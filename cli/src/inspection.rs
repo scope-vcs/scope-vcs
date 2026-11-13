@@ -76,7 +76,6 @@ struct Report {
     target: Option<String>,
     main_push_target: Option<String>,
     request: Option<api::RequestSummaryResponse>,
-    recent_matching_runs: Vec<api::RepositoryRunListItemResponse>,
     diagnostics: Vec<Diagnostic>,
     next_actions: Vec<String>,
 }
@@ -128,7 +127,6 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
         target: None,
         main_push_target: None,
         request: None,
-        recent_matching_runs: Vec::new(),
         diagnostics: Vec::new(),
         next_actions: Vec::new(),
     };
@@ -295,7 +293,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             &mut report,
             "remote",
             DiagnosticState::NotChecked,
-            "Offline mode; account, server visibility, requests, and runs were not queried".into(),
+            "Offline mode; account, server visibility, and requests were not queried".into(),
             None,
         );
     } else if valid_endpoint {
@@ -477,12 +475,6 @@ fn status_lines(report: &Report) -> Vec<String> {
         lines.push(format!(
             "Request: {} · {:?} · {}",
             request.name, request.state, request.id
-        ));
-    }
-    for run in &report.recent_matching_runs {
-        lines.push(format!(
-            "Run: {} · {} · {:?}",
-            run.id, run.workflow_name, run.state
         ));
     }
     for check in &report.diagnostics {

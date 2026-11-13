@@ -14,22 +14,14 @@ mod request_discussion_gallery;
 mod request_discussions;
 #[path = "seed/request_revisions.rs"]
 mod request_revisions;
-#[cfg(feature = "local-dev")]
-#[path = "seed/runs.rs"]
-mod runs;
 #[cfg(test)]
 #[path = "seed/tests.rs"]
 mod tests;
-#[path = "seed/workflow_files.rs"]
-mod workflow_files;
 use git_segments::{SeedPoolPack, store_seed_git_pack, store_seed_request_pack};
 #[cfg(feature = "local-dev")]
 pub(crate) use request_discussion_gallery::seed_request_discussion_gallery;
 use request_revisions::SeedRequestRevision;
-#[cfg(feature = "local-dev")]
-pub(crate) use runs::seed_run_gallery;
 use scope_git::DEFAULT_GIT_BRANCH;
-use workflow_files::{PUBLIC_DEMO_CHECKS_WORKFLOW, PUBLIC_DEMO_LINT_WORKFLOW};
 
 use crate::error::ApiError;
 use crate::seed_user::{DevSeedUser, seed_user_account};
@@ -47,9 +39,8 @@ use scope_domain::{
         canonical_request_ref, edit_request_identity, record_request_revision,
         record_working_request_upload, start_request,
     },
-    runs::catalog::{RepositoryWorkflowCatalog, RepositoryWorkflowFile},
 };
-use scope_storage::{ContentObjectKind, ObjectStore, content_object_for_bytes, object_key};
+use scope_storage::{ObjectStore, content_object_for_bytes, object_key};
 use std::{
     fs,
     path::Path as FsPath,
@@ -212,7 +203,6 @@ fn build_catalog(
     let [contributor, maintainer] = request_discussions::collaborators();
     let mut catalog = scope_postgres::db::CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner.clone());
-    catalog.native_runs_accounts.insert(owner.id.clone());
     catalog.users.insert(contributor.id.clone(), contributor);
     catalog.users.insert(maintainer.id.clone(), maintainer);
 
@@ -250,37 +240,8 @@ fn build_catalog(
                 .repository_landing_files
                 .insert(repo.record.id.clone(), landing);
         }
-        if let Some(workflow_catalog) = workflow_catalog(object_store, repo)? {
-            catalog
-                .repository_workflow_catalogs
-                .insert(repo.record.id.clone(), workflow_catalog);
-        }
     }
     Ok(catalog)
-}
-
-fn workflow_catalog(
-    object_store: &SeedObjects,
-    repo: &Repository,
-) -> Result<Option<RepositoryWorkflowCatalog>, ApiError> {
-    let Some(head) = &repo.git_head else {
-        return Ok(None);
-    };
-    let files = repo
-        .live_files
-        .iter()
-        .filter(|(path, _)| path.as_str().starts_with("/.scope/runs/"))
-        .map(|(path, blob)| {
-            RepositoryWorkflowFile::from_source_blob(path.as_str(), blob, object_store.bytes(blob)?)
-                .map_err(ApiError::internal)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    if files.is_empty() {
-        return Ok(None);
-    }
-    RepositoryWorkflowCatalog::captured(&repo.record.id, &head.head_oid, head.change_version, files)
-        .map(Some)
-        .map_err(ApiError::internal)
 }
 
 #[cfg(any(test, feature = "local-dev"))]
@@ -303,8 +264,6 @@ fn published_demo(
     let readme = blob(object_store, PUBLIC_DEMO_README_HTML);
     let app = blob(object_store, PUBLIC_DEMO_APP);
     let private_plan = blob(object_store, PUBLIC_DEMO_PLAN);
-    let checks_workflow = blob(object_store, PUBLIC_DEMO_CHECKS_WORKFLOW);
-    let lint_workflow = blob(object_store, PUBLIC_DEMO_LINT_WORKFLOW);
     let private_path = ScopePath::parse("/internal/plan.md").map_err(ApiError::internal)?;
     repo.policy
         .add_rule(LabelRule::private(private_path.clone()))
@@ -316,8 +275,6 @@ fn published_demo(
         vec![
             add_change("/README.html", readme, ViewId::public())?,
             add_change("/src/app.ts", app, ViewId::public())?,
-            add_change("/.scope/runs/checks.yml", checks_workflow, ViewId::public())?,
-            add_change("/.scope/runs/lint.yml", lint_workflow, ViewId::public())?,
             add_change(private_path.as_str(), private_plan, ViewId::private())?,
         ],
     ));
@@ -331,8 +288,6 @@ fn published_demo(
             files: &[
                 ("README.html", PUBLIC_DEMO_README_HTML),
                 ("src/app.ts", PUBLIC_DEMO_APP),
-                (".scope/runs/checks.yml", PUBLIC_DEMO_CHECKS_WORKFLOW),
-                (".scope/runs/lint.yml", PUBLIC_DEMO_LINT_WORKFLOW),
                 ("internal/plan.md", PUBLIC_DEMO_PLAN),
             ],
             message: "Seed public demo",
@@ -638,15 +593,15 @@ fn add_change(path: &str, new_content: SourceBlob, label: ViewId) -> Result<File
 }
 
 fn blob(object_store: &SeedObjects, content: &str) -> SourceBlob {
-    object_store.add(ContentObjectKind::Blob, content.as_bytes().to_vec())
+    object_store.add(content.as_bytes().to_vec())
 }
 
 #[derive(Default)]
 pub(crate) struct SeedObjects(std::cell::RefCell<std::collections::BTreeMap<String, Vec<u8>>>);
 
 impl SeedObjects {
-    fn add(&self, kind: ContentObjectKind, bytes: Vec<u8>) -> SourceBlob {
-        let blob = content_object_for_bytes(kind, &bytes);
+    fn add(&self, bytes: Vec<u8>) -> SourceBlob {
+        let blob = content_object_for_bytes(&bytes);
         self.0.borrow_mut().insert(object_key(&blob), bytes);
         blob
     }

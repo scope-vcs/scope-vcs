@@ -96,7 +96,9 @@ async fn run_and_trigger_sources_keep_only_their_head_and_retained_segments_are_
     .await
     .unwrap();
 
-    migrations::Migrator::up(db.as_ref(), None).await.unwrap();
+    migrations::Migrator::up(db.as_ref(), Some(1))
+        .await
+        .unwrap();
 
     let row = db
         .query_one_raw(Statement::from_string(
@@ -203,7 +205,9 @@ async fn request_bundle_deletion_queues_only_objects_without_run_source_referenc
             .unwrap();
         }
     }
-    migrations::Migrator::up(db.as_ref(), None).await.unwrap();
+    migrations::Migrator::up(db.as_ref(), Some(1))
+        .await
+        .unwrap();
     let advertisements = db
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,

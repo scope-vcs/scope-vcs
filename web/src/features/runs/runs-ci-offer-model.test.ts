@@ -17,12 +17,11 @@ const notConnected: GitHubConnectionResponse = {
 const offer = (patch: Partial<Parameters<typeof runsCiOffer>[0]> = {}) => runsCiOffer({
   configured: true,
   github: notConnected,
-  hasWorkflows: false,
   maintainer: true,
   ...patch,
 })
 
-test('a maintainer of a repository without runs or GitHub is offered to connect it, without the button until the connection loads', () => {
+test('a maintainer of a repository without GitHub is offered to connect it, without the button until the connection loads', () => {
   assert.deepEqual(offer(), { kind: 'connect', canConnect: true })
   assert.deepEqual(offer({ github: null }), { kind: 'connect', canConnect: false })
 })
@@ -37,8 +36,7 @@ test('a server without GitHub promises nothing', () => {
   assert.deepEqual(offer({ github: { ...notConnected, configured: false } }), { kind: 'none' })
 })
 
-test('a repository with workflows of its own or a GitHub link keeps its empty state', () => {
-  assert.deepEqual(offer({ hasWorkflows: true }), { kind: 'none' })
+test('a repository already linked to GitHub keeps its empty state', () => {
   const connection = {
     github_full_name: 'octo/demo',
     github_url: 'https://github.com/octo/demo',

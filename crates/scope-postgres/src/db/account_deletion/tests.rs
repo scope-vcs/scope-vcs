@@ -86,14 +86,6 @@ const CONTRIBUTIONS: &str = r#"
         next_attempt_at_unix, created_at_unix, updated_at_unix)
         VALUES ('intent', 'owner/shared', 'repoi_owner_shared', 'open', 'revision',
             repeat('b', 40), 'leaver', 'Active', 2, 3, 3, 3);
-    INSERT INTO scope_workflow_revisions VALUES (repeat('d', 64), '{"jobs":[{"id":"build"}]}', 1);
-    INSERT INTO scope_runs (id, idempotency_key, repo_id, workflow_path, workflow_revision_digest,
-        trigger, requested_by_user_id, source, state, cancellation_requested, created_at_unix,
-        updated_at_unix)
-        VALUES ('run', 'key', 'owner/shared', '/.scope/runs/checks.yml', repeat('d', 64),
-            'manual', 'leaver', jsonb_build_object('kind', 'ephemeral-git-bundle', 'object',
-            jsonb_build_object('sha256', repeat('e', 64), 'git_oid', repeat('b', 40))),
-            'queued', false, 3, 3);
 "#;
 
 #[tokio::test]
@@ -135,7 +127,6 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
             'reply', (SELECT author_user_id FROM scope_request_discussion_replies),
             'invitee', (SELECT jsonb_build_array(user_id, invited_by_user_id)
                 FROM scope_request_invitees),
-            'run', (SELECT requested_by_user_id FROM scope_runs),
             'members', (SELECT jsonb_agg(user_id) FROM scope_repository_members),
             'repositories', (SELECT jsonb_agg(id) FROM scope_repositories),
             'personal', (SELECT count(*) FROM scope_request_ratings)
@@ -164,7 +155,6 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
             "discussion": null,
             "reply": null,
             "invitee": ["guest", null],
-            "run": null,
             "members": ["guest"],
             "repositories": ["owner/shared"],
             "personal": 0,

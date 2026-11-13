@@ -106,45 +106,17 @@ SELECT a.week AS week, count() AS active_contributors,
 FROM activity a JOIN first_seen f ON a.actor = f.actor
 WHERE a.week >= toStartOfWeek(now(), 1) - INTERVAL 12 WEEK
 GROUP BY a.week ORDER BY a.week`),
-    report('workflow-attempts', 'Scope: workflow attempt outcomes',
-      'Terminal attempts in the last 30 days, deduplicated by attempt ID. Duration is per attempt, including provisioning. Retry attempts count separately here.', `,
-  attempts AS (
-    SELECT properties.attempt_id AS attempt_id,
-      argMax(properties.result, timestamp) AS result,
-      argMax(toFloat(properties.duration_ms), timestamp) AS duration_ms
-    FROM product_events WHERE event = 'workflow:attempt_complete'
-      AND timestamp >= now() - INTERVAL 30 DAY AND notEmpty(properties.attempt_id)
-    GROUP BY attempt_id
-  )
-SELECT result, count() AS attempts, avg(duration_ms) AS mean_duration_ms
-FROM attempts GROUP BY result ORDER BY result`),
-    report('workflow-runs', 'Scope: completed workflow run outcomes',
-      'Only completion events carrying a terminal overall run_result count. A successful intermediate job does not mean the run succeeded. Deduplicated by run ID; durations cover the first observed admitted attempt to terminal completion.', `,
-  starts AS (
-    SELECT properties.run_id AS run_id, min(timestamp) AS started_at
-    FROM product_events WHERE event = 'workflow:attempt_start' AND notEmpty(properties.run_id)
-    GROUP BY run_id
-  ), completed AS (
-    SELECT properties.run_id AS run_id, argMax(properties.run_result, timestamp) AS result,
-      max(timestamp) AS completed_at
-    FROM product_events WHERE event = 'workflow:attempt_complete' AND notEmpty(properties.run_result)
-      AND notEmpty(properties.run_id) GROUP BY run_id
-  )
-SELECT c.result AS result, count() AS completed_runs,
-  avgIf(dateDiff('second', s.started_at, c.completed_at), notEmpty(s.run_id)) AS mean_run_seconds
-FROM completed c LEFT JOIN starts s ON c.run_id = s.run_id
-WHERE c.completed_at >= now() - INTERVAL 30 DAY GROUP BY c.result ORDER BY c.result`),
     report('run-log-timing', 'Scope: run log time to text',
       'Run page log opens in the last 7 days, from the run list click, job click or navigation start to the first painted log text. Stored share is the percent of opens whose log Scope already kept instead of fetching it from GitHub.', `
-SELECT properties.trigger AS trigger, properties.provider AS provider, count() AS samples,
+SELECT properties.trigger AS trigger, count() AS samples,
   round(quantile(0.5)(toFloat(properties.duration_ms))) AS p50_ms,
   round(quantile(0.75)(toFloat(properties.duration_ms))) AS p75_ms,
   round(quantile(0.95)(toFloat(properties.duration_ms))) AS p95_ms,
   round(100.0 * avg(properties.log_source = 'stored'), 1) AS stored_percent
 FROM product_events
 WHERE event = 'run_log_timing' AND timestamp >= now() - INTERVAL 7 DAY
-GROUP BY trigger, provider
-ORDER BY trigger, provider`),
+GROUP BY trigger
+ORDER BY trigger`),
   ]
 }
 

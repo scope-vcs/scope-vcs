@@ -10,7 +10,6 @@ use super::{
     request_discussion_rows::{insert_discussion, insert_reply, save_read_state},
     request_revision_rows::insert_revision,
     request_rows::{insert_request_event_row, insert_request_row},
-    workflow_catalogs::apply_repository_workflow_catalog,
 };
 #[cfg(any(test, feature = "test-support"))]
 use super::{
@@ -34,9 +33,7 @@ use std::sync::{
 };
 use {
     crate::error::PostgresError,
-    scope_domain::{
-        account::UserAccount, repository::Repository, runs::catalog::RepositoryWorkflowCatalog,
-    },
+    scope_domain::{account::UserAccount, repository::Repository},
 };
 
 #[cfg(test)]
@@ -619,17 +616,6 @@ async fn seed_catalog_rows(
             .insert(tx)
             .await?;
     }
-    for user_id in &catalog.native_runs_accounts {
-        tx.execute_raw(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            "INSERT INTO scope_native_runs_accounts (user_id, added_at_unix) VALUES ($1, $2)",
-            [
-                user_id.clone().into(),
-                (CATALOG_SEED_NOW_UNIX as i64).into(),
-            ],
-        ))
-        .await?;
-    }
     for upload in &catalog.git_segment_uploads {
         entities::git_segment_upload::Model::from_domain(upload)?
             .into_active_model()
@@ -656,8 +642,6 @@ async fn seed_catalog_rows(
             )
             .await?;
         }
-        let workflow_catalog = catalog.repository_workflow_catalogs.remove(&repo.record.id);
-        seed_repository_workflow_catalog(tx, repo, workflow_catalog).await?;
     }
     for request in catalog.requests.values() {
         insert_request_row(tx, request).await?;
@@ -695,42 +679,6 @@ async fn seed_catalog_rows(
     )
     .await?;
     Ok(())
-}
-
-async fn seed_repository_workflow_catalog(
-    tx: &sea_orm::DatabaseTransaction,
-    repo: &Repository,
-    catalog: Option<RepositoryWorkflowCatalog>,
-) -> Result<(), PostgresError> {
-    let Some(head) = &repo.git_head else {
-        return match catalog {
-            Some(_) => Err(PostgresError::internal_message(
-                "seeded workflow catalog has no Git head",
-            )),
-            None => Ok(()),
-        };
-    };
-    let catalog = match catalog {
-        Some(catalog) => catalog,
-        None if repo
-            .live_files
-            .keys()
-            .any(|path| path.as_str().starts_with("/.scope/runs/")) =>
-        {
-            return Ok(());
-        }
-        None => RepositoryWorkflowCatalog::captured(
-            &repo.record.id,
-            &head.head_oid,
-            repo.record.change_version,
-            Vec::new(),
-        )
-        .map_err(PostgresError::internal)?,
-    };
-    catalog
-        .verify_source(&repo.record.id, &head.head_oid, head.change_version)
-        .map_err(PostgresError::internal)?;
-    apply_repository_workflow_catalog(tx, &catalog).await
 }
 
 fn complete_test_users(catalog: &mut CatalogFixture) {

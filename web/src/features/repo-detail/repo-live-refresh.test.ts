@@ -38,12 +38,7 @@ const discussionEvent = (version: number) =>
 const runEvent = (version: number) =>
   ({
     incarnation_id: TEST_INCARNATION_ID,
-    kind: {
-      RunChanged: {
-        change: 'StatusChanged',
-        run_id: 'run-1',
-      },
-    },
+    kind: { GitHubWorkflowRunChanged: { github_run_id: 7 } },
     repo_id: 'owner/repo',
     version,
   }) satisfies RepoChangeEvent
@@ -56,7 +51,6 @@ test('coordinator ignores stale and wrong-repo events', async () => {
   coordinator.onEvent(discussionEvent(3))
   coordinator.onEvent(runEvent(3))
   coordinator.onEvent({ ...runEvent(0), kind: 'GitHubWorkflowRunsChanged' })
-  coordinator.onEvent({ ...runEvent(0), kind: { GitHubWorkflowRunChanged: { github_run_id: 7 } } })
   coordinator.onEvent(event(3, 'changed', 'other/repo'))
   await tick()
   assert.equal(refreshes, 0)

@@ -130,7 +130,7 @@ test('GitHub workflow runs open on Scope, keep their list across navigation and 
   assert.equal(await connect.count(), 0)
 
   await page.goto(new URL('/octo/demo/runs-empty?configured=false', base).href)
-  await page.getByText('Push to main with a matching trigger', { exact: false }).waitFor()
+  await page.getByText('No runs yet', { exact: true }).waitFor()
   assert.equal(await sentence.count(), 0)
   assert.equal(await connect.count(), 0)
 

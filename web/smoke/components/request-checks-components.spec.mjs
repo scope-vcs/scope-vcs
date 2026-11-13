@@ -58,7 +58,7 @@ test('request CI keeps attention visible, discloses completed checks and review 
   await page.getByRole('heading', { name: 'Run 9001#run-job-35' }).waitFor()
   await page.goBack()
 
-  await page.evaluate(() => window.showNative())
+  await page.evaluate(() => window.showFailing())
   await checks.getByRole('heading', { name: 'CI · 1 failed', exact: true }).waitFor()
   assert.equal(await checks.getByRole('heading', { level: 3 }).count(), 0)
   assert.equal(await checks.locator('a[href^="http"]').count(), 0)
@@ -66,8 +66,8 @@ test('request CI keeps attention visible, discloses completed checks and review 
     await page.screenshot({ animations: 'disabled', path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}-ci-failed.png`, fullPage: true })
   }
   await checks.getByRole('link', { name: 'failed checks', exact: true }).click()
-  await page.getByRole('heading', { name: 'Run run_checks' }).waitFor()
-  assert.equal(new URL(page.url()).pathname, '/octo/demo/runs/run_checks')
+  await page.getByRole('heading', { name: 'Run 9003#run-job-51' }).waitFor()
+  assert.equal(new URL(page.url()).pathname, '/octo/demo/runs/9003')
   await page.goBack()
   await page.evaluate(() => window.showState('no-checks'))
   await checks.waitFor({ state: 'hidden' })

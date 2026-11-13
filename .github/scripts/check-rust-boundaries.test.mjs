@@ -27,7 +27,6 @@ function metadata(packages, workspaceRoot = '/repo') {
 function validMainMetadata() {
   return metadata([
     packageFixture('scope-domain'),
-    packageFixture('scope-cache-domain'),
     packageFixture('scope-git-process'),
     packageFixture('scope-api-contract', [dependency('scope-domain')]),
     packageFixture('scope-content-lifecycle', [dependency('scope-domain')]),
@@ -35,7 +34,6 @@ function validMainMetadata() {
     packageFixture('api', [dependency('scope-content-lifecycle')]),
     packageFixture('worker', [dependency('scope-content-lifecycle'), dependency('scope-dependency-analyzer')]),
     packageFixture('scope-repo-router'),
-    packageFixture('scope-runner-runtime'),
   ])
 }
 

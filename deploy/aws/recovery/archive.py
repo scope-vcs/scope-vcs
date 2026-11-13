@@ -44,7 +44,7 @@ def decrypt(source, identity, destination, max_bytes=MAX_BYTES + 1024**3):
                 name = PurePosixPath(member.name)
                 if not member.isfile() or name.is_absolute() or ".." in name.parts or member.name in seen:
                     raise Incomplete("archive contains an unsafe or duplicate path")
-                if member.name not in ("database.dump", "keys.json", "manifest.json") and not (len(name.parts) == 3 and name.parts[0] == "objects" and name.parts[1] in ("objects", "media", "cache") and len(name.parts[2]) == 64 and all(ch in "0123456789abcdef" for ch in name.parts[2])):
+                if member.name not in ("database.dump", "keys.json", "manifest.json") and not (len(name.parts) == 3 and name.parts[0] == "objects" and name.parts[1] in ("objects", "media") and len(name.parts[2]) == 64 and all(ch in "0123456789abcdef" for ch in name.parts[2])):
                     raise Incomplete("archive contains an unexpected file")
                 total += member.size
                 if total > max_bytes:

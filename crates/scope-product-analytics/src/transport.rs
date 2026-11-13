@@ -256,13 +256,8 @@ mod tests {
             .is_none()
         );
         assert!(
-            ProductEventContext::resolve(
-                EventSource::Worker,
-                Some("test"),
-                Some("production"),
-                None,
-            )
-            .is_none()
+            ProductEventContext::resolve(EventSource::Git, Some("test"), Some("production"), None,)
+                .is_none()
         );
         let production = ProductEventContext::resolve(
             EventSource::Api,

@@ -59,8 +59,6 @@ impl AppState {
             tasks: Vec::new(),
         };
         work.start_repository_cache_pruning();
-        work.start_run_attempt_recovery();
-        work.start_run_cache_reconciliation();
         work.start_retention();
         work.start_invite_email_delivery();
         work.start_github_pushes();
