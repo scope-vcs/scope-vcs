@@ -29,12 +29,16 @@ pub(super) fn test_jwks() -> JwkSet {
 }
 
 pub(super) fn sign_claims(claims: serde_json::Value) -> String {
-    sign_claims_with_kid(claims, "test-key")
+    sign_claims_with_header(claims, test_header("test-key"))
 }
 
-pub(super) fn sign_claims_with_kid(claims: serde_json::Value, kid: &str) -> String {
+pub(super) fn test_header(kid: &str) -> Header {
     let mut header = Header::new(Algorithm::ES256);
     header.kid = Some(kid.into());
+    header
+}
+
+pub(super) fn sign_claims_with_header(claims: serde_json::Value, header: Header) -> String {
     encode(
         &header,
         &claims,
