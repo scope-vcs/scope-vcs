@@ -340,7 +340,9 @@ pub(crate) fn git_ref_listing(
     prefixes: &[&str],
     action: &str,
 ) -> Result<Vec<(String, String)>, ApiError> {
-    if let Some(refs) = GitReader::open(repo).and_then(|reader| reader.references(prefixes)) {
+    if let Some(reader) = GitReader::open(repo)
+        && let Some(refs) = reader.references(prefixes, action)?
+    {
         return Ok(refs);
     }
     let mut args = vec!["for-each-ref", "--format=%(refname)%00%(objectname)"];

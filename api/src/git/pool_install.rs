@@ -231,7 +231,10 @@ pub(crate) fn present_commits<'a>(
     if oids.is_empty() || !repo.join("objects").is_dir() {
         return Ok(BTreeSet::new());
     }
-    if let Some(present) = GitReader::open(repo).and_then(|reader| reader.present_commits(&oids)) {
+    if let Some(reader) = GitReader::open(repo)
+        && let Some(present) =
+            reader.present_commits(&oids, "checking which commits are present")?
+    {
         return Ok(present);
     }
     let input = oids

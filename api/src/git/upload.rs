@@ -274,7 +274,11 @@ fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec
     if required.is_empty() && haves.is_empty() {
         return Ok(request.to_vec());
     }
-    let tips = match GitReader::open(repo_path).and_then(|reader| reader.references(&[])) {
+    let listed = match GitReader::open(repo_path) {
+        Some(reader) => reader.references(&[], "listing fetch tips")?,
+        None => None,
+    };
+    let tips = match listed {
         Some(refs) => refs.into_iter().map(|(_, oid)| oid.into_bytes()).collect(),
         None => git_command_output(
             Command::new("git")

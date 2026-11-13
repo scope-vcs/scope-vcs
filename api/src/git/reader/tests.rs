@@ -187,7 +187,10 @@ fn object_answers_match_cat_file_through_chained_relative_alternates() {
         }
         assert!(commits.contains(&base) && !commits.contains(&fixture.oid("tag")));
         let oids = inputs.iter().map(String::as_str).collect::<Vec<_>>();
-        assert_eq!(reader.present_commits(&oids), Some(commits));
+        assert_eq!(
+            reader.present_commits(&oids, "checking").unwrap(),
+            Some(commits)
+        );
         for oid in &unanswered {
             assert_eq!(reader.is_commit(oid), None);
             assert_eq!(reader.peels_to_commit(oid), None);
@@ -249,7 +252,7 @@ fn references_match_for_each_ref_and_rev_parse_across_packed_loose_and_symbolic_
         let reader = GitReader::open(repo).unwrap();
         for prefixes in prefix_sets {
             assert_eq!(
-                reader.references(prefixes),
+                reader.references(prefixes, "listing").unwrap(),
                 Some(git_for_each_ref(repo, prefixes)),
                 "{prefixes:?} in {repo:?}"
             );
@@ -462,4 +465,43 @@ fn replacement_chains_leave_answers_to_git() {
                 .status
                 .success()
     );
+}
+
+#[test]
+fn grafted_repositories_leave_ancestry_to_git() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_ok(repo, &["init", "-q", "-b", "main"]);
+    let first = commit(repo, "first");
+    let grafted = commit(repo, "grafted");
+    let tip = commit(repo, "tip");
+    fs::create_dir_all(repo.join(".git/info")).unwrap();
+    fs::write(repo.join(".git/info/grafts"), format!("{grafted}\n")).unwrap();
+
+    assert!(GitReader::open(repo).is_none());
+    let git_answer = git(repo, &["merge-base", "--is-ancestor", &first, &tip])
+        .status
+        .success();
+    assert!(!git_answer);
+    assert_eq!(
+        git_is_ancestor(repo, &first, &tip, "checking").unwrap(),
+        git_answer
+    );
+}
+
+#[test]
+fn bulk_reads_fail_like_a_timed_out_git_command_once_the_deadline_passes() {
+    let fixture = Fixture::build();
+    let reader = GitReader::open_with_budget(&fixture.stage, Duration::ZERO).unwrap();
+    let base = fixture.oid("base");
+    for error in [
+        reader.present_commits(&[&base], "checking").unwrap_err(),
+        reader.references(&["refs/heads"], "checking").unwrap_err(),
+    ] {
+        assert_eq!(error.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            error.operator_diagnostic(),
+            "failed checking: Git reader timed out after 0ms"
+        );
+    }
 }

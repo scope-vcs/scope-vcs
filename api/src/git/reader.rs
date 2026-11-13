@@ -26,7 +26,10 @@ impl GitReader {
 
     fn open_with_budget(path: &FsPath, budget: Duration) -> Option<Self> {
         let repo = settled(gix::open_opts(path, gix::open::Options::isolated()))?;
-        if settled(repo.is_shallow())? || has_replacements(&repo)? {
+        if settled(repo.is_shallow())?
+            || has_replacements(&repo)?
+            || repo.git_dir().join("info").join("grafts").exists()
+        {
             return None;
         }
         Some(Self {
@@ -52,14 +55,22 @@ impl GitReader {
         Some(header.is_some_and(|header| header.kind() == Kind::Commit))
     }
 
-    pub(crate) fn present_commits(&self, oids: &[&str]) -> Option<BTreeSet<String>> {
+    pub(crate) fn present_commits(
+        &self,
+        oids: &[&str],
+        action: &str,
+    ) -> Result<Option<BTreeSet<String>>, ApiError> {
         let mut present = BTreeSet::new();
         for oid in oids {
-            if self.is_commit(oid)? {
+            self.within_deadline(action)?;
+            let Some(is_commit) = self.is_commit(oid) else {
+                return Ok(None);
+            };
+            if is_commit {
                 present.insert((*oid).to_string());
             }
         }
-        Some(present)
+        Ok(Some(present))
     }
 
     pub(crate) fn peels_to_commit(&self, oid: &str) -> Option<bool> {
@@ -89,20 +100,33 @@ impl GitReader {
         Some(self.peeled_commit(id)?.to_string())
     }
 
-    pub(crate) fn references(&self, prefixes: &[&str]) -> Option<Vec<(String, String)>> {
+    pub(crate) fn references(
+        &self,
+        prefixes: &[&str],
+        action: &str,
+    ) -> Result<Option<Vec<(String, String)>>, ApiError> {
         if prefixes
             .iter()
             .any(|prefix| prefix.is_empty() || prefix.contains(['*', '?', '[', '\\']))
         {
-            return None;
+            return Ok(None);
         }
-        let platform = settled(self.repo.references())?;
+        let Some(platform) = settled(self.repo.references()) else {
+            return Ok(None);
+        };
+        let Some(all) = settled(platform.all()) else {
+            return Ok(None);
+        };
         let mut listed = Vec::new();
-        for reference in settled(platform.all())? {
-            let mut reference = settled(reference)?;
-            let name = std::str::from_utf8(reference.name().as_bstr())
-                .ok()?
-                .to_string();
+        for reference in all {
+            self.within_deadline(action)?;
+            let Some(mut reference) = settled(reference) else {
+                return Ok(None);
+            };
+            let Ok(name) = std::str::from_utf8(reference.name().as_bstr()) else {
+                return Ok(None);
+            };
+            let name = name.to_string();
             if !name.starts_with("refs/") || !matches_ref_prefix(&name, prefixes) {
                 continue;
             }
@@ -111,13 +135,16 @@ impl GitReader {
                 TargetRef::Symbolic(_) => match reference.follow_to_object() {
                     Ok(id) => id.detach(),
                     Err(error) if error.is_not_found() => continue,
-                    Err(error) => return settled(Err(error)),
+                    Err(error) => {
+                        tracing::debug!(%error, "Git reader deferred to git");
+                        return Ok(None);
+                    }
                 },
             };
             listed.push((name, id.to_string()));
         }
         listed.sort();
-        Some(listed)
+        Ok(Some(listed))
     }
 
     pub(crate) fn is_ancestor(
@@ -147,6 +174,13 @@ impl GitReader {
             return self.unanswered(action);
         };
         Ok(walk::merge_bases(self, left, right, action)?.map(MergeBases::from_bases))
+    }
+
+    fn within_deadline(&self, action: &str) -> Result<(), ApiError> {
+        if Instant::now() >= self.deadline {
+            return Err(self.timed_out(action));
+        }
+        Ok(())
     }
 
     fn unanswered<T>(&self, action: &str) -> Result<Option<T>, ApiError> {
