@@ -562,3 +562,24 @@ fn readers_cap_object_decoding_allocations() {
         Some(i64::try_from(MAX_DECODE_BYTES).unwrap())
     );
 }
+
+#[test]
+fn walks_past_the_memory_budget_leave_the_answer_to_git() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_ok(repo, &["init", "-q", "-b", "main"]);
+    let first = commit(repo, "first");
+    let message = "x".repeat(1_000_000);
+    for _ in 0..70 {
+        pinned_identity_git(
+            repo,
+            &["commit", "-q", "--allow-empty", "-F", "-"],
+            Some(&message),
+        );
+    }
+    let tip = commit(repo, "tip");
+
+    let reader = GitReader::open(repo).unwrap();
+    assert_eq!(reader.is_ancestor(&first, &tip, "checking").unwrap(), None);
+    assert!(git_is_ancestor(repo, &first, &tip, "checking").unwrap());
+}

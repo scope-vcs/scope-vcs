@@ -4,6 +4,7 @@ use gix::ObjectId;
 use std::{cell::Cell, time::Instant};
 
 const MAX_COMMIT_BYTES: u64 = 1024 * 1024;
+const MAX_WALK_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MergeBases {
@@ -26,6 +27,7 @@ impl MergeBases {
 struct WalkOutcome {
     expired: Cell<bool>,
     missing: Cell<bool>,
+    loaded_bytes: Cell<u64>,
 }
 
 struct DeadlineObjects<'walk> {
@@ -46,13 +48,17 @@ impl gix::objs::Find for DeadlineObjects<'_> {
                 std::io::ErrorKind::TimedOut,
             )));
         }
-        match gix::odb::Header::try_header(self.objects, id)? {
-            Some(header) if header.size() <= MAX_COMMIT_BYTES => {}
-            _ => {
-                self.outcome.missing.set(true);
-                return Ok(None);
+        let loaded = match gix::odb::Header::try_header(self.objects, id)? {
+            Some(header) if header.size() <= MAX_COMMIT_BYTES => {
+                self.outcome.loaded_bytes.get() + header.size()
             }
+            _ => u64::MAX,
+        };
+        if loaded > MAX_WALK_BYTES {
+            self.outcome.missing.set(true);
+            return Ok(None);
         }
+        self.outcome.loaded_bytes.set(loaded);
         let found = self.objects.try_find(id, buffer)?;
         if found.is_none() {
             self.outcome.missing.set(true);
