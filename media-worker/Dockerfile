@@ -82,23 +82,24 @@ RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
     && if [ -f /tmp/apt-sources.list ]; then mv /tmp/apt-sources.list /etc/apt/sources.list; fi \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=heif-builder /opt/libheif /opt/libheif
-ENV PATH=/opt/libheif/bin:$PATH LD_LIBRARY_PATH=/opt/libheif/lib
-
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates=20250419+deb13u1 \
         ffmpeg=7:7.1.5-0+deb13u1 \
         libaom3 libde265-0 libjpeg62-turbo libpng16-16t64 libx265-215 \
-    && rm -rf /var/lib/apt/lists/* \
-    && echo /opt/libheif/lib > /etc/ld.so.conf.d/libheif.conf \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=planner /scope/recipe.json recipe.json
+RUN cargo chef cook --locked --release -p scope-media-worker --recipe-path recipe.json
+
+COPY --from=heif-builder /opt/libheif /opt/libheif
+ENV PATH=/opt/libheif/bin:$PATH LD_LIBRARY_PATH=/opt/libheif/lib
+RUN echo /opt/libheif/lib > /etc/ld.so.conf.d/libheif.conf \
     && ldconfig
 
 ENV SCOPE_MEDIA_HEIF_CONVERT=/opt/libheif/bin/heif-convert \
     SCOPE_MEDIA_HEIF_INFO=/opt/libheif/bin/heif-info
 
-COPY --from=planner /scope/recipe.json recipe.json
-RUN cargo chef cook --locked --release -p scope-media-worker --recipe-path recipe.json
 COPY --from=planner /scope ./
 RUN cargo build --locked --release -p scope-media-worker \
     && chmod +x media-worker/tests/*.sh \
