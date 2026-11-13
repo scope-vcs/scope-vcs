@@ -22,12 +22,14 @@ const FILTER_LABELS: Record<ChangedPathFilter, string> = {
   visibility: 'Visibility',
   Added: 'Added',
   Modified: 'Modified',
+  Renamed: 'Renamed',
   Deleted: 'Deleted',
 }
 
 const KIND_CLASS = {
   Added: 'text-success-strong',
   Modified: 'text-warning-strong',
+  Renamed: 'text-info-strong',
   Deleted: 'text-danger-strong',
 } as const
 

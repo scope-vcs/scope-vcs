@@ -25,6 +25,7 @@ function textDiff(oldText: string, newText: string): ReviewFileDiffResponse {
     new_mode: '100644',
     old_content: { kind: 'text', text: oldText },
     old_mode: '100644',
+    old_path: null,
     path: '/fixture.ts',
   }
 }
@@ -87,6 +88,7 @@ test('bounds mixed content without returning raw transport fields', async () => 
     new_mode: '100644',
     old_content: { kind: 'binary', oid: 'abc123', size_bytes: 42 },
     old_mode: '100644',
+    old_path: null,
     path: '/fixture.dat',
   }, 'standard')
 

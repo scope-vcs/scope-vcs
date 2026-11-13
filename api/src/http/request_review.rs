@@ -16,9 +16,14 @@ use crate::{
             RequestBlobContent, RequestDiffRange, request_blob_content, request_diff_file,
         },
         request_revision_inspection::{
-            BoundedNulField, InspectedRequestChange, commit_belongs_to_revision,
-            inspect_counted_request_changes, inspect_raw_request_change, parse_numstat_entry,
-            read_nul_field_bounded, request_counted_commit_changes, request_revision_commit_oids,
+            ChangePairing, InspectedRequestChange, RawRequestChange, ReadableRequestChange,
+            change_paths, commit_belongs_to_revision,
+            diff_stream::{
+                BoundedNulField, read_nul_field_bounded, read_numstat_record, stream_request_diff,
+                whole_file_line_counts,
+            },
+            inspect_counted_request_changes, inspect_raw_request_change, raw_change_has_source,
+            request_counted_commit_changes, request_revision_commit_oids,
         },
         scope_path_input::normalized_scope_path,
     },
@@ -385,6 +390,7 @@ async fn request_diff_file_response(
     .await?;
     Ok(ReviewFileDiffResponse {
         path: file.path,
+        old_path: file.old_path,
         kind: file.kind.into(),
         old_mode: file.old_mode,
         new_mode: file.new_mode,
@@ -504,6 +510,7 @@ fn request_file_response(change: InspectedRequestChange) -> CommitFileResponse {
     let InspectedRequestChange { file, lines } = change;
     CommitFileResponse {
         path: file.path,
+        old_path: file.old_path,
         kind: file.kind.into(),
         old_mode: file.old_mode,
         new_mode: file.new_mode,

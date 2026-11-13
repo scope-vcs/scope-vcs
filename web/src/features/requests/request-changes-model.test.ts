@@ -254,6 +254,7 @@ function revision(
         new_mode: '100644',
         new_oid: oid,
         old_mode: '100644',
+        old_path: null,
         old_oid: 'base',
         path: `${oid}.txt`,
         label: 'public' as const,

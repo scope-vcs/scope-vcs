@@ -1,12 +1,9 @@
 use super::*;
-use crate::runtime_budgets::RuntimeBudgets;
 use scope_domain::policy::Policy;
 use scope_domain::views::{ViewId, Views};
-use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::{BufReader, Read},
-    process::Command,
+    io::BufRead,
 };
 
 const MAX_REQUEST_COMMIT_IDENTITY_BYTES: usize = 64 * 1024;
@@ -31,8 +28,9 @@ pub(super) fn inspect_comparison_files(
     head_oid: &str,
     file_limit: usize,
 ) -> Result<(Vec<CommitFileResponse>, bool), ApiError> {
-    let mut command = Command::new("git");
-    command.arg("-C").arg(raw_repo).args([
+    let mut revisions = Vec::from_iter(base_oid);
+    revisions.push(head_oid);
+    let mut args = vec![
         "--literal-pathspecs",
         "diff-tree",
         "--root",
@@ -41,92 +39,97 @@ pub(super) fn inspect_comparison_files(
         "--raw",
         "--numstat",
         "-z",
-        "--no-renames",
+        ChangePairing::Renames.git_arg(),
         "--abbrev=64",
-    ]);
-    if let Some(base_oid) = base_oid {
-        command.arg(base_oid);
-    }
-    command.arg(head_oid).arg("--");
-    let git_span = crate::git::command::prepare_git_subprocess(&mut command)?;
-    let _entered = git_span.enter();
+    ];
+    args.extend(&revisions);
+    args.push("--");
     let policy = policy.clone();
     let views = views.clone();
     let access = access.clone();
-    let output = run_with_stdout(
-        &mut command,
+    let (mut files, parts, incomplete) = stream_request_diff(
+        raw_repo,
+        &args,
         None,
-        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
         "reading request comparison files",
-        move |stdout, _cancellation| {
-            let mut reader = BufReader::new(stdout);
+        move |mut reader| {
             let mut readable = BTreeMap::new();
             let mut changes = 0usize;
             let mut counted = 0usize;
             let mut incomplete = false;
             let mut files = Vec::new();
+            let mut parts = Vec::new();
             while let Some(field) = read_nul_field_bounded(&mut reader)? {
                 if counted == 0 && field.bytes.starts_with(b":") {
                     validate_request_diff_header(&field)?;
-                    let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
-                        ApiError::internal_message("request comparison diff is missing a path")
-                    })?;
+                    let (old_path, path) =
+                        change_paths(raw_change_has_source(&field.bytes), || {
+                            read_nul_field_bounded(&mut reader)
+                        })?;
                     let index = changes;
                     changes += 1;
-                    if path.truncated || readable.len() == file_limit {
+                    if path.truncated
+                        || old_path.as_ref().is_some_and(|path| path.truncated)
+                        || readable.len() == file_limit
+                    {
                         incomplete = true;
                         continue;
                     }
-                    match inspect_raw_request_change(
-                        &field.bytes,
-                        &path.bytes,
-                        &policy,
-                        &views,
-                        &access,
-                    )? {
-                        Some(change) => {
-                            readable.insert(index, change);
+                    let raw = RawRequestChange {
+                        header: &field.bytes,
+                        old_path: old_path.as_ref().map(|path| path.bytes.as_slice()),
+                        path: &path.bytes,
+                    };
+                    match inspect_raw_request_change(raw, &policy, &views, &access)? {
+                        ReadableRequestChange::Whole(change) => {
+                            readable.insert(index, (path.bytes, Some(change)));
                         }
-                        None => incomplete = true,
+                        ReadableRequestChange::Part(change) => {
+                            incomplete = true;
+                            readable.insert(index, (path.bytes, None));
+                            parts.push(change);
+                        }
+                        ReadableRequestChange::Hidden => incomplete = true,
                     }
                     continue;
                 }
                 let index = counted;
                 counted += 1;
-                let Some(change) = readable.remove(&index) else {
+                let (lines, _, numstat_path) = read_numstat_record(field, &mut reader)?;
+                let Some((path, change)) = readable.remove(&index) else {
                     continue;
                 };
-                let (lines, path) = parse_numstat_entry(&field.bytes)?;
-                if !field.truncated && path != change.path.as_bytes() {
+                if !numstat_path.truncated && numstat_path.bytes != path {
                     return Err(ApiError::internal_message(
                         "request comparison line counts are out of order",
                     ));
                 }
-                files.push(request_file_response(change.with_lines(lines)));
+                if let Some(change) = change {
+                    files.push(request_file_response(change.with_lines(lines)));
+                }
             }
             if counted != changes {
                 return Err(ApiError::internal_message(
                     "request comparison line counts do not match its changes",
                 ));
             }
-            files.sort_by(|left, right| left.path.cmp(&right.path));
-            Ok((files, incomplete))
+            Ok((files, parts, incomplete))
         },
-    )
-    .map_err(|error| match error {
-        StreamingProcessError::Process(error) => {
-            ApiError::infrastructure_unavailable(error.to_string())
-        }
-        StreamingProcessError::Consumer(error) => error,
-    })?;
-    crate::git::command::record_git_exit(&git_span, output.status);
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading request comparison files: {}",
-            truncated_stderr(&output.stderr, scope_git_process::STDERR_DIAGNOSTIC_BYTES).trim()
-        )));
+    )?;
+    let mut whole_lines = whole_file_line_counts(
+        raw_repo,
+        &revisions,
+        parts
+            .iter()
+            .map(|change| change.path.as_bytes().to_vec())
+            .collect(),
+    )?;
+    for change in parts {
+        let lines = whole_lines.take(change.path.as_bytes())?;
+        files.push(request_file_response(change.with_lines(lines)));
     }
-    Ok(output.value)
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok((files, incomplete))
 }
 
 pub(super) fn inspect_request_commit(
@@ -148,18 +151,18 @@ fn inspect_request_commit_with_identity(
     commit_oid: &str,
     identity: RequestCommitIdentity,
 ) -> Result<InspectedRequestCommit, ApiError> {
-    let changes = inspect_counted_request_changes(
+    let Some(changes) = inspect_counted_request_changes(
         &request_counted_commit_changes(raw_repo, commit_oid)?,
         policy,
         views,
         &access,
-    )?;
-    if changes.hidden {
+    )?
+    else {
         return Ok(InspectedRequestCommit {
             commit: None,
             inspection: RequestRevisionInspectionState::Complete,
         });
-    }
+    };
     let metadata = request_commit_display_metadata(raw_repo, commit_oid)?;
     Ok(InspectedRequestCommit {
         commit: Some(RequestRevisionCommitResponse {
@@ -172,12 +175,8 @@ fn inspect_request_commit_with_identity(
             author: metadata.author,
             authored_at_unix: identity.authored_at_unix,
             message: metadata.message,
-            change_count: changes.files.len(),
-            files: changes
-                .files
-                .into_iter()
-                .map(request_file_response)
-                .collect(),
+            change_count: changes.len(),
+            files: changes.into_iter().map(request_file_response).collect(),
             files_truncated: false,
         }),
         inspection: if metadata.complete {
@@ -262,54 +261,35 @@ fn request_commit_change_summaries(
     let views = views.clone();
     let mut input = commit_oids.join("\n").into_bytes();
     input.push(b'\n');
-    let mut command = Command::new("git");
-    command.arg("-C").arg(raw_repo).args([
-        "diff-tree",
-        "--stdin",
-        "--root",
-        "--raw",
-        "-r",
-        "-z",
-        "--no-renames",
-        "--abbrev=64",
-        "--diff-merges=first-parent",
-        "--always",
-    ]);
-    let git_span = crate::git::command::prepare_git_subprocess(&mut command)?;
-    let _entered = git_span.enter();
-    let output = run_with_stdout(
-        &mut command,
+    stream_request_diff(
+        raw_repo,
+        &[
+            "diff-tree",
+            "--stdin",
+            "--root",
+            "--raw",
+            "-r",
+            "-z",
+            ChangePairing::Renames.git_arg(),
+            "--abbrev=64",
+            "--diff-merges=first-parent",
+            "--always",
+        ],
         Some(input),
-        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
         "reading bounded request commit identities",
-        move |stdout, _cancellation| {
-            parse_request_commit_change_summaries(stdout, &policy, &views, &access.view, &expected)
+        move |reader| {
+            parse_request_commit_change_summaries(reader, &policy, &views, &access.view, &expected)
         },
     )
-    .map_err(|error| match error {
-        StreamingProcessError::Process(error) => {
-            ApiError::infrastructure_unavailable(error.to_string())
-        }
-        StreamingProcessError::Consumer(error) => error,
-    })?;
-    crate::git::command::record_git_exit(&git_span, output.status);
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading bounded request commit identities: {}",
-            truncated_stderr(&output.stderr, scope_git_process::STDERR_DIAGNOSTIC_BYTES).trim()
-        )));
-    }
-    Ok(output.value)
 }
 
 fn parse_request_commit_change_summaries(
-    stdout: Box<dyn Read + Send>,
+    mut reader: impl BufRead,
     policy: &scope_domain::policy::Policy,
     views: &Views,
     view: &ViewId,
     expected: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, RequestCommitChangeSummary>, ApiError> {
-    let mut reader = BufReader::new(stdout);
     let mut summaries = BTreeMap::<String, RequestCommitChangeSummary>::new();
     let mut current_oid = None;
     while let Some(field) = read_nul_field_bounded(&mut reader)? {
@@ -321,15 +301,17 @@ fn parse_request_commit_change_summaries(
                     ApiError::internal_message("request identity diff is missing a commit header")
                 })?;
             validate_request_diff_header(&field)?;
-            let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
-                ApiError::internal_message("request identity diff is missing a path")
+            let (old_path, path) = change_paths(raw_change_has_source(&field.bytes), || {
+                read_nul_field_bounded(&mut reader)
             })?;
             summary.change_count = summary.change_count.checked_add(1).ok_or_else(|| {
                 ApiError::internal_message("request identity diff change count overflowed")
             })?;
-            if view != views.full() && !summary.hidden {
-                summary.hidden =
-                    path.truncated || !request_path_is_visible(policy, views, view, &path.bytes)?;
+            for path in old_path.iter().chain([&path]) {
+                if view != views.full() && !summary.hidden {
+                    summary.hidden = path.truncated
+                        || !request_path_is_visible(policy, views, view, &path.bytes)?;
+                }
             }
             continue;
         }

@@ -327,12 +327,12 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
     let select = |policy: &Policy, access: &RepositoryAccess| {
         select_request_diff_file(
             raw_repo,
-            policy,
             &views,
             access,
             &revision,
             &RequestDiffRange::Commit(root.clone()),
             &root_path,
+            |_| Ok(policy.clone()),
         )
     };
     let file = select(&repo.policy, &owner_access).unwrap().unwrap();

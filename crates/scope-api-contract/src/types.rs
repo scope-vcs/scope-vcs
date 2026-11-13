@@ -483,6 +483,7 @@ pub struct RequestRevisionCommitResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct CommitFileResponse {
     pub path: String,
+    pub old_path: Option<String>,
     pub kind: FileChangeKind,
     pub old_mode: Option<String>,
     pub new_mode: Option<String>,
@@ -627,6 +628,7 @@ pub struct MarkRequestDiscussionReadRequest {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct ReviewFileDiffResponse {
     pub path: String,
+    pub old_path: Option<String>,
     pub kind: FileChangeKind,
     pub old_mode: Option<String>,
     pub new_mode: Option<String>,

@@ -3,7 +3,15 @@ use scope_api_contract::{ReviewFileContentResponse, ReviewFileDiffResponse};
 
 pub(super) fn file_diff_lines(diff: &ReviewFileDiffResponse) -> Vec<String> {
     let path = terminal_text(&diff.path);
-    let mut lines = vec![format!("diff --git a/{path} b/{path}")];
+    let old_path = diff
+        .old_path
+        .as_deref()
+        .map_or_else(|| path.clone(), terminal_text);
+    let mut lines = vec![format!("diff --git a/{old_path} b/{path}")];
+    if diff.old_path.is_some() {
+        lines.push(format!("rename from {old_path}"));
+        lines.push(format!("rename to {path}"));
+    }
     if diff.old_mode != diff.new_mode {
         if let Some(mode) = &diff.old_mode {
             lines.push(format!("old mode {}", terminal_text(mode)));
@@ -16,19 +24,19 @@ pub(super) fn file_diff_lines(diff: &ReviewFileDiffResponse) -> Vec<String> {
     let new = text_content(&diff.new_content);
     match (old, new) {
         (Some(old), Some(new)) => {
-            let old_path = if diff.old_content.is_some() {
-                format!("a/{path}")
+            let old_header = if diff.old_content.is_some() {
+                format!("a/{old_path}")
             } else {
                 "/dev/null".to_string()
             };
-            let new_path = if diff.new_content.is_some() {
+            let new_header = if diff.new_content.is_some() {
                 format!("b/{path}")
             } else {
                 "/dev/null".to_string()
             };
             if old != new {
-                lines.push(format!("--- {old_path}"));
-                lines.push(format!("+++ {new_path}"));
+                lines.push(format!("--- {old_header}"));
+                lines.push(format!("+++ {new_header}"));
                 lines.extend(text_hunk(old, new));
             }
         }
@@ -43,7 +51,7 @@ pub(super) fn file_diff_lines(diff: &ReviewFileDiffResponse) -> Vec<String> {
             }
             match (old, new) {
                 (Some(text), None) if !text.is_empty() => {
-                    lines.push(format!("--- a/{path} (text)"));
+                    lines.push(format!("--- a/{old_path} (text)"));
                     lines.extend(text_hunk(text, ""));
                 }
                 (None, Some(text)) if !text.is_empty() => {
@@ -123,6 +131,7 @@ mod tests {
     fn binary_text_conversions_render_both_sides() {
         let mut diff = ReviewFileDiffResponse {
             path: "converted.dat".into(),
+            old_path: None,
             kind: scope_api_contract::FileChangeKind::Modified,
             old_mode: Some("100644".into()),
             new_mode: Some("100644".into()),
@@ -141,6 +150,33 @@ mod tests {
         let removed = file_diff_lines(&diff).join("\n");
         assert!(removed.contains("After: binary blob (3 bytes)"));
         assert!(removed.contains("-visible text"));
+    }
+
+    #[test]
+    fn renamed_files_name_both_paths() {
+        let diff = ReviewFileDiffResponse {
+            path: "docs/guide.md".into(),
+            old_path: Some("guide.md".into()),
+            kind: scope_api_contract::FileChangeKind::Renamed,
+            old_mode: Some("100644".into()),
+            new_mode: Some("100644".into()),
+            old_content: Some(ReviewFileContentResponse::Text {
+                text: "title\nold\n".into(),
+            }),
+            new_content: Some(ReviewFileContentResponse::Text {
+                text: "title\nnew\n".into(),
+            }),
+        };
+        assert_eq!(
+            file_diff_lines(&diff)[..5],
+            [
+                "diff --git a/guide.md b/docs/guide.md",
+                "rename from guide.md",
+                "rename to docs/guide.md",
+                "--- a/guide.md",
+                "+++ b/docs/guide.md",
+            ]
+        );
     }
 
     #[test]

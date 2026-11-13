@@ -50,6 +50,7 @@ test('line discussions open from either side, post under their lines, and keep c
   const diff = page.getByRole('complementary', { name: 'src/lib.ts diff' })
   const fileNotes = diff.getByRole('list', { name: 'File discussions' })
   await fileNotes.waitFor()
+  assert.match(await diff.innerText(), /Renamed from src\/legacy\/review-helpers\/shared-library-module\.ts · /)
   assert.deepEqual(await fileNotes.getByRole('listitem').allInnerTexts(), [
     'Lines outside the shown hunks\nline 40 (new) not shown\nOpen',
     'Outdated naming question\nOutdated\nOpen',

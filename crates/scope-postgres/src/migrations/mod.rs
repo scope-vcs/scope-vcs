@@ -51,6 +51,8 @@ mod m0107_delete_request_bundles;
 mod m0108_github_pull_request_merges;
 #[expect(unreachable_pub)]
 mod m0109_main_advanced_by;
+#[expect(unreachable_pub)]
+mod m0110_request_diff_renames;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -203,6 +205,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0109_main_advanced_by::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0110_request_diff_renames::Migration),
             metadata_restore_safe: true,
         },
     ]

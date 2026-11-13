@@ -73,7 +73,8 @@ pub use checks::{
 };
 mod diff_stat;
 pub use diff_stat::{
-    DiffStat, FileDiffStat, FileLineChanges, RevisionDiffStat, RevisionDiffStatBuilder,
+    DiffStat, FileDiffStat, FileLineChanges, RenameSource, RenameVisibility, RevisionDiffStat,
+    RevisionDiffStatBuilder,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};

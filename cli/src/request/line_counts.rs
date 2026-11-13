@@ -59,9 +59,7 @@ impl DiffStat {
         };
         for file in files {
             stat.changed_files += 1;
-            stat.path_width = stat
-                .path_width
-                .max(terminal_text(&file.path).chars().count());
+            stat.path_width = stat.path_width.max(file_label(file).chars().count());
             if let FileLineChangesResponse::Text {
                 additions,
                 deletions,
@@ -90,7 +88,7 @@ impl DiffStat {
         };
         format!(
             " {:<width$} | {counts}",
-            terminal_text(&file.path),
+            file_label(file),
             width = self.path_width
         )
     }
@@ -104,6 +102,17 @@ impl DiffStat {
                 self.deletions
             )
         })
+    }
+}
+
+fn file_label(file: &CommitFileResponse) -> String {
+    match &file.old_path {
+        Some(old_path) => format!(
+            "{} => {}",
+            terminal_text(old_path),
+            terminal_text(&file.path)
+        ),
+        None => terminal_text(&file.path),
     }
 }
 
@@ -156,7 +165,7 @@ mod tests {
 
     #[test]
     fn stat_aligns_paths_and_counts_and_totals_text_files() {
-        let files = [
+        let mut files = [
             file(
                 "api/src/http/request_review/comparison.rs",
                 serde_json::json!({"kind": "text", "additions": 22, "deletions": 4}),
@@ -170,6 +179,7 @@ mod tests {
                 serde_json::json!({"kind": "binary"}),
             ),
         ];
+        files[2].old_path = Some("logo.png".into());
         let stat = DiffStat::new(&files);
         let mut lines = files.iter().map(|file| stat.row(file)).collect::<Vec<_>>();
         lines.extend(stat.summary());
@@ -178,7 +188,7 @@ mod tests {
             [
                 " api/src/http/request_review/comparison.rs            | +22  -4",
                 " web/src/features/requests/request-workspace-list.tsx | +19  -6",
-                " web/public/logo .png                                 | binary",
+                " logo.png => web/public/logo .png                     | binary",
                 " 3 files changed, +41 -10",
             ]
         );

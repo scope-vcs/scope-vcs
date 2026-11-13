@@ -6,7 +6,7 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     policy::ScopePath,
-    requests::{DiffStat, FileDiffStat, FileLineChanges, Request, RevisionDiffStat},
+    requests::{DiffStat, FileDiffStat, FileLineChanges, RenameSource, Request, RevisionDiffStat},
 };
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait, Value,
@@ -33,6 +33,9 @@ struct DiffFileRow {
     path: String,
     additions: Option<i64>,
     deletions: Option<i64>,
+    renamed_from: Option<String>,
+    old_file_deletions: Option<i64>,
+    new_file_additions: Option<i64>,
 }
 
 impl RequestStore {
@@ -99,7 +102,8 @@ impl RequestStore {
             for row in DiffFileRow::find_by_statement(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 format!(
-                    "SELECT revision_id, path, additions, deletions
+                    "SELECT revision_id, path, additions, deletions,
+                            renamed_from, old_file_deletions, new_file_additions
                      FROM scope_request_revision_diff_files WHERE revision_id IN ({})",
                     placeholders(listed.len())
                 ),
@@ -191,12 +195,14 @@ impl RequestStore {
     }
 }
 
+const FILE_COLUMNS: usize = 7;
+
 async fn insert_files<C: ConnectionTrait>(
     conn: &C,
     revision_id: &str,
     files: &[FileDiffStat],
 ) -> Result<(), PostgresError> {
-    let mut values = Vec::with_capacity(files.len() * 4);
+    let mut values = Vec::with_capacity(files.len() * FILE_COLUMNS);
     let mut rows = Vec::with_capacity(files.len());
     for (index, file) in files.iter().enumerate() {
         let (additions, deletions) = match file.lines {
@@ -206,24 +212,40 @@ async fn insert_files<C: ConnectionTrait>(
             } => (Some(additions), Some(deletions)),
             FileLineChanges::Binary => (None, None),
         };
-        let first = index * 4 + 1;
+        let rename = file.renamed_from.as_ref();
+        let old_file_deletions = rename.and_then(|source| match source.old_file {
+            FileLineChanges::Text { deletions, .. } => Some(deletions),
+            FileLineChanges::Binary => None,
+        });
+        let new_file_additions = rename.and_then(|source| match source.new_file {
+            FileLineChanges::Text { additions, .. } => Some(additions),
+            FileLineChanges::Binary => None,
+        });
+        let first = index * FILE_COLUMNS + 1;
         rows.push(format!(
-            "(${first}, ${}, ${}, ${})",
-            first + 1,
-            first + 2,
-            first + 3
+            "({})",
+            (first..first + FILE_COLUMNS)
+                .map(|position| format!("${position}"))
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
         values.extend([
             Value::from(revision_id),
             Value::from(file.path.as_str()),
             optional_u64_to_i64(additions, "diff file additions")?.into(),
             optional_u64_to_i64(deletions, "diff file deletions")?.into(),
+            Value::from(rename.map(|source| source.path.as_str().to_string())),
+            optional_u64_to_i64(old_file_deletions, "renamed file deletions")?.into(),
+            optional_u64_to_i64(new_file_additions, "renamed file additions")?.into(),
         ]);
     }
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!(
-            "INSERT INTO scope_request_revision_diff_files (revision_id, path, additions, deletions) VALUES {}",
+            "INSERT INTO scope_request_revision_diff_files
+                 (revision_id, path, additions, deletions,
+                  renamed_from, old_file_deletions, new_file_additions)
+             VALUES {}",
             rows.join(", ")
         ),
         values,
@@ -256,9 +278,35 @@ fn file_from_row(row: DiffFileRow) -> Result<FileDiffStat, PostgresError> {
             ));
         }
     };
+    let whole_file = |lines: Option<u64>, text: fn(u64) -> FileLineChanges| {
+        lines.map_or(FileLineChanges::Binary, text)
+    };
+    let renamed_from = row
+        .renamed_from
+        .map(|path| {
+            Ok::<_, PostgresError>(RenameSource {
+                path: ScopePath::parse(path).map_err(PostgresError::internal)?,
+                old_file: whole_file(
+                    optional_i64_to_u64(row.old_file_deletions, "renamed file deletions")?,
+                    |deletions| FileLineChanges::Text {
+                        additions: 0,
+                        deletions,
+                    },
+                ),
+                new_file: whole_file(
+                    optional_i64_to_u64(row.new_file_additions, "renamed file additions")?,
+                    |additions| FileLineChanges::Text {
+                        additions,
+                        deletions: 0,
+                    },
+                ),
+            })
+        })
+        .transpose()?;
     Ok(FileDiffStat {
         path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
         lines,
+        renamed_from,
     })
 }
 

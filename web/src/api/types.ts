@@ -72,7 +72,7 @@ export type ReviewDiffPresentation =
 
 export type ReviewFileDiff = Pick<
   ReviewFileDiffResponse,
-  'kind' | 'new_mode' | 'old_mode' | 'path'
+  'kind' | 'new_mode' | 'old_mode' | 'old_path' | 'path'
 > & {
   presentation: ReviewDiffPresentation
 }
