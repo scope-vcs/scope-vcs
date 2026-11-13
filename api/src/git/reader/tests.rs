@@ -429,7 +429,37 @@ fn tag_peeling_stops_on_a_replacement_cycle() {
     let inner = g(repo, &["rev-parse", "refs/tags/inner"]);
     g(repo, &["replace", "-f", &outer, &inner]);
 
-    let reader = GitReader::open(repo).unwrap();
+    assert!(GitReader::open(repo).is_none());
+    let reader = GitReader::open_with_budget_for_tests(repo);
     assert_eq!(reader.peels_to_commit(&outer), None);
     assert_eq!(reader.revision_commit(&outer), None);
+}
+
+#[test]
+fn replacement_chains_leave_answers_to_git() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_ok(repo, &["init", "-q", "-b", "main"]);
+    let first = commit(repo, "first");
+    let tree = g(repo, &["rev-parse", "HEAD^{tree}"]);
+    g(repo, &["tag", "-a", "-m", "a", "a"]);
+    let a = g(repo, &["rev-parse", "refs/tags/a"]);
+    g(repo, &["tag", "-a", "-m", "b", "b", &tree]);
+    let b = g(repo, &["rev-parse", "refs/tags/b"]);
+    g(repo, &["tag", "-a", "-m", "c", "c", &first]);
+    let c = g(repo, &["rev-parse", "refs/tags/c"]);
+    g(repo, &["replace", "-f", &a, &b]);
+    g(repo, &["replace", "-f", &b, &c]);
+
+    assert!(GitReader::open(repo).is_none());
+    let git_answer = git(repo, &["cat-file", "-e", &format!("{a}^{{commit}}")])
+        .status
+        .success();
+    assert_eq!(
+        crate::git::command::git_contains_commit(repo, &a, &first, "checking").unwrap(),
+        git_answer
+            && git(repo, &["merge-base", "--is-ancestor", &a, &first])
+                .status
+                .success()
+    );
 }

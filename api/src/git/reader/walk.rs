@@ -68,7 +68,7 @@ pub(super) fn merge_bases(
         None,
     );
     let bases = gix_revision::merge_base(one, &[two], &mut graph);
-    if outcome.expired.get() {
+    if outcome.expired.get() || Instant::now() >= reader.deadline {
         return Err(reader.timed_out(action));
     }
     if outcome.missing.get() {

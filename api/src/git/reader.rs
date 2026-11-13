@@ -26,7 +26,7 @@ impl GitReader {
 
     fn open_with_budget(path: &FsPath, budget: Duration) -> Option<Self> {
         let repo = settled(gix::open_opts(path, gix::open::Options::isolated()))?;
-        if settled(repo.is_shallow())? {
+        if settled(repo.is_shallow())? || has_replacements(&repo)? {
             return None;
         }
         Some(Self {
@@ -34,6 +34,16 @@ impl GitReader {
             deadline: Instant::now() + budget,
             budget,
         })
+    }
+
+    #[cfg(test)]
+    fn open_with_budget_for_tests(path: &FsPath) -> Self {
+        let repo = gix::open_opts(path, gix::open::Options::isolated()).unwrap();
+        Self {
+            repo,
+            deadline: Instant::now() + RuntimeBudgets::default_git_command_timeout(),
+            budget: RuntimeBudgets::default_git_command_timeout(),
+        }
     }
 
     pub(crate) fn is_commit(&self, oid: &str) -> Option<bool> {
@@ -197,6 +207,12 @@ impl GitReader {
         }
         settled(ObjectId::from_hex(oid.as_bytes()))
     }
+}
+
+fn has_replacements(repo: &gix::Repository) -> Option<bool> {
+    let platform = settled(repo.references())?;
+    let mut replacements = settled(platform.prefixed("refs/replace/"))?;
+    Some(replacements.next().is_some())
 }
 
 fn matches_ref_prefix(name: &str, prefixes: &[&str]) -> bool {
