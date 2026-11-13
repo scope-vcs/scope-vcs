@@ -2,7 +2,6 @@ mod objects;
 mod refs;
 mod requests;
 
-use super::authorized_git_read;
 use crate::{
     error::ApiError,
     git::{
@@ -22,13 +21,14 @@ use scope_postgres::db::GitFetchReader;
 
 pub(crate) async fn prepare(
     state: &AppState,
-    headers: &HeaderMap,
-    owner: &str,
-    repo_name: &str,
+    read: super::AuthorizedGitRead,
     view: &ViewId,
     ask: &GitFetchAsk,
 ) -> Result<GitRepoHandle, ApiError> {
-    let (source, user) = authorized_git_read(state, headers, owner, repo_name, view).await?;
+    let super::AuthorizedGitRead {
+        source,
+        viewer_user_id,
+    } = read;
     let config = source.repo_config.clone();
     let access = source.context.access.clone();
     let views = source.context.views.clone();
@@ -38,7 +38,7 @@ pub(crate) async fn prepare(
         visibility_fingerprint: &scope_domain::repo_config::repo_config_fingerprint(&config)
             .map_err(ApiError::internal)?,
         view,
-        user_id: user.as_deref(),
+        user_id: viewer_user_id.as_deref(),
     };
     let selection = requests::readable_requests(state, &reader, &access, &views, ask).await?;
     let full = view == views.full();
@@ -100,7 +100,7 @@ pub(crate) async fn capabilities(
     repo_name: &str,
     view: &ViewId,
 ) -> Result<GitRepoHandle, ApiError> {
-    authorized_git_read(state, headers, owner, repo_name, view).await?;
+    super::authorized_git_read(state, headers, owner, repo_name, view).await?;
     new_folder(state, Vec::new()).await
 }
 
@@ -121,15 +121,11 @@ async fn new_folder(
                 "init",
                 "--bare",
                 "--quiet",
+                "--initial-branch=main",
                 path.to_str()
                     .ok_or_else(|| ApiError::internal_message("invalid fetch path"))?,
             ],
             "initializing fetch folder",
-        )?;
-        run_git(
-            Some(&path),
-            &["symbolic-ref", "HEAD", "refs/heads/main"],
-            "setting fetch head",
         )
     })
     .await?;

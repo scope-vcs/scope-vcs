@@ -326,18 +326,23 @@ pub(super) async fn lock_graph(
     tx: &DatabaseTransaction,
     request: &Request,
     selected_base: Option<&RequestBase>,
-) -> Result<(), PostgresError> {
+) -> Result<Request, PostgresError> {
+    let mut observed = request.clone();
     for _ in 0..GRAPH_LOCK_ATTEMPTS {
-        let ids = graph_ids(tx, request, selected_base).await?;
+        let ids = graph_ids(tx, &observed, selected_base).await?;
         let attempt = tx.begin().await?;
         for id in &ids {
             acquire_aggregate_lock(&attempt, "request", id).await?;
         }
-        if graph_ids(&attempt, request, selected_base).await? == ids {
+        let locked = request_by_id(&attempt, &request.id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("request not found"))?;
+        if graph_ids(&attempt, &locked, selected_base).await? == ids {
             attempt.commit().await?;
-            return Ok(());
+            return Ok(locked);
         }
         attempt.rollback().await?;
+        observed = locked;
     }
     Err(PostgresError::conflict(
         "request stack kept changing while it was locked; retry",
@@ -349,9 +354,6 @@ async fn graph_ids<C: ConnectionTrait>(
     request: &Request,
     selected_base: Option<&RequestBase>,
 ) -> Result<BTreeSet<String>, PostgresError> {
-    let request = request_by_id(conn, &request.id)
-        .await?
-        .ok_or_else(|| PostgresError::not_found("request not found"))?;
     let mut ids = ancestry(conn, &request.base)
         .await?
         .into_iter()

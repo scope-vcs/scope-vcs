@@ -227,10 +227,10 @@ pub(crate) fn present_commits<'a>(
     repo: &FsPath,
     oids: impl Iterator<Item = &'a str>,
 ) -> Result<BTreeSet<String>, ApiError> {
-    if !repo.join("objects").is_dir() {
+    let input = oids.map(|oid| format!("{oid}\n")).collect::<String>();
+    if input.is_empty() || !repo.join("objects").is_dir() {
         return Ok(BTreeSet::new());
     }
-    let input = oids.map(|oid| format!("{oid}\n")).collect::<String>();
     let output = git_command_output(
         Command::new("git")
             .arg("-C")

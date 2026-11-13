@@ -545,13 +545,12 @@ async fn close_draft_request_deletes_request_and_events() {
                 body: None,
                 now_unix: 4,
             },
-            store
+            &store
                 .requests()
                 .request_for_tests("req_1")
                 .await
                 .unwrap()
-                .unwrap()
-                .base_version,
+                .unwrap(),
             None,
             Vec::new(),
             super::PushedRevisionObjects {

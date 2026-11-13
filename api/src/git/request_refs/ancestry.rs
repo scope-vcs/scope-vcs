@@ -3,9 +3,22 @@ use crate::{
     git::command::{git_is_ancestor, run_git_output},
 };
 use scope_domain::requests::RequestRevisionGitFacts;
-use std::path::Path as FsPath;
+use std::{collections::BTreeSet, path::Path as FsPath};
 
-pub(super) fn ensure_request_ref_descends_from_base(
+pub(super) fn ensure_request_ref_descends_from_bases(
+    repo: &FsPath,
+    main_ancestor_oid: &str,
+    review_base_oid: &str,
+    head_oid: &str,
+) -> Result<(), ApiError> {
+    ensure_request_ref_descends_from_base(repo, main_ancestor_oid, head_oid)?;
+    if review_base_oid == main_ancestor_oid {
+        return Ok(());
+    }
+    ensure_request_ref_descends_from_base(repo, review_base_oid, head_oid)
+}
+
+fn ensure_request_ref_descends_from_base(
     repo: &FsPath,
     base_oid: &str,
     head_oid: &str,
@@ -25,6 +38,30 @@ pub(crate) fn request_revision_git_facts(
     new_head_oid: &str,
     main_oid: Option<&str>,
 ) -> Result<RequestRevisionGitFacts, ApiError> {
+    let mut present = BTreeSet::new();
+    if let Some(main_oid) = main_oid
+        && request_ref_oid_is_commit(repo, main_oid)?
+    {
+        present.insert(main_oid.to_string());
+    }
+    revision_git_facts(
+        repo,
+        &present,
+        base_oid,
+        old_head_oid,
+        new_head_oid,
+        main_oid,
+    )
+}
+
+pub(super) fn revision_git_facts(
+    repo: &FsPath,
+    present_commits: &BTreeSet<String>,
+    base_oid: &str,
+    old_head_oid: &str,
+    new_head_oid: &str,
+    main_oid: Option<&str>,
+) -> Result<RequestRevisionGitFacts, ApiError> {
     let contains_old_head = git_is_ancestor(
         repo,
         old_head_oid,
@@ -32,12 +69,13 @@ pub(crate) fn request_revision_git_facts(
         "checking whether the request push kept its old head",
     )?;
     let contained_main_oid = match main_oid {
-        Some(main_oid) if request_ref_oid_is_commit(repo, main_oid)? => {
+        Some(main_oid) if present_commits.contains(main_oid) => {
             git_merge_base(repo, main_oid, new_head_oid)?
         }
         _ => None,
     };
     let contained_main_descends_from_base = match contained_main_oid.as_deref() {
+        Some(contained_main_oid) if contained_main_oid == base_oid => true,
         Some(contained_main_oid) => git_is_ancestor(
             repo,
             base_oid,

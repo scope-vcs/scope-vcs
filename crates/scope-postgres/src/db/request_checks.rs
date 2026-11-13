@@ -512,19 +512,14 @@ pub(super) async fn evaluation_for_head<C: ConnectionTrait>(
     request_id: &str,
     head_oid: &str,
 ) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
-    let Some(request) = entities::request::Entity::find_by_id(request_id.to_string())
-        .one(conn)
-        .await?
-    else {
-        return Ok(None);
-    };
-    if request.head_oid != head_oid {
-        return Ok(None);
-    }
-    let Some(id) = request.current_check_evaluation_id else {
-        return Ok(None);
-    };
-    entities::request_check_evaluation::Entity::find_by_id(id)
+    let current_evaluation = Query::select()
+        .column(entities::request::Column::CurrentCheckEvaluationId)
+        .from(entities::request::Entity)
+        .and_where(entities::request::Column::Id.eq(request_id))
+        .and_where(entities::request::Column::HeadOid.eq(head_oid))
+        .to_owned();
+    entities::request_check_evaluation::Entity::find()
+        .filter(entities::request_check_evaluation::Column::Id.in_subquery(current_evaluation))
         .filter(entities::request_check_evaluation::Column::RequestId.eq(request_id))
         .filter(entities::request_check_evaluation::Column::HeadOid.eq(head_oid))
         .one(conn)
