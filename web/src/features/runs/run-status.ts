@@ -1,5 +1,3 @@
-import type { RepositoryRunTerminalReason } from '@/api/types.generated'
-
 export type RunTone = 'running' | 'success' | 'danger' | 'waiting' | 'inert'
 
 type RunStatus = {
@@ -9,12 +7,7 @@ type RunStatus = {
 }
 
 const TONES: Record<string, RunTone> = {
-  blocked: 'waiting',
-  canceled: 'inert',
-  canceling: 'waiting',
-  dispatching: 'waiting',
   failed: 'danger',
-  lost: 'danger',
   pending: 'waiting',
   queued: 'waiting',
   running: 'running',
@@ -22,32 +15,9 @@ const TONES: Record<string, RunTone> = {
   succeeded: 'success',
 }
 
-const LABELS: Record<string, string> = {
-  dispatching: 'starting',
-}
-
-const TERMINAL_LABELS: Record<RepositoryRunTerminalReason['kind'], string | null> = {
-  'canceled': null,
-  'execution-lost': 'execution lost',
-  'dispatch-attempts-exhausted': 'dispatch attempts exhausted',
-  'runtime-setup-failed': 'setup failed',
-  'step-failed': null,
-  'timed-out': 'timed out',
-}
-
-export function runStatus(
-  state: string,
-  terminalReason?: RepositoryRunTerminalReason | null,
-): RunStatus {
+export function runStatus(state: string): RunStatus {
   const tone = TONES[state] ?? 'waiting'
-  const reasonLabel = terminalReason
-    ? TERMINAL_LABELS[terminalReason.kind]
-    : null
-  return {
-    animated: tone === 'running',
-    label: reasonLabel ?? LABELS[state] ?? state,
-    tone,
-  }
+  return { animated: tone === 'running', label: state, tone }
 }
 
 const DURATION_JOINERS: Record<RunTone, string> = {

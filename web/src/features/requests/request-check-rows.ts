@@ -11,7 +11,6 @@ import { type RunTone, runStatus } from '../runs/run-status'
 
 export type RequestCheckRow = {
   key: string
-  provider: RequestCheckResponse['provider']
   workflow: { id: string; name: string } | null
   name: string
   leaf: string
@@ -35,23 +34,11 @@ type RequestChecksSummary = {
 const ATTENTION_ORDER: Partial<Record<RunTone, number>> = { danger: 0, running: 1, waiting: 2 }
 
 function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
-  if (check.provider === 'native') {
-    return row(
-      `native:${check.workflow_path}`,
-      'native',
-      null,
-      check.workflow_name,
-      check.run_state === 'canceled' ? 'failed' : check.run_state ?? 'pending',
-      runStatus(check.run_state ?? 'pending').label,
-      check.run_id ? { id: check.run_id } : null,
-    )
-  }
   const result = check.status
     ? githubRunResult(check.status, check.conclusion)
     : { state: 'pending', label: 'waiting' }
   return row(
-    `github:${check.name}`,
-    'github',
+    check.name,
     check.run ? { id: check.run.run_id, name: check.run.workflow_name } : null,
     check.name,
     result.state,
@@ -154,16 +141,11 @@ export function requestReviewBotRows(bots: RequestReviewBotResponse[]) {
 
 type RequestCheckGroup =
   | { kind: 'workflow'; key: string; name: string; runId: string; jobs: RequestCheckRow[] }
-  | { kind: 'native'; key: string; row: RequestCheckRow }
   | { kind: 'unassigned'; key: string; jobs: RequestCheckRow[] }
 
 export function requestCheckGroups(rows: RequestCheckRow[]): RequestCheckGroup[] {
   const groups = new Map<string, RequestCheckGroup>()
   for (const row of rows) {
-    if (row.provider === 'native') {
-      groups.set(row.key, { kind: 'native', key: row.key, row })
-      continue
-    }
     const key = row.workflow ? `workflow:${row.workflow.id}` : 'unassigned'
     let group = groups.get(key)
     if (!group) {
@@ -172,7 +154,7 @@ export function requestCheckGroups(rows: RequestCheckRow[]): RequestCheckGroup[]
         : { kind: 'unassigned', key, jobs: [] }
       groups.set(key, group)
     }
-    if (group.kind !== 'native') group.jobs.push(row)
+    group.jobs.push(row)
   }
   return [...groups.values()]
 }
@@ -190,7 +172,6 @@ function byNamePath(a: RequestCheckRow, b: RequestCheckRow) {
 
 function row(
   key: string,
-  provider: RequestCheckResponse['provider'],
   workflow: RequestCheckRow['workflow'],
   name: string,
   state: string,
@@ -201,5 +182,5 @@ function row(
   const leaf = parts.pop() ?? name
   const tone = runStatus(state).tone
   const reason = tone === 'danger' && label !== 'failed' ? label : null
-  return { key, provider, workflow, name, leaf, parents: parts, state, tone, reason, run }
+  return { key, workflow, name, leaf, parents: parts, state, tone, reason, run }
 }

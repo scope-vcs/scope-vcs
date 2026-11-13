@@ -1,6 +1,5 @@
 mod account_deletion;
 mod auth;
-mod cache_service;
 #[cfg(any(test, feature = "seeding"))]
 mod catalog_fixture;
 pub mod cleanup_queue;
@@ -54,15 +53,12 @@ mod landing_files;
 mod locks;
 mod main_push_requests;
 mod maintenance;
-mod manual_runs;
 mod merge_turns;
 #[cfg(test)]
 mod migration_tests;
-mod native_runs;
 mod object_references;
 mod outbox;
 mod projection_read_models;
-mod push_triggers;
 mod repo_change_notifications;
 mod repo_collaboration;
 #[cfg(test)]
@@ -104,35 +100,12 @@ mod request_state;
 mod request_submission_transactions;
 mod requests;
 pub use requests::PushedRevisionObjects;
-mod run_admission;
-mod run_attempt_mutations;
-mod run_attempt_persistence;
-mod run_cache_authorization;
-mod run_cache_observations;
-mod run_capacity_retry;
-mod run_details;
-mod run_dispatch;
-mod run_dispatch_authorization;
-mod run_history;
-mod run_log_reads;
-mod run_log_writes;
-mod run_operations;
-mod run_retention;
-mod run_state_sql;
-mod run_step_operations;
-mod runs;
 mod stores;
 #[cfg(any(test, feature = "seeding"))]
 mod test_support;
-mod workflow_catalogs;
 
 pub use crate::migrations::{MigrationLimits, MigrationPlan, PendingMigration};
 pub use account_deletion::{AccountDeletionChange, AccountDeletionError, DeletedAccount};
-pub use cache_service::{
-    CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
-    CacheUploadCleanupClaim, CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
-    RequestedCacheUpload,
-};
 #[cfg(any(test, feature = "seeding"))]
 pub use catalog_fixture::CatalogFixture;
 pub use clerk_users::scope_user_id_for_auth_identity;
@@ -182,12 +155,10 @@ pub use history_rows::RepositoryProjectionSource;
 use json::{decode_json, encode_json};
 use locks::acquire_aggregate_lock;
 pub use maintenance::{
-    apply_maintenance_migrations, migration_plan, migration_preflight,
-    repository_workflow_catalogs_for_maintenance, verify_schema,
+    apply_maintenance_migrations, migration_plan, migration_preflight, verify_schema,
 };
 pub use merge_turns::RepositoryMergeTurn;
-pub use native_runs::{NativeRunsAccountListing, NativeRunsAddition, NativeRunsWithdrawal};
-pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
+pub use outbox::{OutboxJobCounts, OutboxRunSummary};
 pub use repo_change_notifications::RepoChangeListener;
 pub use repo_collaboration::{
     CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
@@ -247,19 +218,9 @@ pub use request_stack::{
     RequestBasePublicationFacts, RequestParentPublicationFacts, RequestStackChildFacts,
 };
 pub use request_state::RequestStateSnapshot;
-pub use run_admission::DispatchAdmission;
-pub use run_cache_authorization::CacheAttemptAccess;
-pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePreparationCommand};
-pub use run_details::{RunAttemptDetail, RunDetail};
-pub use run_dispatch::CloudTaskStop;
-pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
-pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
-pub use run_log_writes::AppendRunLogResult;
-pub use runs::{AttemptMutation, DispatchClaim, EnqueueRunResult};
 pub use stores::{
-    AdminStore, AuthStore, CacheStore, CleanupStore, JobStore, MediaStore, MetadataStore,
-    NativeRunsStore, RepositoryStore, RequestStore, RunStore,
+    AdminStore, AuthStore, CleanupStore, JobStore, MediaStore, MetadataStore, RepositoryStore,
+    RequestStore,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::TestDatabaseTarget;
-pub use workflow_catalogs::CurrentRepositoryWorkflowCatalog;

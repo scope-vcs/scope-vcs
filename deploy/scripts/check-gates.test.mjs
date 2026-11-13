@@ -193,7 +193,7 @@ const alwaysOnGateInputs = [
   /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.(sh|asc))$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
-  /^\.github\/workflows\/(audit-railway-experiments|ci-duration|run-log-budget|main-advisories|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment(?:-cleanup)?|provision-staging-baseline)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|ci-duration|run-log-budget|main-advisories|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment(?:-cleanup)?|provision-staging-baseline)\.yml$/,
   /^deploy\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 
@@ -319,7 +319,7 @@ function releaseJobs() {
 
 function releasePath(selected, { reuse = false, resumeStaging = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false, replaceRedeployedComponent = '' } = {}) {
   const jobs = releaseJobs();
-  const outputs = Object.fromEntries(['runner_image', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
+  const outputs = Object.fromEntries(['worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
     .map((key) => [key, String(selected.includes(key))]));
   outputs.backend_selected = String(['worker', 'media_worker', 'router', 'media', 'api']
     .some((key) => outputs[key] === 'true'));
@@ -349,10 +349,7 @@ test('release paths stage applications once and leave no-op and distribution-onl
   assert.equal(cli.staging.result, 'skipped');
   assert.equal(cli['cli-deploy'].result, 'success');
   assert.equal(cli['production-health-gate'].result, 'success');
-  const runner = releasePath(['runner_image']);
-  assert.equal(runner.staging.result, 'skipped');
-  assert.equal(runner['production-health-gate'].result, 'success');
-  for (const selected of [[], ['cli'], ['runner_image']]) {
+  for (const selected of [[], ['cli']]) {
     const replacement = releasePath(selected, { replaceRedeployedComponent: 'api', failure: 'readiness-preflight' });
     assert.equal(replacement['readiness-preflight'].result, 'failure', 'explicit replacements must reach preflight');
     assert.equal(replacement['production-health-gate'].result, 'skipped');
@@ -492,85 +489,7 @@ test('release selection uses the trusted control revision before exposing a sour
   assert.match(read('.github/workflows/deploy-backend.yml'), /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
   assert.match(release.split('\njobs:')[0], /deployments: read/);
   assert.doesNotMatch(release.split('\njobs:')[0], /: write/);
-  const runner = read('.github/workflows/scope-runner-image.yml');
-  const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
-  assert.match(candidate, /if: \$\{\{ !inputs\.publish \}\}/);
-  assert.doesNotMatch(candidate, /: write/);
-  const publish = runner.slice(runner.indexOf('\n  publish:\n'));
-  assert.match(publish, /if: inputs\.publish\n/);
-  assert.match(publish, /- name: Require main for publication\n\s+run: test "\$GITHUB_REF" = refs\/heads\/main\n/);
 });
-
-test('runner base images pass the container lifecycle gate and scan before publication', () => {
-  const runner = read('.github/workflows/scope-runner-image.yml');
-  const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
-  const publish = runner.slice(runner.indexOf('\n  publish:\n'));
-  for (const lane of [candidate, publish]) {
-    assert.match(lane, /file: runner-runtime\/Dockerfile\n/);
-    assert.match(lane, /push: false\n\s+load: true/);
-    assert.match(lane, /run: dev\/checks\/runner-runtime-container --image /);
-    assert.match(lane, /run: \.github\/scripts\/scan-image\.sh docker /);
-  }
-  const verify = publish.indexOf('- name: Verify runtime process lifecycle');
-  const scan = publish.indexOf('- name: Scan verified image before publishing');
-  const push = publish.indexOf('- name: Publish verified image');
-  assert(verify >= 0 && scan > verify && push > scan);
-  assert.match(publish.slice(push), /bash deploy\/scripts\/push-image-tags\.sh <<< "\$IMAGE"/);
-});
-
-test('runner base images take packages from the live Debian archive refreshed each week', () => {
-  const runner = read('.github/workflows/scope-runner-image.yml');
-  const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
-  const publish = runner.slice(runner.indexOf('\n  publish:\n'));
-  for (const lane of [candidate, publish]) {
-    assert.match(lane, /echo "dependency_epoch=\$\(date -u \+%G-W%V\)" >> "\$GITHUB_OUTPUT"/);
-    assert.match(lane, /IMAGE_DEPENDENCY_EPOCH=\$\{\{ steps\.git\.outputs\.dependency_epoch \}\}/);
-  }
-  const dockerfile = read('runner-runtime/Dockerfile');
-  assert.doesNotMatch(dockerfile, /snapshot\.debian\.org/);
-  const aptLayers = runnerAptLayers();
-  assert.ok(aptLayers.length > 0);
-  for (const layer of aptLayers) assert.match(layer, /^RUN test -n "\$IMAGE_DEPENDENCY_EPOCH" && /);
-});
-
-test('the runner installs its fixed APT first with retries disabled, and every apt layer has a deadline', () => {
-  const layers = runnerAptLayers();
-  const scripts = layers.map(layer => {
-    const bounded = layer.match(/timeout --verbose --kill-after=(\d+)s (\d+)s sh -ec '([^']+)'/);
-    assert.ok(bounded, `${layer.slice(0, 60)} must run apt under a wall-clock deadline`);
-    assert.ok(Number(bounded[1]) + Number(bounded[2]) < 360);
-    assert.equal(layer.match(/\bapt-get\b/g).length, bounded[3].match(/\bapt-get\b/g).length);
-    return bounded[3];
-  });
-  const [bootstrap, ...rest] = layers;
-  assert.match(bootstrap, /URIs: http:\/\/deb\.debian\.org\/debian-security' 'Suites: bookworm-security'/);
-  assert.match(bootstrap, / && mv \/etc\/apt\/sources\.list\.d\/debian\.sources \/tmp\/debian\.sources /);
-  assert.match(bootstrap, /mv \/tmp\/debian\.sources \/etc\/apt\/sources\.list\.d\/debian\.sources/);
-  assert.deepEqual([...new Set(bootstrap.match(/Acquire::Retries=\d+/g))], ['Acquire::Retries=0'],
-    'the vulnerable APT must not retry while it installs its own fix');
-  assert.deepEqual(scripts[0].match(/install --yes --no-install-recommends (.+)$/)[1].trim().split(/\s+/),
-    ['"apt=${APT_VERSION}"', '"libapt-pkg6.0=${APT_VERSION}"']);
-  for (const layer of rest) assert.doesNotMatch(layer, /apt=|libapt-pkg/);
-  const dir = mkdtempSync(resolve(tmpdir(), 'scope-runner-apt-'));
-  try {
-    writeFileSync(resolve(dir, 'apt-get'), '#!/bin/sh\nprintf "%s\\n" "$*"\nexit "${APT_EXIT_STATUS:-0}"\n', { mode: 0o755 });
-    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
-    const packages = spawnSync('sh', ['-ec', scripts.at(-1)], { env, encoding: 'utf8' });
-    assert.equal(packages.status, 0, packages.stderr);
-    assert.deepEqual(packages.stdout.trim().split('\n').map(line => line.replace(/^(?:-o \S+ )+/, '').split(' ')[0]), ['update', 'upgrade', 'install']);
-    const failure = spawnSync('sh', ['-ec', scripts.at(-1)], { env: { ...env, APT_EXIT_STATUS: '100' }, encoding: 'utf8' });
-    assert.equal(failure.status, 100, failure.stderr);
-    assert.equal(failure.stdout.trim().split('\n').length, 1);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-function runnerAptLayers() {
-  const dockerfile = read('runner-runtime/Dockerfile');
-  const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
-  return runtime.replaceAll(/[ \t]*\\\n\s*/g, ' ').split('\n').filter(line => line.startsWith('RUN ') && /\bapt-get\b/.test(line));
-}
 
 test('CI runs on pull requests and Scope request branches, and Release dispatch is owned by the watcher', () => {
   const ci = read('.github/workflows/ci.yml');
@@ -688,13 +607,12 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
   assert.ok(expression, 'validation predicate must be evaluated in the assertion, not the job condition');
   const evaluate = Function('inputs', 'needs', `return (${expression.replace(/needs\.([\w-]+)/g, 'needs["$1"]')});`);
   const selectedBy = {
-    'runner-image': ['runner_image'],
     'server-validation': ['backend', 'web'],
     'cli-validation': ['cli'],
     'integration-validation': ['web', 'cli', 'media_smoke'],
   };
-  for (const mask of Array.from({ length: 32 }, (_, i) => i)) {
-    const inputs = Object.fromEntries(['runner_image', 'backend', 'web', 'cli', 'media_smoke'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
+  for (const mask of Array.from({ length: 16 }, (_, i) => i)) {
+    const inputs = Object.fromEntries(['backend', 'web', 'cli', 'media_smoke'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
     inputs.reuse_artifacts = false;
     inputs.validate_server = true;
     const needs = Object.fromEntries(Object.entries(selectedBy).map(([name, keys]) => [name, {

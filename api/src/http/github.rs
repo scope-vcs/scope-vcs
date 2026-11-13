@@ -20,13 +20,12 @@ use crate::{
     },
     http::origins::public_app_origin,
     persistence::unix_now,
-    repo_access::find_read_access,
+    repo_access::{find_read_access, require_full_view_member},
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
         github_check_results, github_pull_requests, github_pushes, github_review_bot_statuses,
         github_review_imports, github_workflow_jobs, github_workflow_runs,
-        run_inspection::require_full_view_member,
     },
 };
 use axum::{
@@ -42,7 +41,6 @@ use scope_domain::{
     },
     github_review_bots::GitHubReviewBotInput,
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
-    requests::RequestCheckProvider,
 };
 use scope_postgres::db::{GitHubWorkflowRunCursor, GitHubWorkflowRunPageQuery};
 use serde::Deserialize;
@@ -379,9 +377,7 @@ pub(crate) async fn get_github_workflow_runs(
         .github_connection(&context.record.id)
         .await?
         .filter(|_| state.github.is_some());
-    let RequestCheckProvider::GitHub(connection) =
-        RequestCheckProvider::for_repository(connection.as_ref())
-    else {
+    let Some(connection) = connection else {
         return Ok(Json(GitHubWorkflowRunsResponse {
             configured: state.github.is_some(),
             github: None,
@@ -482,7 +478,7 @@ pub(crate) async fn receive_github_webhook(
                 })
                 .await?;
             for incarnation in changed {
-                publish_connection_change(&state, &incarnation).await;
+                publish_connection_change(&state, &incarnation);
             }
         }
         GitHubWebhookEvent::ChecksChanged {
@@ -631,7 +627,7 @@ async fn changed(
     context: &RepositoryAccessContext,
     incarnation: &RepositoryIncarnation,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    publish_connection_change(state, incarnation).await;
+    publish_connection_change(state, incarnation);
     connection_response(state, context).await.map(Json)
 }
 
@@ -683,8 +679,6 @@ async fn connection_response(
     ))
 }
 
-async fn publish_connection_change(state: &AppState, incarnation: &RepositoryIncarnation) {
-    state
-        .publish_request_summary_refresh(incarnation, RepoChangeReason::GitHubConnectionChanged)
-        .await;
+fn publish_connection_change(state: &AppState, incarnation: &RepositoryIncarnation) {
+    state.publish_request_summary_refresh(incarnation, RepoChangeReason::GitHubConnectionChanged);
 }

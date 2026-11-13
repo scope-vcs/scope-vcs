@@ -192,16 +192,14 @@ pub(super) async fn complete_view_main_push(
         persisted.pool_pack,
     )
     .await;
-    state
-        .publish_request_summary_refresh(&push.incarnation, RepoChangeReason::RequestStarted)
-        .await;
+    state.publish_request_summary_refresh(&push.incarnation, RepoChangeReason::RequestStarted);
     crate::use_cases::request_checks::best_effort_evaluate_request_checks(
         state,
         &git,
         views,
         &mutation.request,
         &mutation.revision,
-        RequestCheckReviewer::for_actor(&push.author_id, &context.access, views),
+        RequestCheckReviewer::for_actor(&context.access, views),
         staging_repo,
     )
     .await;

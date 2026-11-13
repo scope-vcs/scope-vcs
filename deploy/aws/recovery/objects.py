@@ -11,8 +11,6 @@ def source_clients():
     from botocore.config import Config
     clients = {}
     for bucket, prefix in PREFIXES.items():
-        if bucket == "cache" and os.environ.get("SCOPE_RECOVERY_INCLUDE_CACHE", "").lower() != "true":
-            continue
         endpoint = required(prefix + "_ENDPOINT")
         parsed = urlsplit(endpoint)
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment:

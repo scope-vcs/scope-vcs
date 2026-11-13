@@ -5,18 +5,6 @@ use scope_domain::{
         RepoLifecycleState,
         collaboration::{RepositoryInvite, RepositoryMemberPermissions},
     },
-    runs::{
-        attempt::AttemptState,
-        job::RunJobState,
-        run::RunState,
-        source::RunSource,
-        step::{AttemptTerminalReason, StepState},
-        workflow::{
-            definition::CompiledWorkflow,
-            identity::{WorkflowIdentity, WorkflowPath},
-            revision::WorkflowRevision,
-        },
-    },
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -80,94 +68,4 @@ fn persisted_domain_shapes_roundtrip_the_recorded_json() {
         "accepted_at_unix": null,
         "revoked_at_unix": null,
     }));
-    persisted_roundtrip::<RunSource>(json!({
-        "kind": "ephemeral-git-bundle",
-        "object": {
-            "content_ref": { "GitBundleSha256": SHA256 },
-            "sha256": SHA256,
-            "git_oid": GIT_OID,
-            "git_file_mode": "100644",
-            "size_bytes": 42,
-        }
-    }));
-    persisted_roundtrip::<AttemptTerminalReason>(json!({
-        "kind": "runtime-setup-failed",
-        "exit_code": 127,
-        "message": "runtime unavailable",
-    }));
-    persisted_roundtrip::<AttemptTerminalReason>(json!({
-        "kind": "provider-capacity-rejected",
-        "message": "provider full",
-    }));
-}
-
-#[test]
-fn compiled_workflow_persisted_json_and_revision_digest_are_stable() {
-    let definition = persisted_roundtrip::<CompiledWorkflow>(json!({
-        "name": "Checks",
-        "triggers": {
-            "manual": true,
-            "push_main": true,
-        },
-        "jobs": [{
-            "id": "build",
-            "needs": [],
-            "container": {
-                "image": format!("rust@sha256:{SHA256}"),
-            },
-            "timeout_seconds": 600,
-            "caches": [],
-            "environment": {
-                "RUST_BACKTRACE": "1",
-            },
-            "steps": [{
-                "name": "Build",
-                "run": "cargo build",
-            }],
-        }],
-    }));
-    let revision = WorkflowRevision::new(
-        WorkflowIdentity::new(
-            "owner/repo",
-            WorkflowPath::parse("/.scope/runs/checks.yml").unwrap(),
-        )
-        .unwrap(),
-        definition,
-    )
-    .unwrap();
-    assert_eq!(
-        revision.digest(),
-        "0740cd8887d731cfb569b266b9228cba9edec98aff5780a0f9ee006815f62699"
-    );
-}
-
-#[test]
-fn run_state_names_match_their_persisted_encoding() {
-    fn assert_persisted_names<T: Serialize + Copy>(variants: &[T], names: &[&str]) {
-        let encoded = variants
-            .iter()
-            .map(|variant| match serde_json::to_value(variant).unwrap() {
-                Value::String(value) => value,
-                other @ Value::Null
-                | other @ Value::Bool(_)
-                | other @ Value::Number(_)
-                | other @ Value::Array(_)
-                | other @ Value::Object(_) => {
-                    panic!("run state must serialize to a string, found {other}")
-                }
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(encoded, names);
-    }
-
-    assert_persisted_names(&RunState::ALL, &RunState::ALL.map(RunState::as_str));
-    assert_persisted_names(
-        &RunJobState::ALL,
-        &RunJobState::ALL.map(RunJobState::as_str),
-    );
-    assert_persisted_names(
-        &AttemptState::ALL,
-        &AttemptState::ALL.map(AttemptState::as_str),
-    );
-    assert_persisted_names(&StepState::ALL, &StepState::ALL.map(StepState::as_str));
 }

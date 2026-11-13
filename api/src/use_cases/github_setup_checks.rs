@@ -55,12 +55,10 @@ async fn read_from_github(state: &AppState, check: &GitHubSetupCheck) -> Result<
 
 async fn publish_setup_check_change(state: &AppState, repo_id: &str) -> Result<(), ApiError> {
     if let Some(incarnation) = state.repository_incarnation(repo_id).await? {
-        state
-            .publish_request_summary_refresh(
-                &incarnation,
-                RepoChangeReason::GitHubConnectionChanged,
-            )
-            .await;
+        state.publish_request_summary_refresh(
+            &incarnation,
+            RepoChangeReason::GitHubConnectionChanged,
+        );
     }
     Ok(())
 }

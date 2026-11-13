@@ -1,85 +1,11 @@
 import type { RunActionInput } from '@/api/types'
-import type { RepositoryRunDetailResponse } from '@/api/types.generated'
-import { SeparatedMeta, SeparatedMetaItem } from '@/components/separated-meta'
-import { RelativeTimestamp } from '@/components/timestamp'
-import { Button } from '@/components/ui/button'
+import { SeparatedMeta } from '@/components/separated-meta'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
-import { LoaderCircle, RotateCcw, Square } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { runCanChange } from './repository-run-detail-model'
-import { runDisplayState, runTriggerLabel } from './run-formatting'
-import { RunDuration } from './run-duration'
 import { runJobTallies } from './run-job-tree-model'
 import { RUN_TONE_TEXT_CLASS, RunStatusIcon } from './run-status-icon'
-import { runDurationLead, runStatus } from './run-status'
-
-export function RunDetailHeader({
-  detail,
-  metadataError,
-  onCancel,
-  onRefresh,
-  onRetry,
-  params,
-  pendingAction,
-}: {
-  detail: RepositoryRunDetailResponse
-  metadataError: string | null
-  onCancel: () => void
-  onRefresh: () => void
-  onRetry: () => void
-  params: RunActionInput
-  pendingAction: 'cancel' | 'retry' | null
-}) {
-  const { run } = detail
-  const state = runDisplayState(run)
-
-  return (
-    <RunPageHeader
-      action={runCanChange(run.state) ? (
-        <Button
-          disabled={!run.can_cancel || pendingAction !== null}
-          onClick={onCancel}
-          size="sm"
-          variant="secondary"
-        >
-          {pendingAction === 'cancel' ? <LoaderCircle className="animate-spin" /> : <Square />}
-          Cancel
-        </Button>
-      ) : (
-        <Button
-          disabled={!run.can_retry || pendingAction !== null}
-          onClick={onRetry}
-          size="sm"
-          variant="secondary"
-        >
-          {pendingAction === 'retry' ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
-          Run again
-        </Button>
-      )}
-      error={metadataError}
-      jobStates={detail.jobs.map(({ job }) => job.state)}
-      name={run.workflow_name}
-      onRetry={onRefresh}
-      params={params}
-      state={state}
-    >
-      <SeparatedMetaItem>
-        <RunHeaderStatus state={state}>
-          {runDurationLead(state)}{' '}
-          <RunDuration end={run.completed_at_unix} start={run.created_at_unix} />
-        </RunHeaderStatus>
-      </SeparatedMetaItem>
-      <SeparatedMetaItem>
-        <code>{run.git_oid.slice(0, 7)}</code>
-      </SeparatedMetaItem>
-      <SeparatedMetaItem>{runTriggerLabel(run.trigger)}</SeparatedMetaItem>
-      <SeparatedMetaItem>
-        started <RelativeTimestamp value={run.created_at_unix} />
-      </SeparatedMetaItem>
-    </RunPageHeader>
-  )
-}
+import { runStatus } from './run-status'
 
 export function RunPageHeader({
   action,

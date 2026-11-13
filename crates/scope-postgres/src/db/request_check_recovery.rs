@@ -18,7 +18,7 @@ impl RequestStore {
                AND EXISTS (SELECT 1 FROM scope_request_revisions revision WHERE revision.request_id = request.id AND revision.new_head_oid = request.head_oid)
                AND (evaluation.request_id IS NULL
                     OR (evaluation.state = 'started' AND evaluation.check_private_main_oid IS NOT NULL AND evaluation.check_private_main_oid IS DISTINCT FROM head.head_oid)
-                    OR (evaluation.changes_github_workflows IS NULL AND evaluation.checks @> '[{"provider":"github"}]'::jsonb))
+                    OR (evaluation.changes_github_workflows IS NULL AND jsonb_array_length(evaluation.checks) > 0))
              ORDER BY request.id LIMIT $2"#,
              [after_id.map(str::to_string).into(), u64_to_i64(limit, "request check recovery page size")?.into()]
         )).all(self.db.as_ref()).await?

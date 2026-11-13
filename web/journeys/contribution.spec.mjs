@@ -7,7 +7,7 @@ import { after, afterEach, before, test } from 'node:test'
 import { chromium } from 'playwright'
 import { assertNoHorizontalOverflow, baseUrl, waitForClientHydration } from '../smoke/browser-smoke.mjs'
 import {
-  apiFetch, apiUrl, cliActor, closeSession, collaborators, devSessionToken, provisionClerkUsers, signIn, signInThroughForm,
+  apiFetch, cliActor, closeSession, collaborators, provisionClerkUsers, signIn, signInThroughForm,
 } from './actors.mjs'
 
 const runId = `${Date.now().toString(36)}-${process.pid}`
@@ -26,11 +26,6 @@ before(async () => {
   }
   assert.equal(existsSync(join(cli.contributor.repo, 'internal/notes.md')), false)
   assert.equal(existsSync(join(cli.maintainer.repo, 'internal/notes.md')), true)
-  assert.equal(
-    existsSync(join(cli.maintainer.repo, '.scope/runs/request.yml')),
-    false,
-    'setup: dev/update-demo already has a request workflow; run ./dev/scope-dev reset, then up --signed-in',
-  )
   browser = await chromium.launch({ headless: true })
   for (const [role, collaborator] of Object.entries(collaborators)) {
     web[role] = await signIn(browser, collaborator)
@@ -91,10 +86,6 @@ function waitForLifecycleBadge(page, label) {
 async function syncMain(actor) {
   await actor.git('switch', 'main')
   await actor.scope('pull')
-}
-
-function holdLiveUpdates(page) {
-  return page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
 }
 
 function thread(page, text) {
@@ -268,50 +259,15 @@ test('signed-in private stack navigation preserves the pin across parent extensi
   }
 })
 
-test('only the maintainer allows CI, and pending CI holds the merge', async () => {
-  const { maintainer: maintainerCli, contributor: contributorCli } = cli
-  await syncMain(maintainerCli)
-  await mkdir(join(maintainerCli.repo, '.scope/runs'), { recursive: true })
-  await writeFile(join(maintainerCli.repo, '.scope/runs/request.yml'), `name: Request gate
-on:
-  request: true
-container:
-  image: ghcr.io/scope/dev-seed-ci@sha256:0000000000000000000000000000000000000000000000000000000000000000
-timeout: 5m
-jobs:
-  verify:
-    steps:
-      - name: Verify
-        run: 'true'
-`)
-  await maintainerCli.commit('Require checks on contributed revisions')
-  await maintainerCli.scope('push', '--main', '--no-review', '--wait')
-  await syncMain(contributorCli)
-
-  const name = `journey-checks-${runId}`
-  const { id, head } = await submitRequest(name, `${name}.txt`, 'needs checks\n')
+test('a maintainer closes a contributed request in the browser', async () => {
+  const name = `journey-close-${runId}`
+  const { id } = await submitRequest(name, `${name}.txt`, 'close this\n')
   finishedRequests.closed = id
-  const { maintainer, contributor } = web
-
-  await openRequest(contributor.page, id)
-  await contributor.page.getByText('A maintainer must allow CI to run for this revision.').waitFor()
-  assert.equal(await contributor.page.getByRole('button', { name: 'Allow CI to run' }).count(), 0)
+  const { maintainer } = web
+  const maintainerCli = cli.maintainer
 
   await openRequest(maintainer.page, id)
-  await clickAfterHydration(maintainer.page.getByRole('button', { name: 'Allow CI to run' }))
-  const confirmation = maintainer.page.getByRole('alertdialog', { name: 'Allow CI to run?' })
-  await confirmation.getByText(head, { exact: true }).waitFor()
-  const beforeApproval = await apiFetch(maintainerCli.token, `${requestApi(id)}/checks`)
-  assert.equal(beforeApproval.state, 'awaiting-approval')
-  await confirmation.getByRole('button', { name: 'Allow CI to run' }).click()
-  await maintainer.page.getByRole('region', { name: 'CI' }).getByRole('link', { name: /queued/ }).waitFor()
-  await waitForLifecycleBadge(maintainer.page, 'Waiting for CI')
-  assert.equal(await maintainer.page.getByRole('button', { name: 'Merge', exact: true, disabled: false }).count(), 0)
-  const checks = await apiFetch(maintainerCli.token, `${requestApi(id)}/checks`)
-  assert.equal(checks.state, 'started')
-  assert.equal(checks.mergeability.status, 'ChecksPending')
-
-  await maintainer.page.getByRole('button', { name: 'More request actions' }).click()
+  await clickAfterHydration(maintainer.page.getByRole('button', { name: 'More request actions' }))
   await maintainer.page.getByRole('button', { name: 'Close request' }).click()
   await maintainer.page.getByRole('alertdialog').getByRole('button', { name: 'Close request' }).click()
   await waitForLifecycleBadge(maintainer.page, 'Closed')
@@ -331,17 +287,13 @@ test('review controls and completion states fit a narrow screen', async () => {
   const context = await browser.newContext({ storageState: await web.maintainer.context.storageState(), viewport })
   const page = await context.newPage()
   await openRequest(page, id)
-  for (const control of [
-    page.getByRole('button', { name: 'Allow CI to run' }),
-    page.getByRole('button', { name: 'Enable auto-merge', exact: true }),
-  ]) {
-    await control.waitFor()
-    const { x, y, width, height } = await control.boundingBox()
-    assert.ok(
-      x >= 0 && y >= 0 && x + width <= viewport.width && y + height <= viewport.height,
-      `${await control.textContent()} is off screen`,
-    )
-  }
+  const merge = page.getByRole('button', { name: 'Merge', exact: true })
+  await merge.waitFor()
+  const { x, y, width, height } = await merge.boundingBox()
+  assert.ok(
+    x >= 0 && y >= 0 && x + width <= viewport.width && y + height <= viewport.height,
+    'Merge is off screen',
+  )
   await assertNoHorizontalOverflow(page)
   for (const [label, requestId] of [['Merged', finishedRequests.merged], ['Closed', finishedRequests.closed]]) {
     await openRequest(page, requestId)
@@ -349,27 +301,4 @@ test('review controls and completion states fit a narrow screen', async () => {
     await assertNoHorizontalOverflow(page)
   }
   await context.close()
-})
-
-test('a revoked maintainer cannot allow CI from an open confirmation', async () => {
-  const { id } = await submitRequest(`journey-revoked-${runId}`, `journey-revoked-${runId}.txt`, 'revoked\n')
-  const { page } = web.maintainer
-  await holdLiveUpdates(page)
-  await openRequest(page, id)
-  const approve = page.getByRole('button', { name: 'Allow CI to run' })
-  await clickAfterHydration(approve)
-  const confirmation = page.getByRole('alertdialog', { name: 'Allow CI to run?' })
-  await confirmation.waitFor()
-
-  const owner = await devSessionToken('dev')
-  const revoked = await fetch(`${apiUrl}/v1/repos${repoPath}/members/scope_usr_dev_maintainer`, {
-    method: 'DELETE',
-    headers: { authorization: `Bearer ${owner}`, 'x-scope-cli-protocol': '1' },
-  })
-  assert.equal(revoked.ok, true, `member removal returned ${revoked.status}`)
-
-  await confirmation.getByRole('button', { name: 'Allow CI to run' }).click()
-  await confirmation.getByRole('alert').filter({ hasText: 'repo maintainer required' }).waitFor()
-  const checks = await apiFetch(owner, `${requestApi(id)}/checks`)
-  assert.equal(checks.state, 'awaiting-approval')
 })

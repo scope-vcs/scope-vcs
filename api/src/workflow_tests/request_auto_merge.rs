@@ -1,11 +1,9 @@
 use super::*;
 use scope_domain::requests::{
-    NativeRequestCheck, RecordRequestRevisionInput, RequestActorRole, RequestCheck,
-    RequestCheckContext, RequestCheckEvaluation, RequestRevisionGitFacts, StartRequestInput,
+    RecordRequestRevisionInput, RequestActorRole, RequestRevisionGitFacts, StartRequestInput,
 };
-use scope_domain::runs::run::RunState;
 use scope_domain::views::ViewId;
-use scope_postgres::db::{RecordRequestChecksCommand, SubmitRequestCommand};
+use scope_postgres::db::SubmitRequestCommand;
 
 const AUTO_REQUEST_ID: &str = "req_auto_merge";
 const AUTO_REQUEST_NAME: &str = "auto-merge";
@@ -26,7 +24,6 @@ async fn open_request_with_revision(
 ) -> (AppState, String) {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
-    allow_native_runs(&state).await;
     if author_user_id != test_owner_id() {
         state
             .metadata
@@ -132,90 +129,6 @@ async fn record_revision(
     event_id
 }
 
-async fn record_queued_request_check(state: &AppState, request_id: &str) -> String {
-    let request = state
-        .metadata
-        .requests()
-        .request_for_tests(request_id)
-        .await
-        .unwrap()
-        .unwrap();
-    let workflow = WORKFLOW.replacen("  manual: true", "  manual: true\n  request: true", 1);
-    let revisions = scope_run_config::parse_workflow_set(
-        TEST_REPO_ID,
-        [("/.scope/runs/checks.yml", workflow.as_bytes())],
-    )
-    .unwrap();
-    let revision = state
-        .metadata
-        .requests()
-        .request_revision_window(&request.id, None, 1)
-        .await
-        .unwrap()
-        .revisions
-        .into_iter()
-        .next()
-        .unwrap();
-    let context = RequestCheckContext::for_revision(&request, &revision).unwrap();
-    let checks = revisions
-        .iter()
-        .map(|revision| RequestCheck::Native(NativeRequestCheck::for_revision(revision)))
-        .collect();
-    let mut evaluation = RequestCheckEvaluation::awaiting_approval(&context, checks, 5).unwrap();
-    let mut run_source = scope_storage::content_object_for_bytes(
-        scope_storage::ContentObjectKind::GitBundle,
-        b"request check run",
-    );
-    run_source.git_oid = request.head_oid.clone();
-    let runs = evaluation
-        .native_checks()
-        .zip(&revisions)
-        .map(|(check, revision)| {
-            check
-                .run(
-                    &request,
-                    Some(&run_source),
-                    &evaluation.id,
-                    revision,
-                    &test_owner_id(),
-                    5,
-                )
-                .unwrap()
-        })
-        .collect::<Vec<_>>();
-    evaluation
-        .approve(runs.iter().map(|run| run.id.clone()).collect(), 5)
-        .unwrap();
-    assert_eq!(runs.len(), 1);
-    let run_id = runs[0].id.clone();
-    state
-        .metadata
-        .requests()
-        .record_request_checks(RecordRequestChecksCommand {
-            expected_canonical_main_oid: state
-                .metadata
-                .requests()
-                .request_check_base(TEST_REPO_ID)
-                .await
-                .unwrap(),
-            repository_incarnation: state
-                .metadata
-                .repositories()
-                .repository_record(TEST_REPO_ID)
-                .await
-                .unwrap()
-                .unwrap()
-                .incarnation(),
-            evaluation,
-            revisions,
-            runs,
-            push_to_github: false,
-        })
-        .await
-        .unwrap();
-    run_id
-}
-
 async fn auto_merge_json(
     app: axum::Router,
     method: &str,
@@ -291,7 +204,7 @@ fn push_head(repo: &FsPath, remote: &str, branch: &str, label: &str) {
     .unwrap();
 }
 
-async fn native_open_request(
+async fn pushed_request(
     label: &str,
     view: ViewId,
 ) -> (AppState, TempGitRepo, String, String, String, TestServer) {
@@ -415,15 +328,14 @@ async fn authorization_is_bound_to_the_exact_revision_and_only_the_current_inten
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn active_authorization_reports_pending_checks_and_stops_after_a_new_push() {
+async fn an_active_authorization_stops_after_a_new_push() {
     let request_id = "req_auto_merge_pending";
     let (state, revision_id) = open_owner_request(request_id).await;
-    record_queued_request_check(&state, request_id).await;
     let app = router(state.clone());
 
     let pending = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD).await;
     assert_eq!(pending["intent"]["status"], "Active");
-    assert_eq!(pending["waiting_reason"], "Waiting for CI to finish");
+    assert_eq!(pending["waiting_reason"], "Waiting for CI evaluation");
 
     record_revision(
         &state,
@@ -462,92 +374,9 @@ async fn active_authorization_reports_pending_checks_and_stops_after_a_new_push(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn terminal_run_failure_stays_stopped_after_retry() {
-    let request_id = "req_auto_merge_run_retry";
-    let (state, revision_id) = open_owner_request(request_id).await;
-    let run_id = record_queued_request_check(&state, request_id).await;
-    let app = router(state.clone());
-    let active = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD).await;
-    assert_eq!(active["intent"]["status"], "Active");
-    assert_eq!(active["waiting_reason"], "Waiting for CI to finish");
-
-    let cancellation_time = unix_now();
-    let canceled = state
-        .metadata
-        .runs()
-        .request_run_cancellation(&test_owner_id(), TEST_REPO_ID, &run_id, cancellation_time)
-        .await
-        .unwrap();
-    assert_eq!(canceled.state, RunState::Canceled);
-    let stopped = auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
-    assert_stopped(&stopped, "ChecksFailed");
-
-    let retried = state
-        .metadata
-        .runs()
-        .retry_run(
-            &test_owner_id(),
-            TEST_REPO_ID,
-            &run_id,
-            cancellation_time + 1,
-        )
-        .await
-        .unwrap();
-    assert_eq!(retried.state, RunState::Queued);
-    let still_stopped = auto_merge_json(app, "GET", request_id, None, StatusCode::OK).await;
-    assert_stopped(&still_stopped, "ChecksFailed");
-    assert_eq!(reconcile(&state, cancellation_time + 2).await, 0);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_old_heads_terminal_run_cannot_stop_the_current_authorization() {
-    let request_id = "req_auto_merge_old_run_failure";
-    let (state, second_revision_id) = open_owner_request(request_id).await;
-    let old_run_id = record_queued_request_check(&state, request_id).await;
-    let app = router(state.clone());
-    let second_head = authorize(app.clone(), request_id, &second_revision_id, SECOND_HEAD).await;
-    assert_eq!(second_head["intent"]["status"], "Active");
-
-    let third_revision_id = record_revision(
-        &state,
-        request_id,
-        &test_owner_id(),
-        Some(SECOND_HEAD),
-        THIRD_HEAD,
-        2,
-        unix_now(),
-    )
-    .await;
-    let stale_intent = auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
-    assert_stopped(&stale_intent, "RequestChanged");
-
-    let current_run_id = record_queued_request_check(&state, request_id).await;
-    assert_ne!(current_run_id, old_run_id);
-    let current = authorize(app.clone(), request_id, &third_revision_id, THIRD_HEAD).await;
-    assert_eq!(current["intent"]["status"], "Active");
-    assert_eq!(current["intent"]["head_oid"], THIRD_HEAD);
-    assert_eq!(current["waiting_reason"], "Waiting for CI to finish");
-    let current_intent_id = current["intent"]["id"].as_str().unwrap().to_string();
-
-    let canceled = state
-        .metadata
-        .runs()
-        .request_run_cancellation(&test_owner_id(), TEST_REPO_ID, &old_run_id, unix_now() + 20)
-        .await
-        .unwrap();
-    assert_eq!(canceled.state, RunState::Canceled);
-
-    let still_active = auto_merge_json(app, "GET", request_id, None, StatusCode::OK).await;
-    assert_eq!(still_active["intent"]["id"], current_intent_id);
-    assert_eq!(still_active["intent"]["status"], "Active");
-    assert_eq!(still_active["intent"]["head_oid"], THIRD_HEAD);
-    assert_eq!(still_active["waiting_reason"], "Waiting for CI to finish");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn manual_merge_fulfills_an_active_authorization() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-manual", ViewId::private()).await;
+        pushed_request("request-auto-merge-manual", ViewId::private()).await;
     let app = router(state);
     let bearer = bearer_header();
     let (_, active) = current_authorization(app.clone(), &request_id, &request_head).await;
@@ -577,7 +406,7 @@ mod reconciliation;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn successful_reconciliation_merges_the_authorized_head_once() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-native", ViewId::private()).await;
+        pushed_request("request-auto-merge-native", ViewId::private()).await;
     let app = router(state.clone());
     let (ready, scheduled) = current_authorization(app.clone(), &request_id, &request_head).await;
     assert_eq!(ready["head_oid"], request_head);
@@ -629,7 +458,7 @@ async fn successful_reconciliation_merges_the_authorized_head_once() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn public_main_advance_stops_authorization_as_needing_a_main_update() {
     let (state, source, remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-public-main-advance", ViewId::public()).await;
+        pushed_request("request-auto-merge-public-main-advance", ViewId::public()).await;
     drain_outbox(&state, "request-auto-merge-public-ready").await;
     let app = router(state.clone());
     let bearer = bearer_header();
@@ -659,7 +488,7 @@ async fn public_main_advance_stops_authorization_as_needing_a_main_update() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn private_request_pool_restores_from_the_private_replica() {
     let (state, source, remote, request_id, _head, _server) =
-        native_open_request("thin-private-snapshot", ViewId::private()).await;
+        pushed_request("thin-private-snapshot", ViewId::private()).await;
     fs::remove_dir_all(crate::git::storage::request_objects_root(
         &state,
         &test_repo_incarnation(),

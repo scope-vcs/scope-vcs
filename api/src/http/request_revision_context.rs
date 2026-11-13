@@ -179,12 +179,10 @@ pub(crate) async fn publish(
                 request.view.clone(),
             ));
     }
-    state
-        .publish_request_summary_refresh(
-            &incarnation,
-            crate::repo_events::RepoChangeReason::RequestRevised,
-        )
-        .await;
+    state.publish_request_summary_refresh(
+        &incarnation,
+        crate::repo_events::RepoChangeReason::RequestRevised,
+    );
     crate::use_cases::request_diff_stats::record_published_revision_diff_stat(
         &state,
         &incarnation,

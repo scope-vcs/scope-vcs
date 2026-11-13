@@ -3,7 +3,7 @@ use super::{
     cleanup_queue::{
         claim::claim_pending_repo_storage_cleanup,
         completion::complete_claimed_repo_storage_cleanup,
-        queue::{pending_repo_storage_cleanup_exists, queue_pending_source_blob_deletion_rows},
+        queue::pending_repo_storage_cleanup_exists,
     },
     entities,
     generated_ids::generate_id,
@@ -13,7 +13,6 @@ use super::{
     repository_rows::insert_repository,
     request_media::tombstone_repository_attachments,
     request_rows::requests_by_repo_id,
-    run_retention::{delete_orphaned_workflow_revisions, delete_run_source_references},
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -26,7 +25,6 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
     Statement, TransactionTrait,
 };
-use std::collections::BTreeSet;
 
 #[cfg(test)]
 use super::MetadataStore;
@@ -166,25 +164,6 @@ pub(super) async fn delete_locked_repository(
     lock_requests_for_repo_postgres(tx, &repo_id).await?;
     tombstone_repository_attachments(tx, &repo_id, now_unix).await?;
     delete_repository_object_references(tx, &repo_id).await?;
-    let runs = entities::run::Entity::find()
-        .filter(entities::run::Column::RepoId.eq(repo_id.clone()))
-        .all(tx)
-        .await?
-        .into_iter()
-        .map(entities::run::Model::try_into_domain)
-        .collect::<Result<Vec<_>, _>>()?;
-    let run_ids = runs.iter().map(|run| run.id.clone()).collect::<Vec<_>>();
-    let workflow_digests = runs
-        .iter()
-        .map(|run| run.workflow_revision_digest.clone())
-        .collect::<BTreeSet<_>>();
-    let retained_sources = runs
-        .iter()
-        .flat_map(|run| run.source.retained_objects())
-        .cloned()
-        .collect::<Vec<_>>();
-    delete_run_source_references(tx, &run_ids).await?;
-
     entities::repository_invite::Entity::delete_many()
         .filter(entities::repository_invite::Column::RepoId.eq(repo_id.clone()))
         .exec(tx)
@@ -221,10 +200,8 @@ pub(super) async fn delete_locked_repository(
     entities::repository::Entity::delete_by_id(repo_id.clone())
         .exec(tx)
         .await?;
-    delete_orphaned_workflow_revisions(tx, workflow_digests).await?;
 
     save_repo_effects(tx, &mutation.effects, now_unix).await?;
-    queue_pending_source_blob_deletion_rows(tx, retained_sources, now_unix).await?;
     Ok(mutation.result)
 }
 

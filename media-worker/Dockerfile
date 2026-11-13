@@ -60,7 +60,6 @@ COPY media-worker/Cargo.toml ./media-worker/Cargo.toml
 COPY media-worker/src ./media-worker/src
 COPY media-worker/tests ./media-worker/tests
 COPY repo-router ./repo-router
-COPY runner-runtime ./runner-runtime
 COPY worker ./worker
 RUN cargo chef prepare --recipe-path recipe.json
 

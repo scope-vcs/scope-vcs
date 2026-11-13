@@ -16,15 +16,10 @@ export type LogLine = {
 
 export type LogStamp = { second: number | null; group: boolean }
 
-export type LogLineOptions = {
-  anchors?: readonly string[]
-  stepsOf?: (stamps: readonly LogStamp[]) => readonly number[]
-}
-
 const MARKER = /^##\[(group|endgroup|error|warning|command)\]/
 const TIMESTAMP = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z) ?/
 
-export function readLogLines(text: string, { anchors, stepsOf }: LogLineOptions = {}): LogLine[] {
+export function readLogLines(text: string, stepsOf?: (stamps: readonly LogStamp[]) => readonly number[]): LogLine[] {
   const raw = text.split('\n')
   if (raw.at(-1) === '') raw.pop()
   if (raw[0]?.startsWith('\uFEFF')) raw[0] = raw[0].slice(1)
@@ -53,7 +48,7 @@ export function readLogLines(text: string, { anchors, stepsOf }: LogLineOptions 
     const length = marker?.[0].length ?? 0
     const line: LogLine = {
       number: index + 1,
-      anchor: anchors?.[index] ?? String(index + 1),
+      anchor: String(index + 1),
       text: length ? ansi.text.slice(length) : ansi.text,
       spans: length && ansi.spans ? dropLeading(ansi.spans, length) : ansi.spans,
       kind,
@@ -77,30 +72,6 @@ function stampedSource(content: string, seconds: Map<string, number>) {
   const second = seconds.get(whole) ?? Date.parse(`${whole}Z`) / 1_000
   seconds.set(whole, second)
   return { content: content.slice(stamp[0].length), time, second }
-}
-
-export function readStepLogLines(logs: readonly { position: number; text: string }[]): LogLine[] {
-  const anchors: string[] = []
-  let lineStarts = true
-  for (const { position, text } of logs) {
-    let newlines = 0
-    for (let start = 0; start < text.length;) {
-      if (lineStarts) anchors.push(`${position}.${newlines}`)
-      const end = text.indexOf('\n', start)
-      if (end === -1) {
-        lineStarts = false
-        break
-      }
-      lineStarts = true
-      newlines++
-      start = end + 1
-    }
-  }
-  return readLogLines(logs.map((log) => log.text).join(''), { anchors })
-}
-
-export function stepLogAnchorPosition(anchor: string) {
-  return Number.parseInt(anchor, 10)
 }
 
 export function lineByNumber(lines: readonly LogLine[], number: number) {

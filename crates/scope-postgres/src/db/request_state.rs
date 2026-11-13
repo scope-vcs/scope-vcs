@@ -190,14 +190,11 @@ async fn read_request_state(
     let suites = evaluation
         .iter()
         .flat_map(|evaluation| {
-            evaluation.checks.iter().filter_map(|check| match check {
-                scope_domain::requests::RequestCheck::GitHub { name } => {
-                    results
-                        .github
-                        .latest(&evaluation.tested_oid, name)?
-                        .check_suite_id
-                }
-                scope_domain::requests::RequestCheck::Native(_) => None,
+            evaluation.checks.iter().filter_map(|check| {
+                results
+                    .github
+                    .latest(&evaluation.tested_oid, &check.name)?
+                    .check_suite_id
             })
         })
         .collect::<Vec<_>>();

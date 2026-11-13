@@ -14,7 +14,6 @@ use scope_domain::{
     repo_config::repo_config_fingerprint as domain_repo_config_fingerprint,
     repository::{Repository, RepositoryIncarnation, git::GitHead},
     reviewed_updates::content::{ReviewedUpdateAuthorization, authorize_reviewed_update},
-    runs::trigger::PushTriggerInput,
 };
 use scope_postgres::{
     db::{
@@ -116,8 +115,6 @@ pub(crate) async fn persist_main_push(
         }
     };
     let author_id = author_id.to_string();
-    let workflow_catalog = update.workflow_catalog.clone();
-    let push_trigger_input = PushTriggerInput::from(&workflow_catalog);
 
     let content_only_candidate = update
         .previous_config
@@ -136,8 +133,6 @@ pub(crate) async fn persist_main_push(
                 author_id: author_id.clone(),
                 expected_git_frontier: expected_git_frontier.clone(),
                 update: update.clone().into_reviewed_update(),
-                workflow_catalog: workflow_catalog.clone(),
-                push_trigger_input: push_trigger_input.clone(),
                 landing_file_mutation: update.landing_file_mutation.clone(),
                 landed_request_candidates: landed_request_candidates.clone(),
                 now_unix,
@@ -220,18 +215,9 @@ pub(crate) async fn persist_main_push(
                     domain_apply_ms = domain_started.elapsed().as_millis(),
                     "applied reviewed push domain transition"
                 );
-                let workflow_catalog = workflow_catalog
-                    .rebind_source_change_version(
-                        &repo.record.id,
-                        &committed_git_head.head_oid,
-                        committed_git_head.change_version,
-                    )
-                    .map_err(DomainError::invariant_violation)?;
-                let mut mutation = RepositoryMutation::with_push_trigger_input(
+                let mut mutation = RepositoryMutation::with_landing_file_mutation(
                     committed_git_head,
-                    push_trigger_input,
                     landing_file_mutation,
-                    workflow_catalog,
                 );
                 mutation.landed_requests = Some(LandedRequestCompletion {
                     actor_user_id: author_id,

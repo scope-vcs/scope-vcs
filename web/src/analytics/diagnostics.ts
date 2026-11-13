@@ -44,7 +44,6 @@ const pendingRunLogTimings: RunLogTimingReport[] = []
 
 export type RunLogTiming = {
   trigger: 'job_click' | 'list_click' | 'page_load'
-  provider: 'github' | 'native'
   durationMs: number
   source: 'fetched' | 'stored'
   logBytes: number
@@ -150,7 +149,6 @@ export function captureRunLogTiming(timing: RunLogTiming) {
     properties: {
       duration_ms: timing.durationMs,
       log_bytes: timing.logBytes,
-      provider: timing.provider,
       route_name: 'repository_run',
       log_source: timing.source,
       trigger: timing.trigger,

@@ -215,7 +215,7 @@ async fn repository_deletion_makes_claimed_outbox_job_obsolete() {
             .expect("the rebuild job should be ready");
         claimed_tx.send(job.id.clone()).unwrap();
         deleted_rx.await.unwrap();
-        execute_outbox_job(worker_store.db.as_ref(), &job, NOW).await?;
+        execute_outbox_job(worker_store.db.as_ref(), &job).await?;
         complete_outbox_job(worker_store.db.as_ref(), &job, "worker", NOW as i64).await
     });
 

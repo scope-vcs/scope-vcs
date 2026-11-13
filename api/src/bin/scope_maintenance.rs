@@ -1,4 +1,3 @@
-use api::native_runs_maintenance::{NativeRunsCommand, run_native_runs_command_for_maintenance};
 use scope_postgres::db::{
     MigrationLimits, apply_maintenance_migrations, migration_plan, migration_preflight,
     terminate_metadata_writer_sessions, verify_schema, verify_writer_fence_available,
@@ -13,13 +12,7 @@ commands:
   verify                      require the exact migration ledger (read-only)
   fence                       probe the exclusive writer fence (read-only)
   drain-writers               terminate sessions holding the shared writer fence
-  validate-workflow-catalogs  validate pre-migration workflow inputs
   apply                       apply all pending migrations behind the writer fence
-  native-runs list            list the accounts whose repositories may use native runs
-  native-runs add <handle> [note]
-                              list an account, or replace its note
-  native-runs remove <handle> unlist an account; its waiting request CI becomes
-                              configuration errors and its unfinished runs are canceled
   help                        show this help
 
 Migration operation limits (positive seconds; independent of downtime warnings):
@@ -34,18 +27,7 @@ and worker writers closed and rerun the same revision to finish forward."#;
 async fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     let command = args.next().ok_or_else(|| anyhow::anyhow!(USAGE))?;
-    let arguments = args.collect::<Vec<_>>();
-    if command == "native-runs" {
-        let command = NativeRunsCommand::parse(&arguments).ok_or_else(|| anyhow::anyhow!(USAGE))?;
-        let database_url = maintenance_database_url()?;
-        verify_schema(database_url.clone()).await?;
-        println!(
-            "{}",
-            run_native_runs_command_for_maintenance(database_url, command).await?
-        );
-        return Ok(());
-    }
-    if !arguments.is_empty() {
+    if args.next().is_some() {
         anyhow::bail!(USAGE);
     }
     if matches!(command.as_str(), "help" | "-h" | "--help") {
@@ -84,11 +66,6 @@ async fn main() -> anyhow::Result<()> {
         "drain-writers" => {
             let terminated = terminate_metadata_writer_sessions(database_url).await?;
             println!(r#"{{"terminated":{terminated}}}"#);
-        }
-        "validate-workflow-catalogs" => {
-            let validated =
-                api::validate_repository_workflow_catalogs_for_maintenance(database_url).await?;
-            println!(r#"{{"workflowCatalogsValidated":{validated}}}"#);
         }
         "verify" => {
             verify_schema(database_url).await?;

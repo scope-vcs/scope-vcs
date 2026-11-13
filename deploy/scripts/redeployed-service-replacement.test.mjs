@@ -85,7 +85,7 @@ test('a same-image deploy replaces the receipt only for a committed patch of var
 test('the release must deploy the redeployed component', () => {
   assert.throws(() => verifyRedeployedReplacement({ ...fixture(), selected: { api: false } }),
     /does not replace api/);
-  assert.throws(() => verifyRedeployedReplacement({ ...fixture(), component: 'runner-image' }),
+  assert.throws(() => verifyRedeployedReplacement({ ...fixture(), component: 'cli-distribution' }),
     /not a Railway service/);
 });
 

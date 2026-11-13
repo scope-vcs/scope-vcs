@@ -1,10 +1,10 @@
 use super::*;
 
 #[tokio::test]
-async fn authorization_rejects_current_failed_checks_without_creating_an_intent() {
+async fn authorization_rejects_stopped_checks_without_creating_an_intent() {
     let store = postgres_store();
     let revision = open_request_with_revision(&store).await;
-    record_terminal_check_evidence(&store, false).await;
+    record_configuration_error(&store).await;
     let request = store
         .requests()
         .request_by_id("req_1")

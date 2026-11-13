@@ -1,5 +1,5 @@
 use super::Request;
-use crate::{error::DomainError, runs::validation::validate_git_oid, views::Views};
+use crate::{error::DomainError, requests::validate_git_oid, views::Views};
 use serde::{Deserialize, Serialize};
 
 pub const PRIVATE_CODE_CONFLICT_MESSAGE: &str = "This contribution conflicts with private code, so its CI cannot run. A maintainer must resolve the conflict.";

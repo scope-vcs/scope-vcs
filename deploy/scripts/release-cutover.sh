@@ -81,7 +81,6 @@ recover_cutover() {
 
 apply_cutover() {
   cutover_phase pre-migration
-  maintenance validate-workflow-catalogs
   local external_effects_started="$cutover_committed"
   cutover_phase applying
   cutover_committed=1

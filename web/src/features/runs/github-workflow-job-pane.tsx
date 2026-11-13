@@ -120,14 +120,13 @@ export function GitHubWorkflowJobPane({
   }, [job.steps, parsed, shownKey])
   const copyText = useMemo(() => (parsed ? logLinesText(parsed.lines) : ''), [parsed])
   useRunLogPaintTiming({
-    provider: 'github',
     runId,
     settled: !finished || (log.value ? log.value.state !== 'pending' : log.error !== null),
     text: visibleText,
   })
 
   function linkLine(step: number, line: LogLine) {
-    window.history.replaceState(window.history.state, '', `#${runLogLineId(key, null, step, line.anchor)}`)
+    window.history.replaceState(window.history.state, '', `#${runLogLineId(key, step, line.anchor)}`)
     setMarkedAnchor(line.anchor)
   }
 
@@ -157,7 +156,7 @@ export function GitHubWorkflowJobPane({
         empty="No output."
         focus={activeFocus}
         followTail={false}
-        lineId={(line) => runLogLineId(key, null, step, line.anchor)}
+        lineId={(line) => runLogLineId(key, step, line.anchor)}
         lines={lines}
         markedLine={markedLine}
         matches={search.byLine}
@@ -205,7 +204,6 @@ export function GitHubWorkflowJobPane({
               return (
                 <RunStepRow
                   completedAt={step.completed_at_unix}
-                  exitCode={null}
                   key={step.number}
                   name={step.name}
                   onToggle={() => toggleStep(step.number)}

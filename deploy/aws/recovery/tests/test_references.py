@@ -25,7 +25,6 @@ class ReferenceTests(unittest.TestCase):
                 CREATE TABLE scope_request_media_manifests (id TEXT, attachment_id TEXT, sha256 TEXT, size_bytes INTEGER);
                 CREATE TABLE scope_request_media_upload_parts (object_key TEXT, sha256 TEXT, plaintext_size_bytes INTEGER, attachment_id TEXT, state TEXT);
                 CREATE TABLE scope_request_media_cleanup_jobs (attachment_id TEXT, state TEXT);
-                CREATE TABLE scope_cache_objects (object_key TEXT, checksum_sha256 TEXT, size_bytes INTEGER);
             ''')
             for attachment, state in [('live', None), ('queued', 'Queued'), ('leased', 'Leased'), ('completed', 'Completed')]:
                 database.execute('INSERT INTO scope_request_media_manifests VALUES (?,?,?,?)', (attachment, attachment, 'digest', 1))

@@ -253,7 +253,6 @@ pub(super) async fn prepare_merge_on(
             expected_merge_evidence,
             origin,
             landing_file_mutation: update.landing_file_mutation.clone(),
-            workflow_catalog: update.workflow_catalog.clone(),
             update,
             staged_pack,
         },
@@ -332,12 +331,10 @@ pub(super) async fn record_integration_conflict(
         .await
     {
         Ok(_) => {
-            state
-                .publish_request_summary_refresh(
-                    &committed.incarnation(),
-                    RepoChangeReason::RequestStackUpdated,
-                )
-                .await;
+            state.publish_request_summary_refresh(
+                &committed.incarnation(),
+                RepoChangeReason::RequestStackUpdated,
+            );
             Ok(())
         }
         Err(error) if error.kind == scope_postgres::error::PostgresErrorKind::Conflict => Ok(()),

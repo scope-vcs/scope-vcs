@@ -168,8 +168,6 @@ async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &st
                 now_unix,
             )
             .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -203,8 +201,6 @@ async fn the_first_evaluation_of_a_head_stands() {
                 11,
             )
             .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -214,7 +210,6 @@ async fn the_first_evaluation_of_a_head_stands() {
         replayed.evaluation.state,
         RequestCheckEvaluationState::NoChecks
     );
-    assert!(replayed.created_runs.is_empty());
     let stored = store
         .requests()
         .request_check_evaluation("request-a", HEAD_A_CURRENT)
@@ -256,8 +251,6 @@ async fn the_first_evaluation_of_a_head_stands() {
                 .await
                 .unwrap(),
             evaluation: stored,
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -310,8 +303,6 @@ async fn a_request_that_can_no_longer_merge_records_no_evaluation() {
                 10,
             )
             .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -377,8 +368,6 @@ async fn evaluation_completion_rejects_changed_head_incarnation_and_base() {
                     10,
                 )
                 .unwrap(),
-                revisions: Vec::new(),
-                runs: Vec::new(),
                 push_to_github: false,
             })
             .await

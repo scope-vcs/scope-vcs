@@ -16,6 +16,15 @@ pub(crate) fn validate_required(label: &str, value: &str) -> Result<(), DomainEr
     Ok(())
 }
 
+pub(crate) fn validate_git_oid(label: &str, value: &str) -> Result<(), DomainError> {
+    if value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(DomainError::invalid_input(format!(
+            "{label} must be a SHA-1 hex digest"
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_body_size(
     label: &str,
     value: &str,

@@ -2,9 +2,7 @@ use super::{
     RequestStore, entities,
     github_connections::repository_github_connection,
     github_pushes::queue_github_push,
-    native_runs::lock_native_runs_availability,
     request_access::{ensure_user_exists, lock_request_repository},
-    runs::{enqueue_run_in_transaction, save_workflow_revision},
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -12,10 +10,6 @@ use scope_domain::{
         GitHubBranch, GitHubCheckResults, GitHubPushDestination, Request, RequestCheckEvaluation,
         RequestCheckPlan, RequestCheckResults, RequestCheckReviewer, RequestRevision,
         ensure_approving_reviewed_head, stop_request_auto_merge_for_check_evaluation,
-    },
-    runs::{
-        run::Run,
-        workflow::{identity::WorkflowIdentity, revision::WorkflowRevision},
     },
     views::ViewId,
 };
@@ -30,8 +24,6 @@ pub struct RecordRequestChecksCommand {
     pub repository_incarnation: scope_domain::repository::RepositoryIncarnation,
     pub expected_canonical_main_oid: Option<String>,
     pub evaluation: RequestCheckEvaluation,
-    pub revisions: Vec<WorkflowRevision>,
-    pub runs: Vec<Run>,
     pub push_to_github: bool,
 }
 
@@ -40,14 +32,12 @@ pub struct ApproveRequestChecksCommand {
     pub request_id: String,
     pub actor_user_id: String,
     pub reviewed_head_oid: String,
-    pub source: Option<scope_domain::content::SourceBlob>,
     pub now_unix: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct RequestChecksMutation {
     pub evaluation: RequestCheckEvaluation,
-    pub created_runs: Vec<Run>,
     pub queued_github_push: bool,
 }
 
@@ -64,7 +54,6 @@ impl RequestStore {
         )
         .await?;
         super::acquire_aggregate_lock(&tx, "request", &command.evaluation.request_id).await?;
-        super::run_retention::lock_run_evidence_for_recording(&tx).await?;
         let active_auto_merge = super::request_auto_merge::lock_active_intent_for_request(
             &tx,
             &command.evaluation.request_id,
@@ -124,18 +113,8 @@ impl RequestStore {
         {
             return Ok(RequestChecksMutation {
                 evaluation,
-                created_runs: Vec::new(),
                 queued_github_push: false,
             });
-        }
-        if command.evaluation.uses_native_runs() {
-            lock_native_runs_availability(&tx, &request.repo_id)
-                .await?
-                .require()?;
-        }
-        let created_runs = start_runs(&tx, &command.revisions, command.runs).await?;
-        for revision in &command.revisions {
-            save_workflow_revision(&tx, revision, command.evaluation.updated_at_unix).await?;
         }
         save_evaluation(&tx, &command.evaluation).await?;
         select_current_evaluation(&tx, &command.evaluation).await?;
@@ -152,7 +131,6 @@ impl RequestStore {
         tx.commit().await?;
         Ok(RequestChecksMutation {
             evaluation: command.evaluation,
-            created_runs,
             queued_github_push,
         })
     }
@@ -165,53 +143,22 @@ impl RequestStore {
         let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
-        super::run_retention::lock_run_evidence_for_recording(&tx).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let approver =
-            RequestCheckReviewer::for_actor(&command.actor_user_id, &repo.access, &repo.views)
-                .ok_or_else(|| {
-                    PostgresError::permission_denied(RequestCheckReviewer::refusal(
-                        &repo.access,
-                        &repo.views,
-                    ))
-                })?;
+            RequestCheckReviewer::for_actor(&repo.access, &repo.views).ok_or_else(|| {
+                PostgresError::permission_denied(RequestCheckReviewer::refusal(
+                    &repo.access,
+                    &repo.views,
+                ))
+            })?;
         ensure_approving_reviewed_head(&request, &command.reviewed_head_oid)?;
         let evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
             .await?
             .ok_or_else(|| PostgresError::not_found("request head has no recorded CI"))?;
-        evaluation.ensure_awaiting_approval()?;
-        let mut revisions = Vec::new();
-        for check in evaluation.native_checks() {
-            let identity = WorkflowIdentity::new(
-                &request.repo_id,
-                scope_domain::runs::workflow::identity::WorkflowPath::parse(
-                    check.workflow_path.clone(),
-                )
-                .map_err(PostgresError::invalid_input)?,
-            )
-            .map_err(PostgresError::invalid_input)?;
-            let revision = entities::workflow_revision::Entity::find_by_id(
-                check.workflow_revision_digest.clone(),
-            )
-            .one(&tx)
-            .await?
-            .ok_or_else(|| PostgresError::internal_message("recorded check revision is missing"))?
-            .try_into_domain(identity)?;
-            revisions.push(revision);
-        }
         let RequestCheckPlan {
             evaluation,
-            runs,
             push_to_github,
-        } = RequestCheckPlan::approve(
-            &request,
-            command.source.as_ref(),
-            evaluation,
-            &revisions,
-            approver,
-            command.now_unix,
-        )?;
-        let created_runs = start_runs(&tx, &revisions, runs).await?;
+        } = RequestCheckPlan::approve(&request, evaluation, approver, command.now_unix)?;
         save_evaluation(&tx, &evaluation).await?;
         let queued_github_push = push_to_github
             && queue_tested_commit_push(&tx, &request, &evaluation.tested_oid, command.now_unix)
@@ -219,7 +166,6 @@ impl RequestStore {
         tx.commit().await?;
         Ok(RequestChecksMutation {
             evaluation,
-            created_runs,
             queued_github_push,
         })
     }
@@ -348,13 +294,11 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
     repo_id: &str,
     evaluations: impl IntoIterator<Item = &'a RequestCheckEvaluation>,
 ) -> Result<RequestCheckResults, PostgresError> {
-    let mut run_ids = Vec::new();
     let mut tested_oids = Vec::new();
     let mut github_request_ids = Vec::new();
     let mut check_commit_request_ids = Vec::new();
     let mut github_destinations = Vec::new();
     for evaluation in evaluations {
-        run_ids.extend(evaluation.run_ids().map(str::to_string));
         if evaluation.asks_github() {
             github_destinations.push(evaluation.github_repository_id);
             tested_oids.push(evaluation.tested_oid.clone());
@@ -365,17 +309,6 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
             }
         }
     }
-    let native_runs = if run_ids.is_empty() {
-        Vec::new()
-    } else {
-        entities::run::Entity::find()
-            .filter(entities::run::Column::Id.is_in(run_ids))
-            .all(conn)
-            .await?
-            .into_iter()
-            .map(|row| Ok((row.id.clone(), row.try_into_domain()?.state)))
-            .collect::<Result<_, PostgresError>>()?
-    };
     let connection = if tested_oids.is_empty() {
         None
     } else {
@@ -419,7 +352,6 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
         super::request_check_commits::canonical_main_oid(conn, repo_id).await?
     };
     Ok(RequestCheckResults {
-        native_runs,
         github,
         withheld_from_github,
         canonical_main_oid,
@@ -442,28 +374,6 @@ async fn requests_outside_anyone_view<C: ConnectionTrait>(
         .into_iter()
         .map(|row| row.id)
         .collect())
-}
-
-async fn start_runs(
-    tx: &DatabaseTransaction,
-    revisions: &[WorkflowRevision],
-    runs: Vec<Run>,
-) -> Result<Vec<Run>, PostgresError> {
-    let mut created = Vec::new();
-    for run in runs {
-        let revision = revisions
-            .iter()
-            .find(|revision| revision.digest() == run.workflow_revision_digest)
-            .cloned()
-            .ok_or_else(|| {
-                PostgresError::invalid_input("request check run has no workflow revision")
-            })?;
-        let stored = enqueue_run_in_transaction(tx, run, revision).await?;
-        if stored.inserted {
-            created.push(stored.run);
-        }
-    }
-    Ok(created)
 }
 
 pub(super) async fn stop_auto_merge_for_evaluation(

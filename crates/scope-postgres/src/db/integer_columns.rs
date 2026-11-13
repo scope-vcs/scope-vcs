@@ -41,17 +41,3 @@ pub(crate) fn optional_i64_to_u64(
 ) -> Result<Option<u64>, PostgresError> {
     value.map(|value| i64_to_u64(value, field)).transpose()
 }
-
-pub(crate) fn optional_u32_to_i32(
-    value: Option<u32>,
-    field: &str,
-) -> Result<Option<i32>, PostgresError> {
-    value.map(|value| u32_to_i32(value, field)).transpose()
-}
-
-pub(crate) fn optional_i32_to_u32(
-    value: Option<i32>,
-    field: &str,
-) -> Result<Option<u32>, PostgresError> {
-    value.map(|value| i32_to_u32(value, field)).transpose()
-}

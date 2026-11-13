@@ -89,7 +89,7 @@ async fn source_blobs_are_checked_against_their_recorded_size_and_digest() {
     let too_large = source_blob_bytes(&store, &blob, 4).await.unwrap_err();
     assert_eq!(too_large.kind, ObjectStoreErrorKind::PayloadTooLarge);
 
-    let expected = content_object_for_bytes(ContentObjectKind::Blob, b"expected");
+    let expected = content_object_for_bytes(b"expected");
     store
         .put(&object_key(&expected), b"unexpected".to_vec())
         .await

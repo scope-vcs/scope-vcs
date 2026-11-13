@@ -1,12 +1,9 @@
 use super::*;
 use crate::requests::RequestMergeSubject;
-use crate::{
-    requests::{
-        GitHubCheckResults, NativeRequestCheck, RequestCheck, RequestCheckEvaluationState,
-        RequestCheckResults,
-        fixtures::{self},
-    },
-    runs::run::RunState,
+use crate::requests::{
+    GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus, RequestCheck,
+    RequestCheckEvaluationState, RequestCheckResults,
+    fixtures::{self},
 };
 
 mod check_failures;
@@ -20,25 +17,32 @@ fn check_context(request_id: &str, head: &str) -> crate::requests::RequestCheckC
 
 const OTHER_HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-fn results(native_runs: &[(&str, RunState)]) -> RequestCheckResults {
+fn results(conclusions: &[(&str, GitHubCheckConclusion)]) -> RequestCheckResults {
     RequestCheckResults {
-        native_runs: native_runs
-            .iter()
-            .map(|(id, state)| (id.to_string(), *state))
-            .collect(),
-        github: GitHubCheckResults::Connected(Vec::new()),
+        github: GitHubCheckResults::Connected(
+            conclusions
+                .iter()
+                .enumerate()
+                .map(|(index, (name, conclusion))| GitHubCheckRun {
+                    commit_oid: HEAD.into(),
+                    name: name.to_string(),
+                    github_check_run_id: index as u64 + 1,
+                    status: GitHubCheckStatus::Completed,
+                    conclusion: Some(*conclusion),
+                    details_url: None,
+                    check_suite_id: None,
+                })
+                .collect(),
+        ),
         withheld_from_github: Vec::new(),
         canonical_main_oid: None,
     }
 }
 
-fn native_check(digest: char, run_id: Option<&str>) -> RequestCheck {
-    RequestCheck::Native(NativeRequestCheck {
-        workflow_path: "/.scope/runs/test.yml".into(),
-        workflow_name: "test".into(),
-        workflow_revision_digest: digest.to_string().repeat(64),
-        run_id: run_id.map(str::to_string),
-    })
+fn github_check(name: char) -> RequestCheck {
+    RequestCheck {
+        name: name.to_string(),
+    }
 }
 
 fn open_request() -> Request {
@@ -249,10 +253,10 @@ fn unattended_readiness_requires_an_explicit_evaluation() {
 }
 
 #[test]
-fn terminal_run_failure_is_a_stop_even_if_a_retry_could_later_succeed() {
+fn failed_check_is_a_stop_even_if_a_retry_could_later_succeed() {
     let evaluation = RequestCheckEvaluation::started(
         &check_context("request_1", HEAD),
-        vec![native_check('c', Some("run_1"))],
+        vec![github_check('c')],
         3,
     )
     .unwrap();
@@ -261,7 +265,7 @@ fn terminal_run_failure_is_a_stop_even_if_a_retry_could_later_succeed() {
             "request_1",
             HEAD,
             Some(&evaluation),
-            &results(&[("run_1", RunState::Failed)]),
+            &results(&[("c", GitHubCheckConclusion::Failure)]),
         ),
         RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksFailed)
     );
@@ -270,7 +274,7 @@ fn terminal_run_failure_is_a_stop_even_if_a_retry_could_later_succeed() {
             "request_1",
             HEAD,
             Some(&evaluation),
-            &results(&[("run_1", RunState::Succeeded)]),
+            &results(&[("c", GitHubCheckConclusion::Success)]),
         ),
         RequestAutoMergeReadiness::Ready
     );
@@ -350,7 +354,7 @@ fn review_bots_hold_auto_merge_without_stopping_it() {
 fn evaluation_state_is_explicitly_interpreted() {
     let awaiting = RequestCheckEvaluation::awaiting_approval(
         &check_context("request_1", HEAD),
-        vec![native_check('d', None)],
+        vec![github_check('d')],
         3,
     )
     .unwrap();

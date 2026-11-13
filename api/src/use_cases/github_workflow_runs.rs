@@ -167,9 +167,7 @@ pub(crate) async fn publish(
         .repository_incarnation(&connection.repository_id)
         .await?
     {
-        state
-            .publish_github_workflow_runs_change(&incarnation)
-            .await;
+        state.publish_github_workflow_runs_change(&incarnation);
     }
     Ok(())
 }

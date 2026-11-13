@@ -2,10 +2,8 @@ mod cleanup;
 mod compaction;
 mod control;
 mod dependencies;
-mod execution;
 mod git_repo;
 mod health;
-mod run_events;
 mod settings;
 
 use crate::{
@@ -71,9 +69,6 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
     let Some(metadata) = connect_worker_or_wait(&settings, &health).await else {
         return Ok(());
     };
-    let product_analytics = scope_product_analytics::ProductAnalytics::from_env(
-        scope_product_analytics::EventSource::Worker,
-    )?;
     let backend = object_backend_from_env(&settings.data_dir)?;
     let encryption_key = EncryptionKey::new(
         "primary",
@@ -89,12 +84,7 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
         settings.git_segment_store.clone(),
     )?);
     let result = tokio::try_join!(
-        control::run(
-            metadata.clone(),
-            product_analytics.clone(),
-            settings.clone(),
-            health.clone(),
-        ),
+        control::run(metadata.clone(), settings.clone(), health.clone()),
         compaction::run(
             metadata.clone(),
             git_segment_store.clone(),
@@ -110,7 +100,6 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
         ),
         cleanup::run(metadata, object_store, health),
     );
-    product_analytics.shutdown().await;
     result.map(|_| ())
 }
 

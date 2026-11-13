@@ -51,10 +51,10 @@ pub(crate) async fn approve_request_checks(
 ) -> Result<Json<RequestChecksResponse>, ApiError> {
     let (user, repo, request) =
         actor_request(&state, &headers, &owner, &repo_name, &request_id).await?;
-    RequestCheckReviewer::for_actor(&user.id, &repo.access, &repo.views).ok_or_else(|| {
+    RequestCheckReviewer::for_actor(&repo.access, &repo.views).ok_or_else(|| {
         ApiError::forbidden(RequestCheckReviewer::refusal(&repo.access, &repo.views))
     })?;
-    let mutation = crate::use_cases::request_check_sources::approve(
+    let mutation = request_checks::approve(
         &state,
         &repo.record,
         &request,
@@ -240,35 +240,19 @@ fn check_response(
     results: &RequestCheckResults,
     check_runs: &HashMap<u64, GitHubWorkflowRunReference>,
 ) -> RequestCheckResponse {
-    match check {
-        RequestCheck::Native(check) => RequestCheckResponse::Native {
-            workflow_path: check.workflow_path.clone(),
-            workflow_name: check.workflow_name.clone(),
-            run_id: check.run_id.clone(),
-            run_state: check.run_id.as_deref().and_then(|run_id| {
-                results
-                    .native_runs
-                    .iter()
-                    .find(|(id, _)| id == run_id)
-                    .map(|(_, state)| (*state).into())
-            }),
-        },
-        RequestCheck::GitHub { name } => {
-            let run = results.github.latest(tested_oid, name);
-            RequestCheckResponse::GitHub {
-                name: name.clone(),
-                status: run.map(|run| run.status.into()),
-                conclusion: run.and_then(|run| run.conclusion.map(Into::into)),
-                details_url: run.and_then(|run| run.details_url.clone()),
-                run: run.and_then(|run| {
-                    let workflow_run = check_runs.get(&run.check_suite_id?)?;
-                    Some(RequestCheckRunResponse {
-                        run_id: workflow_run.github_run_id.to_string(),
-                        workflow_name: workflow_run.workflow_name.clone(),
-                        job_id: run.github_check_run_id.to_string(),
-                    })
-                }),
-            }
-        }
+    let run = results.github.latest(tested_oid, &check.name);
+    RequestCheckResponse {
+        name: check.name.clone(),
+        status: run.map(|run| run.status.into()),
+        conclusion: run.and_then(|run| run.conclusion.map(Into::into)),
+        details_url: run.and_then(|run| run.details_url.clone()),
+        run: run.and_then(|run| {
+            let workflow_run = check_runs.get(&run.check_suite_id?)?;
+            Some(RequestCheckRunResponse {
+                run_id: workflow_run.github_run_id.to_string(),
+                workflow_name: workflow_run.workflow_name.clone(),
+                job_id: run.github_check_run_id.to_string(),
+            })
+        }),
     }
 }

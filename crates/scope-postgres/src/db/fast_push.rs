@@ -1,6 +1,6 @@
 use super::{
     RepositoryMutationResult, RepositoryStore, acquire_aggregate_lock,
-    content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_content_push},
+    content_push_transactions::accept_and_persist_content_push,
     entities,
     request_merge::{LandedRequestCandidate, LandedRequestCompletion, complete_main_push},
 };
@@ -15,7 +15,6 @@ use {
         reviewed_updates::content::{
             ReviewedUpdateAuthorization, ReviewedUpdateInput, authorize_reviewed_update,
         },
-        runs::catalog::RepositoryWorkflowCatalog,
     },
 };
 
@@ -27,8 +26,6 @@ pub struct ApplyContentOnlyPushCommand {
     pub expected_git_frontier: scope_domain::repository::git::GitFrontier,
     pub update: ReviewedUpdateInput,
     pub landing_file_mutation: RepositoryLandingFileMutation,
-    pub workflow_catalog: RepositoryWorkflowCatalog,
-    pub push_trigger_input: scope_domain::runs::trigger::PushTriggerInput,
     pub landed_request_candidates: Vec<LandedRequestCandidate>,
     pub now_unix: u64,
 }
@@ -50,8 +47,6 @@ impl RepositoryStore {
             expected_git_frontier,
             update,
             landing_file_mutation,
-            workflow_catalog,
-            push_trigger_input,
             landed_request_candidates,
             now_unix,
         } = command;
@@ -121,18 +116,9 @@ impl RepositoryStore {
             current_config: &current_config,
             proposed_config: &update.config,
         })?;
-        let persisted = accept_and_persist_content_push(
-            &tx,
-            repo_row,
-            update,
-            RepositoryContentSnapshots {
-                landing_file_mutation,
-                workflow_catalog,
-            },
-            push_trigger_input,
-            now_unix,
-        )
-        .await?;
+        let persisted =
+            accept_and_persist_content_push(&tx, repo_row, update, landing_file_mutation, now_unix)
+                .await?;
         let completed_landed_requests = complete_main_push(
             &tx,
             &repo_id,

@@ -122,7 +122,6 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
       query('SELECT * FROM scope_request_revision_context_receipts;', role, false);
       query('INSERT INTO scope_request_revision_context_receipts SELECT * FROM scope_request_revision_context_receipts WHERE false;', role, false);
     }
-    query('SELECT * FROM scope_cache_objects FOR UPDATE; DELETE FROM scope_cache_uploads;', 'scope_api');
     query('SELECT * FROM scope_cli_sessions;', 'scope_run_worker', false);
     query('UPDATE scope_repository_members SET repo_id = repo_id;', 'scope_run_worker', false);
     query('UPDATE scope_repositories SET owner_user_id = owner_user_id;', 'scope_run_worker', false);
@@ -155,8 +154,6 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     });
     query('DELETE FROM scope_repository_history_entries;', 'scope_run_worker', false);
     query("SELECT 1 AS present FROM scope_request_discussions WHERE id = 'missing' AND request_id = 'missing';", 'scope_media_api');
-    query('SELECT * FROM scope_cache_objects;', 'scope_run_worker', false);
-    query('SELECT * FROM scope_runs;', 'scope_media_worker', false);
     query('SELECT * FROM scope_auth_identities;', 'scope_media_api', false);
     query("INSERT INTO scope_metadata_locks(key) VALUES ('role-canary') ON CONFLICT DO NOTHING; SELECT * FROM scope_metadata_locks FOR SHARE;", 'scope_media_worker');
     const restoredSchema = execFileSync(join(pgBin, 'pg_dump'), ['-h', dir, '-U', 'postgres', '-d', 'postgres', '--schema-only', '--no-owner', '--no-acl'], { encoding: 'utf8' });

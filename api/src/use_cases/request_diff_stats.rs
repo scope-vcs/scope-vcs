@@ -87,7 +87,7 @@ pub(crate) async fn record_published_revision_diff_stat(
     staging_repo: Option<&Path>,
 ) {
     match record_revision_diff_stat(state, incarnation, request, revision, staging_repo).await {
-        Ok(true) => publish_recorded(state, incarnation, request).await,
+        Ok(true) => publish_recorded(state, incarnation, request),
         Ok(false) => {}
         Err(error) => tracing::warn!(
             request_id = %request.id,
@@ -214,17 +214,9 @@ fn listed_path(path: &BoundedNulField) -> Option<ScopePath> {
         .and_then(|path| ScopePath::parse(format!("/{path}")).ok())
 }
 
-async fn publish_recorded(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    request: &Request,
-) {
-    state
-        .publish_request_summary_refresh(incarnation, RepoChangeReason::RequestRevised)
-        .await;
-    state
-        .publish_known_request_state_refresh(incarnation, request)
-        .await;
+fn publish_recorded(state: &AppState, incarnation: &RepositoryIncarnation, request: &Request) {
+    state.publish_request_summary_refresh(incarnation, RepoChangeReason::RequestRevised);
+    state.publish_known_request_state_refresh(incarnation, request);
 }
 
 #[derive(Clone, Default)]
@@ -308,7 +300,7 @@ async fn record_current_revision_diff_stat(
     let incarnation = repo.incarnation();
     let recorded = record_revision_diff_stat(state, &incarnation, request, &revision, None).await?;
     if recorded {
-        publish_recorded(state, &incarnation, request).await;
+        publish_recorded(state, &incarnation, request);
     }
     Ok(recorded)
 }

@@ -422,7 +422,7 @@ export type RequestReviewBotState = "not_started" | "working" | "commented" | "c
 
 export type RequestReviewBotResponse = { login: string, required: boolean, state: RequestReviewBotState, };
 
-export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null, run: RequestCheckRunResponse | null, };
+export type RequestCheckResponse = { name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null, run: RequestCheckRunResponse | null, };
 
 export type RequestCheckRunResponse = { run_id: string, workflow_name: string, job_id: string, };
 
@@ -502,67 +502,7 @@ export type CreateRequestDiscussionReplyRequest = { body_markdown: string, clien
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
-export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "GitHubWorkflowRunChanged": { github_run_id: number, } } | { "RepositoryChanged": { reason: string, } } | { "RequestStateChanged": { request_id: string, view: ViewId, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
-
-export type RunChangeKind = "Created" | "StatusChanged" | "LogsAppended";
-
-export type RunState = "queued" | "dispatching" | "running" | "succeeded" | "failed" | "canceled" | "lost";
-
-export type RunResponse = { id: string, repository_id: string, workflow_name: string, git_oid: string, state: RunState, cancellation_requested: boolean, logs_truncated: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, };
-
-export type RunLogResponse = { attempt_id: string, job_key: string, step_index: number, position: number, sequence: number, text: string, created_at_unix: number, };
-
-export type RepositoryRunTrigger = "manual" | "push-main" | "request";
-
-export type RepositoryRunSummaryResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, can_cancel: boolean, can_retry: boolean, };
-
-export type RepositoryRunListItemResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, };
-
-export type RepositoryRunJobState = "blocked" | "queued" | "dispatching" | "running" | "succeeded" | "failed" | "skipped" | "canceled" | "lost";
-
-export type RepositoryRunJobResponse = { key: string, needs: Array<string>, pinned_container_image: string, state: RepositoryRunJobState, created_at_unix: number, started_at_unix: number | null, updated_at_unix: number, completed_at_unix: number | null, };
-
-export type RepositoryRunJobDetailResponse = { job: RepositoryRunJobResponse, attempts: Array<RepositoryRunAttemptResponse>, opening_step: RepositoryRunStepRefResponse | null, };
-
-export type AttemptState = "dispatching" | "running" | "succeeded" | "failed" | "canceled" | "lost";
-
-export type StepState = "pending" | "running" | "succeeded" | "failed" | "canceled" | "lost" | "skipped";
-
-export type RepositoryRunTerminalReason = { "kind": "step-failed", step_index: number, exit_code: number, } | { "kind": "timed-out", step_index: number | null, } | { "kind": "canceled", step_index: number | null, } | { "kind": "execution-lost", step_index: number | null, } | { "kind": "dispatch-attempts-exhausted" } | { "kind": "runtime-setup-failed", exit_code: number, message: string, };
-
-export type CacheColdReason = "metadata-missing" | "metadata-invalid" | "metadata-not-ready";
-
-export type CachePreparation = { "kind": "exact" } | { "kind": "compatible" } | { "kind": "cold", reason: CacheColdReason, };
-
-export type CacheFinalState = "pending" | "ready" | "evicted";
-
-export type RepositoryRunCacheObservationResponse = { workflow_path: string, job_key: string, identity_digest: string, preparation: CachePreparation, key_ms: number, metadata_ms: number, size_bytes: number, download_verify_ms: number, sync_ms: number, extraction_ms: number, prepare_ms: number, final_state: CacheFinalState, finalize_ms: number | null, };
-
-export type RepositoryRunCacheSetupObservationResponse = { authorization_ms: number, wall_ms: number, };
-
-export type RepositoryRunCacheResponse = { name: string, path: string, observation: RepositoryRunCacheObservationResponse | null, };
-
-export type RepositoryRunStepResponse = { index: number, name: string, command: string, state: StepState, started_at_unix: number | null, completed_at_unix: number | null, exit_code: number | null, };
-
-export type RepositoryRunAttemptResponse = { id: string, number: number, external_run_id: string | null, runtime_version: string, state: AttemptState, created_at_unix: number, started_at_unix: number | null, completed_at_unix: number | null, terminal_reason: RepositoryRunTerminalReason | null, cache_setup: RepositoryRunCacheSetupObservationResponse | null, caches: Array<RepositoryRunCacheResponse>, steps: Array<RepositoryRunStepResponse>, };
-
-export type RepositoryRunWorkflowResponse = { key: string, name: string, path: string, manual: boolean, push_main: boolean, job_count: number, };
-
-export type RepositoryRunWorkflowListResponse = { workflows: Array<RepositoryRunWorkflowResponse>, native_runs_available: boolean, };
-
-export type RepositoryRunHistoryPageResponse = { runs: Array<RepositoryRunListItemResponse>, next_cursor: string | null, };
-
-export type RepositoryRunLogResponse = { byte_length: number, position: number, sequence: number, text: string, created_at_unix: number, };
-
-export type RepositoryRunStepLogPageResponse = { logs: Array<RepositoryRunLogResponse>, next_after: number, logs_truncated: boolean, has_earlier: boolean, has_more: boolean, };
-
-export type RepositoryRunStepRefResponse = { attempt_id: string, step_index: number, };
-
-export type RepositoryRunOpeningStepResponse = { attempt_id: string, step_index: number, log: RepositoryRunStepLogPageResponse, };
-
-export type RepositoryRunOpeningResponse = { job_key: string, step: RepositoryRunOpeningStepResponse | null, };
-
-export type RepositoryRunDetailResponse = { run: RepositoryRunSummaryResponse, jobs: Array<RepositoryRunJobDetailResponse>, opening: RepositoryRunOpeningResponse | null, };
+export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "GitHubWorkflowRunChanged": { github_run_id: number, } } | { "RepositoryChanged": { reason: string, } } | { "RequestStateChanged": { request_id: string, view: ViewId, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } };
 
 export const ApiRouteTemplates = {
   account: "/v1/account",
@@ -593,13 +533,6 @@ export const ApiRouteTemplates = {
   repoGitHubRunImport: "/v1/repos/{owner}/{repo}/github/run-import",
   githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
-  repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",
-  repoRuns: "/v1/repos/{owner}/{repo}/runs",
-  repoRunDetail: "/v1/repos/{owner}/{repo}/runs/{run_id}/detail",
-  repoRunEvents: "/v1/repos/{owner}/{repo}/runs/{run_id}/events",
-  repoRunStepLogs: "/v1/repos/{owner}/{repo}/runs/{run_id}/attempts/{attempt_id}/steps/{step_index}/logs",
-  repoRunCancel: "/v1/repos/{owner}/{repo}/runs/{run_id}/cancel",
-  repoRunRetry: "/v1/repos/{owner}/{repo}/runs/{run_id}/retry",
   repoPushIntents: "/v1/repos/{owner}/{repo}/push-intents",
   repoRequests: "/v1/repos/{owner}/{repo}/requests",
   repoRequestQueue: "/v1/repos/{owner}/{repo}/requests/queue",

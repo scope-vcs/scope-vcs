@@ -6,14 +6,7 @@ use super::seeds::{
 };
 use super::write_bodies::{WriteBodies, write_bodies};
 use scope_api_contract::routes;
-use scope_domain::{
-    runs::{
-        log::RunLogChunk,
-        run::{Run, RunRequest},
-        source::{RunSource, RunTrigger},
-    },
-    views::{ViewDefinition, Views},
-};
+use scope_domain::views::{ViewDefinition, Views};
 
 pub(super) const OUTSIDER_SUBJECT: &str = "user_isolation_outsider";
 pub(super) const OUTSIDER_EMAIL: &str = "isolation-outsider@example.com";
@@ -33,7 +26,6 @@ const DISCUSSION_BODY: &str = "repo a discussion body marker";
 const REPLY_BODY: &str = "repo a reply body marker";
 const ATTACHMENT_FILENAME: &str = "repo-a-attachment-marker.jpg";
 const INVITE_EMAIL: &str = "repo-a-invitee-marker@example.com";
-const LOG_TEXT: &str = "repo a run log marker";
 const REPO_DESCRIPTION: &str = "repo a description marker";
 
 pub(super) struct RepoA {
@@ -160,62 +152,6 @@ async fn push_request_revision(state: &AppState, source: &FsPath) -> String {
     )
     .unwrap();
     git_head_oid(source)
-}
-
-async fn active_run(state: &AppState) -> (String, String) {
-    allow_native_runs(state).await;
-    let revision = scope_run_config::parse_workflow(
-        "/.scope/runs/isolation.yml",
-        workflow_named("Isolation").as_bytes(),
-    )
-    .unwrap()
-    .into_revision(TEST_REPO_ID.to_string())
-    .unwrap();
-    let run_id = "run_isolation".to_string();
-    let attempt_id = format!("attempt_{run_id}");
-    let mut source =
-        scope_storage::content_object_for_bytes(ContentObjectKind::GitBundle, b"isolation bundle");
-    source.git_oid = "b".repeat(40);
-    let run = Run::new(
-        RunRequest {
-            id: run_id.clone(),
-            idempotency_key: format!("manual:{run_id}"),
-            workflow: revision.workflow().clone(),
-            workflow_revision_digest: revision.digest().to_string(),
-            trigger: RunTrigger::Manual,
-            requested_by_user_id: Some(test_owner_id()),
-            source: RunSource::ephemeral_git_bundle(source).unwrap(),
-        },
-        1,
-    )
-    .unwrap();
-    let runs = state.metadata.runs();
-    runs.enqueue_run(run, revision).await.unwrap();
-    let (bootstrap, attempt_token) = ("c".repeat(64), "d".repeat(64));
-    runs.dispatch_job(
-        &run_id,
-        "checks",
-        scope_domain::runs::job::AttemptDispatch {
-            attempt_id: attempt_id.clone(),
-            token_hash: bootstrap.clone(),
-            runtime_version: "test-runtime".to_string(),
-            lease_expires_at_unix: 100,
-        },
-        2,
-    )
-    .await
-    .unwrap();
-    runs.claim_runtime(&attempt_id, &bootstrap, &attempt_token, 3, 100)
-        .await
-        .unwrap();
-    runs.start_attempt_step(&attempt_id, &attempt_token, 0, 4)
-        .await
-        .unwrap();
-    let chunk = RunLogChunk::new(&attempt_id, 0, 1, LOG_TEXT.to_string(), 5).unwrap();
-    runs.append_attempt_log(chunk, &attempt_token, 5)
-        .await
-        .unwrap();
-    (run_id, attempt_id)
 }
 
 fn grant_agents(state: &AppState) {
@@ -397,7 +333,6 @@ pub(super) async fn repo_a() -> RepoA {
     )
     .await;
     let sessions = owner_json(&state, "GET", routes::CLI_SESSIONS, None).await;
-    let (run_id, attempt_id) = active_run(&state).await;
     let history = owner_json(
         &state,
         "GET",
@@ -440,12 +375,8 @@ pub(super) async fn repo_a() -> RepoA {
             "session_id",
             sessions["sessions"][0]["id"].as_str().unwrap().to_string(),
         ),
-        ("run_id", run_id),
-        ("attempt_id", attempt_id),
-        ("step_index", "0".to_string()),
-        ("job_id", "1".to_string()),
-        ("github_run_id", GITHUB_RUN_ID.to_string()),
-        ("github_job_id", GITHUB_JOB_ID.to_string()),
+        ("run_id", GITHUB_RUN_ID.to_string()),
+        ("job_id", GITHUB_JOB_ID.to_string()),
         ("entry_id", entry_id.clone()),
         ("token", UNHELD_CAPABILITY.to_string()),
         ("user_code", UNHELD_CAPABILITY.to_string()),
@@ -455,8 +386,6 @@ pub(super) async fn repo_a() -> RepoA {
         "view",
         "derivative_id",
         "part_number",
-        "step_index",
-        "job_id",
         "token",
         "user_code",
         "device_code",
@@ -506,7 +435,6 @@ pub(super) async fn repo_a() -> RepoA {
         REPLY_BODY,
         ATTACHMENT_FILENAME,
         INVITE_EMAIL,
-        LOG_TEXT,
     ]
     .map(str::to_string)
     .to_vec();

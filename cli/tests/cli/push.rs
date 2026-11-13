@@ -72,19 +72,6 @@ fn push_validates_config_before_login() {
     );
 }
 
-#[test]
-fn push_through_a_narrower_view_refuses_wait_before_touching_local_config() {
-    let dir = TempDir::new("narrower-push-preconditions");
-    create_repo_with_head(dir.path());
-    add_unreachable_remote(dir.path(), "agent");
-    scope_failure(
-        dir.path(),
-        ["push", "--main", "--wait"],
-        "--wait follows workflows on main, but pushes through the agent view land as a request",
-    );
-    assert!(!repo_config_path(dir.path()).unwrap().exists());
-}
-
 fn add_unreachable_remote(cwd: &std::path::Path, view: &str) {
     run_git(
         cwd,

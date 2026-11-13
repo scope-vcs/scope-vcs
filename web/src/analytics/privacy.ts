@@ -40,7 +40,6 @@ const errorKinds = new Set([
 const errorOrigins = new Set(['hydration', 'promise', 'route', 'window'])
 const webVitalMetrics = new Set(['CLS', 'INP', 'LCP'])
 const runLogTriggers = new Set(['job_click', 'list_click', 'page_load'])
-const runLogProviders = new Set(['github', 'native'])
 const runLogSources = new Set(['fetched', 'stored'])
 
 type PageViewContext = {
@@ -210,14 +209,12 @@ function sanitizeRunLogTiming(capture: CaptureResult) {
     duration_ms: durationMs,
     log_bytes: logBytes,
     log_source: logSource,
-    provider,
     route_name: routeName,
     trigger,
   } = capture.properties
   if (
     routeName !== 'repository_run'
     || !isMember(runLogTriggers, trigger)
-    || !isMember(runLogProviders, provider)
     || !isMember(runLogSources, logSource)
     || !isCount(durationMs)
     || durationMs > 600_000
@@ -231,7 +228,6 @@ function sanitizeRunLogTiming(capture: CaptureResult) {
     duration_ms: durationMs,
     log_bytes: logBytes,
     log_source: logSource,
-    provider,
     route_name: routeName,
     trigger,
   })

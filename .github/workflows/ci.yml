@@ -59,7 +59,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      runner_image: ${{ steps.plan.outputs.runner_image }}
       backend_selected: ${{ steps.plan.outputs.backend_selected }}
       web: ${{ steps.plan.outputs.web }}
       cli: ${{ steps.plan.outputs.cli }}
@@ -144,12 +143,9 @@ jobs:
     if: ${{ !cancelled() && needs.plan.result == 'success' }}
     permissions:
       contents: read
-      deployments: write
-      id-token: write
       packages: write
     uses: ./.github/workflows/validate.yml
     with:
-      runner_image: ${{ needs.plan.outputs.runner_image }}
       backend: ${{ needs.plan.outputs.backend_selected }}
       web: ${{ needs.plan.outputs.web }}
       cli: ${{ needs.plan.outputs.cli }}

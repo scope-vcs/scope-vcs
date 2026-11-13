@@ -508,45 +508,18 @@ fn checks_outcome_label(checks: &RequestChecksResponse) -> &'static str {
 }
 
 fn check_line(check: &RequestCheckResponse) -> String {
-    match check {
-        RequestCheckResponse::Native {
-            workflow_name,
-            run_id,
-            run_state,
-            ..
-        } => {
-            let state = match (run_id, run_state) {
-                (Some(run_id), Some(state)) => format!(
-                    "{} ({})",
-                    crate::run::run_state_label(*state),
-                    terminal_text(run_id)
-                ),
-                (Some(run_id), None) => format!("run is gone ({})", terminal_text(run_id)),
-                (None, _) => "not started".to_string(),
-            };
-            format!("  {} · Scope · {state}", terminal_text(workflow_name))
-        }
-        RequestCheckResponse::GitHub {
-            name,
-            status,
-            conclusion,
-            details_url,
-            run: _,
-        } => {
-            let state = match (status, conclusion) {
-                (None, _) => "no run yet",
-                (Some(_), Some(conclusion)) => github_conclusion_label(*conclusion),
-                (Some(status), None) => github_status_label(*status),
-            };
-            match details_url {
-                Some(url) => format!(
-                    "  {} · GitHub · {state} ({})",
-                    terminal_text(name),
-                    terminal_text(url)
-                ),
-                None => format!("  {} · GitHub · {state}", terminal_text(name)),
-            }
-        }
+    let state = match (check.status, check.conclusion) {
+        (None, _) => "no run yet",
+        (Some(_), Some(conclusion)) => github_conclusion_label(conclusion),
+        (Some(status), None) => github_status_label(status),
+    };
+    match &check.details_url {
+        Some(url) => format!(
+            "  {} · GitHub · {state} ({})",
+            terminal_text(&check.name),
+            terminal_text(url)
+        ),
+        None => format!("  {} · GitHub · {state}", terminal_text(&check.name)),
     }
 }
 

@@ -50,10 +50,6 @@ const routeDecisions = {
   '/$owner/$repo/runs': excluded,
   '/$owner/$repo/runs/': tracked('repository_runs', '/repository/runs'),
   '/$owner/$repo/runs/$runId': tracked('repository_run', '/repository/run'),
-  '/$owner/$repo/runs/workflows/$workflow': tracked(
-    'repository_workflow',
-    '/repository/workflow',
-  ),
   '/$owner/$repo/settings': tracked(
     'repository_settings',
     '/repository/settings',

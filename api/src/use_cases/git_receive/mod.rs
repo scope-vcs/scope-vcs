@@ -440,13 +440,11 @@ async fn complete_main_push(
             ));
         RepoChangeReason::PushReceived
     };
-    state
-        .publish_repo_change(
-            &committed_incarnation,
-            committed_git_head.change_version,
-            event,
-        )
-        .await;
+    state.publish_repo_change(
+        &committed_incarnation,
+        committed_git_head.change_version,
+        event,
+    );
     tracing::info!(
         owner,
         repo = repo_name,
@@ -458,12 +456,10 @@ async fn complete_main_push(
     );
     if persisted.completed_landed_requests > 0 {
         state.wakeups.auto_merge.notify_one();
-        state
-            .publish_request_summary_refresh(
-                &committed_incarnation,
-                RepoChangeReason::RequestMerged,
-            )
-            .await;
+        state.publish_request_summary_refresh(
+            &committed_incarnation,
+            RepoChangeReason::RequestMerged,
+        );
     }
     if !first_push {
         crate::use_cases::request_checks::renew_stale_check_commits_in_background(

@@ -12,7 +12,6 @@ use scope_postgres::db::RecordRequestChecksCommand;
 use std::sync::atomic::Ordering;
 
 mod carrier_pull_requests;
-mod native_runs_list;
 mod public;
 mod public_repositories;
 mod review_bot_gate;
@@ -181,7 +180,7 @@ pub(super) async fn record_github_checks(
     )
     .unwrap()
     .evaluation;
-    evaluation.approve(Vec::new(), unix_now()).unwrap();
+    evaluation.approve(unix_now()).unwrap();
     requests
         .record_request_checks(RecordRequestChecksCommand {
             expected_canonical_main_oid: requests.request_check_base(TEST_REPO_ID).await.unwrap(),
@@ -191,8 +190,6 @@ pub(super) async fn record_github_checks(
                 .unwrap()
                 .unwrap(),
             evaluation,
-            revisions: Vec::new(),
-            runs: Vec::new(),
             push_to_github: false,
         })
         .await
@@ -232,7 +229,7 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
     assert_eq!(
         waiting["checks"],
         serde_json::json!([{
-            "provider": "github", "name": REQUIRED_CHECK,
+            "name": REQUIRED_CHECK,
             "status": null, "conclusion": null, "details_url": null, "run": null,
         }])
     );

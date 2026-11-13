@@ -3,8 +3,6 @@ use super::*;
 pub(crate) mod outbox_job {
     use super::*;
 
-    pub(crate) const PUSH_MAIN_TRIGGER_WORKFLOW_SCHEMA_VERSION: u8 = 5;
-
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_outbox_jobs")]
     pub(crate) struct Model {
@@ -50,40 +48,6 @@ pub(crate) mod outbox_job {
                 payload: encode_json(&serde_json::json!({
                     "repo_id": repo_id,
                     "repo_version": repo_version,
-                }))?,
-                state: "ready".to_string(),
-                attempts: 0,
-                next_run_at_unix: u64_to_i64(now, "outbox next run time")?,
-                lease_owner: None,
-                lease_expires_at_unix: None,
-                last_error: None,
-                created_at_unix: u64_to_i64(now, "outbox creation time")?,
-                updated_at_unix: u64_to_i64(now, "outbox update time")?,
-                completed_at_unix: None,
-                traceparent: QueuedTrace::current().into_column(),
-            })
-        }
-
-        pub(crate) fn push_main_trigger_evaluation(
-            id: String,
-            job_kind: &str,
-            repo_id: &str,
-            head: &scope_domain::repository::git::GitHead,
-            input: &scope_domain::runs::trigger::PushTriggerInput,
-            now: u64,
-        ) -> Result<Self, PostgresError> {
-            let repo_version = head.change_version;
-            let persisted_repo_version = u64_to_i64(repo_version, "repository change version")?;
-            Ok(Self {
-                id,
-                idempotency_key: format!("{job_kind}:{repo_id}:{repo_version}"),
-                kind: job_kind.to_string(),
-                repo_id: repo_id.to_string(),
-                repo_version: persisted_repo_version,
-                payload: encode_json(&serde_json::json!({
-                    "workflow_schema_version": PUSH_MAIN_TRIGGER_WORKFLOW_SCHEMA_VERSION,
-                    "head": head,
-                    "input": input,
                 }))?,
                 state: "ready".to_string(),
                 attempts: 0,

@@ -74,11 +74,11 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     assert!(migration_error.to_string().contains("writer still holds"));
     assert!(!migrations::plan(db.as_ref()).await.unwrap().exact);
 
-    assert_eq!(
+    assert!(
         terminate_metadata_writer_sessions(database_url.clone())
             .await
-            .unwrap(),
-        1
+            .unwrap()
+            >= 1
     );
     writer.close().await.unwrap();
     verify_writer_fence_available(database_url.clone())

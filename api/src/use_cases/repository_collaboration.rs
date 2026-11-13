@@ -44,8 +44,6 @@ pub(crate) async fn publish_committed_mutation<T>(
     mutation: RepositoryCollaborationMutation<T>,
     reason: RepoChangeReason,
 ) -> T {
-    state
-        .publish_repo_change(&mutation.incarnation, mutation.change_version, reason)
-        .await;
+    state.publish_repo_change(&mutation.incarnation, mutation.change_version, reason);
     mutation.value
 }

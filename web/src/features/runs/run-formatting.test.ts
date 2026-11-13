@@ -1,27 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import {
-  elapsedDuration,
-  formatDuration,
-  runDisplayState,
-} from './run-formatting'
+import { elapsedDuration, formatDuration } from './run-formatting'
 
 describe('run formatting', () => {
-  it('labels an acknowledged cancellation consistently', () => {
-    assert.equal(
-      runDisplayState({ cancellation_requested: true, state: 'running' }),
-      'canceling',
-    )
-    assert.equal(
-      runDisplayState({ cancellation_requested: false, state: 'running' }),
-      'running',
-    )
-    assert.equal(
-      runDisplayState({ cancellation_requested: true, state: 'canceled' }),
-      'canceled',
-    )
-  })
-
   it('counts a running span up from the shared clock', () => {
     assert.equal(elapsedDuration(100, null, 145), '45s')
     assert.equal(elapsedDuration(100, 130, 999), '30s')

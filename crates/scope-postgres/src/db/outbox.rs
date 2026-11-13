@@ -28,13 +28,6 @@ pub struct OutboxRunSummary {
     pub claimed: usize,
     pub completed: usize,
     pub failed: usize,
-    pub created_runs: Vec<OutboxCreatedRun>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OutboxCreatedRun {
-    pub repo_id: String,
-    pub run_id: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -56,13 +49,11 @@ pub(super) struct ClaimedOutboxJob {
     pub(super) queued_trace: QueuedTrace,
 }
 
-fn outbox_time(
-    current_time: &dyn Fn() -> Result<u64, String>,
-) -> Result<(u64, i64), PostgresError> {
+fn outbox_time(current_time: &dyn Fn() -> Result<u64, String>) -> Result<i64, PostgresError> {
     let now_unix = current_time().map_err(|error| {
         PostgresError::internal_message(format!("outbox clock failed: {error}"))
     })?;
-    Ok((now_unix, unix_timestamp_i64(now_unix)?))
+    unix_timestamp_i64(now_unix)
 }
 
 impl JobStore {
@@ -81,7 +72,7 @@ impl JobStore {
         let mut summary = OutboxRunSummary::default();
         let mut last_completion = None;
         for _ in 0..limit {
-            let (claim_now_unix, claim_now) = outbox_time(current_time)?;
+            let claim_now = outbox_time(current_time)?;
             let Some(job) =
                 claim_next_ready_job(db.as_ref(), worker_id, DEFAULT_JOB_LEASE_SECS, claim_now)
                     .await?
@@ -100,24 +91,20 @@ impl JobStore {
             job.queued_trace.link(&span);
 
             let tx = db.begin().await?;
-            match execute_outbox_job(&tx, &job, claim_now_unix)
-                .instrument(span.clone())
-                .await
-            {
-                Ok(created_runs) => {
-                    let (_, completion_now) = outbox_time(current_time)?;
+            match execute_outbox_job(&tx, &job).instrument(span.clone()).await {
+                Ok(()) => {
+                    let completion_now = outbox_time(current_time)?;
                     complete_outbox_job(&tx, &job, worker_id, completion_now)
                         .instrument(span)
                         .await?;
                     tx.commit().await?;
                     last_completion = Some(completion_now);
                     summary.completed += 1;
-                    summary.created_runs.extend(created_runs);
                 }
                 Err(error) => {
                     tx.rollback().await?;
                     let message = error.message;
-                    let (_, completion_now) = outbox_time(current_time)?;
+                    let completion_now = outbox_time(current_time)?;
                     let attempts = next_retry_attempt(job.attempts)?;
                     let entered = span.enter();
                     if is_terminal_retry_attempt(attempts) {
@@ -278,28 +265,13 @@ where
     }))
 }
 
-async fn execute_outbox_job<C>(
-    conn: &C,
-    job: &ClaimedOutboxJob,
-    now_unix: u64,
-) -> Result<Vec<OutboxCreatedRun>, PostgresError>
+async fn execute_outbox_job<C>(conn: &C, job: &ClaimedOutboxJob) -> Result<(), PostgresError>
 where
     C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
 {
     match job.kind.as_str() {
         PROJECTION_READ_MODEL_REBUILD => {
-            rebuild_live_projection_read_models_for_job(conn, job).await?;
-            Ok(Vec::new())
-        }
-        super::push_triggers::JOB_KIND => {
-            let run_ids = super::push_triggers::evaluate(conn, job, now_unix).await?;
-            Ok(run_ids
-                .into_iter()
-                .map(|run_id| OutboxCreatedRun {
-                    repo_id: job.repo_id.clone(),
-                    run_id,
-                })
-                .collect())
+            rebuild_live_projection_read_models_for_job(conn, job).await
         }
         kind => Err(PostgresError::internal_message(format!(
             "unknown outbox job kind {kind}"
@@ -436,7 +408,7 @@ where
         )
         .col_expr(
             entities::outbox_job::Column::LastError,
-            Expr::value(Some(persisted_error.clone())),
+            Expr::value(Some(persisted_error)),
         )
         .col_expr(
             entities::outbox_job::Column::UpdatedAtUnix,
@@ -452,16 +424,6 @@ where
         return Err(PostgresError::conflict(
             "outbox job lease was lost before failure handling",
         ));
-    }
-    if terminal && job.kind == super::push_triggers::JOB_KIND {
-        super::push_triggers::mark_terminal_failure(
-            &tx,
-            job,
-            persisted_error,
-            u64::try_from(now)
-                .map_err(|_| PostgresError::internal_message("outbox failure time is negative"))?,
-        )
-        .await?;
     }
     tx.commit().await.map_err(PostgresError::internal)
 }

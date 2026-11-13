@@ -39,31 +39,6 @@ pub struct GitPushCredentials {
 }
 
 impl RepositoryStore {
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_repository_incarnation"))]
-    pub async fn run_repository_incarnation(
-        &self,
-        run_id: &str,
-        expected_repository_id: &str,
-    ) -> Result<Option<RepositoryIncarnation>, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let Some(run) = entities::run::Entity::find_by_id(run_id).one(&tx).await? else {
-            tx.commit().await?;
-            return Ok(None);
-        };
-        if run.repo_id != expected_repository_id {
-            tx.commit().await?;
-            return Ok(None);
-        }
-        let repository = entities::repository::Entity::find_by_id(&run.repo_id)
-            .one(&tx)
-            .await?;
-        tx.commit().await?;
-        repository
-            .map(|row| RepositoryIncarnation::new(row.id, row.incarnation_id))
-            .transpose()
-            .map_err(PostgresError::internal)
-    }
-
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_push_state"))]
     pub async fn git_push_state(
         &self,

@@ -149,17 +149,13 @@ pub(crate) async fn refresh_commit_checks(
                         && read.check.commit_oid == commit_oid
                 })
         {
-            state
-                .publish_request_summary_refresh(
-                    &incarnation,
-                    RepoChangeReason::RequestChecksUpdated,
-                )
-                .await;
+            state.publish_request_summary_refresh(
+                &incarnation,
+                RepoChangeReason::RequestChecksUpdated,
+            );
         }
         for request in associated {
-            state
-                .publish_known_request_state_refresh(&incarnation, &request)
-                .await;
+            state.publish_known_request_state_refresh(&incarnation, &request);
         }
     }
     state.wakeups.auto_merge.notify_one();

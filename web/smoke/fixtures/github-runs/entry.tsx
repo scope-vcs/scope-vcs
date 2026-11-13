@@ -224,7 +224,6 @@ function EmptyRuns() {
   return <main className="px-4 pt-7">
     <RunsCiEmptyState
       github={{ configured, loadSettings, startAuthorization }}
-      hasWorkflows={false}
       params={{ owner: owner!, repo: repo! }}
     />
   </main>

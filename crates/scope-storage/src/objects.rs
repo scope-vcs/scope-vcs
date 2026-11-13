@@ -3,8 +3,8 @@ mod source_blobs;
 
 pub use error::{ObjectStoreError, ObjectStoreErrorKind, ensure_object_size, object_too_large};
 pub use source_blobs::{
-    ContentObjectKind, content_object_for_bytes, delete_source_blobs, object_key,
-    put_content_object, put_source_blob, source_blob_bytes, write_source_blob_to,
+    content_object_for_bytes, delete_source_blobs, object_key, put_source_blob, source_blob_bytes,
+    write_source_blob_to,
 };
 
 use crate::{

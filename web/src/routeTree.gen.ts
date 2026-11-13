@@ -35,7 +35,6 @@ import { Route as OwnerRepoRunsRunIdRouteImport } from './routes/$owner.$repo.ru
 import { Route as OwnerRepoUpdatesEntryIdRouteImport } from './routes/$owner.$repo.updates.$entryId'
 import { Route as OwnerRepoRequestsRequestIdDiscussionRouteImport } from './routes/$owner.$repo.requests.$requestId._discussion'
 import { Route as OwnerRepoRequestsRequestIdChangesRouteImport } from './routes/$owner.$repo.requests.$requestId.changes'
-import { Route as OwnerRepoRunsWorkflowsWorkflowRouteImport } from './routes/$owner.$repo.runs.workflows.$workflow'
 import { Route as OwnerRepoRequestsRequestIdDiscussionIndexRouteImport } from './routes/$owner.$repo.requests.$requestId._discussion.index'
 
 const IndexRoute = IndexRouteImport.update({
@@ -169,12 +168,6 @@ const OwnerRepoRequestsRequestIdChangesRoute =
     path: '/changes',
     getParentRoute: () => OwnerRepoRequestsRequestIdRoute,
   } as any)
-const OwnerRepoRunsWorkflowsWorkflowRoute =
-  OwnerRepoRunsWorkflowsWorkflowRouteImport.update({
-    id: '/workflows/$workflow',
-    path: '/workflows/$workflow',
-    getParentRoute: () => OwnerRepoRunsRoute,
-  } as any)
 const OwnerRepoRequestsRequestIdDiscussionIndexRoute =
   OwnerRepoRequestsRequestIdDiscussionIndexRouteImport.update({
     id: '/',
@@ -207,7 +200,6 @@ export interface FileRoutesByFullPath {
   '/$owner/$repo/requests/': typeof OwnerRepoRequestsIndexRoute
   '/$owner/$repo/runs/': typeof OwnerRepoRunsIndexRoute
   '/$owner/$repo/requests/$requestId/changes': typeof OwnerRepoRequestsRequestIdChangesRoute
-  '/$owner/$repo/runs/workflows/$workflow': typeof OwnerRepoRunsWorkflowsWorkflowRoute
   '/$owner/$repo/requests/$requestId/': typeof OwnerRepoRequestsRequestIdDiscussionIndexRoute
 }
 export interface FileRoutesByTo {
@@ -231,7 +223,6 @@ export interface FileRoutesByTo {
   '/$owner/$repo/requests': typeof OwnerRepoRequestsIndexRoute
   '/$owner/$repo/runs': typeof OwnerRepoRunsIndexRoute
   '/$owner/$repo/requests/$requestId/changes': typeof OwnerRepoRequestsRequestIdChangesRoute
-  '/$owner/$repo/runs/workflows/$workflow': typeof OwnerRepoRunsWorkflowsWorkflowRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -261,7 +252,6 @@ export interface FileRoutesById {
   '/$owner/$repo/runs/': typeof OwnerRepoRunsIndexRoute
   '/$owner/$repo/requests/$requestId/_discussion': typeof OwnerRepoRequestsRequestIdDiscussionRouteWithChildren
   '/$owner/$repo/requests/$requestId/changes': typeof OwnerRepoRequestsRequestIdChangesRoute
-  '/$owner/$repo/runs/workflows/$workflow': typeof OwnerRepoRunsWorkflowsWorkflowRoute
   '/$owner/$repo/requests/$requestId/_discussion/': typeof OwnerRepoRequestsRequestIdDiscussionIndexRoute
 }
 export interface FileRouteTypes {
@@ -291,7 +281,6 @@ export interface FileRouteTypes {
     | '/$owner/$repo/requests/'
     | '/$owner/$repo/runs/'
     | '/$owner/$repo/requests/$requestId/changes'
-    | '/$owner/$repo/runs/workflows/$workflow'
     | '/$owner/$repo/requests/$requestId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -315,7 +304,6 @@ export interface FileRouteTypes {
     | '/$owner/$repo/requests'
     | '/$owner/$repo/runs'
     | '/$owner/$repo/requests/$requestId/changes'
-    | '/$owner/$repo/runs/workflows/$workflow'
   id:
     | '__root__'
     | '/'
@@ -344,7 +332,6 @@ export interface FileRouteTypes {
     | '/$owner/$repo/runs/'
     | '/$owner/$repo/requests/$requestId/_discussion'
     | '/$owner/$repo/requests/$requestId/changes'
-    | '/$owner/$repo/runs/workflows/$workflow'
     | '/$owner/$repo/requests/$requestId/_discussion/'
   fileRoutesById: FileRoutesById
 }
@@ -546,13 +533,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerRepoRequestsRequestIdChangesRouteImport
       parentRoute: typeof OwnerRepoRequestsRequestIdRoute
     }
-    '/$owner/$repo/runs/workflows/$workflow': {
-      id: '/$owner/$repo/runs/workflows/$workflow'
-      path: '/workflows/$workflow'
-      fullPath: '/$owner/$repo/runs/workflows/$workflow'
-      preLoaderRoute: typeof OwnerRepoRunsWorkflowsWorkflowRouteImport
-      parentRoute: typeof OwnerRepoRunsRoute
-    }
     '/$owner/$repo/requests/$requestId/_discussion/': {
       id: '/$owner/$repo/requests/$requestId/_discussion/'
       path: '/'
@@ -626,13 +606,11 @@ const OwnerRepoRequestsRouteWithChildren =
 interface OwnerRepoRunsRouteChildren {
   OwnerRepoRunsRunIdRoute: typeof OwnerRepoRunsRunIdRoute
   OwnerRepoRunsIndexRoute: typeof OwnerRepoRunsIndexRoute
-  OwnerRepoRunsWorkflowsWorkflowRoute: typeof OwnerRepoRunsWorkflowsWorkflowRoute
 }
 
 const OwnerRepoRunsRouteChildren: OwnerRepoRunsRouteChildren = {
   OwnerRepoRunsRunIdRoute: OwnerRepoRunsRunIdRoute,
   OwnerRepoRunsIndexRoute: OwnerRepoRunsIndexRoute,
-  OwnerRepoRunsWorkflowsWorkflowRoute: OwnerRepoRunsWorkflowsWorkflowRoute,
 }
 
 const OwnerRepoRunsRouteWithChildren = OwnerRepoRunsRoute._addFileChildren(

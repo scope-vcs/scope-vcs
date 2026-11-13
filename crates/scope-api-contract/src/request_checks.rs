@@ -1,6 +1,6 @@
 use crate::{
     GitOid, RequestCheckEvaluationState, RequestChecksOutcome, RequestMergeabilityResponse,
-    RequestReviewBotState, RunState, wire::wire_enum,
+    RequestReviewBotState, wire::wire_enum,
 };
 use scope_domain::requests::{
     GitHubCheckConclusion as DomainGitHubCheckConclusion,
@@ -38,25 +38,13 @@ wire_enum!(
 );
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "provider", rename_all = "kebab-case")]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-pub enum RequestCheckResponse {
-    Native {
-        workflow_path: String,
-        workflow_name: String,
-        run_id: Option<String>,
-        run_state: Option<RunState>,
-    },
-    #[serde(rename = "github")]
-    #[cfg_attr(feature = "ts", ts(rename = "github"))]
-    GitHub {
-        name: String,
-        status: Option<GitHubCheckStatus>,
-        conclusion: Option<GitHubCheckConclusion>,
-        details_url: Option<String>,
-        run: Option<RequestCheckRunResponse>,
-    },
+pub struct RequestCheckResponse {
+    pub name: String,
+    pub status: Option<GitHubCheckStatus>,
+    pub conclusion: Option<GitHubCheckConclusion>,
+    pub details_url: Option<String>,
+    pub run: Option<RequestCheckRunResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

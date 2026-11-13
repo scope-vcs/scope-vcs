@@ -57,13 +57,6 @@ async fn deletion(store: &crate::db::MetadataStore, path: &str) -> MergePreparat
     MergePreparation {
         expected_git_frontier: repo.git_head.as_ref().unwrap().frontier(),
         expected_repo_change_version: repo.record.change_version,
-        workflow_catalog: RepositoryWorkflowCatalog::captured(
-            "owner/repo",
-            DELETED_HEAD,
-            repo.record.change_version + 1,
-            Vec::new(),
-        )
-        .unwrap(),
         update,
     }
 }

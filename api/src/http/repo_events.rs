@@ -204,8 +204,7 @@ async fn stream_event_for_user(
             | RepoChangeKind::GitHubWorkflowRunChanged { .. }
             | RepoChangeKind::RepositoryChanged { .. }
             | RepoChangeKind::RequestTimelineChanged { .. }
-            | RepoChangeKind::RequestAttachmentChanged { .. }
-            | RepoChangeKind::RunChanged { .. } => policy.activity_stream_visible,
+            | RepoChangeKind::RequestAttachmentChanged { .. } => policy.activity_stream_visible,
         };
         if !visible {
             return Ok(None);
@@ -242,8 +241,7 @@ fn event_for_access(
 
     if matches!(
         &event.kind,
-        RepoChangeKind::RunChanged { .. }
-            | RepoChangeKind::DependenciesChanged
+        RepoChangeKind::DependenciesChanged
             | RepoChangeKind::GitHubWorkflowRunsChanged
             | RepoChangeKind::GitHubWorkflowRunChanged { .. }
     ) {
@@ -277,10 +275,11 @@ fn redacted_event(event: RepoChangeEvent) -> RepoChangeEvent {
             | RepoChangeKind::RepositoryChanged { .. }
             | RepoChangeKind::RequestStateChanged { .. }
             | RepoChangeKind::RequestTimelineChanged { .. }
-            | RepoChangeKind::RequestAttachmentChanged { .. }
-            | RepoChangeKind::RunChanged { .. } => RepoChangeKind::RepositoryChanged {
-                reason: RepoChangeReason::Redacted.as_str().to_string(),
-            },
+            | RepoChangeKind::RequestAttachmentChanged { .. } => {
+                RepoChangeKind::RepositoryChanged {
+                    reason: RepoChangeReason::Redacted.as_str().to_string(),
+                }
+            }
         },
         repo_id: event.repo_id,
         incarnation_id: event.incarnation_id,

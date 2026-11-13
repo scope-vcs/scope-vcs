@@ -1,6 +1,3 @@
-mod revision;
-pub(crate) use revision::GitRevision;
-
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 #[cfg(test)]
 use crate::git::command::run_git_output;
