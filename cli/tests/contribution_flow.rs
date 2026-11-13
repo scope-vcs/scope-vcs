@@ -1,6 +1,3 @@
-#![expect(clippy::unwrap_used)]
-#![expect(clippy::expect_used)]
-
 #[path = "contribution_flow/checks.rs"]
 mod checks;
 #[path = "../src/test_support/git.rs"]

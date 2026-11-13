@@ -6,12 +6,22 @@ import { railwayServicesFromStatus } from './railway-service-health.mjs';
 
 const digestPattern = /^sha256:[0-9a-f]{64}$/;
 const replacementReasons = new Set(['redeploy', 'failover', 'rollback']);
+const patchQuery = 'query EnvironmentPatch($id: String!) { environmentPatch(id: $id) { status patch } }';
 
 function requireMatch(condition, message) {
   if (!condition) throw new Error(`Redeployed service replacement: ${message}`);
 }
 
-export function verifyRedeployedReplacement({ component, selected, receipts, history, liveDeploymentId }) {
+function changesOnlyServiceVariables(environmentPatch, serviceId) {
+  const services = environmentPatch?.patch?.services;
+  return environmentPatch?.status === 'COMMITTED'
+    && Object.keys(environmentPatch.patch).join() === 'services'
+    && Object.hasOwn(services ?? {}, serviceId)
+    && Object.values(services).every(change => Object.keys(change ?? {}).join() === 'variables');
+}
+
+export function verifyRedeployedReplacement({ component, selected, receipts, history, liveDeploymentId,
+  serviceId, readPatch }) {
   requireMatch(RAILWAY_COMPONENTS.includes(component), `${component || 'component'} is not a Railway service`);
   requireMatch(selected?.[component] === true, `this release does not replace ${component}`);
   const [receipt] = receipts ?? [];
@@ -30,9 +40,11 @@ export function verifyRedeployedReplacement({ component, selected, receipts, his
     .map(candidate => [imageOf(candidate), candidate]).filter(([digest]) => digest));
   const receiptedAt = Date.parse(receipted.createdAt);
   const later = history.filter(({ createdAt }) => Date.parse(createdAt) > receiptedAt);
-  requireMatch(later.length > 0
-    && later.every(({ meta }) => replacementReasons.has(meta?.reason) && restorable.has(meta.imageDigest)),
-  'a later deployment is not a redeploy or rollback of a receipted image');
+  const sameImageReplacement = ({ meta }) => restorable.has(meta?.imageDigest)
+    && (replacementReasons.has(meta.reason) || (meta.reason === 'deploy' && typeof meta.patchId === 'string'
+      && changesOnlyServiceVariables(readPatch(meta.patchId), serviceId)));
+  requireMatch(later.length > 0 && later.every(sameImageReplacement),
+    'a later deployment is not a redeploy, rollback, or variable change of a receipted image');
   const live = later.find(({ id }) => id === liveDeploymentId);
   requireMatch(live?.status === 'SUCCESS', 'live deployment is not a successful redeploy or rollback of a receipt');
   return { ...restorable.get(live.meta.imageDigest), evidenceId: live.id };
@@ -46,8 +58,10 @@ export function loadRedeployedReplacement({ component, selected, receipts, statu
   const live = railwayServicesFromStatus(status, environmentId).find(({ id }) => id === serviceId);
   const history = railway(['deployment', 'list', '--project', manifest.railway.projectId,
     '--service', serviceId, '--environment', environmentId, '--limit', '100', '--json']);
+  const readPatch = id => railway(['api', patchQuery, '--variables', '@-'],
+    { input: JSON.stringify({ id }) }).data.environmentPatch;
   return { [component]: verifyRedeployedReplacement({ component, selected, receipts, history,
-    liveDeploymentId: live?.deploymentId }) };
+    liveDeploymentId: live?.deploymentId, serviceId, readPatch }) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

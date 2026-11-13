@@ -635,7 +635,7 @@ fn main_update_block_survives_unchanged_publication_and_clears_on_repaired_head(
             RequestStackStatus::NeedsMainUpdate
         );
         let repaired = record_request_revision(
-            request.clone(),
+            request,
             false,
             RecordRequestRevisionInput {
                 new_head_oid: "repaired-head".into(),

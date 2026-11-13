@@ -183,136 +183,142 @@ fn run(command: &mut Command) -> String {
 
 #[test]
 fn real_cargo_cache_reuses_unchanged_checkout_and_rebuilds_changed_inputs() {
-    let fixture = Fixture::new();
-    let snapshot = fixture.snapshot();
-    assert!(!fixture.build(None));
-    assert_eq!(fixture.output(), "1:one:A");
-    fixture.save(&snapshot);
+    super::test_process::isolated(|| {
+        let fixture = Fixture::new();
+        let snapshot = fixture.snapshot();
+        assert!(!fixture.build(None));
+        assert_eq!(fixture.output(), "1:one:A");
+        fixture.save(&snapshot);
 
-    fixture.checkout();
-    extract_archive(&fixture.archive, &fixture.target, Some(&fixture.workspace)).unwrap();
-    assert!(
-        !fixture.build(None),
-        "output timestamps alone must not certify a new checkout"
-    );
-
-    fixture.checkout();
-    fixture.restore();
-    assert!(
-        fixture.build(None),
-        "unchanged checkout should reuse every compiler artifact"
-    );
-    assert_eq!(fixture.output(), "1:one:A");
-
-    for (case, expected) in [
-        ("same-size-source", "1:one:B"),
-        ("dependency", "2:one:A"),
-        ("build-input", "1:two:A"),
-        ("build-script", "1:script:A"),
-        ("manifest", "1:one:A"),
-        ("rustflags", "1:one:A"),
-        ("build-env", "1:one:A"),
-    ] {
         fixture.checkout();
-        let environment = match case {
-            "same-size-source" => {
-                fixture.replace("src/main.rs", "\"A\"", "\"B\"");
-                None
-            }
-            "dependency" => {
-                fixture.replace("dep/src/lib.rs", "{ 1 }", "{ 2 }");
-                None
-            }
-            "build-input" => {
-                fixture.replace("input.txt", "one", "two");
-                None
-            }
-            "build-script" => {
-                fs::write(
-                    fixture.workspace.join("build.rs"),
-                    "fn main() { println!(\"cargo:rustc-env=GENERATED_VALUE=script\"); }\n",
+        extract_archive(&fixture.archive, &fixture.target, Some(&fixture.workspace)).unwrap();
+        assert!(
+            !fixture.build(None),
+            "output timestamps alone must not certify a new checkout"
+        );
+
+        fixture.checkout();
+        fixture.restore();
+        assert!(
+            fixture.build(None),
+            "unchanged checkout should reuse every compiler artifact"
+        );
+        assert_eq!(fixture.output(), "1:one:A");
+
+        for (case, expected) in [
+            ("same-size-source", "1:one:B"),
+            ("dependency", "2:one:A"),
+            ("build-input", "1:two:A"),
+            ("build-script", "1:script:A"),
+            ("manifest", "1:one:A"),
+            ("rustflags", "1:one:A"),
+            ("build-env", "1:one:A"),
+        ] {
+            fixture.checkout();
+            let environment = match case {
+                "same-size-source" => {
+                    fixture.replace("src/main.rs", "\"A\"", "\"B\"");
+                    None
+                }
+                "dependency" => {
+                    fixture.replace("dep/src/lib.rs", "{ 1 }", "{ 2 }");
+                    None
+                }
+                "build-input" => {
+                    fixture.replace("input.txt", "one", "two");
+                    None
+                }
+                "build-script" => {
+                    fs::write(
+                        fixture.workspace.join("build.rs"),
+                        "fn main() { println!(\"cargo:rustc-env=GENERATED_VALUE=script\"); }\n",
+                    )
+                    .unwrap();
+                    None
+                }
+                "manifest" => {
+                    fixture.replace("Cargo.toml", "edition = '2024'", "edition = '2021'");
+                    None
+                }
+                "rustflags" => Some(("RUSTFLAGS", "-Copt-level=1")),
+                "build-env" => Some(("SCOPE_CACHE_PROBE_ENV", "changed")),
+                _ => unreachable!(),
+            };
+            for path in [
+                "src/main.rs",
+                "dep/src/lib.rs",
+                "input.txt",
+                "build.rs",
+                "Cargo.toml",
+            ] {
+                set_modified(
+                    &fixture.workspace,
+                    Path::new(path),
+                    SystemTime::UNIX_EPOCH + Duration::from_secs(2),
                 )
                 .unwrap();
-                None
             }
-            "manifest" => {
-                fixture.replace("Cargo.toml", "edition = '2024'", "edition = '2021'");
-                None
-            }
-            "rustflags" => Some(("RUSTFLAGS", "-Copt-level=1")),
-            "build-env" => Some(("SCOPE_CACHE_PROBE_ENV", "changed")),
-            _ => unreachable!(),
-        };
-        for path in [
-            "src/main.rs",
-            "dep/src/lib.rs",
-            "input.txt",
-            "build.rs",
-            "Cargo.toml",
-        ] {
-            set_modified(
-                &fixture.workspace,
-                Path::new(path),
-                SystemTime::UNIX_EPOCH + Duration::from_secs(2),
-            )
-            .unwrap();
+            fixture.restore();
+            assert!(!fixture.build(environment), "{case} must rebuild");
+            assert_eq!(
+                fixture.output(),
+                expected,
+                "{case} must execute the correct binary"
+            );
         }
-        fixture.restore();
-        assert!(!fixture.build(environment), "{case} must rebuild");
-        assert_eq!(
-            fixture.output(),
-            expected,
-            "{case} must execute the correct binary"
-        );
-    }
+    });
 }
 
 #[test]
 fn inputs_changed_during_the_job_are_not_certified_as_unchanged() {
-    for restore_timestamp in [false, true] {
-        let fixture = Fixture::new();
-        let snapshot = fixture.snapshot();
-        let original_modified = fs::metadata(fixture.workspace.join("input.txt"))
-            .unwrap()
-            .modified()
-            .unwrap();
-        fixture.replace("input.txt", "one", "two");
-        assert!(!fixture.build(None));
-        assert_eq!(fixture.output(), "1:two:A");
-        fixture.replace("input.txt", "two", "one");
-        if restore_timestamp {
-            set_modified(
-                &fixture.workspace,
-                Path::new("input.txt"),
-                original_modified,
-            )
-            .unwrap();
+    super::test_process::isolated(|| {
+        for restore_timestamp in [false, true] {
+            let fixture = Fixture::new();
+            let snapshot = fixture.snapshot();
+            let original_modified = fs::metadata(fixture.workspace.join("input.txt"))
+                .unwrap()
+                .modified()
+                .unwrap();
+            fixture.replace("input.txt", "one", "two");
+            assert!(!fixture.build(None));
+            assert_eq!(fixture.output(), "1:two:A");
+            fixture.replace("input.txt", "two", "one");
+            if restore_timestamp {
+                set_modified(
+                    &fixture.workspace,
+                    Path::new("input.txt"),
+                    original_modified,
+                )
+                .unwrap();
+            }
+            fixture.save(&snapshot);
+            fixture.checkout();
+            fixture.restore();
+            assert!(!fixture.build(None));
+            assert_eq!(fixture.output(), "1:one:A");
         }
-        fixture.save(&snapshot);
-        fixture.checkout();
-        fixture.restore();
-        assert!(!fixture.build(None));
-        assert_eq!(fixture.output(), "1:one:A");
-    }
+    });
 }
 
 #[test]
 fn changed_source_cache_is_fresh_on_the_next_exact_checkout() {
-    let mut fixture = Fixture::new();
-    let snapshot = fixture.snapshot();
-    assert!(!fixture.build(None));
-    fixture.save(&snapshot);
-    fixture.checkout();
-    fixture.replace("src/main.rs", "\"A\"", "\"B\"");
-    fixture.commit_current();
-    let changed_snapshot = fixture.restore();
-    assert!(!fixture.build(None));
-    assert_eq!(fixture.output(), "1:one:B");
-    fixture.save(&changed_snapshot);
-    fixture.checkout();
-    fixture.restore();
-    assert!(fixture.build(None));
-    assert_eq!(fixture.output(), "1:one:B");
+    super::test_process::isolated(|| {
+        let mut fixture = Fixture::new();
+        let snapshot = fixture.snapshot();
+        assert!(!fixture.build(None));
+        fixture.save(&snapshot);
+        fixture.checkout();
+        fixture.replace("src/main.rs", "\"A\"", "\"B\"");
+        fixture.commit_current();
+        let changed_snapshot = fixture.restore();
+        assert!(!fixture.build(None));
+        assert_eq!(fixture.output(), "1:one:B");
+        fixture.save(&changed_snapshot);
+        fixture.checkout();
+        fixture.restore();
+        assert!(fixture.build(None));
+        assert_eq!(fixture.output(), "1:one:B");
+    });
 }
 
 #[test]
