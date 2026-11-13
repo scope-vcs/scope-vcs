@@ -2380,10 +2380,10 @@ Repository: "https://github.com/oxc-project/json-strip-comments"
 LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
-jsonwebtoken 10.4.0
+jsonwebtoken 11.1.0
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/jsonwebtoken/jsonwebtoken-10.4.0.crate
+Source: https://static.crates.io/crates/jsonwebtoken/jsonwebtoken-11.1.0.crate
 
 Published author metadata: ["Vincent Prouillet <hello@vincentprouillet.com>"]
 Repository: "https://github.com/Keats/jsonwebtoken"

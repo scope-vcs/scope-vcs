@@ -86,7 +86,18 @@ fn rotated_jwks() -> JwkSet {
 }
 
 fn token_signed_with(kid: &str) -> String {
-    sign_claims_with_kid(
+    token_signed_with_header(test_header(kid))
+}
+
+fn token_with_clerk_header_extras() -> String {
+    let mut header = test_header("test-key");
+    header.extras.insert("cat", "cl_B7d4PD111AAA");
+    header.extras.insert("oiat", 1_794_593_136_u64);
+    token_signed_with_header(header)
+}
+
+fn token_signed_with_header(header: Header) -> String {
+    sign_claims_with_header(
         serde_json::json!({
             "iss": TEST_CLERK_ISSUER,
             "exp": unix_now() + 300,
@@ -96,7 +107,7 @@ fn token_signed_with(kid: &str) -> String {
             "azp": LOCAL_APP_ORIGIN,
             "aud": TEST_CLERK_AUDIENCE,
         }),
-        kid,
+        header,
     )
 }
 
@@ -158,6 +169,13 @@ async fn clerk_tokens_verify_issuer_identity_origin_and_audience() {
                 TEST_CLERK_USER_ID,
                 serde_json::json!(["other", TEST_CLERK_AUDIENCE]),
             ),
+            TEST_CLERK_ISSUER,
+            test_clerk_policy(),
+            true,
+        ),
+        (
+            "header with Clerk's numeric extras",
+            token_with_clerk_header_extras(),
             TEST_CLERK_ISSUER,
             test_clerk_policy(),
             true,
