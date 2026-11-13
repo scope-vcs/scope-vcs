@@ -62,8 +62,7 @@ pub(crate) async fn approve_request_checks(
         input.expected_head_oid.as_str(),
     )
     .await?;
-    request_checks::publish_request_checks_change(&state, &repo.incarnation(), &request, &mutation)
-        .await;
+    request_checks::publish_request_checks_change(&state, &repo.incarnation(), &mutation).await;
     let snapshot = super::request_state::load(
         &state,
         &Viewer::resolve(&state, &headers).await?,
