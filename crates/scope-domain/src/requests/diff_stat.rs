@@ -64,6 +64,10 @@ pub struct FileDiffStat {
 }
 
 impl FileDiffStat {
+    pub fn paths(&self) -> impl Iterator<Item = &ScopePath> {
+        std::iter::once(&self.path).chain(self.renamed_from.as_ref().map(|source| &source.path))
+    }
+
     fn readable_lines(&self, can_read: impl Fn(&ScopePath) -> bool) -> Option<FileLineChanges> {
         let Some(source) = &self.renamed_from else {
             return can_read(&self.path).then_some(self.lines);
@@ -130,6 +134,12 @@ impl RevisionDiffStatBuilder {
             Some(files) if files.len() < self.max_files => files.push(file),
             _ => self.files = None,
         }
+    }
+
+    pub fn listing_room(&self) -> usize {
+        self.files
+            .as_ref()
+            .map_or(0, |files| self.max_files.saturating_sub(files.len()))
     }
 
     pub fn add_unlisted(&mut self, lines: FileLineChanges) {

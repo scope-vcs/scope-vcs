@@ -131,20 +131,26 @@ async fn pushed_line_counts_reach_every_request_read_and_exclude_unreadable_file
         .unwrap();
     assert_eq!(queued["request"]["diff_stat"], full);
 
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            for private in ["/notes.txt", "/README.md"] {
-                repo.policy
-                    .add_rule(LabelRule::private(ScopePath::parse(private).unwrap()))
-                    .unwrap();
-            }
-            repo.record.change_version += 1;
-            repo.record.content_version = repo.record.change_version;
-        })
-        .await
-        .unwrap();
+    let make_private = |private: &'static str| {
+        let state = state.clone();
+        async move {
+            state
+                .metadata
+                .repositories()
+                .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+                    repo.policy
+                        .add_rule(LabelRule::private(ScopePath::parse(private).unwrap()))
+                        .unwrap();
+                    repo.record.change_version += 1;
+                    repo.record.content_version = repo.record.change_version;
+                })
+                .await
+                .unwrap();
+        }
+    };
+    make_private("/notes.txt").await;
+    assert_eq!(listed_diff_stat(&app, &public).await, diff_stat(1, 0, 3));
+    make_private("/README.md").await;
     let restricted = diff_stat(2, 0, 3);
     let public_changes = get_json(
         &app,

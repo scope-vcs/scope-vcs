@@ -50,7 +50,8 @@ pub(crate) async fn readable_request_diff_stats(
         .values()
         .filter_map(RevisionDiffStat::files)
         .flatten()
-        .map(|file| file.path.clone())
+        .flat_map(FileDiffStat::paths)
+        .cloned()
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -161,14 +162,15 @@ fn revision_diff_stat(
             let mut renames = Vec::new();
             while let Some(field) = read_nul_field_bounded(&mut reader)? {
                 let (lines, path) = parse_numstat_entry(&field.bytes)?;
+                let listable = builder.listing_room() > renames.len();
                 if !path.is_empty() {
                     match listed_path(field.truncated, path) {
-                        Some(path) => builder.add(FileDiffStat {
+                        Some(path) if listable => builder.add(FileDiffStat {
                             path,
                             lines,
                             renamed_from: None,
                         }),
-                        None => builder.add_unlisted(lines),
+                        _ => builder.add_unlisted(lines),
                     }
                     continue;
                 }
@@ -183,7 +185,7 @@ fn revision_diff_stat(
                     listed_path(old_path.truncated, &old_path.bytes),
                     listed_path(path.truncated, &path.bytes),
                 ) {
-                    (Some(old_path), Some(path)) => renames.push(CountedRename {
+                    (Some(old_path), Some(path)) if listable => renames.push(CountedRename {
                         lines,
                         old_path,
                         path,
@@ -208,6 +210,12 @@ fn revision_diff_stat(
         )));
     }
     let (mut builder, renames) = output.value;
+    if builder.listing_room() < renames.len() {
+        for rename in renames {
+            builder.add_unlisted(rename.lines);
+        }
+        return Ok(builder.finish());
+    }
     let mut whole_lines = whole_file_line_counts(
         raw_repo,
         &[base_oid, head_oid],
