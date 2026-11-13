@@ -13,6 +13,7 @@ pub(crate) use walk::MergeBases;
 
 const MAX_TAG_DEPTH: usize = 32;
 const MAX_TAG_BYTES: u64 = 1024 * 1024;
+const MAX_DECODE_BYTES: u64 = 64 * 1024 * 1024;
 
 enum Peeled {
     Missing,
@@ -33,8 +34,10 @@ impl GitReader {
 
     fn open_with_budget(path: &FsPath, budget: Duration) -> Option<Self> {
         let deadline = Instant::now() + budget;
-        let options =
-            gix::open::Options::isolated().config_overrides(["core.useReplaceRefs=false"]);
+        let options = gix::open::Options::isolated().config_overrides([
+            "core.useReplaceRefs=false".to_string(),
+            format!("gitoxide.objects.allocLimit={MAX_DECODE_BYTES}"),
+        ]);
         let repo = settled(gix::open_opts(path, options))?;
         if settled(repo.is_shallow())?
             || has_replacements(&repo)?

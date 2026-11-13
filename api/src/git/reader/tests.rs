@@ -549,3 +549,16 @@ fn walks_that_reach_an_oversized_commit_leave_the_answer_to_git() {
     assert_eq!(reader.merge_bases(&first, &tip, "checking").unwrap(), None);
     assert!(git_is_ancestor(repo, &first, &tip, "checking").unwrap());
 }
+
+#[test]
+fn readers_cap_object_decoding_allocations() {
+    let fixture = Fixture::build();
+    let reader = GitReader::open(&fixture.stage).unwrap();
+    assert_eq!(
+        reader
+            .repo
+            .config_snapshot()
+            .integer("gitoxide.objects.allocLimit"),
+        Some(i64::try_from(MAX_DECODE_BYTES).unwrap())
+    );
+}
