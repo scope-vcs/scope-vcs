@@ -150,6 +150,7 @@ pub(crate) async fn install_chain(
     Ok(installed_total)
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum PackInstall {
     Indexed,
     AlreadyPresent,
@@ -174,7 +175,7 @@ async fn install_batch(
     state: &AppState,
     objects_repo: &FsPath,
     ready: Vec<(GitPoolPack, FetchedPack)>,
-) -> Vec<(GitPoolPack, Result<PackInstall, ApiError>)> {
+) -> BatchOutcome {
     if ready.is_empty() {
         return Vec::new();
     }
@@ -186,21 +187,7 @@ async fn install_batch(
     let target = objects_repo.to_path_buf();
     let objects_repo = objects_repo.to_path_buf();
     let installed = write_shelf(&target, move || {
-        let present = present_commits(
-            &objects_repo,
-            ready.iter().map(|(pack, _)| pack.head_oid.as_str()),
-        )?;
-        Ok(ready
-            .into_iter()
-            .map(|(pack, fetched)| {
-                let outcome = if present.contains(&pack.head_oid) {
-                    Ok(PackInstall::AlreadyPresent)
-                } else {
-                    index_fetched(&objects_repo, fetched, timeout).map(|()| PackInstall::Indexed)
-                };
-                (pack, outcome)
-            })
-            .collect())
+        index_missing(&objects_repo, ready, timeout)
     })
     .await;
     installed.unwrap_or_else(|error| {
@@ -209,6 +196,30 @@ async fn install_batch(
             .map(|pack| (pack, Err(error.clone())))
             .collect()
     })
+}
+
+type BatchOutcome = Vec<(GitPoolPack, Result<PackInstall, ApiError>)>;
+
+fn index_missing(
+    objects_repo: &FsPath,
+    ready: Vec<(GitPoolPack, FetchedPack)>,
+    timeout: std::time::Duration,
+) -> Result<BatchOutcome, ApiError> {
+    let present = present_commits(
+        objects_repo,
+        ready.iter().map(|(pack, _)| pack.head_oid.as_str()),
+    )?;
+    Ok(ready
+        .into_iter()
+        .map(|(pack, fetched)| {
+            let outcome = if present.contains(&pack.head_oid) {
+                Ok(PackInstall::AlreadyPresent)
+            } else {
+                index_fetched(objects_repo, fetched, timeout).map(|()| PackInstall::Indexed)
+            };
+            (pack, outcome)
+        })
+        .collect())
 }
 
 pub(crate) enum FetchedPack {
@@ -317,3 +328,6 @@ pub(crate) fn present_commits<'a>(
         .map(str::to_string)
         .collect())
 }
+
+#[cfg(test)]
+mod tests;
