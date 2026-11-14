@@ -1,3 +1,4 @@
+mod check_sources;
 mod client;
 pub(crate) mod config;
 mod jobs;
@@ -8,7 +9,7 @@ mod reviews;
 pub(crate) mod setup_tokens;
 pub(crate) mod webhook;
 
-pub(crate) use client::{GitHubRepository, InstallationStatus};
+pub(crate) use client::GitHubRepository;
 use config::GitHubAppConfig;
 use jsonwebtoken::EncodingKey;
 pub(crate) use push::GitHubPublishFailure;

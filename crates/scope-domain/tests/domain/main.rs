@@ -1,8 +1,9 @@
 #![expect(clippy::unwrap_used)]
 
+mod github_check_catalog;
 mod github_connection;
+mod github_connection_test;
 mod github_run_import;
-mod github_setup_check;
 mod persisted_shapes;
 mod policy;
 mod projection;

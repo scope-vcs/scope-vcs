@@ -26,7 +26,7 @@ import {
   setRepoGitHubReviewRequestCommentForRequest,
   setRepoGitHubRunImportCountForRequest,
   startRepoGitHubRunImportForRequest,
-  startRepoGitHubSetupCheckForRequest,
+  testRepoGitHubConnectionForRequest,
 } from '@/api/github'
 import {
   parseSetRepoGitHubMainPublicationInput,
@@ -58,13 +58,15 @@ import {
 } from '@/features/repo-detail/repo-settings-resource'
 import type { CollaborationResult } from '@/features/repo-detail/repo-collaboration-results'
 import { useCachedResource } from '@/lib/use-cached-resource'
+import { githubChecksVersion } from '@/features/repo-detail/repo-github-checks-model'
+import { repoGitHubChecksResource } from '@/features/repo-detail/repo-github-checks-resource'
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { loadRepoSettingsData, startRepoGitHubAuthorization } from './-repo-settings-actions'
+import { loadRepoGitHubChecks, loadRepoSettingsData, startRepoGitHubAuthorization } from './-repo-settings-actions'
 
-const startRepoGitHubSetupCheck = createServerFn({ method: 'POST' })
+const testRepoGitHubConnection = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
-  .handler(({ data }) => startRepoGitHubSetupCheckForRequest(data))
+  .handler(({ data }) => testRepoGitHubConnectionForRequest(data))
 
 const disconnectRepoGitHub = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -168,6 +170,19 @@ function RepoSettingsRoute() {
     fallbackError: 'Repository settings could not be loaded.',
   })
   const settings = resource.value ?? initialValue
+  const github = settings?.github ?? null
+  const checksVersion = githubChecksVersion(repo.content_version, github)
+  const loadChecks = useCallback(
+    (signal: AbortSignal) => loadRepoGitHubChecks({ owner, repo: repoName }, signal),
+    [owner, repoName],
+  )
+  const githubChecks = useCachedResource({
+    identity: checksVersion === null ? null : scope,
+    resource: repoGitHubChecksResource,
+    load: loadChecks,
+    version: checksVersion ?? '',
+    fallbackError: 'Checks could not be read from GitHub.',
+  })
 
   const collaboration = settings?.collaboration ?? null
   useEffect(
@@ -223,7 +238,8 @@ function RepoSettingsRoute() {
               if (scope) retainGitHubConnection(scope, github)
               return github
             }}
-            github={settings?.github ?? null}
+            github={github}
+            githubChecks={githubChecks}
             setGitHubMainPublication={async (data) => {
               const github = await setRepoGitHubMainPublication({ data })
               if (scope) retainGitHubConnection(scope, github)
@@ -260,11 +276,7 @@ function RepoSettingsRoute() {
               if (scope) retainGitHubConnection(scope, github)
               return github
             }}
-            startGitHubSetupCheck={async (data) => {
-              const github = await startRepoGitHubSetupCheck({ data })
-              if (scope) retainGitHubConnection(scope, github)
-              return github
-            }}
+            testGitHubConnection={(data) => testRepoGitHubConnection({ data })}
             deleteMember={(data) => retainResult(
               deleteRepoMember({ data }),
               (member) => ({ type: 'memberRemoved', member }),

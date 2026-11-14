@@ -1,8 +1,9 @@
-use super::{GitHubApp, InstallationStatus};
+use super::GitHubApp;
 use crate::error::ApiError;
 use hmac::{Hmac, KeyInit, Mac};
 use scope_domain::{
     github_connection::GitHubInstallationChange,
+    github_connection_test::GitHubInstallationState,
     requests::{CodexReviewState, GitHubBranch},
 };
 use serde::Deserialize;
@@ -197,10 +198,10 @@ pub(crate) async fn confirmed_installation_change(
     installation_id: u64,
     reported: &GitHubInstallationChange,
 ) -> Result<Option<GitHubInstallationChange>, ApiError> {
-    match app.installation_status(installation_id).await? {
-        InstallationStatus::Uninstalled => Ok(Some(GitHubInstallationChange::Uninstalled)),
-        InstallationStatus::Suspended => Ok(Some(GitHubInstallationChange::Suspended)),
-        InstallationStatus::Active => {
+    match app.installation(installation_id).await?.state {
+        GitHubInstallationState::Uninstalled => Ok(Some(GitHubInstallationChange::Uninstalled)),
+        GitHubInstallationState::Suspended => Ok(Some(GitHubInstallationChange::Suspended)),
+        GitHubInstallationState::Active => {
             let GitHubInstallationChange::RepositoriesRemoved(removed) = reported else {
                 return Ok(None);
             };
@@ -422,7 +423,6 @@ mod tests {
         for (action, head, head_repository) in [
             ("synchronize", "scope/requests/req_1", 42),
             ("closed", "feature", 42),
-            ("closed", "scope/setup-check", 42),
             ("closed", "scope/requests/req_1", 99),
         ] {
             assert_eq!(

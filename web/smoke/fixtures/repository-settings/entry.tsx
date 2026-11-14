@@ -8,7 +8,8 @@ import { CliSessionList } from '@/features/account/cli-session-list'
 import { usePendingActions } from '@/lib/use-pending-actions'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { repoSettingsResource, retainCollaborationResult, retainGitHubConnection } from '@/features/repo-detail/repo-settings-resource'
-import type { GitHubConnectionResponse } from '@/api/types.generated'
+import { repoGitHubChecksResource } from '@/features/repo-detail/repo-github-checks-resource'
+import type { GitHubChecksResponse, GitHubConnectionResponse } from '@/api/types.generated'
 import type { RepoSummary, RepoLiveState, RepoMember, CliSession } from '@/api/types'
 import { WorkspaceFixture } from './workspace'
 import { ChangesResourceFixture, CoalescedResourceFixture } from './changes-resource'
@@ -51,9 +52,28 @@ const githubConnection = {
 }
 repoSettingsResource.write(settingsScope, {
   collaboration: { members, invites: [] },
-  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], review_bots: [], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null },
+  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null },
 })
 const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
+const longCheckName = 'test / unit and integration on every supported platform'
+repoGitHubChecksResource.write(settingsScope, {
+  workflows: [
+    { path: '.github/workflows/ci.yml', name: 'CI', runs: { verdict: 'yes', reason: null }, runtime_named_jobs: [] },
+    {
+      path: '.github/workflows/release.yml', name: 'release.yml',
+      runs: { verdict: 'no', reason: 'This workflow has no trigger for Scope request branches. Add a push trigger for scope/**.' },
+      runtime_named_jobs: [],
+    },
+  ],
+  checks: [
+    { name: 'lint', workflow_path: '.github/workflows/ci.yml', runs: { verdict: 'yes', reason: null }, required_on_github: false, reported_on_main: true },
+    {
+      name: longCheckName, workflow_path: '.github/workflows/ci.yml',
+      runs: { verdict: 'maybe', reason: 'Runs only when its condition holds.' }, required_on_github: true, reported_on_main: false,
+    },
+  ],
+})
+const loadChecks = () => new Promise<GitHubChecksResponse>(() => {})
 function setGitHub(github: GitHubConnectionResponse) {
   const current = repoSettingsResource.peek(settingsScope)
   if (current) repoSettingsResource.write(settingsScope, { ...current, github })
@@ -63,6 +83,7 @@ function App() {
   const [repo, setRepo] = useState(initial)
   const { pending, run } = usePendingActions()
   const settings = useCachedResource({ identity: settingsScope, resource: repoSettingsResource, load: loadSettings, fallbackError: 'Settings unavailable' })
+  const githubChecks = useCachedResource({ identity: settingsScope, resource: repoGitHubChecksResource, load: loadChecks, fallbackError: 'Checks unavailable' })
   return <main className="mx-auto max-w-5xl p-4">
     <div className="mb-6 flex flex-wrap gap-4">
       <button onClick={() => setRepo({ ...repo, description: 'Changed elsewhere', website_url: 'https://example.com' })}>Remote metadata update</button>
@@ -75,7 +96,6 @@ function App() {
         required_checks: ['ci / test'], review_bots: [],
         can_confirm_public: true,
         can_publish_main: true,
-        setup_check: null,
         run_import_count: 50,
         run_import: null,
       })}>GitHub uninstalled elsewhere</button>
@@ -99,10 +119,11 @@ function App() {
         deleteMember={async () => { throw new Error('unused') }}
         deleteRepo={async () => { throw new Error('Deletion denied by fixture') }}
         github={settings.value?.github ?? null}
+        githubChecks={githubChecks}
         disconnectGitHub={async (params) => {
           calls.push({ disconnectGitHub: params })
           await hold('disconnect-github')
-          const github = { configured: true, connection: null, required_checks: [], review_bots: [], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null }
+          const github = { configured: true, connection: null, required_checks: [], review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null }
           retainGitHubConnection(settingsScope, github)
           return github
         }}
@@ -192,20 +213,19 @@ function App() {
           calls.push({ startGitHubAuthorization: params })
           return { authorize_url: '#github-authorize' }
         }}
-        startGitHubSetupCheck={async (params) => {
-          calls.push({ startGitHubSetupCheck: params })
-          await hold('setup-check')
-          const current = repoSettingsResource.peek(settingsScope)!.github!
-          const github = {
-            ...current,
-            setup_check: {
-              branch: 'scope/setup-check', commit_oid: 'abcdef1234567890abcdef1234567890abcdef12',
-              state: 'finished' as const, started_at_unix: 1, finished_at_unix: 2,
-              check_names: ['lint', 'test / unit and integration on every supported platform'], message: null,
-            },
+        testGitHubConnection={async (params) => {
+          calls.push({ testGitHubConnection: params })
+          await hold('connection-test')
+          return {
+            results: [
+              { step: 'installation', passed: true, message: 'The Scope GitHub App is installed.' },
+              { step: 'repository', passed: true, message: 'Scope can reach octo/demo.' },
+              {
+                step: 'permissions', passed: false,
+                message: "The Scope GitHub App is missing checks (read). Accept its requested permissions in GitHub's installation settings.",
+              },
+            ],
           }
-          retainGitHubConnection(settingsScope, github)
-          return github
         }}
         updateMember={async (input) => {
           calls.push(input)

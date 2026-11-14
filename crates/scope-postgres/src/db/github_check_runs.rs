@@ -233,11 +233,6 @@ impl RequestStore {
         repo_id: &str,
         commit_oid: &str,
     ) -> Result<bool, PostgresError> {
-        if super::github_setup_checks::setup_check_watches(self.db.as_ref(), repo_id, commit_oid)
-            .await?
-        {
-            return Ok(true);
-        }
         self.db
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,

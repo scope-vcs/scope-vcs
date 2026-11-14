@@ -1,15 +1,18 @@
 use crate::github::GitHubRepository;
 use scope_api_contract::{GitHubCheckConclusion, GitHubCheckStatus, RequestActorSummaryResponse};
 use scope_domain::{
+    github_check_catalog::{
+        GitHubCatalogCheck, GitHubCheckCatalog, GitHubCheckRuns, GitHubWorkflowSummary,
+    },
     github_connection::{
         GitHubConnectionStatus, GitHubDisconnectReason, GitHubRepositoryVisibility,
     },
+    github_connection_test::{GitHubConnectionTestResult, GitHubConnectionTestStep},
     github_run_import::{GitHubRunImport, GitHubRunImportState},
-    github_setup_check::{GitHubSetupCheck, GitHubSetupCheckState},
     github_workflow_jobs::GitHubWorkflowJob,
     requests::{GitHubPush, GitHubPushState},
 };
-use scope_postgres::db::{GitHubConnectionRead, GitHubSetupCheckRead, GitHubWorkflowRunRead};
+use scope_postgres::db::{GitHubConnectionRead, GitHubWorkflowRunRead};
 use serde::{Deserialize, Serialize};
 
 macro_rules! response_enum {
@@ -35,8 +38,8 @@ macro_rules! response_enum {
 response_enum!(GitHubRunImportStateResponse => GitHubRunImportState {
     Queued, Running, Succeeded, Failed,
 });
-response_enum!(GitHubSetupCheckStateResponse => GitHubSetupCheckState {
-    Pushing, Waiting, Finished, Failed,
+response_enum!(GitHubConnectionTestStepResponse => GitHubConnectionTestStep {
+    Installation, Repository, Permissions,
 });
 response_enum!(GitHubMainPushStateResponse => GitHubPushState {
     Queued, Running, Succeeded, Failed,
@@ -54,7 +57,6 @@ pub(crate) struct GitHubConnectionResponse {
     pub(crate) review_bots: Vec<GitHubReviewBotResponse>,
     pub(crate) can_confirm_public: bool,
     pub(crate) can_publish_main: bool,
-    pub(crate) setup_check: Option<GitHubSetupCheckResponse>,
     pub(crate) run_import_count: u32,
     pub(crate) run_import: Option<GitHubRunImportResponse>,
 }
@@ -72,14 +74,59 @@ pub(crate) struct GitHubRunImportResponse {
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct GitHubSetupCheckResponse {
-    pub(crate) branch: String,
-    pub(crate) commit_oid: String,
-    pub(crate) state: GitHubSetupCheckStateResponse,
-    pub(crate) started_at_unix: u64,
-    pub(crate) finished_at_unix: Option<u64>,
-    pub(crate) check_names: Vec<String>,
-    pub(crate) message: Option<String>,
+pub(crate) struct GitHubConnectionTestResponse {
+    pub(crate) results: Vec<GitHubConnectionTestResultResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubConnectionTestResultResponse {
+    pub(crate) step: GitHubConnectionTestStepResponse,
+    pub(crate) passed: bool,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
+pub(crate) enum GitHubCheckRunsVerdictResponse {
+    Yes,
+    Maybe,
+    No,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubCheckRunsResponse {
+    pub(crate) verdict: GitHubCheckRunsVerdictResponse,
+    pub(crate) reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubChecksResponse {
+    pub(crate) workflows: Vec<GitHubWorkflowSummaryResponse>,
+    pub(crate) checks: Vec<GitHubCatalogCheckResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubWorkflowSummaryResponse {
+    pub(crate) path: String,
+    pub(crate) name: String,
+    pub(crate) runs: GitHubCheckRunsResponse,
+    pub(crate) runtime_named_jobs: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubCatalogCheckResponse {
+    pub(crate) name: String,
+    pub(crate) workflow_path: Option<String>,
+    pub(crate) runs: Option<GitHubCheckRunsResponse>,
+    pub(crate) required_on_github: bool,
+    pub(crate) reported_on_main: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -305,17 +352,56 @@ pub(crate) struct ConnectGitHubRepositoryRequest {
     pub(crate) run_import_count: u32,
 }
 
-pub(crate) fn github_setup_check_response(read: GitHubSetupCheckRead) -> GitHubSetupCheckResponse {
-    let check = read.check;
-    GitHubSetupCheckResponse {
-        branch: GitHubSetupCheck::branch().name(),
-        message: check.message(read.workflows_started),
-        commit_oid: check.commit_oid,
-        state: check.state.into(),
-        started_at_unix: check.started_at_unix,
-        finished_at_unix: check.finished_at_unix,
-        check_names: read.check_names,
+pub(crate) fn github_connection_test_response(
+    results: Vec<GitHubConnectionTestResult>,
+) -> GitHubConnectionTestResponse {
+    GitHubConnectionTestResponse {
+        results: results
+            .into_iter()
+            .map(|result| GitHubConnectionTestResultResponse {
+                step: result.step.into(),
+                passed: result.passed,
+                message: result.message,
+            })
+            .collect(),
     }
+}
+
+pub(crate) fn github_checks_response(catalog: GitHubCheckCatalog) -> GitHubChecksResponse {
+    GitHubChecksResponse {
+        workflows: catalog
+            .workflows
+            .into_iter()
+            .map(
+                |workflow: GitHubWorkflowSummary| GitHubWorkflowSummaryResponse {
+                    path: workflow.path,
+                    name: workflow.name,
+                    runs: check_runs_response(workflow.runs),
+                    runtime_named_jobs: workflow.runtime_named_jobs,
+                },
+            )
+            .collect(),
+        checks: catalog
+            .checks
+            .into_iter()
+            .map(|check: GitHubCatalogCheck| GitHubCatalogCheckResponse {
+                name: check.name,
+                workflow_path: check.workflow_path,
+                runs: check.runs.map(check_runs_response),
+                required_on_github: check.required_on_github,
+                reported_on_main: check.reported_on_main,
+            })
+            .collect(),
+    }
+}
+
+fn check_runs_response(runs: GitHubCheckRuns) -> GitHubCheckRunsResponse {
+    let (verdict, reason) = match runs {
+        GitHubCheckRuns::Yes => (GitHubCheckRunsVerdictResponse::Yes, None),
+        GitHubCheckRuns::Maybe(reason) => (GitHubCheckRunsVerdictResponse::Maybe, Some(reason)),
+        GitHubCheckRuns::No(reason) => (GitHubCheckRunsVerdictResponse::No, Some(reason)),
+    };
+    GitHubCheckRunsResponse { verdict, reason }
 }
 
 pub(crate) fn github_workflow_run_response(
@@ -368,7 +454,6 @@ pub(crate) struct GitHubConnectionParts {
     pub(crate) can_confirm_public: bool,
     pub(crate) can_publish_main: bool,
     pub(crate) main_push: Option<GitHubPush>,
-    pub(crate) setup_check: Option<GitHubSetupCheckRead>,
     pub(crate) run_import_count: u32,
     pub(crate) run_import: Option<GitHubRunImport>,
 }
@@ -382,9 +467,6 @@ pub(crate) fn github_connection_response(
         read.as_ref()
             .is_some_and(|read| read.connection.github_repository_id == github_repository_id)
     };
-    let setup_check = parts
-        .setup_check
-        .filter(|setup| linked(setup.check.github_repository_id));
     let run_import = parts
         .run_import
         .filter(|import| linked(import.github_repository_id));
@@ -426,7 +508,6 @@ pub(crate) fn github_connection_response(
     });
     GitHubConnectionResponse {
         configured,
-        setup_check: setup_check.map(github_setup_check_response),
         connection,
         required_checks: parts.required_checks,
         review_bots: parts

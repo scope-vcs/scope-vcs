@@ -16,7 +16,9 @@ import type {
 } from './types'
 import type {
   GitHubAuthorizeResponse,
+  GitHubChecksResponse,
   GitHubConnectionResponse,
+  GitHubConnectionTestResponse,
   GitHubSetupResponse,
   GitHubWorkflowJobLogResponse,
   GitHubWorkflowRunDetailResponse,
@@ -27,7 +29,9 @@ import { repoRoute } from './paths'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import {
   GitHubAuthorizeResponseValidator,
+  GitHubChecksResponseValidator,
   GitHubConnectionResponseValidator,
+  GitHubConnectionTestResponseValidator,
   GitHubSetupResponseValidator,
   GitHubWorkflowJobLogResponseValidator,
   GitHubWorkflowNamesResponseValidator,
@@ -115,8 +119,25 @@ export async function disconnectRepoGitHubForRequest(data: RepoParams) {
   return changeRepoGitHub('delete', ApiRouteTemplates.repoGitHub, data)
 }
 
-export async function startRepoGitHubSetupCheckForRequest(data: RepoParams) {
-  return changeRepoGitHub('post', ApiRouteTemplates.repoGitHubSetupCheck, data)
+export async function testRepoGitHubConnectionForRequest(
+  data: RepoParams,
+): Promise<GitHubConnectionTestResponse> {
+  return createApiClient().post(
+    repoRoute(ApiRouteTemplates.repoGitHubConnectionTest, data),
+    GitHubConnectionTestResponseValidator,
+    { auth: 'required' },
+  )
+}
+
+export async function loadRepoGitHubChecksForRequest(
+  data: RepoParams,
+  signal?: AbortSignal,
+): Promise<GitHubChecksResponse> {
+  return createApiClient().get(
+    repoRoute(ApiRouteTemplates.repoGitHubChecks, data),
+    GitHubChecksResponseValidator,
+    { auth: 'required', signal },
+  )
 }
 
 export async function setRepoGitHubRunImportCountForRequest(data: SetRepoGitHubRunImportCountInput) {

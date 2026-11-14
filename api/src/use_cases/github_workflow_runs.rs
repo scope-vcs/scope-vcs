@@ -1,8 +1,5 @@
 use crate::{error::ApiError, state::AppState};
-use scope_domain::{
-    github_connection::GitHubConnection,
-    requests::{GitHubBranch, github_retry_at},
-};
+use scope_domain::{github_connection::GitHubConnection, requests::github_retry_at};
 use scope_postgres::db::GitHubWorkflowRunReadJob;
 
 const READ_BATCH_SIZE: u64 = 20;
@@ -115,27 +112,6 @@ async fn read_workflow_run(
         return Ok(());
     };
     save_runs(state, connection, &[run]).await
-}
-
-pub(crate) async fn refresh_branch_workflow_runs(
-    state: &AppState,
-    connection: &GitHubConnection,
-    branch: &GitHubBranch,
-    commit_oid: &str,
-) -> Result<(), ApiError> {
-    let Some(runs) = state
-        .github_app()?
-        .branch_workflow_runs(
-            connection.installation_id,
-            &connection.github_full_name,
-            &branch.name(),
-            commit_oid,
-        )
-        .await?
-    else {
-        return Ok(());
-    };
-    save_runs(state, connection, &runs).await
 }
 
 async fn save_runs(

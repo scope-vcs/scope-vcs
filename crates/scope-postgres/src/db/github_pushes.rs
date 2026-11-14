@@ -5,9 +5,8 @@ use super::{
     integer_columns::{i32_to_u32, i64_to_u64, u64_to_i64},
 };
 use crate::error::PostgresError;
-use scope_domain::{
-    github_setup_check::GitHubSetupCheck,
-    requests::{GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, Request},
+use scope_domain::requests::{
+    GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, Request,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
 
@@ -213,8 +212,8 @@ impl RequestStore {
         now_unix: u64,
     ) -> Result<Option<GitHubPush>, PostgresError> {
         let now = u64_to_i64(now_unix, "GitHub push time")?;
-        let (state, next_attempt, last_error, push_result) = match outcome {
-            GitHubJobOutcome::Succeeded(()) => ("succeeded", None, None, Some(Ok(()))),
+        let (state, next_attempt, last_error) = match outcome {
+            GitHubJobOutcome::Succeeded(()) => ("succeeded", None, None),
             GitHubJobOutcome::Failed {
                 error,
                 retry_at_unix: Some(retry_at),
@@ -222,12 +221,11 @@ impl RequestStore {
                 "queued",
                 Some(u64_to_i64(retry_at, "GitHub push retry time")?),
                 Some(error),
-                None,
             ),
             GitHubJobOutcome::Failed {
                 error,
                 retry_at_unix: None,
-            } => ("failed", None, Some(error.clone()), Some(Err(error))),
+            } => ("failed", None, Some(error)),
         };
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         if blocked_request_push(&tx, id).await? {
@@ -259,24 +257,11 @@ impl RequestStore {
         else {
             return Ok(None);
         };
-        if let (GitHubBranch::Request(request_id), Some(target_oid), Some(Ok(()))) =
-            (&push.branch, &push.target_oid, &push_result)
+        if let (GitHubBranch::Request(request_id), Some(target_oid), GitHubPushState::Succeeded) =
+            (&push.branch, &push.target_oid, push.state)
         {
             super::github_pull_requests::queue_carrier_for_pushed_head(
                 &tx, request_id, target_oid, now_unix,
-            )
-            .await?;
-        }
-        if push.branch == GitHubSetupCheck::branch()
-            && push.target_oid.is_some()
-            && let Some(result) = push_result
-        {
-            super::github_setup_checks::record_setup_check_push(
-                &tx,
-                &push.repo_id,
-                &push.id,
-                result.as_ref().map(|_| ()).map_err(String::as_str),
-                now_unix,
             )
             .await?;
         }
@@ -355,7 +340,7 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
     let git_ref = branch.git_ref();
     let request_id = match branch {
         GitHubBranch::Request(request_id) => Some(request_id.clone()),
-        GitHubBranch::SetupCheck | GitHubBranch::Main => None,
+        GitHubBranch::Main => None,
     };
     acquire_github_push_lock(conn, repo_id, branch).await?;
     let now = u64_to_i64(now_unix, "GitHub push time")?;

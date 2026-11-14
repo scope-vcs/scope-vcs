@@ -1,24 +1,27 @@
-import type { GitHubConnectionResponse } from '@/api/types.generated'
+import type { GitHubChecksResponse, GitHubConnectionResponse } from '@/api/types.generated'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
+import { githubCheckStatus } from './repo-github-checks-model'
 
 function sameNames(left: string[], right: string[]) {
   return left.length === right.length && left.every((name) => right.includes(name))
 }
 
 export function RepoRequiredChecks({
+  checks,
   github,
   save,
 }: {
+  checks: GitHubChecksResponse | null
   github: GitHubConnectionResponse
   save: (names: string[]) => Promise<GitHubConnectionResponse>
 }) {
   const names = github.required_checks
-  const discovered = github.setup_check?.check_names ?? []
+  const catalog = new Map((checks?.checks ?? []).map((check) => [check.name, check]))
   const [selection, setSelection] = useState({ source: names, names, conflict: false })
   const [draft, setDraft] = useState('')
   const [manual, setManual] = useState(false)
@@ -26,7 +29,7 @@ export function RepoRequiredChecks({
   const [saved, setSaved] = useState<string[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const dirty = !sameNames(selection.names, selection.source)
-  const candidates = [...new Set([...discovered, ...names, ...selection.names])]
+  const candidates = [...new Set([...catalog.keys(), ...names, ...selection.names])]
   const name = draft.trim()
   const canAdd = name.length > 0 && !selection.names.includes(name) && !pending
 
@@ -70,30 +73,36 @@ export function RepoRequiredChecks({
       </div>
       {candidates.length ? (
         <ul aria-label="Results required before merge" className="divide-y divide-border">
-          {candidates.map((candidate) => (
-            <li key={candidate}>
-              <label className="flex min-h-11 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 py-2">
-                <input
-                  checked={selection.names.includes(candidate)}
-                  className="size-4 shrink-0 accent-primary"
-                  disabled={pending}
-                  onChange={(event) => select(event.target.checked
-                    ? [...selection.names, candidate]
-                    : selection.names.filter((existing) => existing !== candidate))}
-                  type="checkbox"
-                />
-                <span className="min-w-0 flex-1 break-words font-mono text-[13px] [overflow-wrap:anywhere]">{candidate}</span>
-                <span className="text-xs text-muted-foreground">
-                  {discovered.includes(candidate) ? 'Observed in connection test' : 'Not observed in latest test'}
-                </span>
-              </label>
-            </li>
-          ))}
+          {candidates.map((candidate) => {
+            const status = githubCheckStatus(catalog.get(candidate))
+            return (
+              <li key={candidate}>
+                <label className="flex min-h-11 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                  <input
+                    checked={selection.names.includes(candidate)}
+                    className="size-4 shrink-0 accent-primary"
+                    disabled={pending}
+                    onChange={(event) => select(event.target.checked
+                      ? [...selection.names, candidate]
+                      : selection.names.filter((existing) => existing !== candidate))}
+                    type="checkbox"
+                  />
+                  <span className="min-w-32 flex-1 break-words font-mono text-[13px] [overflow-wrap:anywhere]">{candidate}</span>
+                  {checks && (
+                    <span className={status.tone === 'warning' ? 'text-xs text-warning-strong' : 'text-xs text-muted-foreground'}>
+                      {status.text}
+                    </span>
+                  )}
+                </label>
+              </li>
+            )
+          })}
         </ul>
       ) : (
         <p className="leading-5 text-muted-foreground">
-          No results selected. Test the connection to discover results, or enter an exact name.
-          Workflows need the scope/** push trigger to run on Scope requests.
+          {checks
+            ? 'No results found. Add a workflow that runs on Scope requests, or enter an exact name.'
+            : 'No results selected.'}
         </p>
       )}
       {selection.conflict && (

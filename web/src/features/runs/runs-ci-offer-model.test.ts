@@ -9,7 +9,7 @@ const notConnected: GitHubConnectionResponse = {
   required_checks: [], review_bots: [],
   can_confirm_public: true,
   can_publish_main: false,
-  setup_check: null,
+ 
   run_import_count: 50,
   run_import: null,
 }

@@ -198,7 +198,7 @@ export type RepositoryInviteViewerResponse = "ready" | "signed_out" | "wrong_acc
 
 export type AcceptRepositoryInviteResponse = { repo: RepoSummaryResponse, member: RepositoryMemberResponse, };
 
-export type GitHubConnectionResponse = { configured: boolean, connection: GitHubConnectionDetailsResponse | null, required_checks: Array<string>, review_bots: Array<GitHubReviewBotResponse>, can_confirm_public: boolean, can_publish_main: boolean, setup_check: GitHubSetupCheckResponse | null, run_import_count: number, run_import: GitHubRunImportResponse | null, };
+export type GitHubConnectionResponse = { configured: boolean, connection: GitHubConnectionDetailsResponse | null, required_checks: Array<string>, review_bots: Array<GitHubReviewBotResponse>, can_confirm_public: boolean, can_publish_main: boolean, run_import_count: number, run_import: GitHubRunImportResponse | null, };
 
 export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, connected_by: RequestActorSummaryResponse | null, connected_at_unix: number, disconnected: GitHubDisconnectionResponse | null, public_on_github: boolean, public_confirmed: boolean, open_review_bot_pull_requests: boolean, review_request_comment: string | null, main_publication: GitHubMainPublicationResponse, };
 
@@ -244,9 +244,21 @@ export type GitHubRunImportStateResponse = "queued" | "running" | "succeeded" | 
 
 export type GitHubRunImportResponse = { state: GitHubRunImportStateResponse, run_count: number, imported_count: number, error: string | null, queued_at_unix: number, finished_at_unix: number | null, };
 
-export type GitHubSetupCheckStateResponse = "pushing" | "waiting" | "finished" | "failed";
+export type GitHubConnectionTestStepResponse = "installation" | "repository" | "permissions";
 
-export type GitHubSetupCheckResponse = { branch: string, commit_oid: string, state: GitHubSetupCheckStateResponse, started_at_unix: number, finished_at_unix: number | null, check_names: Array<string>, message: string | null, };
+export type GitHubConnectionTestResponse = { results: Array<GitHubConnectionTestResultResponse>, };
+
+export type GitHubConnectionTestResultResponse = { step: GitHubConnectionTestStepResponse, passed: boolean, message: string, };
+
+export type GitHubCheckRunsVerdictResponse = "yes" | "maybe" | "no";
+
+export type GitHubCheckRunsResponse = { verdict: GitHubCheckRunsVerdictResponse, reason: string | null, };
+
+export type GitHubChecksResponse = { workflows: Array<GitHubWorkflowSummaryResponse>, checks: Array<GitHubCatalogCheckResponse>, };
+
+export type GitHubWorkflowSummaryResponse = { path: string, name: string, runs: GitHubCheckRunsResponse, runtime_named_jobs: Array<string>, };
+
+export type GitHubCatalogCheckResponse = { name: string, workflow_path: string | null, runs: GitHubCheckRunsResponse | null, required_on_github: boolean, reported_on_main: boolean, };
 
 export type GitHubWorkflowRunsResponse = { configured: boolean, github: GitHubWorkflowRunListResponse | null, };
 
@@ -524,7 +536,8 @@ export const ApiRouteTemplates = {
   repoGitHubReviewBotPullRequests: "/v1/repos/{owner}/{repo}/github/review-bot-pull-requests",
   repoGitHubReviewRequestComment: "/v1/repos/{owner}/{repo}/github/review-request-comment",
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
-  repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
+  repoGitHubConnectionTest: "/v1/repos/{owner}/{repo}/github/connection-test",
+  repoGitHubChecks: "/v1/repos/{owner}/{repo}/github/checks",
   repoGitHubMainPublication: "/v1/repos/{owner}/{repo}/github/main-publication",
   repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",
   repoGitHubWorkflowNames: "/v1/repos/{owner}/{repo}/github/workflow-names",

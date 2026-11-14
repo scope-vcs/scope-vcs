@@ -7,10 +7,7 @@ use super::{
     },
 };
 use crate::error::PostgresError;
-use scope_domain::{
-    github_workflow_jobs::GitHubJobsRead, github_workflow_runs::GitHubWorkflowRun,
-    requests::GitHubBranch,
-};
+use scope_domain::{github_workflow_jobs::GitHubJobsRead, github_workflow_runs::GitHubWorkflowRun};
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
 
 const SELECT_RUN: &str = "run.github_run_id, run.workflow_name, run.head_branch, run.head_oid,
@@ -407,36 +404,6 @@ pub(super) async fn save_workflow_run<C: ConnectionTrait>(
     ))
     .await?;
     Ok(())
-}
-
-pub(super) async fn branch_workflow_runs<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    github_repository_id: u64,
-    branch: &GitHubBranch,
-    head_oid: &str,
-) -> Result<Vec<GitHubWorkflowRun>, PostgresError> {
-    WorkflowRunRow::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        format!(
-            "SELECT {SELECT_RUN}
-               FROM scope_github_workflow_runs run
-              WHERE run.repo_id = $1 AND run.github_repository_id = $4
-                AND run.head_branch = $2 AND run.head_oid = $3
-              ORDER BY run.github_run_id"
-        ),
-        [
-            repo_id.into(),
-            branch.name().into(),
-            head_oid.into(),
-            u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
-        ],
-    ))
-    .all(conn)
-    .await?
-    .into_iter()
-    .map(WorkflowRunRow::into_domain)
-    .collect()
 }
 
 impl ListedRow {
