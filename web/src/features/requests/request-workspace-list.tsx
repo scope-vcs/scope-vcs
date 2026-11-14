@@ -357,14 +357,17 @@ function RequestWorkspaceRow({
                   onClick={(event) => {
                     const bounds = stackPressBounds.current
                     stackPressBounds.current = null
-                    if (event.detail > 0 && bounds && (
-                      event.clientX < bounds.left || event.clientX > bounds.right ||
-                      event.clientY < bounds.top || event.clientY > bounds.bottom
+                    if (event.detail > 0 && bounds && [bounds, event.currentTarget.getBoundingClientRect()].every(
+                      ({ left, right, top, bottom }) =>
+                        event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom,
                     )) return
                     onToggleStack()
                   }}
                   onPointerCancel={() => { stackPressBounds.current = null }}
                   onPointerDown={(event) => {
+                    if (event.button !== 0) return
+                    event.preventDefault()
+                    event.currentTarget.focus({ preventScroll: true })
                     stackPressBounds.current = event.currentTarget.getBoundingClientRect()
                     event.currentTarget.setPointerCapture(event.pointerId)
                   }}
