@@ -9,7 +9,7 @@ use crate::{
         },
         git_read_scope_user,
     },
-    runtime_budgets::{RuntimeBudgets, RuntimePermit},
+    runtime_budgets::RuntimePermit,
     state::AppState,
 };
 use axum::{
@@ -27,9 +27,10 @@ use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_postgres::db::GitReadSource;
 use std::{
     collections::BTreeSet,
-    io::{BufRead, BufReader, Read},
+    io::Read,
     path::Path as FsPath,
     process::Command,
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 use tracing::Instrument as _;
@@ -37,6 +38,7 @@ pub(super) mod fetch_folder;
 #[cfg(test)]
 mod fetch_tests;
 mod protocol;
+mod reachability;
 pub(crate) use protocol::GitProtocol;
 
 pub(crate) struct AuthorizedGitRead {
@@ -287,37 +289,16 @@ fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec
     if required.is_empty() && haves.is_empty() {
         return Ok(request.to_vec());
     }
-    let mut command = Command::new("git");
-    command
-        .arg("--git-dir")
-        .arg(repo_path)
-        .args(["rev-list", "--objects", "--all"]);
-    let git_span = prepare_git_subprocess(&mut command)?;
-    let _entered = git_span.enter();
-    let reachable = run_with_stdout(
-        &mut command,
-        None,
-        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
-        "checking Git upload-pack object reachability",
-        move |stdout, _cancellation| {
-            for line in BufReader::new(stdout).split(b'\n') {
-                let line = line?;
-                let oid = line.split(|byte| *byte == b' ').next().unwrap_or_default();
-                required.remove(oid);
-                haves.remove(oid);
-            }
-            Ok::<_, std::io::Error>((required, haves))
-        },
-    )
-    .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
-    record_git_exit(&git_span, reachable.status);
-    if !reachable.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "checking Git upload-pack object reachability: {}",
-            truncated_git_stderr(&reachable.stderr)
-        )));
-    }
-    let (required, haves) = reachable.value;
+    let candidates = required.union(&haves).cloned().collect();
+    let unreachable = reachability::unreachable_from_refs(repo_path, &candidates)?;
+    let required = required
+        .intersection(&unreachable)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let haves = haves
+        .intersection(&unreachable)
+        .cloned()
+        .collect::<BTreeSet<_>>();
     if !required.is_empty() {
         return Err(ApiError::bad_request(
             "Git object is outside the visible refs; refs may have changed, retry fetch",
@@ -371,6 +352,37 @@ fn send_upload_pack_chunk(
                 .min(Duration::from_millis(1)),
         );
     }
+}
+
+static V2_CAPABILITIES: OnceLock<Vec<u8>> = OnceLock::new();
+
+pub(crate) fn cached_v2_capabilities() -> Option<Vec<u8>> {
+    V2_CAPABILITIES.get().cloned()
+}
+
+pub(crate) fn v2_capabilities(timeout: Duration) -> Result<Vec<u8>, ApiError> {
+    if let Some(capabilities) = cached_v2_capabilities() {
+        return Ok(capabilities);
+    }
+    let folder = tempfile::Builder::new()
+        .prefix("scope-upload-capabilities-")
+        .tempdir()
+        .map_err(ApiError::internal)?;
+    git_command_output_with_timeout(
+        Command::new("git")
+            .args(["init", "--bare", "--quiet", "--initial-branch=main"])
+            .arg(folder.path()),
+        None,
+        timeout,
+    )?;
+    let capabilities = git_command_output_with_timeout(
+        git_upload_pack_command(GitProtocol::V2)
+            .args(["--stateless-rpc", "--advertise-refs"])
+            .arg(folder.path()),
+        None,
+        timeout,
+    )?;
+    Ok(V2_CAPABILITIES.get_or_init(|| capabilities).clone())
 }
 
 pub(crate) fn git_upload_pack_advertisement(

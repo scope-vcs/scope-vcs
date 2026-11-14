@@ -116,37 +116,99 @@ pub(crate) async fn install_chain(
         if installable.is_empty() {
             break;
         }
-        let mut fetched = stream::iter(installable.into_iter().map(|pack| async move {
+        let mut batches = stream::iter(installable.into_iter().map(|pack| async move {
             let fetched = fetch_pack(state, incarnation, &pack).await;
             (pack, fetched)
         }))
-        .buffered(CONCURRENT_POOL_FETCHES);
-        let mut installed = 0;
-        while let Some((pack, fetched)) = fetched.next().await {
-            let result = match fetched {
-                Ok(fetched) => install_fetched(state, objects_repo, fetched)
-                    .await
-                    .map_err(|error| ("install", error)),
-                Err(error) => Err(("fetch", error)),
-            };
-            match result {
-                Ok(()) => installed += 1,
-                Err((step, error)) => tracing::warn!(
-                    repository_id = incarnation.repository_id(),
-                    pack_id = pack.id,
-                    step,
-                    error = %error.operator_diagnostic(),
-                    "skipping an unusable pool pack"
-                ),
+        .buffered(CONCURRENT_POOL_FETCHES)
+        .ready_chunks(CONCURRENT_POOL_FETCHES);
+        let mut progressed = false;
+        while let Some(batch) = batches.next().await {
+            let mut ready = Vec::new();
+            for (pack, fetched) in batch {
+                match fetched {
+                    Ok(fetched) => ready.push((pack, fetched)),
+                    Err(error) => skip_pack(incarnation, &pack, "fetch", &error),
+                }
+            }
+            for (pack, outcome) in install_batch(state, objects_repo, ready).await {
+                match outcome {
+                    Ok(PackInstall::Indexed) => {
+                        installed_total += 1;
+                        progressed = true;
+                    }
+                    Ok(PackInstall::AlreadyPresent) => progressed = true,
+                    Err(error) => skip_pack(incarnation, &pack, "install", &error),
+                }
             }
         }
-        if installed == 0 {
+        if !progressed {
             break;
         }
-        installed_total += installed;
         pending = waiting;
     }
     Ok(installed_total)
+}
+
+enum PackInstall {
+    Indexed,
+    AlreadyPresent,
+}
+
+fn skip_pack(
+    incarnation: &RepositoryIncarnation,
+    pack: &GitPoolPack,
+    step: &str,
+    error: &ApiError,
+) {
+    tracing::warn!(
+        repository_id = incarnation.repository_id(),
+        pack_id = pack.id,
+        step,
+        error = %error.operator_diagnostic(),
+        "skipping an unusable pool pack"
+    );
+}
+
+async fn install_batch(
+    state: &AppState,
+    objects_repo: &FsPath,
+    ready: Vec<(GitPoolPack, FetchedPack)>,
+) -> Vec<(GitPoolPack, Result<PackInstall, ApiError>)> {
+    if ready.is_empty() {
+        return Vec::new();
+    }
+    let heads = ready
+        .iter()
+        .map(|(pack, _)| pack.clone())
+        .collect::<Vec<_>>();
+    let timeout = state.runtime_budgets.git_command_timeout();
+    let target = objects_repo.to_path_buf();
+    let objects_repo = objects_repo.to_path_buf();
+    let installed = write_shelf(&target, move || {
+        let present = present_commits(
+            &objects_repo,
+            ready.iter().map(|(pack, _)| pack.head_oid.as_str()),
+        )?;
+        Ok(ready
+            .into_iter()
+            .map(|(pack, fetched)| {
+                let outcome = if present.contains(&pack.head_oid) {
+                    Ok(PackInstall::AlreadyPresent)
+                } else {
+                    index_fetched(&objects_repo, fetched, timeout).map(|()| PackInstall::Indexed)
+                };
+                (pack, outcome)
+            })
+            .collect())
+    })
+    .await;
+    installed.unwrap_or_else(|error| {
+        heads
+            .into_iter()
+            .map(|pack| (pack, Err(error.clone())))
+            .collect()
+    })
 }
 
 pub(crate) enum FetchedPack {
@@ -186,20 +248,30 @@ pub(crate) async fn install_fetched(
     let objects_repo = objects_repo.to_path_buf();
     let timeout = state.runtime_budgets.git_command_timeout();
     let target = objects_repo.clone();
-    write_shelf(&target, move || match fetched {
+    write_shelf(&target, move || {
+        index_fetched(&objects_repo, fetched, timeout)
+    })
+    .await
+}
+
+fn index_fetched(
+    objects_repo: &FsPath,
+    fetched: FetchedPack,
+    timeout: std::time::Duration,
+) -> Result<(), ApiError> {
+    match fetched {
         FetchedPack::Bytes(pack) => git_command_output(
             Command::new("git")
                 .arg("-C")
-                .arg(&objects_repo)
+                .arg(objects_repo)
                 .args(["index-pack", "--stdin"]),
             Some(&pack),
         )
         .map(drop),
         FetchedPack::Verified(verified) => {
-            install_verified_git_pack(&objects_repo, verified.path(), timeout)
+            install_verified_git_pack(objects_repo, verified.path(), timeout)
         }
-    })
-    .await
+    }
 }
 
 pub(crate) fn installable_packs(

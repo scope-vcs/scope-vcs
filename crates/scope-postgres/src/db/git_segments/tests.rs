@@ -206,7 +206,7 @@ async fn ready_segment(store: &MetadataStore, segment_id: &str, digest: char) ->
 }
 
 #[tokio::test]
-async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
+async fn request_pool_packs_are_walked_from_heads_only_within_the_lineage() {
     let store = store_with_repository("segment-user/repo").await;
     store
         .db
@@ -271,9 +271,40 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
             .unwrap();
     }
 
+    let lineage = store
+        .repositories()
+        .git_pool_request_lineage("segment-user/repo", &["req_wanted".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(
+        lineage
+            .iter()
+            .map(|request| (
+                request.id.as_str(),
+                request.submitted,
+                request.has_full_scope_packs,
+                request.has_own_view_packs
+            ))
+            .collect::<Vec<_>>(),
+        [("req_wanted", false, true, false)]
+    );
+    let lineage_ids = ["req_wanted".to_string()];
+    let heads = ["b".repeat(40), "f".repeat(40)];
+    let nearest = store
+        .repositories()
+        .git_pool_packs_behind("segment-user/repo", &lineage_ids, &heads, 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        nearest
+            .iter()
+            .map(|pack| pack.id.as_str())
+            .collect::<Vec<_>>(),
+        ["pool-segment"]
+    );
     let listed = store
         .repositories()
-        .git_pool_packs_for_requests("segment-user/repo", &["req_wanted".to_string()])
+        .git_pool_packs_behind("segment-user/repo", &lineage_ids, &heads, 8)
         .await
         .unwrap();
     let stored = store
@@ -306,7 +337,6 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
             .collect::<Vec<_>>(),
         [inline, segment]
     );
-    assert!(listed.iter().all(|listed| !listed.request_submitted));
 
     let main_listing = store
         .repositories()
@@ -330,4 +360,57 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
             .unwrap(),
         [main]
     );
+}
+
+#[tokio::test]
+async fn a_walk_over_converging_prerequisites_returns_each_pack_once() {
+    let store = store_with_repository("segment-user/repo").await;
+    store
+        .db
+        .execute_unprepared(
+            "INSERT INTO scope_requests (
+                id, repo_id, name, author_user_id, author_role, audience,
+                base_kind, review_base_oid, base_version, stack_status, stack_depth,
+                main_ancestor_oid, head_oid, title, description_markdown, activity_version,
+                created_at_unix, updated_at_unix
+             ) VALUES ('req_crossed', 'segment-user/repo', 'crossed', 'segment_user', 'Owner',
+                 'private', 'Main', repeat('c', 40), 1, 'main', 1,
+                 repeat('c', 40), repeat('d', 40), 'crossed', '', 1, 1, 1)",
+        )
+        .await
+        .unwrap();
+    let head = |level: usize, side: usize| format!("{:039x}{side}", level + 1);
+    let levels = 24;
+    for level in 0..levels {
+        for side in 0..2 {
+            let pack = GitPoolPack {
+                id: format!("pool-{level}-{side}"),
+                owner: GitPoolPackOwner::Request {
+                    scope: scope_domain::repository::git::RequestPackScope::Full,
+                    request_id: "req_crossed".to_string(),
+                },
+                head_oid: head(level, side),
+                prerequisites: match level {
+                    0 => Vec::new(),
+                    _ => vec![head(level - 1, 0), head(level - 1, 1)],
+                },
+                storage: GitPoolPackStorage::Inline { sealed: vec![1] },
+            };
+            register_git_pool_pack(store.db.as_ref(), "segment-user/repo", &pack, 1)
+                .await
+                .unwrap();
+        }
+    }
+
+    let walked = store
+        .repositories()
+        .git_pool_packs_behind(
+            "segment-user/repo",
+            &["req_crossed".to_string()],
+            &[head(levels - 1, 0), head(levels - 1, 1)],
+            64,
+        )
+        .await
+        .unwrap();
+    assert_eq!(walked.len(), 2 * levels);
 }
