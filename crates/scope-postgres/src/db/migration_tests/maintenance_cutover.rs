@@ -34,6 +34,26 @@ async fn ordinary_startup_refuses_pending_maintenance_migration() {
 }
 
 #[tokio::test]
+async fn writer_sessions_run_queries_without_jit_compilation() {
+    let (target, _db, _lease) = isolated_database().await;
+    let database_url = target.schema_database_url();
+    let writer = connect_writer_database(&database_url, database_url.parse().unwrap(), 2)
+        .await
+        .unwrap();
+    let jit = writer
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT current_setting('jit') AS jit".to_string(),
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<String>("", "jit")
+        .unwrap();
+    assert_eq!(jit, "off");
+}
+
+#[tokio::test]
 async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     let (target, db, _lease) = isolated_database().await;
     let database_url = target.schema_database_url();

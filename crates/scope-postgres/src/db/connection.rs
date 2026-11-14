@@ -123,7 +123,7 @@ pub(super) async fn connect_writer_database(
                     .map(|_| ())
             })
         })
-        .connect_with(connection_options)
+        .connect_with(connection_options.options([("jit", "off")]))
         .await?;
     Ok(SqlxPostgresConnector::from_sqlx_postgres_pool(pool))
 }
