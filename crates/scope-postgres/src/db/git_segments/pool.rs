@@ -174,14 +174,21 @@ where
          ) SELECT requests.id, requests.audience, requests.author_user_id,
                 requests.submitted_at_unix IS NOT NULL AS submitted,
                 ARRAY(SELECT user_id FROM scope_request_invitees WHERE request_id = requests.id) AS invitees,
-                EXISTS(SELECT 1 FROM scope_git_pool_packs packs
-                       WHERE packs.repo_id = $1 AND packs.request_id = requests.id
-                         AND packs.view_id IS NULL) AS has_full_scope_packs,
-                EXISTS(SELECT 1 FROM scope_git_pool_packs packs
-                       WHERE packs.repo_id = $1 AND packs.request_id = requests.id
-                         AND packs.view_id = requests.audience) AS has_own_view_packs
-         FROM scope_requests requests
-         WHERE requests.repo_id = $1 AND requests.id IN (SELECT id FROM lineage)
+                full_scope.found IS NOT NULL AS has_full_scope_packs,
+                own_view.found IS NOT NULL AS has_own_view_packs
+         FROM (SELECT DISTINCT id FROM lineage) lineage
+         JOIN scope_requests requests ON requests.id = lineage.id AND requests.repo_id = $1
+         LEFT JOIN LATERAL (
+             SELECT true AS found FROM scope_git_pool_packs packs
+             WHERE packs.request_id = requests.id AND packs.view_id IS NULL AND packs.repo_id = $1
+             LIMIT 1
+         ) full_scope ON true
+         LEFT JOIN LATERAL (
+             SELECT true AS found FROM scope_git_pool_packs packs
+             WHERE packs.request_id = requests.id AND packs.view_id = requests.audience
+               AND packs.repo_id = $1
+             LIMIT 1
+         ) own_view ON true
          ORDER BY requests.id",
         [repo_id.into(), request_ids.to_vec().into()],
     ))
