@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
+use tracing::Instrument;
 
 pub(crate) async fn write_shelf<T: Send + 'static>(
     path: &Path,
@@ -38,7 +39,14 @@ async fn lock_shelf(path: &Path) -> Result<OwnedMutexGuard<()>, ApiError> {
             }
         }
     };
+    if let Ok(guard) = lock.clone().try_lock_owned() {
+        return Ok(guard);
+    }
     tokio::time::timeout(Duration::from_secs(2), lock.lock_owned())
+        .instrument(crate::runtime_budgets::waiting_span(
+            "object shelf",
+            "Git object shelf write",
+        ))
         .await
         .map_err(|_| ApiError::infrastructure_unavailable("Git object shelf is busy; retry fetch"))
 }

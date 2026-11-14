@@ -13,6 +13,7 @@ use tokio::{
     io::AsyncWrite,
     sync::{OwnedSemaphorePermit, Semaphore},
 };
+use tracing::Instrument;
 
 const DEFAULT_RECEIVE_PACK_CONCURRENCY: usize = 4;
 const DEFAULT_UPLOAD_PACK_CONCURRENCY: usize = 8;
@@ -182,6 +183,7 @@ impl RuntimeBudgets {
             return Ok(permit);
         }
         tokio::time::timeout(self.git_admission_wait, semaphore.clone().acquire_owned())
+            .instrument(waiting_span("admission", operation))
             .await
             .ok()
             .and_then(Result::ok)
@@ -207,6 +209,16 @@ impl RuntimeBudgets {
             self.git_storage_limits.max_object_bytes(),
         )
     }
+}
+
+pub(crate) fn waiting_span(wait: &'static str, operation: &str) -> tracing::Span {
+    tracing::info_span!(
+        "waiting for capacity",
+        otel.name = %format!("wait {wait}"),
+        otel.kind = "internal",
+        scope.wait = wait,
+        scope.operation = operation,
+    )
 }
 
 fn try_acquire(semaphore: &Arc<Semaphore>, operation: &str) -> Result<RuntimePermit, ApiError> {
