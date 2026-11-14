@@ -20,6 +20,7 @@ use yaml_rust2::{
 const WORKFLOWS_DIRECTORY: &str = ".github/workflows/";
 const MAX_WORKFLOW_BYTES: u64 = 512 * 1024;
 const MAX_WORKFLOW_NODES: usize = 100_000;
+const MAX_WORKFLOW_EXPANDED_BYTES: usize = 4 * 1024 * 1024;
 
 pub(crate) async fn read_github_check_catalog(
     state: &AppState,
@@ -138,32 +139,61 @@ fn parse_workflow(bytes: &[u8]) -> Result<WorkflowValue, String> {
         .map_or(Ok(WorkflowValue::Null), workflow_value)
 }
 
+#[derive(Clone, Copy, Default)]
+struct ExpandedSize {
+    nodes: usize,
+    bytes: usize,
+}
+
+impl ExpandedSize {
+    fn scalar(text: &str) -> Self {
+        Self {
+            nodes: 1,
+            bytes: text.len(),
+        }
+    }
+
+    fn plus(self, other: Self) -> Self {
+        Self {
+            nodes: self.nodes.saturating_add(other.nodes),
+            bytes: self.bytes.saturating_add(other.bytes),
+        }
+    }
+
+    fn within_budget(self) -> bool {
+        self.nodes <= MAX_WORKFLOW_NODES && self.bytes <= MAX_WORKFLOW_EXPANDED_BYTES
+    }
+}
+
 #[derive(Default)]
 struct ExpandedNodes {
-    anchors: HashMap<usize, usize>,
-    open: Vec<(usize, usize)>,
-    total: usize,
+    anchors: HashMap<usize, ExpandedSize>,
+    open: Vec<(usize, ExpandedSize)>,
+    total: ExpandedSize,
     exceeded: bool,
 }
 
 impl ExpandedNodes {
-    fn add(&mut self, count: usize) {
+    fn add(&mut self, size: ExpandedSize) {
         match self.open.last_mut() {
-            Some((_, open)) => *open = open.saturating_add(count),
-            None => self.total = self.total.saturating_add(count),
+            Some((_, open)) => *open = open.plus(size),
+            None => self.total = self.total.plus(size),
         }
-        let pending = self.open.iter().map(|(_, count)| *count).sum::<usize>();
-        if self.total.saturating_add(pending) > MAX_WORKFLOW_NODES {
+        let expanded = self
+            .open
+            .iter()
+            .fold(self.total, |expanded, (_, open)| expanded.plus(*open));
+        if !expanded.within_budget() {
             self.exceeded = true;
         }
     }
 
     fn close(&mut self) {
-        if let Some((anchor, count)) = self.open.pop() {
+        if let Some((anchor, size)) = self.open.pop() {
             if anchor > 0 {
-                self.anchors.insert(anchor, count);
+                self.anchors.insert(anchor, size);
             }
-            self.add(count);
+            self.add(size);
         }
     }
 }
@@ -174,15 +204,20 @@ impl EventReceiver for ExpandedNodes {
             return;
         }
         match event {
-            Event::Scalar(_, _, anchor, _) => {
+            Event::Scalar(text, _, anchor, _) => {
+                let size = ExpandedSize::scalar(&text);
                 if anchor > 0 {
-                    self.anchors.insert(anchor, 1);
+                    self.anchors.insert(anchor, size);
                 }
-                self.add(1);
+                self.add(size);
             }
-            Event::Alias(anchor) => self.add(self.anchors.get(&anchor).copied().unwrap_or(1)),
+            Event::Alias(anchor) => {
+                let size = self.anchors.get(&anchor).copied().unwrap_or_default();
+                self.add(size.plus(ExpandedSize { nodes: 1, bytes: 0 }));
+            }
             Event::SequenceStart(anchor, _) | Event::MappingStart(anchor, _) => {
-                self.open.push((anchor, 1));
+                self.open
+                    .push((anchor, ExpandedSize { nodes: 1, bytes: 0 }));
             }
             Event::SequenceEnd | Event::MappingEnd => self.close(),
             Event::Nothing
@@ -280,9 +315,17 @@ mod tests {
                 }
             ));
         }
-        assert_eq!(
-            parse_workflow(nested.as_bytes()),
-            Err("The file expands to more values than Scope reads.".to_string())
+        let long = format!(
+            "s: &s {}\nr: &r [{}]\nt: [{}]\n",
+            "x".repeat(256 * 1024),
+            vec!["*s"; 100].join(", "),
+            vec!["*r"; 900].join(", ")
         );
+        for expanding in [nested, long] {
+            assert_eq!(
+                parse_workflow(expanding.as_bytes()),
+                Err("The file expands to more values than Scope reads.".to_string())
+            );
+        }
     }
 }
