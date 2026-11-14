@@ -1,7 +1,10 @@
-use super::{GitHubApp, GitHubRepository};
+use super::{GitHubApp, GitHubRepository, client::unavailable};
 use crate::error::ApiError;
+use reqwest::{Method, StatusCode};
 use scope_domain::github_check_catalog::GitHubWorkflowState;
 use serde::Deserialize;
+
+const BRANCH_RULES_ROUTE: &str = "/repos/{owner}/{repo}/rules/branches/{branch}";
 
 #[derive(Deserialize)]
 struct Branch {
@@ -90,14 +93,8 @@ impl GitHubApp {
             return Ok(None);
         };
         let rules = self
-            .installation_pages::<Vec<BranchRule>, _>(
-                installation_id,
-                &format!("/repos/{full_name}/rules/branches/{branch}"),
-                "/repos/{owner}/{repo}/rules/branches/{branch}",
-                |page| page,
-            )
-            .await?
-            .unwrap_or_default();
+            .branch_rules(installation_id, full_name, branch)
+            .await?;
         let required = protected
             .protection
             .and_then(|protection| protection.required_status_checks)
@@ -117,6 +114,39 @@ impl GitHubApp {
             head_oid: protected.commit.sha,
             required,
         }))
+    }
+
+    async fn branch_rules(
+        &self,
+        installation_id: u64,
+        full_name: &str,
+        branch: &str,
+    ) -> Result<Vec<BranchRule>, ApiError> {
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(Vec::new());
+        };
+        let request = self
+            .request(
+                Method::GET,
+                &format!("/repos/{full_name}/rules/branches/{branch}?per_page=100"),
+            )
+            .bearer_auth(token);
+        let response =
+            scope_service_runtime::outbound_http::send_traced(request, BRANCH_RULES_ROUTE)
+                .await
+                .map_err(|error| {
+                    unavailable(format!("GitHub was unreachable: {}", error.without_url()))
+                })?;
+        match response.status() {
+            StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => Ok(Vec::new()),
+            status if !status.is_success() => Err(unavailable(format!(
+                "GitHub answered {status} for the rules of {full_name}'s {branch}"
+            ))),
+            _ => response
+                .json()
+                .await
+                .map_err(|error| unavailable(format!("GitHub answered unreadably: {error}"))),
+        }
     }
 
     pub(crate) async fn workflow_states(

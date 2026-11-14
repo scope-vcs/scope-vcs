@@ -8,7 +8,10 @@ use axum::{
 };
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 pub(in crate::workflow_tests) struct FakeCheckSources {
@@ -16,6 +19,7 @@ pub(in crate::workflow_tests) struct FakeCheckSources {
     pub(in crate::workflow_tests) protected_contexts: Mutex<Vec<String>>,
     pub(in crate::workflow_tests) ruleset_contexts: Mutex<Vec<String>>,
     pub(in crate::workflow_tests) workflows: Mutex<Vec<serde_json::Value>>,
+    pub(in crate::workflow_tests) rulesets_need_a_paid_plan: AtomicBool,
 }
 
 impl Default for FakeCheckSources {
@@ -28,6 +32,7 @@ impl Default for FakeCheckSources {
             protected_contexts: Mutex::default(),
             ruleset_contexts: Mutex::default(),
             workflows: Mutex::default(),
+            rulesets_need_a_paid_plan: AtomicBool::default(),
         }
     }
 }
@@ -102,8 +107,21 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             get(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
+                    if fake
+                        .check_sources
+                        .rulesets_need_a_paid_plan
+                        .load(Ordering::SeqCst)
+                    {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            Json(serde_json::json!({
+                                "message": "Upgrade to GitHub Pro or make this repository public to enable this feature.",
+                            })),
+                        )
+                            .into_response();
+                    }
                     if !first_page(&query) {
-                        return Json(serde_json::json!([]));
+                        return Json(serde_json::json!([])).into_response();
                     }
                     let contexts = fake.check_sources.ruleset_contexts.lock().unwrap().clone();
                     Json(serde_json::json!([
@@ -119,6 +137,7 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                             },
                         },
                     ]))
+                    .into_response()
                 },
             ),
         )

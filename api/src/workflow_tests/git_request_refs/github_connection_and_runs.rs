@@ -178,6 +178,19 @@ async fn the_check_list_reads_workflows_from_scope_main_and_requirements_from_gi
             ),
         ]
     );
+
+    fake.check_sources
+        .rulesets_need_a_paid_plan
+        .store(true, Ordering::SeqCst);
+    let without_rulesets = github_json(&state, "GET", "/checks").await;
+    let required = without_rulesets["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|check| check["required_on_github"] == true)
+        .map(|check| check["name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(required, ["Required PR checks"]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
