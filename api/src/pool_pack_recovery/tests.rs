@@ -152,10 +152,7 @@ impl Fixture {
         self.state
             .metadata
             .repositories()
-            .git_pool_packs_for_requests(
-                &self.repo.record.id,
-                std::slice::from_ref(&self.request.id),
-            )
+            .request_pool_packs(&self.repo.record.id, &self.request.id)
             .await
             .unwrap()
     }

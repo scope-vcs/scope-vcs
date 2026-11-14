@@ -43,7 +43,9 @@ use ancestry::{
 pub(crate) use pool::request_object_repos;
 pub(crate) use pool::retain_staged_pool_pack;
 #[cfg(test)]
-pub(crate) use pool::{PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs};
+pub(crate) use pool::{
+    PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs, packs_to_catch_up,
+};
 pub(crate) use revision::{sweep_revision_jobs, with_request_revision_store_repo};
 pub(crate) use seeding::{
     DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,

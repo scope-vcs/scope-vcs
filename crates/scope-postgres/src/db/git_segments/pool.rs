@@ -10,16 +10,23 @@ use scope_domain::{
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, Value};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PooledRequest {
+    pub id: String,
+    pub view: ViewId,
+    pub author_id: Option<String>,
+    pub submitted: bool,
+    pub invitees: Vec<String>,
+    pub has_full_scope_packs: bool,
+    pub has_own_view_packs: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PooledRequestPack {
     pub id: String,
     pub request_id: String,
     pub head_oid: String,
     pub prerequisites: Vec<String>,
-    pub request_view: ViewId,
     pub scope: RequestPackScope,
-    pub request_author_id: Option<String>,
-    pub request_submitted: bool,
-    pub request_invitees: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,11 +151,11 @@ where
     Ok(())
 }
 
-async fn git_pool_packs_for_requests<C>(
+async fn git_pool_request_lineage<C>(
     conn: &C,
     repo_id: &str,
     request_ids: &[String],
-) -> Result<Vec<PooledRequestPack>, PostgresError>
+) -> Result<Vec<PooledRequest>, PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -161,41 +168,115 @@ where
         "WITH RECURSIVE lineage(id) AS (
              SELECT unnest($2::text[]) UNION
              SELECT unnest(ARRAY[r.parent_request_id] || ARRAY(
-                 SELECT parent_request_id FROM scope_request_revisions WHERE request_id = r.id))
+                 SELECT parent_request_id FROM scope_request_revisions
+                 WHERE request_id = r.id AND parent_request_id IS NOT NULL))
              FROM scope_requests r JOIN lineage l ON r.id = l.id WHERE r.repo_id = $1
-         ) SELECT packs.id, packs.request_id, packs.head_oid, packs.prerequisites, packs.view_id,
-                requests.audience AS request_view,
-                requests.author_user_id AS request_author_id,
-                requests.submitted_at_unix IS NOT NULL AS request_submitted,
-                ARRAY(SELECT user_id FROM scope_request_invitees WHERE request_id = requests.id) AS request_invitees
-         FROM scope_git_pool_packs packs
-         JOIN scope_requests requests ON requests.id = packs.request_id
-         WHERE packs.repo_id = $1 AND packs.request_id IN (SELECT id FROM lineage)
-         ORDER BY packs.created_at_unix, packs.id",
+         ) SELECT requests.id, requests.audience, requests.author_user_id,
+                requests.submitted_at_unix IS NOT NULL AS submitted,
+                ARRAY(SELECT user_id FROM scope_request_invitees WHERE request_id = requests.id) AS invitees,
+                EXISTS(SELECT 1 FROM scope_git_pool_packs packs
+                       WHERE packs.repo_id = $1 AND packs.request_id = requests.id
+                         AND packs.view_id IS NULL) AS has_full_scope_packs,
+                EXISTS(SELECT 1 FROM scope_git_pool_packs packs
+                       WHERE packs.repo_id = $1 AND packs.request_id = requests.id
+                         AND packs.view_id = requests.audience) AS has_own_view_packs
+         FROM scope_requests requests
+         WHERE requests.repo_id = $1 AND requests.id IN (SELECT id FROM lineage)
+         ORDER BY requests.id",
         [repo_id.into(), request_ids.to_vec().into()],
     ))
     .await?
     .iter()
     .map(|row| {
-        Ok(PooledRequestPack {
+        Ok(PooledRequest {
             id: row.try_get("", "id").map_err(read)?,
-            request_id: row.try_get("", "request_id").map_err(read)?,
-            scope: match row.try_get::<Option<String>>("", "view_id").map_err(read)? {
-                Some(view) => {
-                    RequestPackScope::View(ViewId::parse(&view).map_err(PostgresError::internal)?)
-                }
-                None => RequestPackScope::Full,
-            },
-            head_oid: row.try_get("", "head_oid").map_err(read)?,
-            prerequisites: row.try_get("", "prerequisites").map_err(read)?,
-            request_view: ViewId::parse(&row.try_get::<String>("", "request_view").map_err(read)?)
+            view: ViewId::parse(&row.try_get::<String>("", "audience").map_err(read)?)
                 .map_err(PostgresError::internal)?,
-            request_author_id: row.try_get("", "request_author_id").map_err(read)?,
-            request_submitted: row.try_get("", "request_submitted").map_err(read)?,
-            request_invitees: row.try_get("", "request_invitees").map_err(read)?,
+            author_id: row.try_get("", "author_user_id").map_err(read)?,
+            submitted: row.try_get("", "submitted").map_err(read)?,
+            invitees: row.try_get("", "invitees").map_err(read)?,
+            has_full_scope_packs: row.try_get("", "has_full_scope_packs").map_err(read)?,
+            has_own_view_packs: row.try_get("", "has_own_view_packs").map_err(read)?,
         })
     })
     .collect()
+}
+
+async fn git_pool_packs_behind<C>(
+    conn: &C,
+    repo_id: &str,
+    request_ids: &[String],
+    heads: &[String],
+    depth: u32,
+) -> Result<Vec<PooledRequestPack>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    if request_ids.is_empty() || heads.is_empty() || depth == 0 {
+        return Ok(Vec::new());
+    }
+    conn.query_all_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "WITH RECURSIVE walk(id, request_id, head_oid, prerequisites, view_id, depth) AS (
+             SELECT id, request_id, head_oid, prerequisites, view_id, 1
+             FROM scope_git_pool_packs
+             WHERE repo_id = $1 AND request_id = ANY($2) AND head_oid = ANY($3)
+             UNION
+             SELECT packs.id, packs.request_id, packs.head_oid, packs.prerequisites,
+                    packs.view_id, walk.depth + 1
+             FROM walk JOIN scope_git_pool_packs packs ON packs.head_oid = ANY(walk.prerequisites)
+             WHERE walk.depth < $4 AND packs.repo_id = $1 AND packs.request_id = ANY($2)
+         ) SELECT DISTINCT ON (id) id, request_id, head_oid, prerequisites, view_id
+         FROM walk ORDER BY id, depth",
+        [
+            repo_id.into(),
+            request_ids.to_vec().into(),
+            heads.to_vec().into(),
+            u32_to_i32(depth, "Git pool pack walk depth")?.into(),
+        ],
+    ))
+    .await?
+    .iter()
+    .map(pooled_request_pack)
+    .collect()
+}
+
+async fn request_pool_packs<C>(
+    conn: &C,
+    repo_id: &str,
+    request_id: &str,
+) -> Result<Vec<PooledRequestPack>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    conn.query_all_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT id, request_id, head_oid, prerequisites, view_id
+         FROM scope_git_pool_packs
+         WHERE repo_id = $1 AND request_id = $2
+         ORDER BY created_at_unix, id",
+        [repo_id.into(), request_id.into()],
+    ))
+    .await?
+    .iter()
+    .map(pooled_request_pack)
+    .collect()
+}
+
+fn pooled_request_pack(row: &QueryResult) -> Result<PooledRequestPack, PostgresError> {
+    let read = PostgresError::internal;
+    Ok(PooledRequestPack {
+        id: row.try_get("", "id").map_err(read)?,
+        request_id: row.try_get("", "request_id").map_err(read)?,
+        scope: match row.try_get::<Option<String>>("", "view_id").map_err(read)? {
+            Some(view) => {
+                RequestPackScope::View(ViewId::parse(&view).map_err(PostgresError::internal)?)
+            }
+            None => RequestPackScope::Full,
+        },
+        head_oid: row.try_get("", "head_oid").map_err(read)?,
+        prerequisites: row.try_get("", "prerequisites").map_err(read)?,
+    })
 }
 
 async fn main_pool_pack_listing<C>(
@@ -311,13 +392,33 @@ fn pool_pack_storage(row: &QueryResult) -> Result<GitPoolPackStorage, PostgresEr
 }
 
 impl crate::db::RepositoryStore {
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_pool_packs_for_requests"))]
-    pub async fn git_pool_packs_for_requests(
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_pool_request_lineage"))]
+    pub async fn git_pool_request_lineage(
         &self,
         repo_id: &str,
         request_ids: &[String],
+    ) -> Result<Vec<PooledRequest>, PostgresError> {
+        git_pool_request_lineage(self.db.as_ref(), repo_id, request_ids).await
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_pool_packs_behind"))]
+    pub async fn git_pool_packs_behind(
+        &self,
+        repo_id: &str,
+        request_ids: &[String],
+        heads: &[String],
+        depth: u32,
     ) -> Result<Vec<PooledRequestPack>, PostgresError> {
-        git_pool_packs_for_requests(self.db.as_ref(), repo_id, request_ids).await
+        git_pool_packs_behind(self.db.as_ref(), repo_id, request_ids, heads, depth).await
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_pool_packs"))]
+    pub async fn request_pool_packs(
+        &self,
+        repo_id: &str,
+        request_id: &str,
+    ) -> Result<Vec<PooledRequestPack>, PostgresError> {
+        request_pool_packs(self.db.as_ref(), repo_id, request_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "main_pool_packs"))]
