@@ -171,20 +171,35 @@ pub(crate) async fn git_info_refs(
                 Err(error) => return git_advertisement_error(error.into_public_message()),
             };
             let protocol = GitProtocol::of(&headers);
-            let folder = match protocol {
-                GitProtocol::V2 => {
-                    upload::fetch_folder::capabilities(&state, &headers, &org, &repo, &view).await
-                }
-                GitProtocol::V0 => {
-                    async {
-                        let read =
-                            authorized_git_read(&state, &headers, &org, &repo, &view).await?;
-                        upload::fetch_folder::prepare(&state, read, &view, &GitFetchAsk::listing())
-                            .await
+            if protocol == GitProtocol::V2 {
+                return match authorized_git_read(&state, &headers, &org, &repo, &view).await {
+                    Ok(_) => {
+                        let cache_root = state.repository_engine.cache_root().to_path_buf();
+                        let timeout = state.runtime_budgets.git_command_timeout();
+                        match blocking::run(move || {
+                            let _permit = permit;
+                            upload::v2_capabilities(&cache_root, timeout)
+                        })
+                        .await
+                        {
+                            Ok(capabilities) => git_response(
+                                "application/x-git-upload-pack-advertisement",
+                                capabilities,
+                            ),
+                            Err(error) => git_advertisement_error(error.into_public_message()),
+                        }
                     }
-                    .await
-                }
-            };
+                    Err(error) if error.status() == StatusCode::UNAUTHORIZED => {
+                        git_error_response(error)
+                    }
+                    Err(error) => git_advertisement_error(error.into_public_message()),
+                };
+            }
+            let folder = async {
+                let read = authorized_git_read(&state, &headers, &org, &repo, &view).await?;
+                upload::fetch_folder::prepare(&state, read, &view, &GitFetchAsk::listing()).await
+            }
+            .await;
             match folder {
                 Ok(repo_path) => {
                     let timeout = state.runtime_budgets.git_command_timeout();
