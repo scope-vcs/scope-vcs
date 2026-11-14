@@ -166,34 +166,14 @@ pub(crate) async fn git_info_refs(
             }
         }
         Some(GIT_UPLOAD_PACK) => {
+            let protocol = GitProtocol::of(&headers);
+            if protocol == GitProtocol::V2 {
+                return git_v2_capabilities(&state, &headers, &org, &repo, &view).await;
+            }
             let permit = match state.runtime_budgets.admit_upload_pack().await {
                 Ok(permit) => permit,
                 Err(error) => return git_advertisement_error(error.into_public_message()),
             };
-            let protocol = GitProtocol::of(&headers);
-            if protocol == GitProtocol::V2 {
-                return match authorized_git_read(&state, &headers, &org, &repo, &view).await {
-                    Ok(_) => {
-                        let timeout = state.runtime_budgets.git_command_timeout();
-                        match blocking::run(move || {
-                            let _permit = permit;
-                            upload::v2_capabilities(timeout)
-                        })
-                        .await
-                        {
-                            Ok(capabilities) => git_response(
-                                "application/x-git-upload-pack-advertisement",
-                                capabilities,
-                            ),
-                            Err(error) => git_advertisement_error(error.into_public_message()),
-                        }
-                    }
-                    Err(error) if error.status() == StatusCode::UNAUTHORIZED => {
-                        git_error_response(error)
-                    }
-                    Err(error) => git_advertisement_error(error.into_public_message()),
-                };
-            }
             let folder = async {
                 let read = authorized_git_read(&state, &headers, &org, &repo, &view).await?;
                 upload::fetch_folder::prepare(&state, read, &view, &GitFetchAsk::listing()).await
@@ -232,6 +212,43 @@ pub(crate) async fn git_info_refs(
             })),
         )
             .into_response(),
+    }
+}
+
+async fn git_v2_capabilities(
+    state: &AppState,
+    headers: &HeaderMap,
+    org: &str,
+    repo: &str,
+    view: &ViewId,
+) -> Response {
+    match authorized_git_read(state, headers, org, repo, view).await {
+        Ok(_) => {}
+        Err(error) if error.status() == StatusCode::UNAUTHORIZED => {
+            return git_error_response(error);
+        }
+        Err(error) => return git_advertisement_error(error.into_public_message()),
+    }
+    let capabilities = match upload::cached_v2_capabilities() {
+        Some(capabilities) => Ok(capabilities),
+        None => {
+            let permit = match state.runtime_budgets.admit_upload_pack().await {
+                Ok(permit) => permit,
+                Err(error) => return git_advertisement_error(error.into_public_message()),
+            };
+            let timeout = state.runtime_budgets.git_command_timeout();
+            blocking::run(move || {
+                let _permit = permit;
+                upload::v2_capabilities(timeout)
+            })
+            .await
+        }
+    };
+    match capabilities {
+        Ok(capabilities) => {
+            git_response("application/x-git-upload-pack-advertisement", capabilities)
+        }
+        Err(error) => git_advertisement_error(error.into_public_message()),
     }
 }
 
