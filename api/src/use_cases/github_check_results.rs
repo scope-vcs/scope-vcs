@@ -1,10 +1,7 @@
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
-    error::ApiError,
-    persistence::unix_now,
-    repo_events::RepoChangeReason,
-    state::AppState,
-    use_cases::{github_setup_checks, github_workflow_runs},
+    error::ApiError, persistence::unix_now, repo_events::RepoChangeReason, state::AppState,
+    use_cases::github_workflow_runs,
 };
 use scope_domain::{
     github_connection::GitHubConnection,
@@ -137,18 +134,7 @@ pub(crate) async fn refresh_commit_checks(
         let associated = requests
             .requests_testing_github_commit(&connection.repository_id, commit_oid)
             .await?;
-        if associated.is_empty()
-            || state
-                .metadata
-                .repositories()
-                .github_setup_check(&connection.repository_id)
-                .await?
-                .is_some_and(|read| {
-                    read.check.is_running()
-                        && read.check.is_of(connection)
-                        && read.check.commit_oid == commit_oid
-                })
-        {
+        if associated.is_empty() {
             state.publish_request_summary_refresh(
                 &incarnation,
                 RepoChangeReason::RequestChecksUpdated,
@@ -255,11 +241,9 @@ impl BackgroundWork {
             |state| async move {
                 let now = unix_now()?;
                 let checks = reconcile_github_checks_once(&state, now).await;
-                let setup_checks =
-                    github_setup_checks::reconcile_github_setup_checks_once(&state, now).await;
                 let workflow_runs =
                     github_workflow_runs::retry_github_workflow_run_reads_once(&state, now).await;
-                checks.and(setup_checks).and(workflow_runs)
+                checks.and(workflow_runs)
             },
         );
     }

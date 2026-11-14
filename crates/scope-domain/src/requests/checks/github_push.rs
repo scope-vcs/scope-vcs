@@ -6,7 +6,6 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 const REQUEST_BRANCH_PREFIX: &str = "scope/requests/";
-const SETUP_CHECK_BRANCH: &str = "scope/setup-check";
 const MAIN_BRANCH: &str = "main";
 const RETRY_DELAYS_SECS: [u64; 4] = [30, 2 * 60, 10 * 60, 30 * 60];
 const WORKFLOWS_DIRECTORY: &str = ".github/workflows/";
@@ -14,7 +13,6 @@ const WORKFLOWS_DIRECTORY: &str = ".github/workflows/";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubBranch {
     Request(String),
-    SetupCheck,
     Main,
 }
 
@@ -23,10 +21,8 @@ pub const GITHUB_MAIN_DIVERGED_MESSAGE: &str = "GitHub main has commits Scope do
 
 impl GitHubBranch {
     pub fn parse(branch: &str) -> Option<Self> {
-        match branch {
-            SETUP_CHECK_BRANCH => return Some(Self::SetupCheck),
-            MAIN_BRANCH => return Some(Self::Main),
-            _ => {}
+        if branch == MAIN_BRANCH {
+            return Some(Self::Main);
         }
         branch
             .strip_prefix(REQUEST_BRANCH_PREFIX)
@@ -37,7 +33,6 @@ impl GitHubBranch {
     pub fn name(&self) -> String {
         match self {
             Self::Request(request_id) => format!("{REQUEST_BRANCH_PREFIX}{request_id}"),
-            Self::SetupCheck => SETUP_CHECK_BRANCH.to_string(),
             Self::Main => MAIN_BRANCH.to_string(),
         }
     }
@@ -124,9 +119,6 @@ pub fn main_publication_contains_merge<E>(
 }
 
 pub fn github_push_retry_at(push: &GitHubPush, now_unix: u64) -> Option<u64> {
-    if push.branch == GitHubBranch::SetupCheck && push.target_oid.is_some() {
-        return None;
-    }
     github_retry_at(push.attempts, now_unix)
 }
 

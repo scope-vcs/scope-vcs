@@ -781,6 +781,13 @@
           "sha256": "5b19674a1db628a475850a131956ed49521b744e3dda8f5a94141f9aba681219"
         }
       ]
+    },
+    "rust:yaml-rust2@0.13.0": {
+      "reason": "MIT branch selected. The checksum-verified published archive ships its license texts as MIT-LICENSE and Apache-LICENSE; preserve the archive's MIT text with its copyright notices.",
+      "archive_document": {
+        "path": "MIT-LICENSE",
+        "start": "The MIT License (MIT)"
+      }
     }
   }
 }

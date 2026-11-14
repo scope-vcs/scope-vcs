@@ -508,16 +508,6 @@ fn failed_pushes_back_off_and_then_give_up() {
     assert_eq!(retry_at(4), Some(1900));
     assert_eq!(retry_at(5), None);
     assert_eq!(retry_at(0), None);
-    let setup = GitHubPush {
-        branch: GitHubBranch::SetupCheck,
-        ..push(HEAD, GitHubPushState::Running, None)
-    };
-    assert_eq!(github_push_retry_at(&setup, 100), None);
-    let setup_deletion = GitHubPush {
-        target_oid: None,
-        ..setup
-    };
-    assert_eq!(github_push_retry_at(&setup_deletion, 100), Some(130));
 }
 
 #[test]
@@ -534,26 +524,21 @@ fn a_deletion_waiting_for_pull_requests_rechecks_after_as_long_as_it_has_waited(
 }
 
 #[test]
-fn scope_branches_name_their_request_the_connection_test_or_main() {
+fn scope_branches_name_their_request_or_main() {
     let request = GitHubBranch::Request("req_1".into());
     assert_eq!(request.git_ref(), "refs/heads/scope/requests/req_1");
-    assert_eq!(
-        GitHubBranch::SetupCheck.git_ref(),
-        "refs/heads/scope/setup-check"
-    );
     assert_eq!(GitHubBranch::Main.git_ref(), "refs/heads/main");
-    for branch in [request, GitHubBranch::SetupCheck, GitHubBranch::Main] {
+    for branch in [request, GitHubBranch::Main] {
         assert_eq!(GitHubBranch::parse(&branch.name()), Some(branch));
     }
-    for other in ["master", "scope/main", "main/x"] {
+    for other in ["master", "scope/main", "main/x", "scope/setup-check"] {
         assert_eq!(GitHubBranch::parse(other), None, "{other}");
     }
 }
 
 #[test]
-fn scope_owns_its_request_and_test_branches_but_shares_main_with_github() {
+fn scope_owns_its_request_branches_but_shares_main_with_github() {
     assert!(GitHubBranch::Request("req_1".into()).owned_by_scope());
-    assert!(GitHubBranch::SetupCheck.owned_by_scope());
     assert!(!GitHubBranch::Main.owned_by_scope());
 }
 

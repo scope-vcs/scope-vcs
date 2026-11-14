@@ -13,6 +13,7 @@ import { requestDiscussionReferenceIdentity, requestDiscussionReferenceResource 
 import { runsPageResource } from '../runs/runs-page-resource'
 import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
 import { githubWorkflowNamesResource } from '../runs/github-workflow-names-resource'
+import { repoGitHubChecksResource } from './repo-github-checks-resource'
 import {
   githubWorkflowJobLogIdentity,
   githubWorkflowJobLogResource,
@@ -121,8 +122,11 @@ test('dependency completion invalidates only the retained dependency report', ()
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, false)
 })
 
-test('GitHub workflow runs refresh the retained GitHub run lists and request queues', () => {
+test('GitHub workflow runs refresh the retained GitHub run lists, check list and request queues', () => {
   seed()
+  const checks = { workflows: [], checks: [] }
+  repoGitHubChecksResource.write('viewer-a', checks)
+  repoGitHubChecksResource.write('viewer-b', checks)
   githubWorkflowRunsResource.clear()
   const runs = {
     list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], next_cursor: null },
@@ -142,14 +146,19 @@ test('GitHub workflow runs refresh the retained GitHub run lists and request que
   assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-a').stale, true)
   assert.equal(githubWorkflowNamesResource.peek('viewer-a')?.workflows[0], 'ci')
   assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-b').stale, false)
+  assert.equal(repoGitHubChecksResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(repoGitHubChecksResource.peek('viewer-a'), checks)
+  assert.equal(repoGitHubChecksResource.getSnapshot('viewer-b').stale, false)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
 
   githubWorkflowRunsResource.write(all, runs)
   githubWorkflowNamesResource.write('viewer-a', { workflows: ['ci'] })
-  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'github-connection-changed' } }))
+  repoGitHubChecksResource.write('viewer-a', checks)
+  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'request-checks-updated' } }))
   assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)
   assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(repoGitHubChecksResource.getSnapshot('viewer-a').stale, true)
 })
 
 test('a GitHub job report refreshes only its run, keeping what the run shows', () => {

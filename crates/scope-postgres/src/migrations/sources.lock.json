@@ -27,5 +27,7 @@
   "m0108_github_pull_request_merges.rs": "d0b80e588e832abc6c6b05dfed3c5950ec1f8cf99eac9aed33116d8e284a8695",
   "m0109_main_advanced_by.rs": "1f4c0ebac8956a80cf129026db6badb2feafc4e904882efcb2c2197945e74423",
   "m0110_request_diff_renames.rs": "e6c413c7a3864c3861212f4ca36dba00dbb60d506fd492584f79fc2c6c22085f",
-  "m0111_remove_native_runs.rs": "ccbaeb2027e508a080eaac1cf631a404a4892b44bdcb55417dc7c30570b305d5"
+  "m0111_remove_native_runs.rs": "ccbaeb2027e508a080eaac1cf631a404a4892b44bdcb55417dc7c30570b305d5",
+  "m0112_remove_github_setup_checks.rs": "38ac0bc09d0c3854cc0a611c1372c6bd1300791f874f1efd6da8511720075587",
+  "m0113_pool_pack_lookups.rs": "df9527a015cb2b16f718117fad431981662f6d94fd5ffd780a845d2c8be00e52"
 }

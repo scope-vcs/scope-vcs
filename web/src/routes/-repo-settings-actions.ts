@@ -1,4 +1,9 @@
-import { currentWebOrigin, loadRepoGitHubConnectionForRequest, startRepoGitHubAuthorizationForRequest } from '@/api/github'
+import {
+  currentWebOrigin,
+  loadRepoGitHubChecksForRequest,
+  loadRepoGitHubConnectionForRequest,
+  startRepoGitHubAuthorizationForRequest,
+} from '@/api/github'
 import { parseRepoGitHubAuthorizeInput } from '@/api/github-inputs'
 import { loadOptionalResource } from '@/api/http'
 import { parseRepoParams } from '@/api/repo-params'
@@ -15,6 +20,14 @@ const loadRepoCollaboration = createServerFn({ method: 'GET' })
 const loadRepoGitHubConnection = createServerFn({ method: 'GET' })
   .validator(parseRepoParams)
   .handler(({ data }) => loadOptionalResource(() => loadRepoGitHubConnectionForRequest(data, getRequest().signal)))
+
+const loadRepoGitHubChecksFn = createServerFn({ method: 'GET' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => loadRepoGitHubChecksForRequest(data, getRequest().signal))
+
+export function loadRepoGitHubChecks(params: RepoParams, signal: AbortSignal) {
+  return loadRepoGitHubChecksFn({ data: { owner: params.owner, repo: params.repo }, signal })
+}
 
 const startRepoGitHubAuthorizationFn = createServerFn({ method: 'POST' })
   .validator(parseRepoGitHubAuthorizeInput)

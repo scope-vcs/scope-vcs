@@ -3,7 +3,7 @@ mod pool;
 mod publication;
 mod retirement;
 
-pub use pool::{ListedMainPoolPack, PooledRequestPack};
+pub use pool::{ListedMainPoolPack, PooledRequest, PooledRequestPack};
 pub(super) use pool::{
     load_main_pool_packs, register_git_pool_pack, register_request_pool_pack,
     retire_request_pool_packs,

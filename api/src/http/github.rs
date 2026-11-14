@@ -11,7 +11,6 @@ use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
     github::{
-        InstallationStatus,
         setup_tokens::GrantedRepository,
         webhook::{
             GITHUB_EVENT_HEADER, GITHUB_SIGNATURE_HEADER, GitHubWebhookEvent,
@@ -39,6 +38,7 @@ use scope_domain::{
         ConnectGitHubRepository, can_publish_main_to_github, can_publish_to_github,
         ensure_can_manage_github_connection,
     },
+    github_connection_test::GitHubInstallationState,
     github_review_bots::GitHubReviewBotInput,
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
 };
@@ -179,7 +179,8 @@ pub(crate) async fn connect_github_repository(
             },
             async || {
                 Ok::<_, ApiError>(
-                    app.installation_status(installation_id).await? == InstallationStatus::Active
+                    app.installation(installation_id).await?.state
+                        == GitHubInstallationState::Active
                         && app
                             .installation_repository(installation_id, repository_id)
                             .await?
@@ -294,22 +295,6 @@ pub(crate) async fn confirm_public_github_repository(
         .metadata
         .repositories()
         .acknowledge_public_github_repository(&context.record.id, &user_id)
-        .await?;
-    state.wakeups.github_pushes.notify_one();
-    changed(&state, &context, &incarnation).await
-}
-
-pub(crate) async fn start_github_setup_check(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((owner, repo)): Path<(String, String)>,
-) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
-    state.github_app()?;
-    let (_, incarnation) = state
-        .metadata
-        .repositories()
-        .start_github_setup_check(&context.record.id, &user_id, unix_now()?)
         .await?;
     state.wakeups.github_pushes.notify_one();
     changed(&state, &context, &incarnation).await
@@ -611,7 +596,7 @@ fn callback_origin(state: &AppState, web_origin: Option<&str>) -> Result<String,
     })
 }
 
-async fn maintainer(
+pub(super) async fn maintainer(
     state: &AppState,
     headers: &HeaderMap,
     owner: &str,
@@ -655,7 +640,6 @@ async fn connection_response(
         .github_required_checks(&context.record.id)
         .await?;
     let review_bots = repositories.github_review_bots(&context.record.id).await?;
-    let setup_check = repositories.github_setup_check(&context.record.id).await?;
     let run_import_count = repositories
         .github_run_import_count(&context.record.id)
         .await?;
@@ -672,7 +656,6 @@ async fn connection_response(
             can_confirm_public: can_publish_to_github(context.access.clone()),
             can_publish_main: can_publish_main_to_github(&context.access, &context.views),
             main_push,
-            setup_check,
             run_import_count,
             run_import,
         },

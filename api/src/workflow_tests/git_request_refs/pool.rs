@@ -6,6 +6,7 @@ use crate::use_cases::git_receive::{
 };
 use std::collections::BTreeSet;
 
+mod catch_up;
 mod fetch;
 mod fetch_visibility;
 mod mixed_scopes;
@@ -419,7 +420,7 @@ async fn pooled_heads(state: &AppState, request_id: &str) -> BTreeSet<String> {
     state
         .metadata
         .repositories()
-        .git_pool_packs_for_requests(TEST_REPO_ID, &[request_id.to_string()])
+        .request_pool_packs(TEST_REPO_ID, request_id)
         .await
         .unwrap()
         .into_iter()

@@ -5,6 +5,7 @@ pub(crate) mod dependencies;
 pub(crate) mod device_login;
 pub(crate) mod file_diffs;
 pub(crate) mod github;
+pub(crate) mod github_checks;
 pub(crate) mod github_runs;
 pub(crate) mod history;
 pub(crate) mod mcp;

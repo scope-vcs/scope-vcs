@@ -33,7 +33,7 @@ const initialRuns: GitHubWorkflowRunListResponse = {
   workflow_runs: [
     run(1, { branch: 'scope/requests/req_1', status: 'in_progress', conclusion: null, request_id: 'req_1' }),
     run(2, { workflow_name: 'Release images and publish the container manifests for every platform', conclusion: 'failure' }),
-    run(3, { branch: 'scope/setup-check' }),
+    run(3, { branch: 'release/next' }),
   ],
   next_cursor: 'page-2',
 }
@@ -201,7 +201,7 @@ async function loadRuns({ after, workflow }: RepoGitHubWorkflowRunsInput) {
 
 const loadSettings = async () => ({
   collaboration: null,
-  github: { configured: true, connection: null, required_checks: [], review_bots: [], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null },
+  github: { configured: true, connection: null, required_checks: [], review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null },
 })
 async function startAuthorization(params: RepoParams) {
   authorizeCalls.push(params)

@@ -37,7 +37,6 @@ mod github_review_bot_statuses;
 mod github_review_bots;
 mod github_review_imports;
 mod github_run_imports;
-mod github_setup_checks;
 mod github_workflow_job_log_reads;
 mod github_workflow_jobs;
 #[cfg(test)]
@@ -128,7 +127,7 @@ pub use fast_push::ApplyContentOnlyPushCommand;
 use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::{GitPushCredentials, GitPushState};
-pub use git_segments::{ListedMainPoolPack, PooledRequestPack};
+pub use git_segments::{ListedMainPoolPack, PooledRequest, PooledRequestPack};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
@@ -141,7 +140,6 @@ pub use github_review_imports::{
     GitHubThreadTransition, ImportGitHubReviewCommand, QueueGitHubReviewImport,
     TransitionGitHubDiscussionCommand,
 };
-pub use github_setup_checks::GitHubSetupCheckRead;
 pub use github_workflow_job_log_reads::GitHubJobLogReadJob;
 pub use github_workflow_runs::{
     GitHubWorkflowRunCursor, GitHubWorkflowRunDetailRead, GitHubWorkflowRunPageQuery,

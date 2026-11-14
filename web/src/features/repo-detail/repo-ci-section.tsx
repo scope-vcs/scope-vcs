@@ -1,6 +1,13 @@
-import type { GitHubAuthorizeResponse, GitHubConnectionResponse, GitHubReviewBotRequest } from '@/api/types.generated'
+import type {
+  GitHubAuthorizeResponse,
+  GitHubChecksResponse,
+  GitHubConnectionResponse,
+  GitHubConnectionTestResponse,
+  GitHubReviewBotRequest,
+} from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
+import type { CachedResource } from '@/lib/use-cached-resource'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
 import { openGitHubAuthorization } from '../github/github-authorization'
 import {
@@ -12,13 +19,15 @@ import { useRepoViews } from './repo-layout-context'
 import { RepoGitHubMainPublication } from './repo-github-main-publication'
 import { RepoGitHubReviewBots } from './repo-github-review-bots'
 import { RepoGitHubRunImport } from './repo-github-run-import'
-import { RepoGitHubSetupCheck } from './repo-github-setup-check'
+import { RepoGitHubConnectionTest } from './repo-github-connection-test'
+import { RepoGitHubWorkflows } from './repo-github-workflows'
 import { RepoRequiredChecks } from './repo-required-checks'
 import { RepoReviewBots } from './repo-review-bots'
 import { CiSection } from './repo-settings-sections'
 import { useSettingsAction } from './use-settings-action'
 
 export function RepoCiSection({
+  checks,
   confirmPublic,
   disconnect,
   github,
@@ -30,8 +39,9 @@ export function RepoCiSection({
   setRunImportCount,
   startAuthorization,
   startRunImport,
-  startSetupCheck,
+  testConnection,
 }: {
+  checks: CachedResource<GitHubChecksResponse>
   confirmPublic: () => Promise<GitHubConnectionResponse>
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
@@ -43,7 +53,7 @@ export function RepoCiSection({
   setRunImportCount: (count: number) => Promise<GitHubConnectionResponse>
   startAuthorization: () => Promise<GitHubAuthorizeResponse>
   startRunImport: () => Promise<GitHubConnectionResponse>
-  startSetupCheck: () => Promise<GitHubConnectionResponse>
+  testConnection: () => Promise<GitHubConnectionTestResponse>
 }) {
   const { act, errorAlert, pending } = useSettingsAction<'connect' | 'disconnect' | 'confirm'>()
   const withheldRequests = githubWithheldRequestsText(useRepoViews())
@@ -145,19 +155,16 @@ export function RepoCiSection({
           </div>
         )}
 
-        {view.kind === 'connected' && (
-          <RepoGitHubSetupCheck
-            github={github}
-            startTest={startSetupCheck}
-          />
-        )}
+        {view.kind === 'connected' && <RepoGitHubConnectionTest test={testConnection} />}
+
+        {view.kind === 'connected' && <RepoGitHubWorkflows checks={checks} />}
 
         {view.kind === 'connected' && (
           <RepoGitHubMainPublication github={github} setEnabled={setMainPublication} />
         )}
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (
-          <RepoRequiredChecks github={github} save={setRequiredChecks} />
+          <RepoRequiredChecks checks={checks.value} github={github} save={setRequiredChecks} />
         )}
 
         {view.kind === 'connected' && <RepoReviewBots github={github} save={setReviewBots} />}

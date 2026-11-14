@@ -53,8 +53,9 @@ routes! {
             => "repoGitHubReviewRequestComment";
         REPO_GITHUB_PUBLIC_CONFIRMATION = "/v1/repos/{owner}/{repo}/github/public-confirmation"
             => "repoGitHubPublicConfirmation";
-        REPO_GITHUB_SETUP_CHECK = "/v1/repos/{owner}/{repo}/github/setup-check"
-            => "repoGitHubSetupCheck";
+        REPO_GITHUB_CONNECTION_TEST = "/v1/repos/{owner}/{repo}/github/connection-test"
+            => "repoGitHubConnectionTest";
+        REPO_GITHUB_CHECKS = "/v1/repos/{owner}/{repo}/github/checks" => "repoGitHubChecks";
         REPO_GITHUB_MAIN_PUBLICATION = "/v1/repos/{owner}/{repo}/github/main-publication"
             => "repoGitHubMainPublication";
         REPO_GITHUB_WORKFLOW_RUNS = "/v1/repos/{owner}/{repo}/github/workflow-runs"
