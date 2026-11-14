@@ -1,9 +1,11 @@
 use super::{
     GITHUB_MAIN_PULL_REQUESTS_MESSAGE, GITHUB_PATH_FILTER_MESSAGE,
+    GITHUB_PULL_REQUEST_OPENED_ONLY_MESSAGE, GITHUB_PULL_REQUEST_PUSHES_ONLY_MESSAGE,
     GITHUB_STACKED_PULL_REQUESTS_MESSAGE, GitHubCheckRuns, WorkflowValue, branch_filter,
 };
 
-const PULL_REQUEST_UPDATE_TYPES: [&str; 3] = ["opened", "synchronize", "reopened"];
+const PULL_REQUEST_OPEN_TYPES: [&str; 2] = ["opened", "reopened"];
+const PULL_REQUEST_PUSH_TYPE: &str = "synchronize";
 
 pub(super) struct ScopePushes {
     pub(super) request_branch: String,
@@ -86,16 +88,26 @@ fn pull_request(
     let Some(config @ WorkflowValue::Mapping(_)) = config else {
         return Some(GitHubCheckRuns::Yes);
     };
-    let type_triggered = config.get("types").is_none_or(|types| {
-        branch_filter::filter_values(types)
+    let types = config.get("types").map(branch_filter::filter_values);
+    let runs_on_pushes = types
+        .as_ref()
+        .is_none_or(|types| types.iter().any(|kind| kind == PULL_REQUEST_PUSH_TYPE));
+    let runs_on_open = types.as_ref().is_none_or(|types| {
+        types
             .iter()
-            .any(|kind| PULL_REQUEST_UPDATE_TYPES.contains(&kind.as_str()))
+            .any(|kind| PULL_REQUEST_OPEN_TYPES.contains(&kind.as_str()))
     });
-    if !type_triggered {
+    if !runs_on_pushes && !runs_on_open {
         return None;
     }
     let into = |base| branch_triggers(config, base).unwrap_or(true);
     match (into(main_base), into(stacked_base)) {
+        (true, true) if !runs_on_pushes => Some(GitHubCheckRuns::Maybe(
+            GITHUB_PULL_REQUEST_OPENED_ONLY_MESSAGE.to_string(),
+        )),
+        (true, true) if !runs_on_open => Some(GitHubCheckRuns::Maybe(
+            GITHUB_PULL_REQUEST_PUSHES_ONLY_MESSAGE.to_string(),
+        )),
         (true, true) => Some(path_verdict(config)),
         (true, false) => Some(GitHubCheckRuns::Maybe(
             GITHUB_MAIN_PULL_REQUESTS_MESSAGE.to_string(),

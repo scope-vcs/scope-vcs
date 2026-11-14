@@ -53,7 +53,8 @@ test('each result says whether it runs on requests and where else it comes from'
     [check({ runs: YES, required_on_github: true }), 'Runs on Scope requests, required on GitHub', 'muted'],
     [check({ runs: MAYBE, required_on_github: true }), 'Runs only when its condition holds, required on GitHub', 'muted'],
     [check({ runs: NO }), 'Does not run on Scope requests', 'warning'],
-    [check({ required_on_github: true }), 'Required on GitHub, reported by another app', 'muted'],
+    [check({ required_on_github: true, reported_on_main: true }), 'Required on GitHub, reported by another app', 'muted'],
+    [check({ required_on_github: true }), 'Required on GitHub but not reported as a check run, so Scope cannot wait for it', 'warning'],
     [check({ reported_on_main: true }), 'Reported on main by another app', 'muted'],
   ] as const) {
     assert.deepEqual(githubCheckStatus(entry), { text, tone })

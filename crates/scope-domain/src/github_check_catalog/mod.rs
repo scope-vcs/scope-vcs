@@ -9,6 +9,10 @@ pub const GITHUB_WORKFLOW_DISABLED_MESSAGE: &str = "Disabled on GitHub.";
 pub const GITHUB_PATH_FILTER_MESSAGE: &str =
     "Runs only when the changed files match its path filters.";
 pub const GITHUB_JOB_CONDITION_MESSAGE: &str = "Runs only when its condition holds.";
+pub const GITHUB_PULL_REQUEST_OPENED_ONLY_MESSAGE: &str =
+    "Runs only when the pull request opens, not on later pushes.";
+pub const GITHUB_PULL_REQUEST_PUSHES_ONLY_MESSAGE: &str =
+    "Runs only on pushes after the pull request opens.";
 pub const GITHUB_MAIN_PULL_REQUESTS_MESSAGE: &str =
     "Runs only for requests based on main, not stacked requests.";
 pub const GITHUB_STACKED_PULL_REQUESTS_MESSAGE: &str =

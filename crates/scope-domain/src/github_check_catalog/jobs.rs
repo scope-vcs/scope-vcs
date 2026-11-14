@@ -3,6 +3,7 @@ use super::{GitHubWorkflowFile, WorkflowValue};
 const REUSABLE_WORKFLOW_DEPTH_LIMIT: usize = 4;
 const GITHUB_MATRIX_JOB_LIMIT: usize = 256;
 const CATALOG_CHECK_LIMIT: usize = 10_000;
+const CATALOG_NAME_BYTE_LIMIT: usize = 1024 * 1024;
 const EXPRESSION_OPEN: &str = "${{";
 const EXPRESSION_CLOSE: &str = "}}";
 
@@ -19,20 +20,27 @@ pub(super) struct WorkflowJobs {
 }
 
 pub(super) struct CheckBudget {
-    remaining: usize,
+    checks: usize,
+    name_bytes: usize,
 }
 
 impl Default for CheckBudget {
     fn default() -> Self {
         Self {
-            remaining: CATALOG_CHECK_LIMIT,
+            checks: CATALOG_CHECK_LIMIT,
+            name_bytes: CATALOG_NAME_BYTE_LIMIT,
         }
     }
 }
 
 impl CheckBudget {
-    fn spend(&mut self, checks: usize) -> Option<()> {
-        self.remaining = self.remaining.checked_sub(checks)?;
+    fn spend_checks(&mut self, checks: usize) -> Option<()> {
+        self.checks = self.checks.checked_sub(checks)?;
+        Some(())
+    }
+
+    fn spend_name(&mut self, bytes: usize) -> Option<()> {
+        self.name_bytes = self.name_bytes.checked_sub(bytes)?;
         Some(())
     }
 }
@@ -83,25 +91,28 @@ fn job_checks<'a>(
             return None;
         }
         let called = called_checks(uses, files, callers, budget)?;
-        return Some(
-            called
-                .into_iter()
-                .map(|check| JobCheck {
+        return called
+            .into_iter()
+            .map(|check| {
+                budget.spend_name(display.len() + " / ".len() + check.name.len())?;
+                Some(JobCheck {
                     name: format!("{display} / {}", check.name),
                     conditional: conditional || check.conditional,
                 })
-                .collect(),
-        );
+            })
+            .collect();
     }
     let combinations = match matrix {
         Some(matrix) => combinations(matrix)?,
         None => vec![Vec::new()],
     };
-    budget.spend(combinations.len())?;
+    budget.spend_checks(combinations.len())?;
     combinations
         .iter()
         .map(|combination| {
-            check_name(&display, combination).map(|name| JobCheck { name, conditional })
+            let name = check_name(&display, combination)?;
+            budget.spend_name(name.len())?;
+            Some(JobCheck { name, conditional })
         })
         .collect()
 }

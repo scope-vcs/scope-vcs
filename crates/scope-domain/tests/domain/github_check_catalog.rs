@@ -1,5 +1,6 @@
 use scope_domain::github_check_catalog::{
     GITHUB_JOB_CONDITION_MESSAGE, GITHUB_MAIN_PULL_REQUESTS_MESSAGE, GITHUB_PATH_FILTER_MESSAGE,
+    GITHUB_PULL_REQUEST_OPENED_ONLY_MESSAGE, GITHUB_PULL_REQUEST_PUSHES_ONLY_MESSAGE,
     GITHUB_STACKED_PULL_REQUESTS_MESSAGE, GITHUB_WORKFLOW_DISABLED_MESSAGE, GitHubCatalogCheck,
     GitHubCheckCatalog, GitHubCheckRuns, GitHubCheckSources, GitHubWorkflowFile,
     GitHubWorkflowState, GitHubWorkflowSummary, WorkflowValue, github_check_catalog,
@@ -257,8 +258,20 @@ fn workflow_triggers_decide_whether_request_branches_run() {
             None,
         ),
         (
-            "pull request synchronize",
+            "pull request opened only",
+            pull_request(map(&[("types", strs(&["opened"]))])),
+            true,
+            Some(maybe(GITHUB_PULL_REQUEST_OPENED_ONLY_MESSAGE)),
+        ),
+        (
+            "pull request synchronize only",
             pull_request(map(&[("types", strs(&["labeled", "synchronize"]))])),
+            true,
+            Some(maybe(GITHUB_PULL_REQUEST_PUSHES_ONLY_MESSAGE)),
+        ),
+        (
+            "pull request opened and synchronize",
+            pull_request(map(&[("types", strs(&["opened", "synchronize"]))])),
             true,
             Some(yes()),
         ),
@@ -640,6 +653,26 @@ fn reusable_calls_that_fan_out_past_the_catalog_budget_are_named_at_runtime() {
         })
         .collect::<Vec<_>>();
     let (names, runtime) = job_names(map(&[("uses", s("./.github/workflows/l1.yml"))]), levels);
+    assert!(names.is_empty());
+    assert_eq!(runtime, ["build"]);
+}
+
+#[test]
+fn long_check_names_past_the_catalog_budget_are_named_at_runtime() {
+    let long_name = "n".repeat(4096);
+    let job_ids = (0..300).map(|job| format!("j{job}")).collect::<Vec<_>>();
+    let jobs = job_ids
+        .iter()
+        .map(|id| (id.as_str(), map(&[("name", s(&long_name))])))
+        .collect::<Vec<_>>();
+    let called = file(
+        ".github/workflows/called.yml",
+        workflow(map(&[("workflow_call", WorkflowValue::Null)]), map(&jobs)),
+    );
+    let (names, runtime) = job_names(
+        map(&[("uses", s("./.github/workflows/called.yml"))]),
+        vec![called],
+    );
     assert!(names.is_empty());
     assert_eq!(runtime, ["build"]);
 }

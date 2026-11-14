@@ -59,6 +59,9 @@ export function githubCheckStatus(check: GitHubCatalogCheckResponse | undefined)
     case 'no':
       return { text: `Does not run on Scope requests${required}`, tone: 'warning' }
     case undefined:
+      if (!check.reported_on_main) {
+        return { text: 'Required on GitHub but not reported as a check run, so Scope cannot wait for it', tone: 'warning' }
+      }
       return check.required_on_github
         ? { text: 'Required on GitHub, reported by another app', tone: 'muted' }
         : { text: 'Reported on main by another app', tone: 'muted' }
