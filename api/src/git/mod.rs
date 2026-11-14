@@ -174,11 +174,10 @@ pub(crate) async fn git_info_refs(
             if protocol == GitProtocol::V2 {
                 return match authorized_git_read(&state, &headers, &org, &repo, &view).await {
                     Ok(_) => {
-                        let cache_root = state.repository_engine.cache_root().to_path_buf();
                         let timeout = state.runtime_budgets.git_command_timeout();
                         match blocking::run(move || {
                             let _permit = permit;
-                            upload::v2_capabilities(&cache_root, timeout)
+                            upload::v2_capabilities(timeout)
                         })
                         .await
                         {

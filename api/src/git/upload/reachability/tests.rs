@@ -145,3 +145,40 @@ fn every_advertised_ref_counts_as_visible() {
     assert_eq!(unreachable, folder.oracle(&candidates));
     assert!(unreachable.is_empty());
 }
+
+#[test]
+fn a_commit_with_missing_ancestors_falls_back_to_the_full_walk() {
+    let folder = Folder::build();
+    let tip = folder.commit("a.txt", "a");
+    folder.advertise("refs/heads/main", &tip);
+    let tree = String::from_utf8(rev(&folder.store, "HEAD^{tree}")).unwrap();
+    let orphan = std::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(&folder.folder)
+        .args(["hash-object", "-t", "commit", "-w", "--literally", "--stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(
+                format!(
+                    "tree {tree}\nparent {}\nauthor a <a@a> 0 +0000\ncommitter a <a@a> 0 +0000\n\norphan\n",
+                    std::str::from_utf8(MISSING).unwrap()
+                )
+                .as_bytes(),
+            )?;
+            child.wait_with_output()
+        })
+        .unwrap();
+    let orphan = String::from_utf8(orphan.stdout)
+        .unwrap()
+        .trim()
+        .as_bytes()
+        .to_vec();
+
+    let candidates = set(&[&tip, &orphan]);
+    let unreachable = unreachable_from_refs(&folder.folder, &candidates).unwrap();
+    assert_eq!(unreachable, folder.oracle(&candidates));
+    assert_eq!(unreachable, set(&[&orphan]));
+}

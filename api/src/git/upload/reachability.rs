@@ -27,11 +27,17 @@ pub(super) fn unreachable_from_refs(
     if present.is_empty() {
         return Ok(unreachable);
     }
-    if present.iter().all(|oid| kinds[oid] == COMMIT) {
-        unreachable.extend(commits_outside_refs(repo, &present)?);
-    } else {
-        let reachable = objects_reachable_from_refs(repo, present.clone())?;
-        unreachable.extend(present.difference(&reachable).cloned());
+    let bounded = present
+        .iter()
+        .all(|oid| kinds[oid] == COMMIT)
+        .then(|| commits_outside_refs(repo, &present).ok())
+        .flatten();
+    match bounded {
+        Some(outside) => unreachable.extend(outside),
+        None => {
+            let reachable = objects_reachable_from_refs(repo, present.clone())?;
+            unreachable.extend(present.difference(&reachable).cloned());
+        }
     }
     Ok(unreachable)
 }
@@ -40,17 +46,12 @@ fn object_kinds(
     repo: &FsPath,
     candidates: &BTreeSet<Vec<u8>>,
 ) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, ApiError> {
-    let input = candidates.iter().fold(Vec::new(), |mut input, oid| {
-        input.extend_from_slice(oid);
-        input.push(b'\n');
-        input
-    });
     let output = git_command_output(
         Command::new("git")
             .arg("--git-dir")
             .arg(repo)
             .args(["cat-file", "--batch-check=%(objectname) %(objecttype)"]),
-        Some(&input),
+        Some(&oid_lines(candidates)),
     )?;
     Ok(output
         .split(|byte| *byte == b'\n')
@@ -62,17 +63,25 @@ fn object_kinds(
         .collect())
 }
 
+fn oid_lines(oids: &BTreeSet<Vec<u8>>) -> Vec<u8> {
+    oids.iter().fold(Vec::new(), |mut lines, oid| {
+        lines.extend_from_slice(oid);
+        lines.push(b'\n');
+        lines
+    })
+}
+
 fn commits_outside_refs(
     repo: &FsPath,
     commits: &BTreeSet<Vec<u8>>,
 ) -> Result<BTreeSet<Vec<u8>>, ApiError> {
-    let mut command = Command::new("git");
-    command.arg("--git-dir").arg(repo).arg("rev-list");
-    for oid in commits {
-        command.arg(String::from_utf8_lossy(oid).as_ref());
-    }
-    command.args(["--not", "--all"]);
-    let output = git_command_output(&mut command, None)?;
+    let output = git_command_output(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(repo)
+            .args(["rev-list", "--stdin", "--not", "--all"]),
+        Some(&oid_lines(commits)),
+    )?;
     Ok(output
         .split(|byte| *byte == b'\n')
         .filter(|oid| commits.contains(*oid))
