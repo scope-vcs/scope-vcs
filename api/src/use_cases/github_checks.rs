@@ -11,11 +11,15 @@ use scope_domain::{
     github_connection::GitHubConnection,
     requests::GitHubBranch,
 };
-use std::path::Path;
-use yaml_rust2::{Yaml, YamlLoader};
+use std::{collections::HashMap, path::Path};
+use yaml_rust2::{
+    Yaml, YamlLoader,
+    parser::{Event, EventReceiver, Parser},
+};
 
 const WORKFLOWS_DIRECTORY: &str = ".github/workflows/";
 const MAX_WORKFLOW_BYTES: u64 = 512 * 1024;
+const MAX_WORKFLOW_NODES: usize = 100_000;
 
 pub(crate) async fn read_github_check_catalog(
     state: &AppState,
@@ -120,11 +124,74 @@ fn read_blob(repo: &Path, oid: &str) -> Result<Vec<u8>, ApiError> {
 
 fn parse_workflow(bytes: &[u8]) -> Result<WorkflowValue, String> {
     let text = std::str::from_utf8(bytes).map_err(|_| "The file is not UTF-8 text.".to_string())?;
+    let mut nodes = ExpandedNodes::default();
+    Parser::new_from_str(text)
+        .load(&mut nodes, true)
+        .map_err(|error| error.to_string())?;
+    if nodes.exceeded {
+        return Err("The file expands to more values than Scope reads.".to_string());
+    }
     let documents = YamlLoader::load_from_str(text).map_err(|error| error.to_string())?;
     documents
         .into_iter()
         .next()
         .map_or(Ok(WorkflowValue::Null), workflow_value)
+}
+
+#[derive(Default)]
+struct ExpandedNodes {
+    anchors: HashMap<usize, usize>,
+    open: Vec<(usize, usize)>,
+    total: usize,
+    exceeded: bool,
+}
+
+impl ExpandedNodes {
+    fn add(&mut self, count: usize) {
+        match self.open.last_mut() {
+            Some((_, open)) => *open = open.saturating_add(count),
+            None => self.total = self.total.saturating_add(count),
+        }
+        let pending = self.open.iter().map(|(_, count)| *count).sum::<usize>();
+        if self.total.saturating_add(pending) > MAX_WORKFLOW_NODES {
+            self.exceeded = true;
+        }
+    }
+
+    fn close(&mut self) {
+        if let Some((anchor, count)) = self.open.pop() {
+            if anchor > 0 {
+                self.anchors.insert(anchor, count);
+            }
+            self.add(count);
+        }
+    }
+}
+
+impl EventReceiver for ExpandedNodes {
+    fn on_event(&mut self, event: Event) {
+        if self.exceeded {
+            return;
+        }
+        match event {
+            Event::Scalar(_, _, anchor, _) => {
+                if anchor > 0 {
+                    self.anchors.insert(anchor, 1);
+                }
+                self.add(1);
+            }
+            Event::Alias(anchor) => self.add(self.anchors.get(&anchor).copied().unwrap_or(1)),
+            Event::SequenceStart(anchor, _) | Event::MappingStart(anchor, _) => {
+                self.open.push((anchor, 1));
+            }
+            Event::SequenceEnd | Event::MappingEnd => self.close(),
+            Event::Nothing
+            | Event::StreamStart
+            | Event::StreamEnd
+            | Event::DocumentStart
+            | Event::DocumentEnd => {}
+        }
+    }
 }
 
 fn workflow_value(yaml: Yaml) -> Result<WorkflowValue, String> {
@@ -201,5 +268,21 @@ mod tests {
         assert!(parse_workflow(b"on: [push\n").is_err());
         assert!(parse_workflow(&[0xff, 0xfe]).is_err());
         assert!(parse_workflow(b"? [a, b]\n: c\n").is_err());
+        let mut nested = String::from("a: &a [x, x, x, x, x, x, x, x, x, x]\n");
+        for level in 1..8 {
+            let previous = level - 1;
+            nested.push_str(&format!(
+                "b{level}: &b{level} [*{}, *{0}, *{0}, *{0}, *{0}, *{0}, *{0}, *{0}, *{0}, *{0}]\n",
+                if previous == 0 {
+                    "a".to_string()
+                } else {
+                    format!("b{previous}")
+                }
+            ));
+        }
+        assert_eq!(
+            parse_workflow(nested.as_bytes()),
+            Err("The file expands to more values than Scope reads.".to_string())
+        );
     }
 }
