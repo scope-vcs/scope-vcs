@@ -356,13 +356,13 @@ fn send_upload_pack_chunk(
 
 static V2_CAPABILITIES: OnceLock<Vec<u8>> = OnceLock::new();
 
-pub(crate) fn v2_capabilities(cache_root: &FsPath, timeout: Duration) -> Result<Vec<u8>, ApiError> {
+pub(crate) fn v2_capabilities(timeout: Duration) -> Result<Vec<u8>, ApiError> {
     if let Some(capabilities) = V2_CAPABILITIES.get() {
         return Ok(capabilities.clone());
     }
     let folder = tempfile::Builder::new()
-        .prefix("fetch-")
-        .tempdir_in(cache_root)
+        .prefix("scope-upload-capabilities-")
+        .tempdir()
         .map_err(ApiError::internal)?;
     git_command_output_with_timeout(
         Command::new("git")

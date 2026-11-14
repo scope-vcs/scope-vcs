@@ -77,7 +77,7 @@ async fn fetch_folder_is_removed_after_stream_success_error_and_disconnect() {
 fn v2_capabilities_match_a_fresh_advertisement_from_an_empty_folder() {
     let root = tempfile::tempdir().unwrap();
     let timeout = RuntimeBudgets::default_git_command_timeout();
-    let first = v2_capabilities(root.path(), timeout).unwrap();
+    let first = v2_capabilities(timeout).unwrap();
     let folder = root.path().join("fresh.git");
     run_git(
         None,
@@ -101,6 +101,5 @@ fn v2_capabilities_match_a_fresh_advertisement_from_an_empty_folder() {
     .unwrap();
     assert_eq!(first, fresh);
     assert!(String::from_utf8_lossy(&first).contains("version 2"));
-    assert_eq!(v2_capabilities(root.path(), timeout).unwrap(), first);
-    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+    assert_eq!(v2_capabilities(timeout).unwrap(), first);
 }
