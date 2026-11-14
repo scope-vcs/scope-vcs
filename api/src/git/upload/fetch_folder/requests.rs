@@ -2,7 +2,8 @@ use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::{
     repository::access::RepositoryAccess,
     requests::{
-        GitFetchAsk, Request, RequestViewer, request_readable_in_git, retain_git_fetch_heads,
+        GitFetchAsk, GitFetchHead, Request, RequestViewer, request_readable_in_git,
+        retain_git_fetch_heads,
     },
     views::Views,
 };
@@ -28,22 +29,6 @@ pub(super) async fn readable_requests(
             reader.view,
         )
     };
-    let mut requests = Vec::new();
-    let mut current = Vec::new();
-    for (request, invitee) in state
-        .metadata
-        .requests()
-        .git_fetch_requests(reader.repo_id, reader.user_id)
-        .await?
-    {
-        if !readable(&request, invitee) {
-            continue;
-        }
-        if ask.includes(&request, reader.user_id, invitee) {
-            requests.push(request.clone());
-        }
-        current.push(request);
-    }
     let advertised = match ask {
         GitFetchAsk::Transfer { wants, .. } => {
             state
@@ -54,6 +39,36 @@ pub(super) async fn readable_requests(
         }
         GitFetchAsk::Listing { .. } => Vec::new(),
     };
+    let advertised_request_ids = advertised
+        .iter()
+        .filter_map(|(_, head)| match head {
+            GitFetchHead::Requests(requests) => Some(requests),
+            GitFetchHead::Main => None,
+        })
+        .flatten()
+        .map(|request| request.id.clone())
+        .collect::<Vec<_>>();
+    let mut requests = Vec::new();
+    let mut current = Vec::new();
+    for (request, invitee) in state
+        .metadata
+        .requests()
+        .git_fetch_requests(
+            reader.repo_id,
+            reader.user_id,
+            &ask.candidates(),
+            &advertised_request_ids,
+        )
+        .await?
+    {
+        if !readable(&request, invitee) {
+            continue;
+        }
+        if ask.includes(&request, reader.user_id, invitee) {
+            requests.push(request.clone());
+        }
+        current.push(request);
+    }
     let retained = retain_git_fetch_heads(&current, &mut requests, advertised);
     Ok(FetchRequests { requests, retained })
 }

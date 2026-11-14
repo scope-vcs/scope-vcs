@@ -1,4 +1,4 @@
-use super::{Request, RequestViewer, canonical_request_ref, request_policy};
+use super::{REQUEST_REF_PREFIX, Request, RequestViewer, canonical_request_ref, request_policy};
 use crate::views::{ViewId, Views};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -39,6 +39,66 @@ impl GitFetchAsk {
 
     pub fn is_listing(&self) -> bool {
         matches!(self, Self::Listing { .. })
+    }
+
+    pub fn candidates(&self) -> GitFetchCandidates {
+        match self {
+            Self::Listing { named_refs } if named_refs.is_empty() => GitFetchCandidates::Listing {
+                own_name_prefixes: None,
+                names: BTreeSet::new(),
+            },
+            Self::Listing { named_refs } => {
+                let mut own_name_prefixes = Some(BTreeSet::new());
+                let mut names = BTreeSet::new();
+                for prefix in named_refs {
+                    if let Some(name) = prefix.strip_prefix(REQUEST_REF_PREFIX) {
+                        names.insert(name.to_string());
+                        if let Some(prefixes) = &mut own_name_prefixes {
+                            prefixes.insert(name.to_string());
+                        }
+                    } else if REQUEST_REF_PREFIX.starts_with(prefix.as_str()) {
+                        own_name_prefixes = None;
+                    }
+                }
+                GitFetchCandidates::Listing {
+                    own_name_prefixes,
+                    names,
+                }
+            }
+            Self::Transfer { shallow: true, .. } => GitFetchCandidates::Every,
+            Self::Transfer { wants, .. } => GitFetchCandidates::Heads(wants.clone()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitFetchCandidates {
+    Every,
+    Listing {
+        own_name_prefixes: Option<BTreeSet<String>>,
+        names: BTreeSet<String>,
+    },
+    Heads(Vec<String>),
+}
+
+impl GitFetchCandidates {
+    pub fn admits(&self, request: &Request, own: bool) -> bool {
+        match self {
+            Self::Every => true,
+            Self::Listing {
+                own_name_prefixes,
+                names,
+            } => {
+                names.contains(&request.name)
+                    || own
+                        && own_name_prefixes.as_ref().is_none_or(|prefixes| {
+                            prefixes
+                                .iter()
+                                .any(|prefix| request.name.starts_with(prefix.as_str()))
+                        })
+            }
+            Self::Heads(heads) => heads.contains(&request.head_oid),
+        }
     }
 }
 
@@ -204,6 +264,62 @@ mod tests {
                 "{ask:?} {user:?} {invitee}"
             );
         }
+    }
+
+    #[test]
+    fn candidates_admit_every_request_a_fetch_includes() {
+        let request = open_request();
+        let name = canonical_request_ref(&request.name);
+        let asks = [
+            GitFetchAsk::listing(),
+            GitFetchAsk::Listing {
+                named_refs: [name.clone()].into(),
+            },
+            GitFetchAsk::Listing {
+                named_refs: [name[..name.len() - 2].to_string()].into(),
+            },
+            GitFetchAsk::Listing {
+                named_refs: ["refs/".to_string(), "refs/tags/".to_string()].into(),
+            },
+            GitFetchAsk::Listing {
+                named_refs: ["refs/heads/".to_string()].into(),
+            },
+            GitFetchAsk::Listing {
+                named_refs: ["refs/heads/other".to_string(), "refs/tags/".to_string()].into(),
+            },
+            GitFetchAsk::Listing {
+                named_refs: ["refs/heads/other".to_string(), "refs/remotes/".to_string()].into(),
+            },
+            GitFetchAsk::Transfer {
+                wants: vec![request.head_oid.clone()],
+                shallow: false,
+            },
+            GitFetchAsk::Transfer {
+                wants: vec!["other".to_string()],
+                shallow: false,
+            },
+            GitFetchAsk::Transfer {
+                wants: vec!["other".to_string()],
+                shallow: true,
+            },
+        ];
+        let mut narrowed = 0;
+        for ask in &asks {
+            for (user, invitee, own) in [
+                (Some("author"), false, true),
+                (Some("reader"), true, true),
+                (Some("reader"), false, false),
+                (None, false, false),
+            ] {
+                let admitted = ask.candidates().admits(&request, own);
+                assert!(
+                    admitted || !ask.includes(&request, user, invitee),
+                    "{ask:?} {user:?} {invitee}"
+                );
+                narrowed += usize::from(!admitted);
+            }
+        }
+        assert!(narrowed > 0);
     }
 
     #[test]
