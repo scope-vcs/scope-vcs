@@ -176,10 +176,16 @@ fn combinations(matrix: &WorkflowValue) -> Option<Vec<Combination>> {
                 Some(exclude) => entry_list(exclude)?,
                 None => Vec::new(),
             };
-            dimensions
+            let size = dimensions
                 .iter()
                 .try_fold(1_usize, |size, (_, values)| size.checked_mul(values.len()))
                 .filter(|size| *size <= GITHUB_MATRIX_JOB_LIMIT)?;
+            let combination_bytes = dimensions
+                .iter()
+                .map(|(key, values)| key.len() + values.iter().map(String::len).max().unwrap_or(0))
+                .sum::<usize>();
+            size.checked_mul(combination_bytes)
+                .filter(|bytes| *bytes <= CATALOG_NAME_BYTE_LIMIT)?;
             let product =
                 dimensions
                     .iter()
@@ -258,4 +264,39 @@ fn check_name(display: &str, combination: &[(String, String)]) -> Option<String>
     }
     rendered.push_str(rest);
     Some(rendered)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn axis(values: &[&str]) -> WorkflowValue {
+        WorkflowValue::Sequence(
+            values
+                .iter()
+                .map(|value| WorkflowValue::String((*value).to_string()))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn a_matrix_is_expanded_only_within_the_name_budget() {
+        let value = "v".repeat(16 * 1024);
+        let shards = (0..256).map(|shard| shard.to_string()).collect::<Vec<_>>();
+        let shards = shards.iter().map(String::as_str).collect::<Vec<_>>();
+        let large = (0..15)
+            .map(|axis_index| (format!("axis{axis_index}"), axis(&[value.as_str()])))
+            .chain([("shard".to_string(), axis(&shards))])
+            .collect::<Vec<_>>();
+        assert!(combinations(&WorkflowValue::Mapping(large)).is_none());
+
+        let small = vec![
+            ("os".to_string(), axis(&["linux", "macos"])),
+            ("shard".to_string(), axis(&shards[..100])),
+        ];
+        assert_eq!(
+            combinations(&WorkflowValue::Mapping(small)).map(|all| all.len()),
+            Some(200)
+        );
+    }
 }
