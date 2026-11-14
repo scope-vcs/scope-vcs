@@ -171,7 +171,7 @@ jobs:
           done
 
       - name: Stop local stack
-        if: always()
+        if: ${{ !cancelled() }}
         run: ./dev/scope-dev down
 
   cli-media:
@@ -336,7 +336,7 @@ jobs:
           done
 
       - name: Stop local stack
-        if: always()
+        if: ${{ !cancelled() }}
         run: ./dev/scope-dev down
 
   journey:
@@ -477,5 +477,5 @@ jobs:
           done
 
       - name: Stop local stack
-        if: always()
+        if: ${{ !cancelled() }}
         run: ./dev/scope-dev down
