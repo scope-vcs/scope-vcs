@@ -213,6 +213,7 @@ function RequestWorkspaceRow({
   stackOpen: boolean
 }) {
   const hydrated = useHydrated()
+  const stackPressBounds = useRef<DOMRect | null>(null)
   const { request, attention, author } = item
   const nowUnix = useUnixClock()
   const selected = selectedId === request.id
@@ -353,7 +354,20 @@ function RequestWorkspaceRow({
                   aria-expanded={stackOpen}
                   aria-label={`${stackOpen ? 'Collapse' : 'Expand'} ${descendants.length} stacked requests`}
                   className="request-workspace-stack-pill"
-                  onClick={onToggleStack}
+                  onClick={(event) => {
+                    const bounds = stackPressBounds.current
+                    stackPressBounds.current = null
+                    if (event.detail > 0 && bounds && (
+                      event.clientX < bounds.left || event.clientX > bounds.right ||
+                      event.clientY < bounds.top || event.clientY > bounds.bottom
+                    )) return
+                    onToggleStack()
+                  }}
+                  onPointerCancel={() => { stackPressBounds.current = null }}
+                  onPointerDown={(event) => {
+                    stackPressBounds.current = event.currentTarget.getBoundingClientRect()
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                  }}
                   type="button"
                 >
                   <Layers aria-hidden="true" />
