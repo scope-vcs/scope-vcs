@@ -125,6 +125,7 @@ test('repository components retain drafts, previews and pending actions across r
 
   await checks.getByText("branches: ['scope/**']", { exact: false }).waitFor()
   await checks.getByText('1 of 2 workflows on main run on Scope requests.', { exact: true }).waitFor()
+  await checks.getByRole('button', { name: 'Check GitHub again', exact: true }).waitFor()
   await checks.getByRole('list', { name: 'Workflows that may not run on requests' }).getByText('.github/workflows/release.yml', { exact: true }).waitFor()
   const testConnection = checks.getByRole('button', { name: 'Test connection', exact: true })
   await testConnection.click()

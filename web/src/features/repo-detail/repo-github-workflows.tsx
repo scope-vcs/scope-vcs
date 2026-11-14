@@ -2,13 +2,22 @@ import type { GitHubChecksResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import type { CachedResource } from '@/lib/use-cached-resource'
+import { RefreshCw } from 'lucide-react'
 import { GITHUB_TRIGGER_SNIPPET, githubWorkflowsView } from './repo-github-checks-model'
 
 export function RepoGitHubWorkflows({ checks }: { checks: CachedResource<GitHubChecksResponse> }) {
   const view = checks.value && githubWorkflowsView(checks.value)
   return (
     <div className="space-y-2 border-t border-border pt-3">
-      <div className="leading-5">Run workflows on requests</div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="leading-5">Run workflows on requests</div>
+        {view && (
+          <Button disabled={checks.refreshing} onClick={checks.retry} size="sm" type="button" variant="secondary">
+            <RefreshCw className={checks.refreshing ? 'size-3.5 animate-spin' : 'size-3.5'} />
+            <span>Check GitHub again</span>
+          </Button>
+        )}
+      </div>
       {checks.status === 'loading' && <TextSkeleton length="long" />}
       {checks.status === 'failed' && (
         <div className="flex flex-wrap items-center justify-between gap-3">

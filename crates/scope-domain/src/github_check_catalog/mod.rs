@@ -9,6 +9,10 @@ pub const GITHUB_WORKFLOW_DISABLED_MESSAGE: &str = "Disabled on GitHub.";
 pub const GITHUB_PATH_FILTER_MESSAGE: &str =
     "Runs only when the changed files match its path filters.";
 pub const GITHUB_JOB_CONDITION_MESSAGE: &str = "Runs only when its condition holds.";
+pub const GITHUB_MAIN_PULL_REQUESTS_MESSAGE: &str =
+    "Runs only for requests based on main, not stacked requests.";
+pub const GITHUB_STACKED_PULL_REQUESTS_MESSAGE: &str =
+    "Runs only for stacked requests, not requests based on main.";
 
 const REPRESENTATIVE_REQUEST_ID: &str = "req_00000000000000000000000000000000";
 

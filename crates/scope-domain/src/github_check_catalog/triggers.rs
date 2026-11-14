@@ -1,4 +1,7 @@
-use super::{GITHUB_PATH_FILTER_MESSAGE, GitHubCheckRuns, WorkflowValue, branch_filter};
+use super::{
+    GITHUB_MAIN_PULL_REQUESTS_MESSAGE, GITHUB_PATH_FILTER_MESSAGE,
+    GITHUB_STACKED_PULL_REQUESTS_MESSAGE, GitHubCheckRuns, WorkflowValue, branch_filter,
+};
 
 const PULL_REQUEST_UPDATE_TYPES: [&str; 3] = ["opened", "synchronize", "reopened"];
 
@@ -37,7 +40,7 @@ impl ScopePushes {
             .filter_map(|(event, config)| match event.as_str() {
                 "push" => push(*config, &self.request_branch),
                 "pull_request" if self.opens_pull_requests => {
-                    pull_request(*config, &self.base_branch)
+                    pull_request(*config, &self.base_branch, &self.request_branch)
                 }
                 _ => None,
             })
@@ -75,17 +78,33 @@ fn push(config: Option<&WorkflowValue>, branch: &str) -> Option<GitHubCheckRuns>
     triggered.then(|| path_verdict(config))
 }
 
-fn pull_request(config: Option<&WorkflowValue>, base_branch: &str) -> Option<GitHubCheckRuns> {
+fn pull_request(
+    config: Option<&WorkflowValue>,
+    main_base: &str,
+    stacked_base: &str,
+) -> Option<GitHubCheckRuns> {
     let Some(config @ WorkflowValue::Mapping(_)) = config else {
         return Some(GitHubCheckRuns::Yes);
     };
-    let branch_triggered = branch_triggers(config, base_branch).unwrap_or(true);
     let type_triggered = config.get("types").is_none_or(|types| {
         branch_filter::filter_values(types)
             .iter()
             .any(|kind| PULL_REQUEST_UPDATE_TYPES.contains(&kind.as_str()))
     });
-    (branch_triggered && type_triggered).then(|| path_verdict(config))
+    if !type_triggered {
+        return None;
+    }
+    let into = |base| branch_triggers(config, base).unwrap_or(true);
+    match (into(main_base), into(stacked_base)) {
+        (true, true) => Some(path_verdict(config)),
+        (true, false) => Some(GitHubCheckRuns::Maybe(
+            GITHUB_MAIN_PULL_REQUESTS_MESSAGE.to_string(),
+        )),
+        (false, true) => Some(GitHubCheckRuns::Maybe(
+            GITHUB_STACKED_PULL_REQUESTS_MESSAGE.to_string(),
+        )),
+        (false, false) => None,
+    }
 }
 
 fn branch_triggers(config: &WorkflowValue, branch: &str) -> Option<bool> {

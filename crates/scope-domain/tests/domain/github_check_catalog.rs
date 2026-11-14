@@ -1,8 +1,8 @@
 use scope_domain::github_check_catalog::{
-    GITHUB_JOB_CONDITION_MESSAGE, GITHUB_PATH_FILTER_MESSAGE, GITHUB_WORKFLOW_DISABLED_MESSAGE,
-    GitHubCatalogCheck, GitHubCheckCatalog, GitHubCheckRuns, GitHubCheckSources,
-    GitHubWorkflowFile, GitHubWorkflowState, GitHubWorkflowSummary, WorkflowValue,
-    github_check_catalog,
+    GITHUB_JOB_CONDITION_MESSAGE, GITHUB_MAIN_PULL_REQUESTS_MESSAGE, GITHUB_PATH_FILTER_MESSAGE,
+    GITHUB_STACKED_PULL_REQUESTS_MESSAGE, GITHUB_WORKFLOW_DISABLED_MESSAGE, GitHubCatalogCheck,
+    GitHubCheckCatalog, GitHubCheckRuns, GitHubCheckSources, GitHubWorkflowFile,
+    GitHubWorkflowState, GitHubWorkflowSummary, WorkflowValue, github_check_catalog,
 };
 
 fn s(value: &str) -> WorkflowValue {
@@ -233,8 +233,20 @@ fn workflow_triggers_decide_whether_request_branches_run() {
             None,
         ),
         (
-            "pull request into main",
+            "pull request into main only",
             pull_request(map(&[("branches", strs(&["main"]))])),
+            true,
+            Some(maybe(GITHUB_MAIN_PULL_REQUESTS_MESSAGE)),
+        ),
+        (
+            "pull request into request branches only",
+            pull_request(map(&[("branches", strs(&["scope/**"]))])),
+            true,
+            Some(maybe(GITHUB_STACKED_PULL_REQUESTS_MESSAGE)),
+        ),
+        (
+            "pull request into main and request branches",
+            pull_request(map(&[("branches", strs(&["main", "scope/**"]))])),
             true,
             Some(yes()),
         ),
