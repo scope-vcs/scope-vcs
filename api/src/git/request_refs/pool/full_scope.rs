@@ -27,10 +27,10 @@ impl PoolInstall<'_> {
         let has_full = state
             .metadata
             .repositories()
-            .git_pool_packs_for_requests(self.incarnation.repository_id(), &ids)
+            .git_pool_request_lineage(self.incarnation.repository_id(), &ids)
             .await?
             .into_iter()
-            .any(|pack| pack.request_view == *view && pack.scope.view().is_none());
+            .any(|request| request.view == *view && request.has_full_scope_packs);
         if !has_full {
             return Ok(0);
         }
