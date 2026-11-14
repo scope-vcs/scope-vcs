@@ -110,7 +110,7 @@ fn job_checks<'a>(
     combinations
         .iter()
         .map(|combination| {
-            let name = check_name(&display, combination)?;
+            let name = check_name(&display, combination, budget.name_bytes)?;
             budget.spend_name(name.len())?;
             Some(JobCheck { name, conditional })
         })
@@ -136,19 +136,14 @@ fn called_checks<'a>(
     }
     let document = file.document.as_ref().ok()?;
     callers.push(&file.path);
-    let mut checks = Vec::new();
-    let mut complete = true;
-    for (id, job) in jobs(document) {
-        match job_checks(id, job, files, callers, budget) {
-            Some(called) => checks.extend(called),
-            None => {
-                complete = false;
-                break;
-            }
-        }
-    }
+    let checks = jobs(document)
+        .iter()
+        .try_fold(Vec::new(), |mut checks, (id, job)| {
+            checks.extend(job_checks(id, job, files, callers, budget)?);
+            Some(checks)
+        });
     callers.pop();
-    complete.then_some(checks)
+    checks
 }
 
 fn combinations(matrix: &WorkflowValue) -> Option<Vec<Combination>> {
@@ -176,10 +171,10 @@ fn combinations(matrix: &WorkflowValue) -> Option<Vec<Combination>> {
                 Some(exclude) => entry_list(exclude)?,
                 None => Vec::new(),
             };
-            let size = dimensions
-                .iter()
-                .try_fold(1_usize, |size, (_, values)| size.checked_mul(values.len()))
-                .filter(|size| *size <= GITHUB_MATRIX_JOB_LIMIT)?;
+            let size = dimensions.iter().try_fold(1_usize, |size, (_, values)| {
+                size.checked_mul(values.len())
+                    .filter(|size| *size <= GITHUB_MATRIX_JOB_LIMIT)
+            })?;
             let combination_bytes = dimensions
                 .iter()
                 .map(|(key, values)| key.len() + values.iter().map(String::len).max().unwrap_or(0))
@@ -240,29 +235,32 @@ fn entry_list(value: &WorkflowValue) -> Option<Vec<Combination>> {
         .collect()
 }
 
-fn check_name(display: &str, combination: &[(String, String)]) -> Option<String> {
-    if !display.contains(EXPRESSION_OPEN) {
-        if combination.is_empty() {
-            return Some(display.to_string());
-        }
-        let values = combination
-            .iter()
-            .map(|(_, value)| value.as_str())
-            .collect::<Vec<_>>();
-        return Some(format!("{display} ({})", values.join(", ")));
-    }
+fn check_name(display: &str, combination: &[(String, String)], limit: usize) -> Option<String> {
     let mut rendered = String::new();
+    let mut push =
+        |piece: &str| (rendered.len() + piece.len() <= limit).then(|| rendered.push_str(piece));
+    if !display.contains(EXPRESSION_OPEN) {
+        push(display)?;
+        for (index, (_, value)) in combination.iter().enumerate() {
+            push(if index == 0 { " (" } else { ", " })?;
+            push(value)?;
+        }
+        if !combination.is_empty() {
+            push(")")?;
+        }
+        return Some(rendered);
+    }
     let mut rest = display;
     while let Some(start) = rest.find(EXPRESSION_OPEN) {
-        rendered.push_str(&rest[..start]);
+        push(&rest[..start])?;
         let expression = &rest[start + EXPRESSION_OPEN.len()..];
         let end = expression.find(EXPRESSION_CLOSE)?;
         let key = expression[..end].trim().strip_prefix("matrix.")?;
         let (_, value) = combination.iter().find(|(candidate, _)| candidate == key)?;
-        rendered.push_str(value);
+        push(value)?;
         rest = &expression[end + EXPRESSION_CLOSE.len()..];
     }
-    rendered.push_str(rest);
+    push(rest)?;
     Some(rendered)
 }
 
@@ -298,5 +296,35 @@ mod tests {
             combinations(&WorkflowValue::Mapping(small)).map(|all| all.len()),
             Some(200)
         );
+
+        let wide = (0..15_000)
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>();
+        let wide = wide.iter().map(String::as_str).collect::<Vec<_>>();
+        let emptied = vec![
+            ("a".to_string(), axis(&wide)),
+            ("b".to_string(), axis(&wide)),
+            ("c".to_string(), axis(&[])),
+        ];
+        assert!(combinations(&WorkflowValue::Mapping(emptied)).is_none());
+    }
+
+    #[test]
+    fn a_name_stops_rendering_at_the_byte_limit() {
+        let value = ("x".to_string(), "v".repeat(1000));
+        let display = "${{ matrix.x }}".repeat(20);
+        assert_eq!(
+            check_name(&display, std::slice::from_ref(&value), 20_000).map(|name| name.len()),
+            Some(20_000)
+        );
+        assert_eq!(
+            check_name(&display, std::slice::from_ref(&value), 19_999),
+            None
+        );
+        assert_eq!(
+            check_name("Test", &[value.clone(), ("y".into(), "1".into())], 1_100).as_deref(),
+            Some(format!("Test ({}, 1)", value.1).as_str())
+        );
+        assert_eq!(check_name("Test", &[value], 1_000), None);
     }
 }
