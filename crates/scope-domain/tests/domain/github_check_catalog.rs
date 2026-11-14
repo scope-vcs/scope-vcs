@@ -453,6 +453,21 @@ fn job_check_names_expand_matrices_or_defer_to_runtime() {
             &["build"],
         ),
         (
+            "expression matrix value",
+            matrix_job(None, map(&[("os", strs(&["linux", "${{ vars.RUNNER }}"]))])),
+            &[],
+            &["build"],
+        ),
+        (
+            "expression include value",
+            matrix_job(
+                Some("Test on ${{ matrix.os }}"),
+                map(&[("include", seq(&[map(&[("os", s("${{ vars.RUNNER }}"))])]))]),
+            ),
+            &[],
+            &["build"],
+        ),
+        (
             "non scalar matrix value",
             matrix_job(None, map(&[("os", seq(&[map(&[("name", s("linux"))])]))])),
             &[],

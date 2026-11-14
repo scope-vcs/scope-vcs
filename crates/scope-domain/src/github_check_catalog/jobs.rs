@@ -200,12 +200,14 @@ fn combinations(matrix: &WorkflowValue) -> Option<Vec<Combination>> {
     }
 }
 
-fn scalar_list(value: &WorkflowValue) -> Option<Vec<String>> {
+fn literal_text(value: &WorkflowValue) -> Option<String> {
     value
-        .items()?
-        .iter()
-        .map(WorkflowValue::scalar_text)
-        .collect()
+        .scalar_text()
+        .filter(|text| !text.contains(EXPRESSION_OPEN))
+}
+
+fn scalar_list(value: &WorkflowValue) -> Option<Vec<String>> {
+    value.items()?.iter().map(literal_text).collect()
 }
 
 fn entry_list(value: &WorkflowValue) -> Option<Vec<Combination>> {
@@ -215,7 +217,7 @@ fn entry_list(value: &WorkflowValue) -> Option<Vec<Combination>> {
         .map(|item| {
             item.entries()?
                 .iter()
-                .map(|(key, value)| value.scalar_text().map(|text| (key.clone(), text)))
+                .map(|(key, value)| literal_text(value).map(|text| (key.clone(), text)))
                 .collect()
         })
         .collect()
