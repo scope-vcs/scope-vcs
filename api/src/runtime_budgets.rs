@@ -143,7 +143,7 @@ impl RuntimeBudgets {
         .await
         .ok()
         .and_then(Result::ok)
-        .map(|permit| RuntimePermit { _permit: permit })
+        .map(RuntimePermit::new)
         .ok_or_else(|| {
             ApiError::too_many_requests("Git materialization capacity is exhausted; retry later")
         })
@@ -179,21 +179,27 @@ impl RuntimeBudgets {
         semaphore: &Arc<Semaphore>,
         operation: &str,
     ) -> Result<RuntimePermit, ApiError> {
-        if let Ok(permit) = try_acquire(semaphore, operation) {
-            return Ok(permit);
-        }
-        tokio::time::timeout(self.git_admission_wait, semaphore.clone().acquire_owned())
-            .instrument(waiting_span("admission", operation))
-            .await
-            .ok()
-            .and_then(Result::ok)
-            .map(|permit| RuntimePermit { _permit: permit })
-            .ok_or_else(|| {
-                tracing::warn!(operation, "runtime capacity admission timed out");
-                ApiError::too_many_requests(format!(
-                    "{operation} capacity is exhausted; retry later"
-                ))
-            })
+        let permit = match try_acquire(semaphore, operation) {
+            Ok(permit) => permit,
+            Err(_) => {
+                tokio::time::timeout(self.git_admission_wait, semaphore.clone().acquire_owned())
+                    .instrument(capacity_span("waiting", operation))
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .map(RuntimePermit::new)
+                    .ok_or_else(|| {
+                        tracing::warn!(operation, "runtime capacity admission timed out");
+                        ApiError::too_many_requests(format!(
+                            "{operation} capacity is exhausted; retry later"
+                        ))
+                    })?
+            }
+        };
+        Ok(RuntimePermit {
+            _held: capacity_span("held", operation),
+            ..permit
+        })
     }
 
     fn check_object_size(
@@ -211,12 +217,12 @@ impl RuntimeBudgets {
     }
 }
 
-pub(crate) fn waiting_span(wait: &'static str, operation: &str) -> tracing::Span {
+pub(crate) fn capacity_span(stage: &'static str, operation: &str) -> tracing::Span {
     tracing::info_span!(
-        "waiting for capacity",
-        otel.name = %format!("wait {wait}"),
+        "Git capacity",
+        otel.name = %format!("capacity {stage}"),
         otel.kind = "internal",
-        scope.wait = wait,
+        scope.capacity = stage,
         scope.operation = operation,
     )
 }
@@ -225,7 +231,7 @@ fn try_acquire(semaphore: &Arc<Semaphore>, operation: &str) -> Result<RuntimePer
     semaphore
         .clone()
         .try_acquire_owned()
-        .map(|permit| RuntimePermit { _permit: permit })
+        .map(RuntimePermit::new)
         .map_err(|_| {
             tracing::warn!(operation, "runtime capacity permit rejected");
             ApiError::too_many_requests(format!("{operation} capacity is exhausted; retry later"))
@@ -234,6 +240,16 @@ fn try_acquire(semaphore: &Arc<Semaphore>, operation: &str) -> Result<RuntimePer
 
 pub(crate) struct RuntimePermit {
     _permit: OwnedSemaphorePermit,
+    _held: tracing::Span,
+}
+
+impl RuntimePermit {
+    fn new(permit: OwnedSemaphorePermit) -> Self {
+        Self {
+            _permit: permit,
+            _held: tracing::Span::none(),
+        }
+    }
 }
 
 pub(crate) struct BudgetedObjectStore {

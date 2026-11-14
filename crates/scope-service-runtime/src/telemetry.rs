@@ -43,7 +43,7 @@ const INJECTED_EXPORTER_HEADERS: [&str; 3] = [
     "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
 ];
 const UNTRACED_PATHS: [&str; 2] = ["/healthz", "/readyz"];
-const EXPORTED_ATTRIBUTES: [&str; 21] = [
+const EXPORTED_ATTRIBUTES: [&str; 23] = [
     "db.operation.name",
     "db.system.name",
     "git.subcommand",
@@ -56,12 +56,14 @@ const EXPORTED_ATTRIBUTES: [&str; 21] = [
     "rpc.service",
     "rpc.system",
     "scope.blob.count",
+    "scope.capacity",
     "scope.change.count",
     "scope.job.attempt",
     "scope.job.id",
     "scope.job.kind",
     "scope.job.queued_trace_ids",
     "scope.landed_request.count",
+    "scope.operation",
     "server.address",
     "server.port",
     "url.scheme",

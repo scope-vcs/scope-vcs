@@ -43,8 +43,8 @@ async fn lock_shelf(path: &Path) -> Result<OwnedMutexGuard<()>, ApiError> {
         return Ok(guard);
     }
     tokio::time::timeout(Duration::from_secs(2), lock.lock_owned())
-        .instrument(crate::runtime_budgets::waiting_span(
-            "object shelf",
+        .instrument(crate::runtime_budgets::capacity_span(
+            "waiting",
             "Git object shelf write",
         ))
         .await
