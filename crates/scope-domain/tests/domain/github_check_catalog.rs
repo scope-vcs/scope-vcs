@@ -590,6 +590,34 @@ fn local_reusable_workflows_prefix_called_check_names() {
 }
 
 #[test]
+fn reusable_calls_that_fan_out_past_the_catalog_budget_are_named_at_runtime() {
+    let job_ids = (0..100).map(|job| format!("j{job}")).collect::<Vec<_>>();
+    let levels = (1..=4)
+        .map(|level| {
+            let job = if level == 4 {
+                step_job()
+            } else {
+                map(&[(
+                    "uses",
+                    s(&format!("./.github/workflows/l{}.yml", level + 1)),
+                )])
+            };
+            let jobs = job_ids
+                .iter()
+                .map(|id| (id.as_str(), job.clone()))
+                .collect::<Vec<_>>();
+            file(
+                &format!(".github/workflows/l{level}.yml"),
+                workflow(map(&[("workflow_call", WorkflowValue::Null)]), map(&jobs)),
+            )
+        })
+        .collect::<Vec<_>>();
+    let (names, runtime) = job_names(map(&[("uses", s("./.github/workflows/l1.yml"))]), levels);
+    assert!(names.is_empty());
+    assert_eq!(runtime, ["build"]);
+}
+
+#[test]
 fn reusable_calls_stop_past_the_depth_limit() {
     let chain = (1..=6)
         .map(|level| {

@@ -1,4 +1,4 @@
-use super::FakeGitHub;
+use super::{FakeGitHub, InstallationState};
 use axum::{
     Json, Router,
     extract::{Path as AxumPath, Query as AxumQuery, State as AxumState},
@@ -55,6 +55,13 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                  AxumPath(id): AxumPath<u64>,
                  headers: HeaderMap| async move {
                     let installation = installation_id(&headers);
+                    let suspended = installation.is_some_and(|installation| {
+                        fake.installation_states.lock().unwrap().get(&installation)
+                            == Some(&InstallationState::Suspended)
+                    });
+                    if suspended {
+                        return StatusCode::FORBIDDEN.into_response();
+                    }
                     fake.installation_repositories
                         .lock()
                         .unwrap()

@@ -2,6 +2,7 @@ use super::{GitHubWorkflowFile, WorkflowValue};
 
 const REUSABLE_WORKFLOW_DEPTH_LIMIT: usize = 4;
 const GITHUB_MATRIX_JOB_LIMIT: usize = 256;
+const CATALOG_CHECK_LIMIT: usize = 10_000;
 const EXPRESSION_OPEN: &str = "${{";
 const EXPRESSION_CLOSE: &str = "}}";
 
@@ -17,17 +18,37 @@ pub(super) struct WorkflowJobs {
     pub(super) runtime_named: Vec<String>,
 }
 
+pub(super) struct CheckBudget {
+    remaining: usize,
+}
+
+impl Default for CheckBudget {
+    fn default() -> Self {
+        Self {
+            remaining: CATALOG_CHECK_LIMIT,
+        }
+    }
+}
+
+impl CheckBudget {
+    fn spend(&mut self, checks: usize) -> Option<()> {
+        self.remaining = self.remaining.checked_sub(checks)?;
+        Some(())
+    }
+}
+
 pub(super) fn workflow_jobs(
     document: &WorkflowValue,
     path: &str,
     files: &[GitHubWorkflowFile],
+    budget: &mut CheckBudget,
 ) -> WorkflowJobs {
     let mut result = WorkflowJobs {
         checks: Vec::new(),
         runtime_named: Vec::new(),
     };
     for (id, job) in jobs(document) {
-        match job_checks(id, job, files, &mut vec![path]) {
+        match job_checks(id, job, files, &mut vec![path], budget) {
             Some(checks) => result.checks.extend(checks),
             None => result.runtime_named.push(id.clone()),
         }
@@ -47,6 +68,7 @@ fn job_checks<'a>(
     job: &WorkflowValue,
     files: &'a [GitHubWorkflowFile],
     callers: &mut Vec<&'a str>,
+    budget: &mut CheckBudget,
 ) -> Option<Vec<JobCheck>> {
     let display = job
         .get("name")
@@ -60,7 +82,7 @@ fn job_checks<'a>(
         if matrix.is_some() || display.contains(EXPRESSION_OPEN) {
             return None;
         }
-        let called = called_checks(uses, files, callers)?;
+        let called = called_checks(uses, files, callers, budget)?;
         return Some(
             called
                 .into_iter()
@@ -75,6 +97,7 @@ fn job_checks<'a>(
         Some(matrix) => combinations(matrix)?,
         None => vec![Vec::new()],
     };
+    budget.spend(combinations.len())?;
     combinations
         .iter()
         .map(|combination| {
@@ -87,6 +110,7 @@ fn called_checks<'a>(
     uses: &WorkflowValue,
     files: &'a [GitHubWorkflowFile],
     callers: &mut Vec<&'a str>,
+    budget: &mut CheckBudget,
 ) -> Option<Vec<JobCheck>> {
     let WorkflowValue::String(uses) = uses else {
         return None;
@@ -101,12 +125,19 @@ fn called_checks<'a>(
     }
     let document = file.document.as_ref().ok()?;
     callers.push(&file.path);
-    let checks = jobs(document)
-        .iter()
-        .map(|(id, job)| job_checks(id, job, files, callers))
-        .collect::<Option<Vec<_>>>();
+    let mut checks = Vec::new();
+    let mut complete = true;
+    for (id, job) in jobs(document) {
+        match job_checks(id, job, files, callers, budget) {
+            Some(called) => checks.extend(called),
+            None => {
+                complete = false;
+                break;
+            }
+        }
+    }
     callers.pop();
-    Some(checks?.into_iter().flatten().collect())
+    complete.then_some(checks)
 }
 
 fn combinations(matrix: &WorkflowValue) -> Option<Vec<Combination>> {

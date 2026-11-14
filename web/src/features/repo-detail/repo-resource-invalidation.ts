@@ -9,6 +9,7 @@ import { requestAttachmentResource, requestAttachmentResourceIdentity } from '..
 import { repositoryActivityResource } from './repository-activity-resource'
 import { repositoryDependencyResource } from './repository-dependency-resource'
 import { repoSettingsResource } from './repo-settings-resource'
+import { repoGitHubChecksResource } from './repo-github-checks-resource'
 import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
 import { repositoryVersionKey } from './repository-version'
@@ -37,6 +38,7 @@ export function invalidateRepoResources(
   if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || repositoryChanged) {
     if (!summaryPending) invalidateRequestQueues(scope)
     repoSettingsResource.invalidate(scope)
+    repoGitHubChecksResource.invalidate(scope)
     requestChangesResource.invalidateMatching(inScope)
     requestDiscussionReferenceResource.invalidateMatching(inScope)
     historyFeedResource.invalidateMatching(inScope)
@@ -70,6 +72,7 @@ export function invalidateRepoResources(
     if (!summaryPending) invalidateRequestQueues(scope)
     invalidateGitHubWorkflowRuns(scope)
     githubWorkflowNamesResource.invalidate(scope)
+    repoGitHubChecksResource.invalidate(scope)
     invalidateGitHubWorkflowRunDetails(scope)
   } else if (typeof event.kind === 'object' && 'GitHubWorkflowRunChanged' in event.kind) {
     invalidateGitHubWorkflowRunDetails(scope, event.kind.GitHubWorkflowRunChanged.github_run_id)

@@ -138,6 +138,7 @@ pub fn github_check_catalog(sources: GitHubCheckSources) -> GitHubCheckCatalog {
 
     let mut workflows = Vec::new();
     let mut checks = BTreeMap::<String, GitHubCatalogCheck>::new();
+    let mut budget = jobs::CheckBudget::default();
     for file in files {
         let active = sources
             .workflow_states
@@ -145,7 +146,7 @@ pub fn github_check_catalog(sources: GitHubCheckSources) -> GitHubCheckCatalog {
             .find(|state| state.path == file.path)
             .is_none_or(|state| state.active);
         let Some((summary, job_checks)) =
-            summarize_workflow(file, active, &pushes, &sources.workflow_files)
+            summarize_workflow(file, active, &pushes, &sources.workflow_files, &mut budget)
         else {
             continue;
         };
@@ -210,6 +211,7 @@ fn summarize_workflow(
     active: bool,
     pushes: &triggers::ScopePushes,
     files: &[GitHubWorkflowFile],
+    budget: &mut jobs::CheckBudget,
 ) -> Option<(GitHubWorkflowSummary, Vec<jobs::JobCheck>)> {
     let file_name = file
         .path
@@ -240,7 +242,7 @@ fn summarize_workflow(
     } else {
         GitHubCheckRuns::No(GITHUB_WORKFLOW_DISABLED_MESSAGE.to_string())
     };
-    let workflow_jobs = jobs::workflow_jobs(document, &file.path, files);
+    let workflow_jobs = jobs::workflow_jobs(document, &file.path, files, budget);
     let summary = GitHubWorkflowSummary {
         path: file.path.clone(),
         name: document
