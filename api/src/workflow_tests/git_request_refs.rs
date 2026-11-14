@@ -1,6 +1,6 @@
 use super::*;
 use scope_domain::requests::{
-    Request, RequestActorRole, RequestEventKind, RequestState, StartRequestInput,
+    GitFetchAsk, Request, RequestActorRole, RequestEventKind, RequestState, StartRequestInput,
 };
 use scope_domain::views::ViewId;
 use scope_postgres::db::{AddRequestInviteeCommand, SubmitRequestCommand};
@@ -345,10 +345,19 @@ async fn fetch_folder(
     headers: &HeaderMap,
     view: &ViewId,
 ) -> crate::git::cache::GitRepoHandle {
-    let ask = scope_domain::requests::GitFetchAsk::Listing {
+    let ask = GitFetchAsk::Listing {
         named_refs: [REQUEST_REF.to_string()].into(),
     };
-    git_upload_pack_repo_for_request(state, headers, TEST_REPO_OWNER, TEST_REPO_NAME, view, &ask)
+    fetch_folder_for(state, headers, view, &ask).await
+}
+
+async fn fetch_folder_for(
+    state: &AppState,
+    headers: &HeaderMap,
+    view: &ViewId,
+    ask: &GitFetchAsk,
+) -> crate::git::cache::GitRepoHandle {
+    git_upload_pack_repo_for_request(state, headers, TEST_REPO_OWNER, TEST_REPO_NAME, view, ask)
         .await
         .unwrap()
 }
