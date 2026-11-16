@@ -183,7 +183,7 @@ as_installer rm -f "$binary_backup"
 echo "scope installed to $install_dir/scope"
 
 resolved="$(command -v scope 2>/dev/null || true)"
-if [ "$resolved" != "$install_dir/scope" ]; then
+if [ -z "$resolved" ] || ! [ "$resolved" -ef "$install_dir/scope" ]; then
   echo "scope at $resolved comes first on PATH, so the shell will not run the version just installed." >&2
   echo "Remove it, or rerun with SCOPE_INSTALL_DIR=${{resolved%/*}} to update it." >&2
   exit 1

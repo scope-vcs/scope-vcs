@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
@@ -160,6 +160,11 @@ test('native installer installs the CLI and preserves it on failed updates', { t
       assert.match(error.stderr, /comes first on PATH/);
       return true;
     });
+    const alias = join(workspace, 'alias bin');
+    await symlink(installDir, alias);
+    for (const entry of [`${installDir}/`, alias]) {
+      await execute('sh', [script], { env: { ...env, PATH: `${entry}${delimiter}${env.PATH}` }, timeout: 60_000 });
+    }
     const automatic = { ...shadowed };
     delete automatic.SCOPE_INSTALL_DIR;
     await execute('sh', [script], { env: automatic, timeout: 60_000 });
