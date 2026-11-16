@@ -13,6 +13,7 @@ pub use codex_state::CodexReviewState;
 mod tests;
 
 pub const REVIEW_BOT_START_DEADLINE_SECS: u64 = 30 * 60;
+pub const ENDED_PULL_REQUEST_BOT_WATCH_SECS: u64 = 30 * 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,12 +26,14 @@ pub enum GitHubReviewBotState {
 }
 
 impl GitHubReviewBotState {
+    pub const UNFINISHED: [Self; 2] = [Self::NotStarted, Self::Working];
+
     pub fn is_done(self) -> bool {
         matches!(self, Self::Commented | Self::Clear)
     }
 
     pub fn holds_merge(self) -> bool {
-        matches!(self, Self::NotStarted | Self::Working)
+        Self::UNFINISHED.contains(&self)
     }
 }
 

@@ -204,7 +204,7 @@ pub(crate) async fn note_review_bot_activity(
     if state
         .metadata
         .requests()
-        .requeue_github_review_bot_reconcile(github_repository_id, number)
+        .requeue_github_review_bot_reconcile(github_repository_id, number, unix_now()?)
         .await?
     {
         state.wakeups.github_review_bot_statuses.notify_one();

@@ -10,7 +10,9 @@ use crate::db::{
 use scope_domain::{
     github_account::{GitHubAccount, GitHubAccountType},
     github_review_bots::GitHubReviewBotInput,
-    requests::{GitHubReviewBotState, github_review_comment_client_id},
+    requests::{
+        ENDED_PULL_REQUEST_BOT_WATCH_SECS, GitHubReviewBotState, github_review_comment_client_id,
+    },
 };
 
 const BOT_ACCOUNT: u64 = 99;
@@ -152,13 +154,13 @@ async fn open_carriers_of_repositories_with_bots_are_reconciled_until_the_next_d
 
     assert!(
         requests
-            .requeue_github_review_bot_reconcile(42, 5)
+            .requeue_github_review_bot_reconcile(42, 5, 23)
             .await
             .unwrap()
     );
     assert!(
         !requests
-            .requeue_github_review_bot_reconcile(42, 6)
+            .requeue_github_review_bot_reconcile(42, 6, 23)
             .await
             .unwrap()
     );
@@ -337,4 +339,80 @@ async fn statuses_belong_to_the_carrier_pull_request_they_were_read_from() {
     list_bots(&store, &[("greptile-apps[bot]", true)]).await;
     push_succeeds(&store, "req_1", 'a', 22).await;
     assert!(bot_reviews(&store).await.statuses.is_empty());
+}
+
+#[tokio::test]
+async fn an_ended_pull_request_is_reconciled_while_a_bot_it_waited_on_may_still_finish() {
+    let store = postgres_store();
+    connect(&store, true).await;
+    submitted_full_view_request(&store, "req_1").await;
+    open_carrier(&store, "req_1", 5).await;
+    list_bots(&store, &[("chatgpt-codex-connector[bot]", true)]).await;
+    let requests = store.requests();
+    let reconcile = requests
+        .claim_due_github_review_bot_reconciles(20, 120, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    let working = [status(
+        "chatgpt-codex-connector[bot]",
+        GitHubReviewBotState::Working,
+    )];
+    requests
+        .finish_github_review_bot_reconcile(&reconcile, Some(&working), 300, 21)
+        .await
+        .unwrap();
+    store
+        .db
+        .execute_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "UPDATE scope_github_pull_requests SET state = 'closed' WHERE request_id = 'req_1'",
+        ))
+        .await
+        .unwrap();
+
+    assert!(due(&store, 299).await.is_empty());
+    assert_eq!(due(&store, 300).await, ["req_1"]);
+    assert!(
+        requests
+            .requeue_github_review_bot_reconcile(42, 5, 301)
+            .await
+            .unwrap()
+    );
+    assert_eq!(due(&store, 301).await, ["req_1"]);
+
+    let clear = [status(
+        "chatgpt-codex-connector[bot]",
+        GitHubReviewBotState::Clear,
+    )];
+    requests
+        .finish_github_review_bot_reconcile(&reconcile, Some(&clear), 600, 302)
+        .await
+        .unwrap();
+    assert_eq!(bot_reviews(&store).await.statuses, clear);
+    assert!(due(&store, 600).await.is_empty());
+    assert!(
+        !requests
+            .requeue_github_review_bot_reconcile(42, 5, 601)
+            .await
+            .unwrap()
+    );
+
+    requests
+        .finish_github_review_bot_reconcile(&reconcile, Some(&working), 900, 303)
+        .await
+        .unwrap();
+    let watch_ends = 303 + ENDED_PULL_REQUEST_BOT_WATCH_SECS;
+    assert_eq!(due(&store, watch_ends - 1).await, ["req_1"]);
+    requests
+        .finish_github_review_bot_reconcile(&reconcile, None, watch_ends, watch_ends - 1)
+        .await
+        .unwrap();
+    assert!(due(&store, watch_ends).await.is_empty());
+    assert!(
+        !requests
+            .requeue_github_review_bot_reconcile(42, 5, watch_ends)
+            .await
+            .unwrap()
+    );
 }
