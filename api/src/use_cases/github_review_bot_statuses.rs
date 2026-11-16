@@ -5,7 +5,7 @@ use crate::{
 };
 use scope_domain::{
     requests::{
-        GitHubReviewBotStatus, GitHubReviewImportSubject, RequestReviewsOutcome,
+        GitHubReviewBotStatus, GitHubReviewImportSubject, ImportedReviews, RequestReviewsOutcome,
         github_review_bot_statuses, github_reviews_awaiting_import, request_reviews_outcome,
     },
     views::Views,
@@ -78,12 +78,14 @@ async fn read_statuses(
     else {
         return Ok(None);
     };
-    let bots = state
+    let reviews = state
         .metadata
-        .repositories()
-        .github_review_bots(&reconcile.repo_id)
+        .requests()
+        .request_bot_reviews(&reconcile.repo_id, std::slice::from_ref(&request.id))
         .await
-        .map_err(ApiError::from)?;
+        .map_err(ApiError::from)?
+        .remove(&request.id)
+        .unwrap_or_default();
     let head_delivered_at_unix = state
         .metadata
         .requests()
@@ -104,17 +106,23 @@ async fn read_statuses(
             head_delivered_at_unix,
         )
         .await?;
-    for review_id in
-        github_reviews_awaiting_import(&bots, &signals, &request.head_oid, &imported_review_ids)
-    {
+    for review_id in github_reviews_awaiting_import(
+        &reviews.bots,
+        &signals,
+        &request.head_oid,
+        &imported_review_ids,
+    ) {
         queue_review_import(state, reconcile, review_id).await?;
     }
     Ok(Some(github_review_bot_statuses(
-        &bots,
+        &reviews.bots,
         &signals,
         &request.head_oid,
         head_delivered_at_unix,
-        &imported_review_ids,
+        ImportedReviews {
+            review_ids: &imported_review_ids,
+            open_finding_authors: &reviews.open_finding_authors,
+        },
         reconcile.review_request.as_ref(),
         now_unix,
     )))
