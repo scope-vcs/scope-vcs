@@ -59,7 +59,7 @@ async fn cold_fetch_advertises_and_installs_only_active_request_heads() {
         &replica,
         &authorization_headers(bearer_header()),
         &ViewId::private(),
-        &GitFetchAsk::listing(),
+        &GitFetchAsk::Advertisement,
     )
     .await;
     let refs = git_stdout_text(
@@ -292,7 +292,7 @@ async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents(
         &replica,
         &authorization_headers(bearer_header()),
         &ViewId::private(),
-        &GitFetchAsk::listing(),
+        &GitFetchAsk::Advertisement,
     )
     .await;
     let refs = git_stdout_text(
@@ -422,7 +422,7 @@ async fn an_authors_fetch_of_one_branch_prepares_only_that_request_on_a_cold_rep
     .await;
     assert!(!has_commit(&folder, &heads[2]));
 
-    let (_, refs) = prepared_refs(GitFetchAsk::listing()).await;
+    let (_, refs) = prepared_refs(GitFetchAsk::Advertisement).await;
     assert_eq!(
         refs,
         [
@@ -432,4 +432,93 @@ async fn an_authors_fetch_of_one_branch_prepares_only_that_request_on_a_cold_rep
             "refs/heads/unrelated"
         ]
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_plain_fetch_lists_the_most_recent_requests_and_still_pulls_an_older_tracked_one() {
+    let (state, main, _) =
+        super::super::super::push_intent_completion::published_git_fixture("fetch-capped").await;
+    let source = clone_test_repo(&main, "fetch-capped-source", false);
+    let (origin, _server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
+    configure_bearer_header(&source, &remote, &bearer_header());
+    let names = (0..=scope_domain::requests::GIT_LISTING_BROWSED_REQUEST_LIMIT)
+        .map(|index| format!("agent-{index:03}"))
+        .collect::<Vec<_>>();
+    for name in &names {
+        start_request(&state, name).await;
+    }
+    fs::write(source.join("agents.txt"), "agents").unwrap();
+    run_git(Some(&source), &["add", "-A"], "stage agents change").unwrap();
+    commit_all(&source, "agents");
+    let head = git_head_oid(&source);
+    for name in &names {
+        run_git(
+            Some(&source),
+            &["push", &remote, &format!("HEAD:refs/heads/{name}")],
+            "push request",
+        )
+        .unwrap();
+    }
+
+    let reader = TempGitRepo(unique_test_path("fetch-capped-reader"));
+    run_git(None, &["init", reader.to_str().unwrap()], "init reader").unwrap();
+    configure_bearer_header(&reader, &remote, &bearer_header());
+    run_git(
+        Some(&reader),
+        &["remote", "add", "origin", &remote],
+        "add origin",
+    )
+    .unwrap();
+    let fetch = ["-c", "protocol.version=2", "fetch", "origin"];
+    run_git(Some(&reader), &fetch, "plain fetch").unwrap();
+    let listed = git_stdout_text(
+        &reader,
+        &[
+            "for-each-ref",
+            "--format=%(refname:lstrip=3)",
+            "refs/remotes/origin",
+        ],
+        "listed requests",
+    )
+    .unwrap()
+    .lines()
+    .filter(|name| name.starts_with("agent-"))
+    .map(str::to_string)
+    .collect::<BTreeSet<_>>();
+    assert_eq!(
+        listed.len(),
+        scope_domain::requests::GIT_LISTING_BROWSED_REQUEST_LIMIT
+    );
+    let older = names
+        .iter()
+        .find(|name| !listed.contains(*name))
+        .unwrap()
+        .clone();
+
+    run_git(
+        Some(&reader),
+        &["-c", "protocol.version=2", "fetch", "origin", &older],
+        "fetch the older request by name",
+    )
+    .unwrap();
+    run_git(
+        Some(&reader),
+        &[
+            "checkout",
+            "-b",
+            &older,
+            "--track",
+            &format!("origin/{older}"),
+        ],
+        "track the older request",
+    )
+    .unwrap();
+    run_git(
+        Some(&reader),
+        &["-c", "protocol.version=2", "pull", "--ff-only"],
+        "pull the tracked request",
+    )
+    .unwrap();
+    assert_eq!(git_head_oid(&reader), head);
 }

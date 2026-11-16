@@ -9,21 +9,40 @@ pub struct GitFetchRequest {
     pub view: ViewId,
 }
 
+pub const GIT_LISTING_BROWSED_REQUEST_LIMIT: usize = 50;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitFetchAsk {
+    Advertisement,
     Listing { named_refs: BTreeSet<String> },
     Transfer { wants: Vec<String>, shallow: bool },
 }
 
 impl GitFetchAsk {
-    pub fn listing() -> Self {
-        Self::Listing {
-            named_refs: BTreeSet::new(),
-        }
+    pub fn select(&self, readable: &[(Request, bool)], user: Option<&str>) -> Vec<Request> {
+        let (mut selected, mut browsed): (Vec<_>, Vec<_>) = readable
+            .iter()
+            .filter(|(request, invitee)| self.includes(request, user, *invitee))
+            .map(|(request, _)| request.clone())
+            .partition(|request| !self.browses(request));
+        browsed.sort_by(|left, right| {
+            right
+                .updated_at_unix
+                .cmp(&left.updated_at_unix)
+                .then_with(|| left.name.cmp(&right.name))
+        });
+        browsed.truncate(GIT_LISTING_BROWSED_REQUEST_LIMIT);
+        selected.extend(browsed);
+        selected
+    }
+
+    fn browses(&self, request: &Request) -> bool {
+        matches!(self, Self::Listing { named_refs } if !named_refs.contains(&canonical_request_ref(&request.name)))
     }
 
     pub fn includes(&self, request: &Request, user: Option<&str>, invitee: bool) -> bool {
         match self {
+            Self::Advertisement => invitee || user.is_some_and(|user| request.is_author(user)),
             Self::Listing { named_refs } => {
                 let name = canonical_request_ref(&request.name);
                 if invitee || user.is_some_and(|user| request.is_author(user)) {
@@ -38,11 +57,15 @@ impl GitFetchAsk {
     }
 
     pub fn is_listing(&self) -> bool {
-        matches!(self, Self::Listing { .. })
+        !matches!(self, Self::Transfer { .. })
     }
 
     pub fn candidates(&self) -> GitFetchCandidates {
         match self {
+            Self::Advertisement => GitFetchCandidates::Listing {
+                own_name_prefixes: None,
+                names: BTreeSet::new(),
+            },
             Self::Listing { named_refs } if named_refs.is_empty() => GitFetchCandidates::Listing {
                 own_name_prefixes: None,
                 names: BTreeSet::new(),
@@ -239,10 +262,10 @@ mod tests {
             .into(),
         };
         for (ask, user, invitee, expected) in [
-            (&GitFetchAsk::listing(), Some("author"), false, true),
-            (&GitFetchAsk::listing(), Some("reader"), true, true),
-            (&GitFetchAsk::listing(), Some("reader"), false, false),
-            (&GitFetchAsk::listing(), None, false, false),
+            (&GitFetchAsk::Advertisement, Some("author"), false, true),
+            (&GitFetchAsk::Advertisement, Some("reader"), true, true),
+            (&GitFetchAsk::Advertisement, Some("reader"), false, false),
+            (&GitFetchAsk::Advertisement, None, false, false),
             (&other_ref, Some("author"), false, true),
             (&other_ref, Some("reader"), true, true),
             (&other_ref, Some("reader"), false, false),
@@ -267,11 +290,62 @@ mod tests {
     }
 
     #[test]
+    fn browsing_listings_keep_the_most_recent_requests_and_every_named_one() {
+        let count = GIT_LISTING_BROWSED_REQUEST_LIMIT + 2;
+        let requests = (0..count)
+            .map(|index| {
+                let mut request = open_request();
+                request.id = format!("request-{index}");
+                request.name = format!("agent-{index:03}");
+                request.head_oid = format!("head-{index}");
+                request.updated_at_unix = 100 + index as u64;
+                (request, false)
+            })
+            .collect::<Vec<_>>();
+        let selected = |ask: GitFetchAsk| {
+            ask.select(&requests, Some("author"))
+                .into_iter()
+                .map(|request| request.name)
+                .collect::<BTreeSet<_>>()
+        };
+        let recent = (2..count)
+            .map(|index| format!("agent-{index:03}"))
+            .collect::<BTreeSet<_>>();
+        let listing = |named_refs: &[&str]| GitFetchAsk::Listing {
+            named_refs: named_refs.iter().map(|name| name.to_string()).collect(),
+        };
+        assert_eq!(selected(listing(&[])), recent);
+        assert_eq!(selected(listing(&["refs/heads/"])), recent);
+        let mut tracked = recent;
+        tracked.insert("agent-000".to_string());
+        assert_eq!(
+            selected(listing(&["refs/heads/", "refs/heads/agent-000"])),
+            tracked
+        );
+        assert_eq!(
+            selected(listing(&["refs/heads/agent-00"])),
+            (0..10).map(|index| format!("agent-{index:03}")).collect()
+        );
+        assert_eq!(selected(GitFetchAsk::Advertisement).len(), count);
+        assert_eq!(
+            selected(GitFetchAsk::Transfer {
+                wants: (0..count).map(|index| format!("head-{index}")).collect(),
+                shallow: false,
+            })
+            .len(),
+            count
+        );
+    }
+
+    #[test]
     fn candidates_admit_every_request_a_fetch_includes() {
         let request = open_request();
         let name = canonical_request_ref(&request.name);
         let asks = [
-            GitFetchAsk::listing(),
+            GitFetchAsk::Advertisement,
+            GitFetchAsk::Listing {
+                named_refs: BTreeSet::new(),
+            },
             GitFetchAsk::Listing {
                 named_refs: [name.clone()].into(),
             },

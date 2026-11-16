@@ -179,8 +179,13 @@ pub(crate) async fn git_info_refs(
                     async {
                         let read =
                             authorized_git_read(&state, &headers, &org, &repo, &view).await?;
-                        upload::fetch_folder::prepare(&state, read, &view, &GitFetchAsk::listing())
-                            .await
+                        upload::fetch_folder::prepare(
+                            &state,
+                            read,
+                            &view,
+                            &GitFetchAsk::Advertisement,
+                        )
+                        .await
                     }
                     .await
                 }

@@ -37,7 +37,7 @@ pub(super) async fn readable_requests(
                 .advertised_git_fetch_heads(reader, wants, unix_now()?)
                 .await?
         }
-        GitFetchAsk::Listing { .. } => Vec::new(),
+        GitFetchAsk::Advertisement | GitFetchAsk::Listing { .. } => Vec::new(),
     };
     let advertised_request_ids = advertised
         .iter()
@@ -48,9 +48,7 @@ pub(super) async fn readable_requests(
         .flatten()
         .map(|request| request.id.clone())
         .collect::<Vec<_>>();
-    let mut requests = Vec::new();
-    let mut current = Vec::new();
-    for (request, invitee) in state
+    let current = state
         .metadata
         .requests()
         .git_fetch_requests(
@@ -60,15 +58,14 @@ pub(super) async fn readable_requests(
             &advertised_request_ids,
         )
         .await?
-    {
-        if !readable(&request, invitee) {
-            continue;
-        }
-        if ask.includes(&request, reader.user_id, invitee) {
-            requests.push(request.clone());
-        }
-        current.push(request);
-    }
+        .into_iter()
+        .filter(|(request, invitee)| readable(request, *invitee))
+        .collect::<Vec<_>>();
+    let mut requests = ask.select(&current, reader.user_id);
+    let current = current
+        .into_iter()
+        .map(|(request, _)| request)
+        .collect::<Vec<_>>();
     let retained = retain_git_fetch_heads(&current, &mut requests, advertised);
     Ok(FetchRequests { requests, retained })
 }

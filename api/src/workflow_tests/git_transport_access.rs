@@ -173,7 +173,7 @@ async fn git_reads_reveal_repository_state_only_to_permitted_readers() {
             TEST_REPO_OWNER,
             repo_name,
             &view,
-            &scope_domain::requests::GitFetchAsk::listing(),
+            &scope_domain::requests::GitFetchAsk::Advertisement,
         )
         .await
         .unwrap_err();
