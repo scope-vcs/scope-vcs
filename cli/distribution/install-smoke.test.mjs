@@ -150,6 +150,22 @@ test('native installer installs the CLI and preserves it on failed updates', { t
   await install();
   assert.equal(createHash('sha256').update(await readFile(destination)).digest('hex'), installedChecksum);
 
+  if (!windows) {
+    const earlierDir = join(workspace, 'earlier bin');
+    await mkdir(earlierDir);
+    const earlier = join(earlierDir, executable);
+    await writeFile(earlier, '#!/bin/sh\necho scope stale\n', { mode: 0o755 });
+    const shadowed = { ...env, PATH: `${earlierDir}${delimiter}${env.PATH}` };
+    await assert.rejects(execute('sh', [script], { env: shadowed, timeout: 60_000 }), (error) => {
+      assert.match(error.stderr, /comes first on PATH/);
+      return true;
+    });
+    const automatic = { ...shadowed };
+    delete automatic.SCOPE_INSTALL_DIR;
+    await execute('sh', [script], { env: automatic, timeout: 60_000 });
+    assert.equal(createHash('sha256').update(await readFile(earlier)).digest('hex'), installedChecksum);
+  }
+
   await writeFile(join(artifacts, target.artifact), 'corrupted download');
   await assert.rejects(install(), (error) => {
     assert.match(`${error.stdout}\n${error.stderr}`, /checksum verification failed/);

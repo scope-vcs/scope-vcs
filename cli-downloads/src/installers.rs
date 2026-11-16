@@ -47,6 +47,17 @@ select_install_dir() {{
     return
   fi
 
+  existing="$(command -v scope 2>/dev/null || true)"
+  case "$existing" in
+    /*)
+      candidate="${{existing%/*}}"
+      if [ -w "$candidate" ] && path_contains "$candidate"; then
+        install_dir="$candidate"
+        return
+      fi
+      ;;
+  esac
+
   for candidate in "$HOME/.local/bin" "$HOME/bin" "$HOME/.cargo/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
     if [ -d "$candidate" ] && [ -w "$candidate" ] && path_contains "$candidate"; then
       install_dir="$candidate"
@@ -170,6 +181,13 @@ binary_installed=1
 committed=1
 as_installer rm -f "$binary_backup"
 echo "scope installed to $install_dir/scope"
+
+resolved="$(command -v scope 2>/dev/null || true)"
+if [ "$resolved" != "$install_dir/scope" ]; then
+  echo "scope at $resolved comes first on PATH, so the shell will not run the version just installed." >&2
+  echo "Remove it, or rerun with SCOPE_INSTALL_DIR=${{resolved%/*}} to update it." >&2
+  exit 1
+fi
 "#,
     )
 }
