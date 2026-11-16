@@ -40,6 +40,7 @@ mod fetch_tests;
 mod protocol;
 mod reachability;
 pub(crate) use protocol::GitProtocol;
+use protocol::splice_ls_refs;
 
 pub(crate) struct AuthorizedGitRead {
     pub(crate) source: GitReadSource,
@@ -56,7 +57,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     ask: &scope_domain::requests::GitFetchAsk,
 ) -> Result<GitRepoHandle, ApiError> {
     let read = authorized_git_read(state, headers, owner, repo_name, view).await?;
-    fetch_folder::prepare(state, read, view, ask).await
+    Ok(fetch_folder::prepare(state, read, view, ask).await?.repo)
 }
 
 pub(crate) async fn authorized_git_read(
@@ -202,6 +203,32 @@ pub(crate) async fn git_upload_pack_response(
             (CACHE_CONTROL, "no-cache"),
         ],
         Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(receiver)),
+    )
+        .into_response())
+}
+
+pub(crate) async fn git_ls_refs_response(
+    folder: fetch_folder::FetchFolder,
+    request: Vec<u8>,
+    protocol: GitProtocol,
+    timeout: Duration,
+    permit: RuntimePermit,
+) -> Result<Response, ApiError> {
+    let listing = crate::git::blocking::run(move || {
+        let _permit = permit;
+        let mut command = git_upload_pack_command(protocol);
+        command.arg("--stateless-rpc").arg(folder.repo.as_ref());
+        let listing = git_command_output_with_timeout(&mut command, Some(request), timeout)?;
+        splice_ls_refs(&listing, &folder.unprepared_refs)
+    })
+    .await?;
+    Ok((
+        StatusCode::OK,
+        [
+            (CONTENT_TYPE, "application/x-git-upload-pack-result"),
+            (CACHE_CONTROL, "no-cache"),
+        ],
+        listing,
     )
         .into_response())
 }

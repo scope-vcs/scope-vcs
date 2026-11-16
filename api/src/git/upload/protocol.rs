@@ -1,8 +1,8 @@
-use super::{upload_pack_oid, upload_pack_packets};
+use super::{pkt_line, pkt_line_length, upload_pack_oid, upload_pack_packets};
 use crate::error::ApiError;
 use axum::http::HeaderMap;
 use scope_domain::requests::GitFetchAsk;
-use std::process::Command;
+use std::{collections::BTreeMap, process::Command};
 
 const GIT_PROTOCOL_HEADER: &str = "git-protocol";
 const LS_REFS_COMMAND: &[u8] = b"command=ls-refs";
@@ -69,6 +69,46 @@ impl GitProtocol {
             .collect::<Result<_, _>>()?;
         Ok(GitFetchAsk::Listing { named_refs })
     }
+}
+
+pub(crate) fn splice_ls_refs(
+    listing: &[u8],
+    refs: &[(String, String)],
+) -> Result<Vec<u8>, ApiError> {
+    let invalid = || ApiError::internal_message("unexpected Git ls-refs response");
+    let mut lines = BTreeMap::new();
+    let mut offset = 0;
+    loop {
+        let length = listing
+            .get(offset..offset + 4)
+            .and_then(pkt_line_length)
+            .ok_or_else(invalid)?;
+        if length == 0 {
+            break;
+        }
+        let line = listing
+            .get(offset..offset + length)
+            .filter(|line| line.len() > 4)
+            .ok_or_else(invalid)?;
+        let name = line[4..]
+            .split(|byte| *byte == b' ')
+            .nth(1)
+            .map(<[u8]>::trim_ascii_end)
+            .ok_or_else(invalid)?;
+        lines.insert(name.to_vec(), line.to_vec());
+        offset += length;
+    }
+    if offset + 4 != listing.len() {
+        return Err(invalid());
+    }
+    for (name, oid) in refs {
+        lines
+            .entry(name.as_bytes().to_vec())
+            .or_insert_with(|| pkt_line(format!("{oid} {name}\n").as_bytes()));
+    }
+    let mut spliced = lines.into_values().flatten().collect::<Vec<_>>();
+    spliced.extend_from_slice(b"0000");
+    Ok(spliced)
 }
 
 #[cfg(test)]
@@ -144,5 +184,33 @@ mod tests {
                 shallow: false,
             }
         );
+    }
+
+    #[test]
+    fn spliced_ls_refs_keep_git_lines_and_add_missing_refs_in_name_order() {
+        let listing = [
+            pkt_line(b"aaaa HEAD symref-target:refs/heads/main\n"),
+            pkt_line(b"aaaa refs/heads/main\n"),
+            pkt_line(b"bbbb refs/heads/zeta\n"),
+            b"0000".to_vec(),
+        ]
+        .concat();
+        let refs = [
+            ("refs/heads/agent".to_string(), "cccc".to_string()),
+            ("refs/heads/zeta".to_string(), "dddd".to_string()),
+        ];
+        assert_eq!(
+            splice_ls_refs(&listing, &refs).unwrap(),
+            [
+                pkt_line(b"aaaa HEAD symref-target:refs/heads/main\n"),
+                pkt_line(b"cccc refs/heads/agent\n"),
+                pkt_line(b"aaaa refs/heads/main\n"),
+                pkt_line(b"bbbb refs/heads/zeta\n"),
+                b"0000".to_vec(),
+            ]
+            .concat()
+        );
+        assert!(splice_ls_refs(b"0000extra", &refs).is_err());
+        assert!(splice_ls_refs(&pkt_line(b"aaaa refs/heads/main\n"), &refs).is_err());
     }
 }

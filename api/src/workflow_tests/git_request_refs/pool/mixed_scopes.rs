@@ -36,10 +36,14 @@ async fn cold_full_reader_installs_restricted_full_pack_with_its_view_prerequisi
         && pack.scope == RequestPackScope::Full
         && pack.prerequisites.contains(&first)));
     let cold = state.replica_for_tests();
-    let folder = fetch_folder(
+    let folder = fetch_folder_for(
         &cold,
         &authorization_headers(bearer_header()),
         &ViewId::private(),
+        &GitFetchAsk::Transfer {
+            wants: vec![head.clone()],
+            shallow: false,
+        },
     )
     .await;
     assert_eq!(ref_head(&folder, REQUEST_REF), head);

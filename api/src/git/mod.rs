@@ -176,7 +176,9 @@ pub(crate) async fn git_info_refs(
             };
             let folder = async {
                 let read = authorized_git_read(&state, &headers, &org, &repo, &view).await?;
-                upload::fetch_folder::prepare(&state, read, &view, &GitFetchAsk::listing()).await
+                upload::fetch_folder::prepare(&state, read, &view, &GitFetchAsk::Advertisement)
+                    .await
+                    .map(|folder| folder.repo)
             }
             .await;
             match folder {
@@ -431,13 +433,27 @@ pub(crate) async fn git_upload_pack_rpc(
         Ok(ask) => ask,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
-    let repo_path = match upload::fetch_folder::prepare(&state, read, &view, &ask).await {
-        Ok(repo) => repo,
+    let folder = match upload::fetch_folder::prepare(&state, read, &view, &ask).await {
+        Ok(folder) => folder,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
+    if !folder.unprepared_refs.is_empty() {
+        return match upload::git_ls_refs_response(
+            folder,
+            body,
+            protocol,
+            state.runtime_budgets.git_command_timeout(),
+            permit,
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(error) => git_upload_pack_error(error.into_public_message()),
+        };
+    }
 
     match git_upload_pack_response(
-        repo_path,
+        folder.repo,
         &body,
         protocol,
         state.runtime_budgets.git_command_timeout(),

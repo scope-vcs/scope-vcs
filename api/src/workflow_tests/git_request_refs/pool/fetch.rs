@@ -59,7 +59,7 @@ async fn cold_fetch_advertises_and_installs_only_active_request_heads() {
         &replica,
         &authorization_headers(bearer_header()),
         &ViewId::private(),
-        &GitFetchAsk::listing(),
+        &GitFetchAsk::Advertisement,
     )
     .await;
     let refs = git_stdout_text(
@@ -292,7 +292,7 @@ async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents(
         &replica,
         &authorization_headers(bearer_header()),
         &ViewId::private(),
-        &GitFetchAsk::listing(),
+        &GitFetchAsk::Advertisement,
     )
     .await;
     let refs = git_stdout_text(
@@ -331,7 +331,7 @@ async fn a_cached_copy_whose_head_names_an_unborn_branch_still_advertises_main()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_authors_fetch_of_one_branch_prepares_only_that_request_on_a_cold_replica() {
+async fn a_listing_prepares_no_pushed_request_and_a_transfer_only_the_wanted_one() {
     let (state, main, _) =
         super::super::super::push_intent_completion::published_git_fixture("fetch-asked-only")
             .await;
@@ -380,21 +380,21 @@ async fn an_authors_fetch_of_one_branch_prepares_only_that_request_on_a_cold_rep
         }
     };
 
-    for ask in [
-        GitFetchAsk::Listing {
-            named_refs: ["refs/heads/built-on-sibling".to_string()].into(),
-        },
-        GitFetchAsk::Transfer {
-            wants: vec![heads[1].clone()],
-            shallow: false,
-        },
-    ] {
-        let (folder, refs) = prepared_refs(ask).await;
-        assert_eq!(refs, ["refs/heads/built-on-sibling", "refs/heads/main"]);
-        assert!(has_commit(&folder, &heads[0]));
-        assert!(has_commit(&folder, &heads[1]));
-        assert!(!has_commit(&folder, &heads[2]));
-    }
+    let (folder, refs) = prepared_refs(GitFetchAsk::Listing {
+        named_refs: ["refs/heads/built-on-sibling".to_string()].into(),
+    })
+    .await;
+    assert_eq!(refs, ["refs/heads/main"]);
+    assert!(heads.iter().all(|head| !has_commit(&folder, head)));
+    let (folder, refs) = prepared_refs(GitFetchAsk::Transfer {
+        wants: vec![heads[1].clone()],
+        shallow: false,
+    })
+    .await;
+    assert_eq!(refs, ["refs/heads/built-on-sibling", "refs/heads/main"]);
+    assert!(has_commit(&folder, &heads[0]));
+    assert!(has_commit(&folder, &heads[1]));
+    assert!(!has_commit(&folder, &heads[2]));
 
     let (replica_origin, _replica_server) = spawn_test_server(&replica).await;
     let replica_remote = format!("{replica_origin}/git/private/{TEST_REPO_ID}");
@@ -422,7 +422,7 @@ async fn an_authors_fetch_of_one_branch_prepares_only_that_request_on_a_cold_rep
     .await;
     assert!(!has_commit(&folder, &heads[2]));
 
-    let (_, refs) = prepared_refs(GitFetchAsk::listing()).await;
+    let (_, refs) = prepared_refs(GitFetchAsk::Advertisement).await;
     assert_eq!(
         refs,
         [
@@ -432,4 +432,112 @@ async fn an_authors_fetch_of_one_branch_prepares_only_that_request_on_a_cold_rep
             "refs/heads/unrelated"
         ]
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_plain_fetch_from_a_cold_replica_lists_every_pushed_request_and_prune_keeps_them() {
+    let (state, main, _) =
+        super::super::super::push_intent_completion::published_git_fixture("fetch-unprepared")
+            .await;
+    let source = clone_test_repo(&main, "fetch-unprepared-source", false);
+    let (origin, _server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
+    configure_bearer_header(&source, &remote, &bearer_header());
+    let names = ["agent-a", "agent-b", "agent-c"];
+    let mut heads = std::collections::BTreeMap::new();
+    let mut ids = Vec::new();
+    for name in names {
+        ids.push(start_request(&state, name).await);
+        run_git(
+            Some(&source),
+            &["checkout", "-B", name, "origin/main"],
+            "create agent branch",
+        )
+        .unwrap();
+        push_change(
+            &source,
+            &remote,
+            &format!("refs/heads/{name}"),
+            &format!("{name}.txt"),
+            name,
+            name,
+        )
+        .unwrap();
+        heads.insert(name.to_string(), git_head_oid(&source));
+    }
+
+    let pooled = state
+        .metadata
+        .repositories()
+        .git_pooled_request_heads(
+            TEST_REPO_ID,
+            &[
+                (ids[0].clone(), heads["agent-a"].clone()),
+                (ids[1].clone(), heads["agent-a"].clone()),
+            ],
+        )
+        .await
+        .unwrap();
+    assert_eq!(pooled, [ids[0].clone()].into());
+
+    let replica = state.replica_for_tests();
+    let (replica_origin, _replica_server) = spawn_test_server(&replica).await;
+    let replica_remote = format!("{replica_origin}/git/private/{TEST_REPO_ID}");
+    let reader = TempGitRepo(unique_test_path("fetch-unprepared-reader"));
+    run_git(None, &["init", reader.to_str().unwrap()], "init reader").unwrap();
+    configure_bearer_header(&reader, &replica_remote, &bearer_header());
+    run_git(
+        Some(&reader),
+        &["remote", "add", "origin", &replica_remote],
+        "add origin",
+    )
+    .unwrap();
+    let tracked = |reader: &FsPath| {
+        git_stdout_text(
+            reader,
+            &[
+                "for-each-ref",
+                "--format=%(refname:lstrip=3) %(objectname)",
+                "refs/remotes/origin/agent-*",
+            ],
+            "tracked agent refs",
+        )
+        .unwrap()
+        .lines()
+        .map(|line| {
+            let (name, oid) = line.split_once(' ').unwrap();
+            (name.to_string(), oid.to_string())
+        })
+        .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let fetch = ["-c", "protocol.version=2", "fetch", "--prune", "origin"];
+    run_git(Some(&reader), &fetch, "plain fetch from the cold replica").unwrap();
+    assert_eq!(tracked(&reader), heads);
+    assert!(heads.values().all(|head| has_commit(&reader, head)));
+
+    run_git(
+        Some(&source),
+        &["checkout", "-B", "agent-b", "origin/main"],
+        "return to agent-b",
+    )
+    .unwrap();
+    run_git(
+        Some(&source),
+        &["reset", "--hard", &heads["agent-b"]],
+        "start from agent-b's head",
+    )
+    .unwrap();
+    push_change(
+        &source,
+        &remote,
+        "refs/heads/agent-b",
+        "agent-b.txt",
+        "agent-b again",
+        "agent-b again",
+    )
+    .unwrap();
+    heads.insert("agent-b".to_string(), git_head_oid(&source));
+    run_git(Some(&reader), &fetch, "prune fetch from the cold replica").unwrap();
+    assert_eq!(tracked(&reader), heads);
+    assert!(has_commit(&reader, &heads["agent-b"]));
 }

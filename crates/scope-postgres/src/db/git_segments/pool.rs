@@ -399,6 +399,38 @@ fn pool_pack_storage(row: &QueryResult) -> Result<GitPoolPackStorage, PostgresEr
 }
 
 impl crate::db::RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_pooled_request_heads"))]
+    pub async fn git_pooled_request_heads(
+        &self,
+        repo_id: &str,
+        heads: &[(String, String)],
+    ) -> Result<std::collections::BTreeSet<String>, PostgresError> {
+        if heads.is_empty() {
+            return Ok(std::collections::BTreeSet::new());
+        }
+        let (request_ids, head_oids): (Vec<String>, Vec<String>) = heads.iter().cloned().unzip();
+        self.db
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT heads.request_id
+                 FROM unnest($2::text[], $3::text[]) AS heads(request_id, head_oid)
+                 WHERE EXISTS (
+                     SELECT 1 FROM scope_git_pool_packs packs
+                     WHERE packs.request_id = heads.request_id
+                       AND packs.head_oid = heads.head_oid
+                       AND packs.repo_id = $1
+                       AND packs.view_id IS NULL)",
+                [repo_id.into(), request_ids.into(), head_oids.into()],
+            ))
+            .await?
+            .iter()
+            .map(|row| {
+                row.try_get("", "request_id")
+                    .map_err(PostgresError::internal)
+            })
+            .collect()
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_pool_request_lineage"))]
     pub async fn git_pool_request_lineage(
         &self,

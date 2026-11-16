@@ -155,7 +155,7 @@ async fn public_git_read_view_physically_excludes_private_objects() {
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &ViewId::public(),
-        &scope_domain::requests::GitFetchAsk::listing(),
+        &scope_domain::requests::GitFetchAsk::Advertisement,
     )
     .await
     .unwrap();
@@ -185,7 +185,7 @@ async fn warm_public_clone_reads_no_repository_history() {
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &ViewId::public(),
-        &scope_domain::requests::GitFetchAsk::listing(),
+        &scope_domain::requests::GitFetchAsk::Advertisement,
     )
     .await
     .unwrap();
@@ -206,7 +206,7 @@ async fn warm_public_clone_reads_no_repository_history() {
             TEST_REPO_OWNER,
             TEST_REPO_NAME,
             &ViewId::public(),
-            &scope_domain::requests::GitFetchAsk::listing(),
+            &scope_domain::requests::GitFetchAsk::Advertisement,
         ),
     )
     .await

@@ -37,7 +37,7 @@ pub(super) async fn readable_requests(
                 .advertised_git_fetch_heads(reader, wants, unix_now()?)
                 .await?
         }
-        GitFetchAsk::Listing { .. } => Vec::new(),
+        GitFetchAsk::Advertisement | GitFetchAsk::Listing { .. } => Vec::new(),
     };
     let advertised_request_ids = advertised
         .iter()
@@ -71,4 +71,31 @@ pub(super) async fn readable_requests(
     }
     let retained = retain_git_fetch_heads(&current, &mut requests, advertised);
     Ok(FetchRequests { requests, retained })
+}
+
+pub(super) async fn split_unprepared(
+    state: &AppState,
+    reader: &GitFetchReader<'_>,
+    ask: &GitFetchAsk,
+    full_view: bool,
+    selection: &mut FetchRequests,
+) -> Result<Vec<Request>, ApiError> {
+    let candidates = selection
+        .requests
+        .iter()
+        .filter(|request| ask.lists_without_preparing(request, full_view))
+        .map(|request| (request.id.clone(), request.head_oid.clone()))
+        .collect::<Vec<_>>();
+    let pooled = state
+        .metadata
+        .repositories()
+        .git_pooled_request_heads(reader.repo_id, &candidates)
+        .await?;
+    let (unprepared, prepared) = std::mem::take(&mut selection.requests)
+        .into_iter()
+        .partition(|request| {
+            ask.lists_without_preparing(request, full_view) && pooled.contains(&request.id)
+        });
+    selection.requests = prepared;
+    Ok(unprepared)
 }
