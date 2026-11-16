@@ -3,6 +3,13 @@ use sha2::{Digest, Sha256};
 
 pub const EMPTY_GIT_OID: &str = "0000000000000000000000000000000000000000";
 pub const GIT_FETCH_ADVERTISEMENT_RETENTION_SECONDS: u64 = 300;
+pub const GIT_FETCH_ADVERTISEMENT_REFRESH_SECONDS: u64 = 30;
+
+pub fn git_fetch_advertisement_expiry(now: u64) -> u64 {
+    now.saturating_add(GIT_FETCH_ADVERTISEMENT_RETENTION_SECONDS)
+        .div_ceil(GIT_FETCH_ADVERTISEMENT_REFRESH_SECONDS)
+        .saturating_mul(GIT_FETCH_ADVERTISEMENT_REFRESH_SECONDS)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitHead {
@@ -267,6 +274,24 @@ pub(crate) mod fixtures {
 mod tests {
     use super::fixtures::main_pack;
     use super::*;
+
+    #[test]
+    fn an_advertisement_outlives_its_retention_and_shares_expiry_within_a_refresh() {
+        for now in [0, 1, 29, 30, 31, 1_700_000_017] {
+            let expiry = git_fetch_advertisement_expiry(now);
+            assert!(expiry >= now + GIT_FETCH_ADVERTISEMENT_RETENTION_SECONDS);
+            assert!(
+                expiry
+                    < now
+                        + GIT_FETCH_ADVERTISEMENT_RETENTION_SECONDS
+                        + GIT_FETCH_ADVERTISEMENT_REFRESH_SECONDS
+            );
+        }
+        assert_eq!(
+            git_fetch_advertisement_expiry(31),
+            git_fetch_advertisement_expiry(60)
+        );
+    }
 
     #[test]
     fn frontier_preserves_the_signed_identity_and_ignores_non_git_changes() {
