@@ -8,6 +8,8 @@ pub use navigation::*;
 
 mod stack;
 pub use stack::*;
+mod restack;
+pub use restack::{RestackAncestry, RestackLayerBase};
 mod base;
 pub use base::RequestBase;
 pub mod comparison;
