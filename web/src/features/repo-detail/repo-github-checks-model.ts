@@ -58,7 +58,7 @@ export function searchWorkflows(groups: GitHubWorkflowGroup[], query: string) {
 }
 
 export function workflowFileUrl(repositoryUrl: string, path: string) {
-  return `${repositoryUrl}/blob/HEAD/${path.split('/').map(encodeURIComponent).join('/')}`
+  return `${repositoryUrl}/blob/main/${path.split('/').map(encodeURIComponent).join('/')}`
 }
 
 type GitHubCheckStatus = { text: string; tone: 'muted' | 'warning' }

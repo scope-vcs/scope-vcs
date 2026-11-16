@@ -85,9 +85,9 @@ test('each result says whether it runs on requests and where else it comes from'
   }
 })
 
-test('workflow links keep reserved characters inside the file name', () => {
+test('workflow links open main and keep reserved characters inside the file name', () => {
   assert.equal(
     workflowFileUrl('https://github.com/octo/demo', '.github/workflows/ci#nightly?.yml'),
-    'https://github.com/octo/demo/blob/HEAD/.github/workflows/ci%23nightly%3F.yml',
+    'https://github.com/octo/demo/blob/main/.github/workflows/ci%23nightly%3F.yml',
   )
 })

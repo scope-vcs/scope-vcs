@@ -134,7 +134,7 @@ test('repository components retain drafts, previews and pending actions across r
   assert.deepEqual(await notRunList.locator('[title]').allTextContents(), ['release.yml', 'nightly-backup.yml'])
   assert.equal(
     await notRunList.getByRole('link', { name: 'Open release.yml on GitHub' }).getAttribute('href'),
-    'https://github.com/octo/demo/blob/HEAD/.github/workflows/release.yml',
+    'https://github.com/octo/demo/blob/main/.github/workflows/release.yml',
   )
   const workflowSearch = checks.getByRole('searchbox', { name: 'Find a workflow' })
   await workflowSearch.fill('BACKUP')
