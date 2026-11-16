@@ -15,7 +15,10 @@ use crate::{
     persistence::unix_now,
     state::AppState,
 };
-use scope_domain::{requests::GitFetchAsk, views::ViewId};
+use scope_domain::{
+    requests::{GitFetchAsk, canonical_request_ref},
+    views::ViewId,
+};
 use scope_postgres::db::GitFetchReader;
 
 pub(crate) async fn prepare(
@@ -23,7 +26,7 @@ pub(crate) async fn prepare(
     read: super::AuthorizedGitRead,
     view: &ViewId,
     ask: &GitFetchAsk,
-) -> Result<GitRepoHandle, ApiError> {
+) -> Result<FetchFolder, ApiError> {
     let super::AuthorizedGitRead {
         source,
         viewer_user_id,
@@ -39,8 +42,9 @@ pub(crate) async fn prepare(
         view,
         user_id: viewer_user_id.as_deref(),
     };
-    let selection = requests::readable_requests(state, &reader, &access, &views, ask).await?;
+    let mut selection = requests::readable_requests(state, &reader, &access, &views, ask).await?;
     let full = view == views.full();
+    let unprepared = requests::split_unprepared(state, &reader, ask, full, &mut selection).await?;
     let base = match git.git_head.as_ref() {
         Some(head) if full => {
             state
@@ -81,7 +85,17 @@ pub(crate) async fn prepare(
         .leases
         .into_iter()
         .fold(folder, GitRepoHandle::with_dependency);
-    let attached = refs::attach_refs(&folder, selection, bases, &main_oid).await?;
+    let mut attached = refs::attach_refs(&folder, selection, bases, &main_oid).await?;
+    let unprepared_refs = unprepared
+        .iter()
+        .map(|request| {
+            (
+                canonical_request_ref(&request.name),
+                request.head_oid.clone(),
+            )
+        })
+        .collect();
+    attached.extend(unprepared);
     if ask.is_listing() {
         state
             .metadata
@@ -89,7 +103,15 @@ pub(crate) async fn prepare(
             .record_git_fetch_advertisement(&reader, &main_oid, &attached, unix_now()?)
             .await?;
     }
-    Ok(folder)
+    Ok(FetchFolder {
+        repo: folder,
+        unprepared_refs,
+    })
+}
+
+pub(crate) struct FetchFolder {
+    pub(crate) repo: GitRepoHandle,
+    pub(crate) unprepared_refs: Vec<(String, String)>,
 }
 
 async fn new_folder(

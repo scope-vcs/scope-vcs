@@ -11,19 +11,15 @@ pub struct GitFetchRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitFetchAsk {
+    Advertisement,
     Listing { named_refs: BTreeSet<String> },
     Transfer { wants: Vec<String>, shallow: bool },
 }
 
 impl GitFetchAsk {
-    pub fn listing() -> Self {
-        Self::Listing {
-            named_refs: BTreeSet::new(),
-        }
-    }
-
     pub fn includes(&self, request: &Request, user: Option<&str>, invitee: bool) -> bool {
         match self {
+            Self::Advertisement => invitee || user.is_some_and(|user| request.is_author(user)),
             Self::Listing { named_refs } => {
                 let name = canonical_request_ref(&request.name);
                 if invitee || user.is_some_and(|user| request.is_author(user)) {
@@ -37,12 +33,20 @@ impl GitFetchAsk {
         }
     }
 
+    pub fn lists_without_preparing(&self, request: &Request, full_view: bool) -> bool {
+        full_view && matches!(self, Self::Listing { .. }) && request.pushed_at_unix.is_some()
+    }
+
     pub fn is_listing(&self) -> bool {
-        matches!(self, Self::Listing { .. })
+        !matches!(self, Self::Transfer { .. })
     }
 
     pub fn candidates(&self) -> GitFetchCandidates {
         match self {
+            Self::Advertisement => GitFetchCandidates::Listing {
+                own_name_prefixes: None,
+                names: BTreeSet::new(),
+            },
             Self::Listing { named_refs } if named_refs.is_empty() => GitFetchCandidates::Listing {
                 own_name_prefixes: None,
                 names: BTreeSet::new(),
@@ -239,10 +243,10 @@ mod tests {
             .into(),
         };
         for (ask, user, invitee, expected) in [
-            (&GitFetchAsk::listing(), Some("author"), false, true),
-            (&GitFetchAsk::listing(), Some("reader"), true, true),
-            (&GitFetchAsk::listing(), Some("reader"), false, false),
-            (&GitFetchAsk::listing(), None, false, false),
+            (&GitFetchAsk::Advertisement, Some("author"), false, true),
+            (&GitFetchAsk::Advertisement, Some("reader"), true, true),
+            (&GitFetchAsk::Advertisement, Some("reader"), false, false),
+            (&GitFetchAsk::Advertisement, None, false, false),
             (&other_ref, Some("author"), false, true),
             (&other_ref, Some("reader"), true, true),
             (&other_ref, Some("reader"), false, false),
@@ -267,11 +271,41 @@ mod tests {
     }
 
     #[test]
+    fn only_full_view_v2_listings_list_pushed_requests_without_preparing_them() {
+        let pushed = open_request();
+        let mut unpushed = pushed.clone();
+        unpushed.pushed_at_unix = None;
+        let listing = GitFetchAsk::Listing {
+            named_refs: ["refs/heads/".to_string()].into(),
+        };
+        let transfer = GitFetchAsk::Transfer {
+            wants: vec![pushed.head_oid.clone()],
+            shallow: false,
+        };
+        for (ask, request, full_view, expected) in [
+            (&listing, &pushed, true, true),
+            (&listing, &pushed, false, false),
+            (&listing, &unpushed, true, false),
+            (&GitFetchAsk::Advertisement, &pushed, true, false),
+            (&transfer, &pushed, true, false),
+        ] {
+            assert_eq!(
+                ask.lists_without_preparing(request, full_view),
+                expected,
+                "{ask:?} {full_view}"
+            );
+        }
+    }
+
+    #[test]
     fn candidates_admit_every_request_a_fetch_includes() {
         let request = open_request();
         let name = canonical_request_ref(&request.name);
         let asks = [
-            GitFetchAsk::listing(),
+            GitFetchAsk::Advertisement,
+            GitFetchAsk::Listing {
+                named_refs: BTreeSet::new(),
+            },
             GitFetchAsk::Listing {
                 named_refs: [name.clone()].into(),
             },

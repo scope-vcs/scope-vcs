@@ -80,7 +80,7 @@ async fn fetch_folders_keep_draft_visibility_separate() {
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &ViewId::public(),
-        &scope_domain::requests::GitFetchAsk::listing(),
+        &scope_domain::requests::GitFetchAsk::Advertisement,
     )
     .await
     .unwrap_err();
