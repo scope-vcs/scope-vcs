@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
@@ -149,6 +149,27 @@ test('native installer installs the CLI and preserves it on failed updates', { t
   await writeFile(destination, 'old installed version');
   await install();
   assert.equal(createHash('sha256').update(await readFile(destination)).digest('hex'), installedChecksum);
+
+  if (!windows) {
+    const earlierDir = join(workspace, 'earlier bin');
+    await mkdir(earlierDir);
+    const earlier = join(earlierDir, executable);
+    await writeFile(earlier, '#!/bin/sh\necho scope stale\n', { mode: 0o755 });
+    const shadowed = { ...env, PATH: `${earlierDir}${delimiter}${env.PATH}` };
+    await assert.rejects(execute('sh', [script], { env: shadowed, timeout: 60_000 }), (error) => {
+      assert.match(error.stderr, /comes first on PATH/);
+      return true;
+    });
+    const alias = join(workspace, 'alias bin');
+    await symlink(installDir, alias);
+    for (const entry of [`${installDir}/`, alias]) {
+      await execute('sh', [script], { env: { ...env, PATH: `${entry}${delimiter}${env.PATH}` }, timeout: 60_000 });
+    }
+    const automatic = { ...shadowed };
+    delete automatic.SCOPE_INSTALL_DIR;
+    await execute('sh', [script], { env: automatic, timeout: 60_000 });
+    assert.equal(createHash('sha256').update(await readFile(earlier)).digest('hex'), installedChecksum);
+  }
 
   await writeFile(join(artifacts, target.artifact), 'corrupted download');
   await assert.rejects(install(), (error) => {
