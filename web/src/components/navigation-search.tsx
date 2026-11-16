@@ -19,7 +19,7 @@ export function NavigationSearch({
   clearLabel: string
   value: string
   onChange: (value: string) => void
-  onOpen: () => void
+  onOpen?: () => void
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>
   input?: InputHTMLAttributes<HTMLInputElement>
   onEscape?: () => void
@@ -41,7 +41,7 @@ export function NavigationSearch({
       if (isTypingTarget(event.target)) return
       if (!inputRef.current) return
       event.preventDefault()
-      onOpen()
+      onOpen?.()
       requestAnimationFrame(() => inputRef.current?.focus())
     }
     document.addEventListener('keydown', focusSearch)
@@ -86,7 +86,7 @@ export function NavigationSearch({
         >
           <X aria-hidden="true" className="size-3.5" />
         </button>
-      ) : (
+      ) : shortcut && (
         <kbd
           aria-hidden="true"
           className="pointer-events-none absolute right-2 text-xs text-muted-foreground"

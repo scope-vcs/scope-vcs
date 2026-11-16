@@ -1,5 +1,6 @@
 import type {
   GitHubCatalogCheckResponse,
+  GitHubCheckRunsVerdictResponse,
   GitHubChecksResponse,
   GitHubConnectionResponse,
   GitHubWorkflowSummaryResponse,
@@ -9,41 +10,51 @@ export const GITHUB_TRIGGER_SNIPPET = `on:
   push:
     branches: ['scope/**']`
 
+export type GitHubWorkflowGroup = {
+  verdict: GitHubCheckRunsVerdictResponse
+  reason: string | null
+  workflows: GitHubWorkflowSummaryResponse[]
+}
+
 type GitHubWorkflowsView = {
   summary: string
-  attention: GitHubWorkflowSummaryResponse[]
-  needsTrigger: boolean
+  groups: GitHubWorkflowGroup[]
   runtimeNamed: string[]
 }
 
+const VERDICT_ORDER: Record<GitHubCheckRunsVerdictResponse, number> = { no: 0, maybe: 1, yes: 2 }
+
 export function githubWorkflowsView(checks: GitHubChecksResponse): GitHubWorkflowsView {
   const { workflows } = checks
-  const attention = workflows.filter((workflow) => workflow.runs.verdict !== 'yes')
+  const groups: GitHubWorkflowGroup[] = []
+  for (const workflow of [...workflows].sort((a, b) => VERDICT_ORDER[a.runs.verdict] - VERDICT_ORDER[b.runs.verdict])) {
+    const { verdict, reason } = workflow.runs
+    const group = groups.find((candidate) => candidate.verdict === verdict && candidate.reason === reason)
+    if (group) group.workflows.push(workflow)
+    else groups.push({ verdict, reason, workflows: [workflow] })
+  }
   const runtimeNamed = workflows
     .filter((workflow) => workflow.runtime_named_jobs.length > 0)
     .map((workflow) => `${workflow.name} (${workflow.runtime_named_jobs.join(', ')})`)
-  const view = {
-    attention,
-    needsTrigger: workflows.length === 0 || attention.some((workflow) => workflow.runs.verdict === 'no'),
-    runtimeNamed,
-  }
-  if (workflows.length === 0) {
-    return { ...view, summary: 'No workflows on main. Add one with this trigger so requests get checks.' }
-  }
-  const running = workflows.length - attention.length
+  return { groups, runtimeNamed, summary: workflowsSummary(workflows) }
+}
+
+function workflowsSummary(workflows: GitHubWorkflowSummaryResponse[]) {
+  if (workflows.length === 0) return 'No workflows on main. Add one with this trigger so requests get checks.'
+  const running = workflows.filter((workflow) => workflow.runs.verdict === 'yes').length
   const total = `${workflows.length} ${workflows.length === 1 ? 'workflow' : 'workflows'}`
-  if (attention.length === 0) {
-    return {
-      ...view,
-      summary: workflows.length === 1
-        ? 'The workflow on main runs on Scope requests.'
-        : `All ${total} on main run on Scope requests.`,
-    }
-  }
-  return {
-    ...view,
-    summary: `${running} of ${total} on main run on Scope requests.`,
-  }
+  if (running < workflows.length) return `${running} of ${total} on main run on Scope requests.`
+  return workflows.length === 1
+    ? 'The workflow on main runs on Scope requests.'
+    : `All ${total} on main run on Scope requests.`
+}
+
+export function searchWorkflows(groups: GitHubWorkflowGroup[], query: string) {
+  const needle = query.trim().toLowerCase()
+  return groups
+    .flatMap((group) => group.workflows)
+    .filter((workflow) => [workflow.path, workflow.name, ...workflow.triggers]
+      .some((text) => text.toLowerCase().includes(needle)))
 }
 
 type GitHubCheckStatus = { text: string; tone: 'muted' | 'warning' }

@@ -134,6 +134,7 @@ fn this_repository_runs_on_request_branches_and_flags_conditional_jobs() {
                 path: ".github/workflows/ci.yml".to_string(),
                 name: "CI".to_string(),
                 runs: yes(),
+                triggers: vec!["pull_request".to_string(), "push".to_string()],
                 runtime_named_jobs: Vec::new(),
             }],
             checks: vec![

@@ -63,7 +63,7 @@ impl ScopePushes {
             .map(|root| format!("{root}/**"))
             .unwrap_or_default();
         GitHubCheckRuns::No(format!(
-            "This workflow has no trigger for Scope's request branches. \
+            "No trigger for Scope's request branches. \
              Add a push trigger for `{suggested}`."
         ))
     }
