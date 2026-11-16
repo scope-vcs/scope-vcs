@@ -24,7 +24,7 @@ pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 mod bot_reviews;
 pub use bot_reviews::{
     CodexReviewState, GitHubBotReaction, GitHubReviewBotSignal, GitHubReviewBotState,
-    GitHubReviewBotStatus, REVIEW_BOT_START_DEADLINE_SECS, RequestBotReviews,
+    GitHubReviewBotStatus, ImportedReviews, REVIEW_BOT_START_DEADLINE_SECS, RequestBotReviews,
     RequestReviewsOutcome, github_review_bot_statuses, github_reviews_awaiting_import,
     request_reviews_outcome,
 };

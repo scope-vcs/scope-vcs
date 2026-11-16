@@ -41,12 +41,24 @@ fn state_after_imports(
     login: &str,
     imported_review_ids: &[u64],
 ) -> GitHubReviewBotState {
+    state_holding(signals, login, imported_review_ids, &[])
+}
+
+fn state_holding(
+    signals: &[GitHubReviewBotSignal],
+    login: &str,
+    imported_review_ids: &[u64],
+    open_finding_authors: &[String],
+) -> GitHubReviewBotState {
     github_review_bot_statuses(
         &[bot(login, true)],
         signals,
         HEAD,
         Some(PUSHED_AT),
-        imported_review_ids,
+        ImportedReviews {
+            review_ids: imported_review_ids,
+            open_finding_authors,
+        },
         None,
         PUSHED_AT,
     )[0]
@@ -312,7 +324,7 @@ fn a_bot_is_done_after_reviewing_the_head_or_approving_after_it_was_pushed() {
             &[reacted(GREPTILE, GitHubBotReaction::ThumbsUp, PUSHED_AT)],
             HEAD,
             None,
-            &[],
+            ImportedReviews::default(),
             None,
             PUSHED_AT,
         )[0]
@@ -405,7 +417,7 @@ fn a_required_bot_that_never_starts_on_the_requested_head_stops_holding_after_th
             signals,
             HEAD,
             Some(PUSHED_AT),
-            &[],
+            ImportedReviews::default(),
             Some(request),
             now,
         )[0]
@@ -624,6 +636,28 @@ fn codex_unresolved_findings_wait_for_their_review_to_be_imported() {
     );
     assert_eq!(
         state_after_imports(&[clean, review], CODEX, &[]),
+        GitHubReviewBotState::Working
+    );
+}
+
+#[test]
+fn codex_unresolved_findings_scope_already_holds_open_need_no_head_review() {
+    let finished_head_with_earlier_findings_open = commented(codex_comment(
+        &part(HEAD, "completed", "true"),
+        &part(OLD, "completed", "null"),
+    ));
+    let earlier_review = reviewed(CODEX, 41, OLD);
+    let signals = [finished_head_with_earlier_findings_open, earlier_review];
+    assert_eq!(
+        state_holding(&signals, CODEX, &[41], &[CODEX.to_string()]),
+        GitHubReviewBotState::Commented
+    );
+    assert_eq!(
+        state_holding(&signals, CODEX, &[41], &["octocat".to_string()]),
+        GitHubReviewBotState::Working
+    );
+    assert_eq!(
+        state_holding(&signals, CODEX, &[41], &[]),
         GitHubReviewBotState::Working
     );
 }

@@ -68,6 +68,12 @@ impl GitHubReviewBotSignal {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ImportedReviews<'a> {
+    pub review_ids: &'a [u64],
+    pub open_finding_authors: &'a [String],
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubReviewBotStatus {
     pub login: String,
@@ -80,7 +86,7 @@ pub fn github_review_bot_statuses(
     signals: &[GitHubReviewBotSignal],
     head_oid: &str,
     head_delivered_at_unix: Option<u64>,
-    imported_review_ids: &[u64],
+    imported: ImportedReviews<'_>,
     review_request: Option<&GitHubReviewRequest>,
     now_unix: u64,
 ) -> Vec<GitHubReviewBotStatus> {
@@ -102,7 +108,11 @@ pub fn github_review_bot_statuses(
                 &signals,
                 head_oid,
                 head_delivered_at_unix,
-                imported_review_ids,
+                imported.review_ids,
+                imported
+                    .open_finding_authors
+                    .iter()
+                    .any(|author| bot.login.names(author)),
             );
             GitHubReviewBotStatus {
                 login: bot.login.as_str().to_string(),
@@ -162,6 +172,7 @@ fn bot_state(
     head_oid: &str,
     head_delivered_at_unix: Option<u64>,
     imported_review_ids: &[u64],
+    holds_open_findings: bool,
 ) -> GitHubReviewBotState {
     let reacted = |wanted: GitHubBotReaction| {
         signals.iter().any(|signal| {
@@ -217,7 +228,8 @@ fn bot_state(
         let findings_unseen = reported
             .iter()
             .any(|state| state.reports_unresolved_findings_for(head_oid))
-            && head_reviews.is_empty();
+            && head_reviews.is_empty()
+            && !holds_open_findings;
         return if state.is_done() && (unimported_review || findings_unseen) {
             GitHubReviewBotState::Working
         } else {
