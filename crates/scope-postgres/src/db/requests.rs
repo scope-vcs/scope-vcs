@@ -91,7 +91,8 @@ impl RequestStore {
         input: StartRequestInput,
     ) -> Result<StartRequestMutation, PostgresError> {
         let tx = self.db.begin().await?;
-        acquire_aggregate_lock(&tx, "repository", &input.repo_id).await?;
+        super::locks::acquire_shared_repository_lock(&tx, &input.repo_id).await?;
+        acquire_aggregate_lock(&tx, "request-start", &input.repo_id).await?;
         let mut graph_ids = super::request_stack::ancestry(&tx, &input.base)
             .await?
             .into_iter()
