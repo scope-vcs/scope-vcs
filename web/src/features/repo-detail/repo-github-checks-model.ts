@@ -57,6 +57,10 @@ export function searchWorkflows(groups: GitHubWorkflowGroup[], query: string) {
       .some((text) => text.toLowerCase().includes(needle)))
 }
 
+export function workflowFileUrl(repositoryUrl: string, path: string) {
+  return `${repositoryUrl}/blob/HEAD/${path.split('/').map(encodeURIComponent).join('/')}`
+}
+
 type GitHubCheckStatus = { text: string; tone: 'muted' | 'warning' }
 
 export function githubCheckStatus(check: GitHubCatalogCheckResponse | undefined): GitHubCheckStatus {

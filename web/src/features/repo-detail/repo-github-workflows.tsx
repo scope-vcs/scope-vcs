@@ -10,6 +10,7 @@ import {
   GITHUB_TRIGGER_SNIPPET,
   githubWorkflowsView,
   searchWorkflows,
+  workflowFileUrl,
   type GitHubWorkflowGroup,
 } from './repo-github-checks-model'
 
@@ -160,12 +161,17 @@ function WorkflowRow({
       <a
         aria-label={`Open ${fileName} on GitHub`}
         className="col-start-2 row-start-1 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring sm:col-start-3"
-        href={`${repositoryUrl}/blob/HEAD/${workflow.path}`}
+        href={workflowFileUrl(repositoryUrl, workflow.path)}
         rel="noreferrer"
         target="_blank"
       >
         <ExternalLink aria-hidden="true" className="size-3.5" />
       </a>
+      {showVerdict && workflow.runs.reason && (
+        <span className={`col-span-full text-[13px] leading-5 [overflow-wrap:anywhere] ${workflow.runs.verdict === 'no' ? 'text-warning-strong' : 'text-muted-foreground'}`}>
+          {workflow.runs.reason}
+        </span>
+      )}
     </li>
   )
 }

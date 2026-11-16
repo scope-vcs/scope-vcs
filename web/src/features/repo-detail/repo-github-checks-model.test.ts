@@ -5,7 +5,7 @@ import type {
   GitHubCheckRunsResponse,
   GitHubWorkflowSummaryResponse,
 } from '../../api/types.generated'
-import { githubCheckStatus, githubWorkflowsView, searchWorkflows } from './repo-github-checks-model'
+import { githubCheckStatus, githubWorkflowsView, searchWorkflows, workflowFileUrl } from './repo-github-checks-model'
 
 const YES: GitHubCheckRunsResponse = { verdict: 'yes', reason: null }
 const NO: GitHubCheckRunsResponse = { verdict: 'no', reason: 'No trigger for Scope branches.' }
@@ -83,4 +83,11 @@ test('each result says whether it runs on requests and where else it comes from'
   ] as const) {
     assert.deepEqual(githubCheckStatus(entry), { text, tone })
   }
+})
+
+test('workflow links keep reserved characters inside the file name', () => {
+  assert.equal(
+    workflowFileUrl('https://github.com/octo/demo', '.github/workflows/ci#nightly?.yml'),
+    'https://github.com/octo/demo/blob/HEAD/.github/workflows/ci%23nightly%3F.yml',
+  )
 })

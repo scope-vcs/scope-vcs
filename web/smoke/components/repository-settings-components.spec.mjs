@@ -140,6 +140,7 @@ test('repository components retain drafts, previews and pending actions across r
   await workflowSearch.fill('BACKUP')
   const matching = checks.getByRole('list', { name: 'Matching workflows' })
   assert.deepEqual(await matching.locator('[title]').allTextContents(), ['nightly-backup.yml'])
+  await matching.getByText("No trigger for Scope's request branches. Add a push trigger for `scope/**`.", { exact: true }).waitFor()
   await workflowSearch.fill('pull_request')
   assert.deepEqual(await matching.locator('[title]').allTextContents(), ['ci.yml'])
   await workflowSearch.fill('deploy')
