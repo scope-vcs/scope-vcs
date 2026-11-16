@@ -75,13 +75,23 @@ pub(super) fn current_parent(
     Ok((parent, pin))
 }
 
+pub(super) fn contains_base(
+    git_repo: &GitRepo,
+    base: &RequestBase,
+    head: &str,
+) -> anyhow::Result<bool> {
+    try_run_git_in_repo(
+        git_repo,
+        &["merge-base", "--is-ancestor", base_head(base), head],
+    )
+}
+
 pub(super) fn require_contains_pin(
     git_repo: &GitRepo,
     base: &RequestBase,
     head: &str,
 ) -> anyhow::Result<()> {
-    let head_oid = base_head(base);
-    if !try_run_git_in_repo(git_repo, &["merge-base", "--is-ancestor", head_oid, head])? {
+    if !contains_base(git_repo, base, head)? {
         return Err(crate::error::CliError::usage(
             "the commit does not contain the selected base; restack before pushing",
         )

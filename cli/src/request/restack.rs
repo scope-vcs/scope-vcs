@@ -4,6 +4,7 @@ use crate::git_repo::{
 };
 use args::RequestRestackArgs;
 use scope_api_contract::RequestBase;
+use scope_domain::requests::{RestackAncestry, RestackLayerBase};
 
 pub(in crate::request) mod state;
 use state::PendingRestack;
@@ -62,9 +63,22 @@ pub(super) fn run(
         RequestBase::Request { request_id, .. } => request_id.clone(),
     });
     let head = head_oid(repo)?;
-    stack::require_contains_pin(repo, &request.base, &head)?;
-    require_rebase_ready(repo, &branch, stack::base_head(&request.base), &head)?;
     let selected = stack::select_base(repo, api, &context, &request, &selector, None)?;
+    let layer_base = match RestackLayerBase::locate(RestackAncestry {
+        head_contains_recorded: stack::contains_base(repo, &request.base, &head)?,
+        head_contains_selected: stack::contains_base(repo, &selected.base, &head)?,
+        selected_contains_recorded: stack::contains_base(
+            repo,
+            &request.base,
+            stack::base_head(&selected.base),
+        )?,
+    })
+    .map_err(|error| crate::error::CliError::usage(error.message))?
+    {
+        RestackLayerBase::Recorded => stack::base_head(&request.base).to_string(),
+        RestackLayerBase::Selected => stack::base_head(&selected.base).to_string(),
+    };
+    require_rebase_ready(repo, &branch, &layer_base, &head)?;
     require_preserved_main(repo, &request, &selected.base)?;
     let history = stack::current_revisions(api, &context, &request.id)?;
     let revision = history.review_revision_id;
@@ -102,7 +116,7 @@ pub(super) fn run(
     let output = rebase_layer(
         repo,
         stack::base_head(&pending.selected.base),
-        stack::base_head(&pending.original_base),
+        &layer_base,
         &pending.branch,
     )
     .map_err(|error| recovery(repo, &pending, "rebase", &error.to_string()))?;

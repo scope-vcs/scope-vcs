@@ -198,6 +198,65 @@ fn restack_replays_only_the_child_layer_and_leaves_publication_explicit() {
 }
 
 #[test]
+fn restack_accepts_a_layer_already_rebased_onto_the_parents_current_head() {
+    for (extension, onto) in [(false, None), (false, Some("req_parent")), (true, None)] {
+        let layer = Layer::new(false, extension, true, "public");
+        run_git(
+            layer.checkout.path(),
+            ["rebase", "--onto", &layer.new_parent, &layer.old_parent],
+        );
+        let rebased = git_stdout(layer.checkout.path(), ["rev-parse", "HEAD"]);
+        let args = onto.map_or(Vec::new(), |onto| vec!["--onto", onto]);
+        let value = success(layer.command(&args));
+        assert_eq!(value["result"]["status"], "ready_to_publish");
+        assert_eq!(value["result"]["head_oid"], rebased);
+        assert_eq!(
+            value["result"]["selected_base"]["head_oid"],
+            layer.new_parent
+        );
+        assert_eq!(
+            git_stdout(layer.checkout.path(), ["rev-parse", "HEAD"]),
+            rebased
+        );
+        assert_eq!(
+            git_stdout(layer.checkout.path(), ["rev-parse", "HEAD^"]),
+            layer.new_parent
+        );
+        layer.assert_binding();
+    }
+}
+
+#[test]
+fn restack_refuses_a_layer_on_neither_the_recorded_nor_the_selected_base() {
+    let layer = Layer::new(false, false, true, "public");
+    run_git(layer.checkout.path(), ["reset", "--hard", &layer.main]);
+    fs::write(layer.checkout.path().join("child.txt"), "detached layer\n").unwrap();
+    run_git(layer.checkout.path(), ["add", "."]);
+    commit_all(layer.checkout.path(), "Layer on main");
+    let before = git_stdout(layer.checkout.path(), ["rev-parse", "HEAD"]);
+    let output = layer.command(&[]);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert!(
+        failure["message"]
+            .as_str()
+            .unwrap()
+            .contains("neither the request's recorded base nor the selected base")
+    );
+    assert_eq!(
+        git_stdout(layer.checkout.path(), ["rev-parse", "HEAD"]),
+        before
+    );
+    assert!(
+        !layer
+            .checkout
+            .path()
+            .join(".git/scope-restack.json")
+            .exists()
+    );
+}
+
+#[test]
 fn restack_conflict_can_continue_staged_resolutions_or_abort_to_the_backup() {
     for mode in ["continue", "abort", "manual_abort"] {
         let abort = mode != "continue";
