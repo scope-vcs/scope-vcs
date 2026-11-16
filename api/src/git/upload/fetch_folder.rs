@@ -15,7 +15,6 @@ use crate::{
     persistence::unix_now,
     state::AppState,
 };
-use axum::http::HeaderMap;
 use scope_domain::{requests::GitFetchAsk, views::ViewId};
 use scope_postgres::db::GitFetchReader;
 
@@ -91,17 +90,6 @@ pub(crate) async fn prepare(
             .await?;
     }
     Ok(folder)
-}
-
-pub(crate) async fn capabilities(
-    state: &AppState,
-    headers: &HeaderMap,
-    owner: &str,
-    repo_name: &str,
-    view: &ViewId,
-) -> Result<GitRepoHandle, ApiError> {
-    super::authorized_git_read(state, headers, owner, repo_name, view).await?;
-    new_folder(state, Vec::new()).await
 }
 
 async fn new_folder(
