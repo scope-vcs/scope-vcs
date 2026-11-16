@@ -2,7 +2,6 @@ use crate::{auth::clerk::bearer_token, config::CLI_SESSION_TOKEN_PREFIX};
 use axum::{
     Json,
     extract::Request,
-    http::Method,
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -22,10 +21,7 @@ pub(crate) async fn enforce(request: Request, next: Next) -> Response {
 
 fn incompatible_cli_protocol(request: &Request) -> Option<Option<u32>> {
     let path = request.uri().path();
-    if !is_api_mutation(request.method())
-        || !path.starts_with("/v1/")
-        || path.starts_with("/v1/cli/")
-    {
+    if !path.starts_with("/v1/") || path.starts_with("/v1/cli/") {
         return None;
     }
     let is_cli_session = bearer_token(request.headers())
@@ -44,20 +40,13 @@ fn incompatible_cli_protocol(request: &Request) -> Option<Option<u32>> {
     (installed != Some(CLI_PROTOCOL_VERSION)).then_some(installed)
 }
 
-fn is_api_mutation(method: &Method) -> bool {
-    matches!(
-        method,
-        &Method::POST | &Method::PATCH | &Method::PUT | &Method::DELETE
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::{
         Router,
         body::{Body, to_bytes},
-        http::{Request as HttpRequest, StatusCode, header::AUTHORIZATION},
+        http::{Method, Request as HttpRequest, StatusCode, header::AUTHORIZATION},
         middleware,
         routing::{get, post},
     };
@@ -91,24 +80,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn incompatible_cli_mutation_returns_actionable_426() {
-        for (protocol, installed) in [(Some("0"), Some(0)), (None, None), (Some("2"), Some(2))] {
-            let response = test_router()
-                .oneshot(request(Method::POST, "/v1/mutate", protocol))
-                .await
-                .unwrap();
+    async fn incompatible_cli_reads_and_mutations_return_actionable_426() {
+        let older = (CLI_PROTOCOL_VERSION - 1).to_string();
+        let newer = (CLI_PROTOCOL_VERSION + 1).to_string();
+        for (method, path) in [(Method::GET, "/v1/read"), (Method::POST, "/v1/mutate")] {
+            for (protocol, installed) in [
+                (Some(older.as_str()), Some(CLI_PROTOCOL_VERSION - 1)),
+                (None, None),
+                (Some(newer.as_str()), Some(CLI_PROTOCOL_VERSION + 1)),
+            ] {
+                let response = test_router()
+                    .oneshot(request(method.clone(), path, protocol))
+                    .await
+                    .unwrap();
 
-            assert_eq!(response.status(), StatusCode::UPGRADE_REQUIRED);
-            let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
-            let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
-            assert_eq!(error.code, ErrorCode::CliUpgradeRequired);
-            assert_eq!(error.fields.installed_protocol, installed);
-            assert_eq!(error.fields.supported_protocol, Some(CLI_PROTOCOL_VERSION));
+                assert_eq!(response.status(), StatusCode::UPGRADE_REQUIRED);
+                let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
+                let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
+                assert_eq!(error.code, ErrorCode::CliUpgradeRequired);
+                assert_eq!(error.fields.installed_protocol, installed);
+                assert_eq!(error.fields.supported_protocol, Some(CLI_PROTOCOL_VERSION));
+            }
         }
     }
 
     #[tokio::test]
-    async fn current_cli_and_non_mutating_or_git_traffic_pass_through() {
+    async fn current_cli_and_cli_setup_or_git_traffic_pass_through() {
+        let current = CLI_PROTOCOL_VERSION.to_string();
         let non_cli_bearer_mutation = HttpRequest::builder()
             .method(Method::POST)
             .uri("/v1/mutate")
@@ -116,8 +114,8 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         for request in [
-            request(Method::POST, "/v1/mutate", Some("1")),
-            request(Method::GET, "/v1/read", None),
+            request(Method::POST, "/v1/mutate", Some(&current)),
+            request(Method::GET, "/v1/read", Some(&current)),
             request(Method::POST, "/v1/cli/device-login/code/complete", None),
             request(Method::POST, "/git/private/repo/git-receive-pack", None),
             non_cli_bearer_mutation,

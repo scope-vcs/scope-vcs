@@ -1,6 +1,6 @@
 use crate::{ErrorCode, ErrorResponse};
 
-pub const CLI_PROTOCOL_VERSION: u32 = 1;
+pub const CLI_PROTOCOL_VERSION: u32 = 2;
 pub const CLI_PROTOCOL_HEADER: &str = "x-scope-cli-protocol";
 pub const CLI_VERSION_HEADER: &str = "x-scope-cli-version";
 pub const CLI_BUILD_HEADER: &str = "x-scope-cli-build";
@@ -57,7 +57,7 @@ mod tests {
 
         assert_eq!(
             error.instruction.as_deref(),
-            Some("This Scope CLI requires API protocol 2. Retry after the Scope API is updated.")
+            Some("This Scope CLI requires API protocol 3. Retry after the Scope API is updated.")
         );
         assert!(!error.instruction.unwrap().contains(CLI_INSTALL_COMMAND));
         assert!(error.retryable);
