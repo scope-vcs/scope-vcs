@@ -356,9 +356,13 @@ fn send_upload_pack_chunk(
 
 static V2_CAPABILITIES: OnceLock<Vec<u8>> = OnceLock::new();
 
+pub(crate) fn cached_v2_capabilities() -> Option<Vec<u8>> {
+    V2_CAPABILITIES.get().cloned()
+}
+
 pub(crate) fn v2_capabilities(timeout: Duration) -> Result<Vec<u8>, ApiError> {
-    if let Some(capabilities) = V2_CAPABILITIES.get() {
-        return Ok(capabilities.clone());
+    if let Some(capabilities) = cached_v2_capabilities() {
+        return Ok(capabilities);
     }
     let folder = tempfile::Builder::new()
         .prefix("scope-upload-capabilities-")

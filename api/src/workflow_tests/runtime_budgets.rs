@@ -146,6 +146,41 @@ async fn upload_pack_capacity_exhaustion_happens_before_materialization() {
 }
 
 #[tokio::test]
+async fn protocol_v2_capabilities_are_served_without_an_upload_slot() {
+    let state = state_with_budget_config(RuntimeBudgetConfig {
+        upload_pack_concurrency: 0,
+        git_admission_wait: Duration::ZERO,
+        ..Default::default()
+    });
+    replace_test_repo(&state, repo_with_readme(&state)).await;
+    let capabilities =
+        crate::git::upload::v2_capabilities(state.runtime_budgets.git_command_timeout()).unwrap();
+    let advertise = |view: &str| {
+        Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/git/{view}/owner/repo/info/refs?service=git-upload-pack"
+            ))
+            .header("git-protocol", "version=2")
+            .body(Body::empty())
+            .unwrap()
+    };
+
+    let response = router(state.clone())
+        .oneshot(advertise("public"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        to_bytes(response.into_body(), 1024 * 1024).await.unwrap(),
+        capabilities
+    );
+
+    let anonymous = router(state).oneshot(advertise("private")).await.unwrap();
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn cold_git_backed_projection_succeeds_with_one_build_permit() {
     let (mut state, _source, _head_oid) =
         super::push_intent_completion::published_git_fixture("single-projection-permit").await;
