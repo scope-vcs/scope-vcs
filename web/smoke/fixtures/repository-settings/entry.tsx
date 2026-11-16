@@ -58,12 +58,12 @@ const loadSettings = () => new Promise<{ collaboration: null; github: null }>(()
 const longCheckName = 'test / unit and integration on every supported platform'
 repoGitHubChecksResource.write(settingsScope, {
   workflows: [
-    { path: '.github/workflows/ci.yml', name: 'CI', runs: { verdict: 'yes', reason: null }, runtime_named_jobs: [] },
-    {
-      path: '.github/workflows/release.yml', name: 'release.yml',
-      runs: { verdict: 'no', reason: 'This workflow has no trigger for Scope request branches. Add a push trigger for scope/**.' },
-      runtime_named_jobs: [],
-    },
+    { path: '.github/workflows/ci.yml', name: 'CI', runs: { verdict: 'yes', reason: null }, triggers: ['pull_request', 'push'], runtime_named_jobs: [] },
+    ...['release.yml', 'nightly-backup.yml'].map((file) => ({
+      path: `.github/workflows/${file}`, name: file,
+      runs: { verdict: 'no' as const, reason: "No trigger for Scope's request branches. Add a push trigger for `scope/**`." },
+      triggers: ['schedule', 'workflow_dispatch'], runtime_named_jobs: [],
+    })),
   ],
   checks: [
     { name: 'lint', workflow_path: '.github/workflows/ci.yml', runs: { verdict: 'yes', reason: null }, required_on_github: false, reported_on_main: true },

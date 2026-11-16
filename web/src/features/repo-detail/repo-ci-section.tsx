@@ -157,7 +157,7 @@ export function RepoCiSection({
 
         {view.kind === 'connected' && <RepoGitHubConnectionTest test={testConnection} />}
 
-        {view.kind === 'connected' && <RepoGitHubWorkflows checks={checks} />}
+        {view.kind === 'connected' && <RepoGitHubWorkflows checks={checks} repositoryUrl={view.url} />}
 
         {view.kind === 'connected' && (
           <RepoGitHubMainPublication github={github} setEnabled={setMainPublication} />

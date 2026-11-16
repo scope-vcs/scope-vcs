@@ -256,7 +256,7 @@ export type GitHubCheckRunsResponse = { verdict: GitHubCheckRunsVerdictResponse,
 
 export type GitHubChecksResponse = { workflows: Array<GitHubWorkflowSummaryResponse>, checks: Array<GitHubCatalogCheckResponse>, };
 
-export type GitHubWorkflowSummaryResponse = { path: string, name: string, runs: GitHubCheckRunsResponse, runtime_named_jobs: Array<string>, };
+export type GitHubWorkflowSummaryResponse = { path: string, name: string, runs: GitHubCheckRunsResponse, triggers: Array<string>, runtime_named_jobs: Array<string>, };
 
 export type GitHubCatalogCheckResponse = { name: string, workflow_path: string | null, runs: GitHubCheckRunsResponse | null, required_on_github: boolean, reported_on_main: boolean, };
 

@@ -117,6 +117,7 @@ pub struct GitHubWorkflowSummary {
     pub path: String,
     pub name: String,
     pub runs: GitHubCheckRuns,
+    pub triggers: Vec<String>,
     pub runtime_named_jobs: Vec<String>,
 }
 
@@ -236,6 +237,7 @@ fn summarize_workflow(
                 runs: GitHubCheckRuns::No(format!(
                     "GitHub cannot read this workflow file: {error}"
                 )),
+                triggers: Vec::new(),
                 runtime_named_jobs: Vec::new(),
             };
             return Some((summary, Vec::new()));
@@ -258,6 +260,7 @@ fn summarize_workflow(
             .and_then(WorkflowValue::scalar_text)
             .unwrap_or(file_name),
         runs,
+        triggers: events.into_iter().map(|(event, _)| event).collect(),
         runtime_named_jobs: workflow_jobs.runtime_named,
     };
     Some((summary, workflow_jobs.checks))

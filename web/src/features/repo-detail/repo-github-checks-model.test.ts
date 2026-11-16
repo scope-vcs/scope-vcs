@@ -5,14 +5,20 @@ import type {
   GitHubCheckRunsResponse,
   GitHubWorkflowSummaryResponse,
 } from '../../api/types.generated'
-import { githubCheckStatus, githubWorkflowsView } from './repo-github-checks-model'
+import { githubCheckStatus, githubWorkflowsView, searchWorkflows, workflowFileUrl } from './repo-github-checks-model'
 
 const YES: GitHubCheckRunsResponse = { verdict: 'yes', reason: null }
 const NO: GitHubCheckRunsResponse = { verdict: 'no', reason: 'No trigger for Scope branches.' }
+const DISABLED: GitHubCheckRunsResponse = { verdict: 'no', reason: 'Disabled on GitHub.' }
 const MAYBE: GitHubCheckRunsResponse = { verdict: 'maybe', reason: 'Runs only when its condition holds.' }
 
-function workflow(name: string, runs: GitHubCheckRunsResponse, runtime: string[] = []): GitHubWorkflowSummaryResponse {
-  return { path: `.github/workflows/${name}.yml`, name, runs, runtime_named_jobs: runtime }
+function workflow(
+  name: string,
+  runs: GitHubCheckRunsResponse,
+  runtime: string[] = [],
+  triggers: string[] = ['push'],
+): GitHubWorkflowSummaryResponse {
+  return { path: `.github/workflows/${name}.yml`, name, runs, triggers, runtime_named_jobs: runtime }
 }
 
 function check(overrides: Partial<GitHubCatalogCheckResponse>): GitHubCatalogCheckResponse {
@@ -26,25 +32,43 @@ function check(overrides: Partial<GitHubCatalogCheckResponse>): GitHubCatalogChe
   }
 }
 
-test('workflows that do not run on requests ask for the trigger', () => {
-  for (const [workflows, summary, attention, needsTrigger] of [
-    [[], 'No workflows on main. Add one with this trigger so requests get checks.', [], true],
-    [[workflow('ci', YES)], 'The workflow on main runs on Scope requests.', [], false],
+test('workflows group by outcome, most urgent first, and search by path, name or trigger', () => {
+  for (const [workflows, summary, groups] of [
+    [[], 'No workflows on main. Add one with this trigger so requests get checks.', []],
+    [[workflow('ci', YES)], 'The workflow on main runs on Scope requests.', [['yes', ['ci']]]],
+    [[workflow('release', NO)], '0 of 1 workflow on main run on Scope requests.', [['no', ['release']]]],
     [
-      [workflow('ci', YES), workflow('deploy', MAYBE), workflow('release', NO)],
-      '1 of 3 workflows on main run on Scope requests.',
-      ['deploy', 'release'],
-      true,
+      [workflow('ci', YES), workflow('deploy', MAYBE), workflow('nightly', NO), workflow('old', DISABLED), workflow('release', NO)],
+      '1 of 5 workflows on main run on Scope requests.',
+      [['no', ['nightly', 'release']], ['no', ['old']], ['maybe', ['deploy']], ['yes', ['ci']]],
     ],
-    [[workflow('ci', YES), workflow('deploy', MAYBE)], '1 of 2 workflows on main run on Scope requests.', ['deploy'], false],
   ] as const) {
     const view = githubWorkflowsView({ workflows: [...workflows], checks: [] })
     assert.equal(view.summary, summary)
-    assert.deepEqual(view.attention.map((item) => item.name), attention)
-    assert.equal(view.needsTrigger, needsTrigger)
+    assert.deepEqual(
+      view.groups.map((group) => [group.verdict, group.workflows.map((item) => item.name)]),
+      groups,
+    )
   }
   const runtime = githubWorkflowsView({ workflows: [workflow('ci', YES, ['build', 'test'])], checks: [] })
   assert.deepEqual(runtime.runtimeNamed, ['ci (build, test)'])
+
+  const { groups } = githubWorkflowsView({
+    checks: [],
+    workflows: [
+      workflow('ci', YES),
+      { ...workflow('nightly', NO, [], ['schedule', 'workflow_dispatch']), name: 'Nightly Backup' },
+      workflow('release', NO, [], ['workflow_dispatch']),
+    ],
+  })
+  for (const [query, names] of [
+    ['  DISPATCH ', ['Nightly Backup', 'release']],
+    ['backup', ['Nightly Backup']],
+    ['ci.yml', ['ci']],
+    ['deploy', []],
+  ] as const) {
+    assert.deepEqual(searchWorkflows(groups, query).map((item) => item.name), names, query)
+  }
 })
 
 test('each result says whether it runs on requests and where else it comes from', () => {
@@ -59,4 +83,11 @@ test('each result says whether it runs on requests and where else it comes from'
   ] as const) {
     assert.deepEqual(githubCheckStatus(entry), { text, tone })
   }
+})
+
+test('workflow links open main and keep reserved characters inside the file name', () => {
+  assert.equal(
+    workflowFileUrl('https://github.com/octo/demo', '.github/workflows/ci#nightly?.yml'),
+    'https://github.com/octo/demo/blob/main/.github/workflows/ci%23nightly%3F.yml',
+  )
 })

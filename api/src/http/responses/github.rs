@@ -116,6 +116,7 @@ pub(crate) struct GitHubWorkflowSummaryResponse {
     pub(crate) path: String,
     pub(crate) name: String,
     pub(crate) runs: GitHubCheckRunsResponse,
+    pub(crate) triggers: Vec<String>,
     pub(crate) runtime_named_jobs: Vec<String>,
 }
 
@@ -377,6 +378,7 @@ pub(crate) fn github_checks_response(catalog: GitHubCheckCatalog) -> GitHubCheck
                     path: workflow.path,
                     name: workflow.name,
                     runs: check_runs_response(workflow.runs),
+                    triggers: workflow.triggers,
                     runtime_named_jobs: workflow.runtime_named_jobs,
                 },
             )
