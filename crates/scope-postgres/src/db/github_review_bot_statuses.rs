@@ -8,8 +8,9 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     requests::{
-        GitHubReviewBotStatus, GitHubReviewRequest, Request, RequestBotReviews,
-        RequestDiscussionStatus, RequestReviewsOutcome, request_reviews_outcome,
+        ENDED_PULL_REQUEST_BOT_WATCH_SECS, GitHubReviewBotState, GitHubReviewBotStatus,
+        GitHubReviewRequest, Request, RequestBotReviews, RequestDiscussionStatus,
+        RequestReviewsOutcome, request_reviews_outcome,
     },
     views::Views,
 };
@@ -41,25 +42,35 @@ impl RequestStore {
         self.db
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "UPDATE scope_github_pull_requests pull_request
-                    SET review_bots_due_at_unix = $2
-                   FROM (SELECT request_id FROM scope_github_pull_requests candidate
-                          WHERE state = 'open' AND review_bots_due_at_unix <= $1
-                            AND EXISTS (SELECT 1 FROM scope_github_review_bots bot
-                                         WHERE bot.repo_id = candidate.repo_id)
-                          ORDER BY review_bots_due_at_unix, request_id
-                          LIMIT $3
-                          FOR UPDATE SKIP LOCKED) due
-                  WHERE pull_request.request_id = due.request_id
+                format!(
+                    "UPDATE scope_github_pull_requests pull_request
+                        SET review_bots_due_at_unix = $2
+                       FROM (SELECT request_id FROM scope_github_pull_requests candidate
+                              WHERE review_bots_due_at_unix <= $1
+                                AND candidate.request_id IN (
+                                    SELECT request_id FROM scope_github_pull_requests
+                                     WHERE state = 'open' AND review_bots_due_at_unix <= $1
+                                    UNION ALL
+                                    {})
+                                AND EXISTS (SELECT 1 FROM scope_github_review_bots bot
+                                             WHERE bot.repo_id = candidate.repo_id)
+                              ORDER BY review_bots_due_at_unix, request_id
+                              LIMIT $3
+                              FOR UPDATE SKIP LOCKED) due
+                      WHERE pull_request.request_id = due.request_id
               RETURNING pull_request.request_id, pull_request.repo_id,
                         pull_request.installation_id, pull_request.github_repository_id,
                         pull_request.github_full_name,
                         pull_request.number, pull_request.commented_head_oid,
                         pull_request.commented_at_unix",
+                    watched_after_ending("$4", "$5")
+                ),
                 [
                     u64_to_i64(now_unix, "review bot reconcile time")?.into(),
                     u64_to_i64(lease_until_unix, "review bot reconcile lease")?.into(),
                     u64_to_i64(limit, "review bot reconcile batch size")?.into(),
+                    watched_since(now_unix)?,
+                    unfinished_states()?,
                 ],
             ))
             .await?
@@ -162,16 +173,23 @@ impl RequestStore {
         &self,
         github_repository_id: u64,
         number: u64,
+        now_unix: u64,
     ) -> Result<bool, PostgresError> {
         let requeued = self
             .db
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "UPDATE scope_github_pull_requests SET review_bots_due_at_unix = 0
-                  WHERE github_repository_id = $1 AND number = $2 AND state = 'open'",
+                format!(
+                    "UPDATE scope_github_pull_requests SET review_bots_due_at_unix = 0
+                      WHERE github_repository_id = $1 AND number = $2
+                        AND (state = 'open' OR request_id IN ({}))",
+                    watched_after_ending("$3", "$4")
+                ),
                 [
                     u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
                     u64_to_i64(number, "GitHub pull request number")?.into(),
+                    watched_since(now_unix)?,
+                    unfinished_states()?,
                 ],
             ))
             .await?;
@@ -195,6 +213,36 @@ impl RequestStore {
     ) -> Result<RequestReviewsOutcome, PostgresError> {
         reviews_outcome(self.db.as_ref(), request, views).await
     }
+}
+
+fn watched_after_ending(since: &str, unfinished: &str) -> String {
+    format!(
+        "SELECT status.request_id
+           FROM scope_github_review_bot_statuses status
+           JOIN scope_github_pull_requests ended
+             ON ended.request_id = status.request_id
+            AND ended.github_repository_id = status.github_repository_id
+            AND ended.number = status.pull_number
+          WHERE ended.state <> 'open'
+            AND status.updated_at_unix > {since}
+            AND status.state = ANY({unfinished})"
+    )
+}
+
+fn watched_since(now_unix: u64) -> Result<sea_orm::Value, PostgresError> {
+    Ok(u64_to_i64(
+        now_unix.saturating_sub(ENDED_PULL_REQUEST_BOT_WATCH_SECS),
+        "review bot watch start",
+    )?
+    .into())
+}
+
+fn unfinished_states() -> Result<sea_orm::Value, PostgresError> {
+    Ok(GitHubReviewBotState::UNFINISHED
+        .iter()
+        .map(|state| encode_enum(*state))
+        .collect::<Result<Vec<_>, _>>()?
+        .into())
 }
 
 pub(super) async fn request_bot_reviews<C: ConnectionTrait>(

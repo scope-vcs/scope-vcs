@@ -211,7 +211,7 @@ async fn a_required_bot_holds_the_merge_until_it_finishes_the_latest_head() {
         .state
         .metadata
         .requests()
-        .requeue_github_review_bot_reconcile(GITHUB_REPOSITORY_ID, 1)
+        .requeue_github_review_bot_reconcile(GITHUB_REPOSITORY_ID, 1, now + 2_000)
         .await
         .unwrap();
     assert_eq!(reconcile(&request, now + 2_000).await, 1);
@@ -326,14 +326,15 @@ fn github_time(unix: u64) -> String {
 }
 
 async fn reconcile_now(request: &OwnerRequest) {
+    let at_unix = unix_now();
     request
         .state
         .metadata
         .requests()
-        .requeue_github_review_bot_reconcile(GITHUB_REPOSITORY_ID, 1)
+        .requeue_github_review_bot_reconcile(GITHUB_REPOSITORY_ID, 1, at_unix)
         .await
         .unwrap();
-    assert_eq!(reconcile(request, unix_now()).await, 1);
+    assert_eq!(reconcile(request, at_unix).await, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -504,7 +505,11 @@ async fn a_required_bot_that_never_starts_after_the_review_request_turns_advisor
         .state
         .metadata
         .requests()
-        .requeue_github_review_bot_reconcile(GITHUB_REPOSITORY_ID, 1)
+        .requeue_github_review_bot_reconcile(
+            GITHUB_REPOSITORY_ID,
+            1,
+            requested_before + REVIEW_BOT_START_DEADLINE_SECS,
+        )
         .await
         .unwrap();
     assert_eq!(
