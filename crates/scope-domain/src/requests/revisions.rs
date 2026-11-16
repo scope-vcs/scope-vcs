@@ -37,12 +37,12 @@ impl RequestRevision {
         views: &crate::views::Views,
     ) -> Result<crate::repository::git::GitPoolPackOwner, DomainError> {
         if self.request_id != request.id
-            || request.state() != super::RequestState::Merged
+            || !request.is_terminal()
             || views.get(&request.view).is_none()
             || !self.comparison_oids().contains(&self.new_head_oid)
         {
             return Err(DomainError::conflict(
-                "pool pack restoration requires an existing merged request revision and view",
+                "pool pack restoration requires an existing merged or closed request revision and view",
             ));
         }
         Ok(crate::repository::git::GitPoolPackOwner::Request {
@@ -91,3 +91,6 @@ pub(super) fn revision(
         created_at_unix: event.created_at_unix,
     }
 }
+
+#[cfg(test)]
+mod tests;
