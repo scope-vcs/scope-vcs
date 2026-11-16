@@ -35,22 +35,7 @@ async fn deleting_the_account_ends_its_sessions_and_then_its_clerk_user() {
     let app = router(state.clone());
     let cli = cli_bearer(&app).await;
 
-    let from_cli = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri("/v1/account")
-                .header(AUTHORIZATION, &cli)
-                .header(
-                    scope_api_contract::CLI_PROTOCOL_HEADER,
-                    scope_api_contract::CLI_PROTOCOL_VERSION,
-                )
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let from_cli = request(&app, "DELETE", "/v1/account", &cli).await;
     assert_eq!(from_cli.status(), StatusCode::UNAUTHORIZED);
 
     let deleted = request(&app, "DELETE", "/v1/account", &bearer_header()).await;

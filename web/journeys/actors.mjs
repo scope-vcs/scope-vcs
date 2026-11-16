@@ -160,7 +160,9 @@ export async function signInThroughForm(browser, collaborator, contextOptions) {
 }
 
 export async function apiFetch(token, path) {
-  const response = await fetch(`${apiUrl}${path}`, { headers: { authorization: `Bearer ${token}` } })
+  const response = await fetch(`${apiUrl}${path}`, {
+    headers: { authorization: `Bearer ${token}`, 'x-scope-cli-protocol': '2' },
+  })
   assert.equal(response.status, 200, `GET ${path} returned ${response.status}: ${await response.clone().text()}`)
   return response.json()
 }

@@ -370,7 +370,7 @@ function authEnvironment(url, token, extraHeaders = []) {
 }
 
 async function api(config, path, options = {}) {
-  const headers = { accept: 'application/json', authorization: `Bearer ${config.token}`, 'x-scope-cli-protocol': '1' };
+  const headers = { accept: 'application/json', authorization: `Bearer ${config.token}`, 'x-scope-cli-protocol': '2' };
   if (options.body) headers['content-type'] = 'application/json';
   const method = options.method || 'GET';
   const response = await fetch(`${config.apiUrl}${path}`, {

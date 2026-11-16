@@ -7,7 +7,10 @@ pub(super) async fn api_request(
     bearer: Option<&str>,
     body: Option<&str>,
 ) -> Response {
-    let mut request = Request::builder().method(method).uri(uri);
+    let mut request = Request::builder().method(method).uri(uri).header(
+        scope_api_contract::CLI_PROTOCOL_HEADER,
+        scope_api_contract::CLI_PROTOCOL_VERSION,
+    );
     if let Some(bearer) = bearer {
         request = request.header(AUTHORIZATION, bearer);
     }

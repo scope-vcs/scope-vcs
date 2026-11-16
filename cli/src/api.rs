@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
         let request = server.join().unwrap().to_ascii_lowercase();
-        assert!(request.contains("x-scope-cli-protocol: 1\r\n"));
+        assert!(request.contains(&format!("x-scope-cli-protocol: {CLI_PROTOCOL_VERSION}\r\n")));
         assert!(request.contains(&format!(
             "x-scope-cli-version: {}\r\n",
             crate::build::PACKAGE_VERSION

@@ -1,6 +1,6 @@
 use crate::{ErrorCode, ErrorResponse};
 
-pub const CLI_PROTOCOL_VERSION: u32 = 1;
+pub const CLI_PROTOCOL_VERSION: u32 = 2;
 pub const CLI_PROTOCOL_HEADER: &str = "x-scope-cli-protocol";
 pub const CLI_VERSION_HEADER: &str = "x-scope-cli-version";
 pub const CLI_BUILD_HEADER: &str = "x-scope-cli-build";
@@ -38,13 +38,22 @@ mod tests {
 
     #[test]
     fn upgrade_error_is_structured_and_actionable() {
-        let error = ErrorResponse::cli_upgrade_required(Some(0));
+        let older = CLI_PROTOCOL_VERSION - 1;
+        let error = ErrorResponse::cli_upgrade_required(Some(older));
 
         assert_eq!(error.code, ErrorCode::CliUpgradeRequired);
-        assert_eq!(error.fields.installed_protocol, Some(0));
-        assert_eq!(error.fields.supported_protocol, Some(1));
-        assert!(error.message.contains("installed Scope CLI protocol 0"));
-        assert!(error.message.contains("supports protocol 1"));
+        assert_eq!(error.fields.installed_protocol, Some(older));
+        assert_eq!(error.fields.supported_protocol, Some(CLI_PROTOCOL_VERSION));
+        assert!(
+            error
+                .message
+                .contains(&format!("installed Scope CLI protocol {older}"))
+        );
+        assert!(
+            error
+                .message
+                .contains(&format!("supports protocol {CLI_PROTOCOL_VERSION}"))
+        );
         assert_eq!(
             error.instruction.as_deref(),
             Some("Upgrade with `curl -fsSL https://cli.scopevcs.com/install.sh | sh`, then retry.")
@@ -57,7 +66,13 @@ mod tests {
 
         assert_eq!(
             error.instruction.as_deref(),
-            Some("This Scope CLI requires API protocol 2. Retry after the Scope API is updated.")
+            Some(
+                format!(
+                    "This Scope CLI requires API protocol {}. Retry after the Scope API is updated.",
+                    CLI_PROTOCOL_VERSION + 1
+                )
+                .as_str()
+            )
         );
         assert!(!error.instruction.unwrap().contains(CLI_INSTALL_COMMAND));
         assert!(error.retryable);

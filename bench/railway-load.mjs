@@ -692,7 +692,7 @@ async function apiJson(config, path, options = {}) {
 }
 
 function apiHeaders(token) {
-  return { accept: 'application/json', authorization: `Bearer ${token}`, 'x-scope-cli-protocol': '1' };
+  return { accept: 'application/json', authorization: `Bearer ${token}`, 'x-scope-cli-protocol': '2' };
 }
 
 function authEnvironment(destination, secret, pushIntent) {
