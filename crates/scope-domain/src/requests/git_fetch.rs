@@ -23,14 +23,18 @@ impl GitFetchAsk {
     }
 
     pub fn includes(&self, request: &Request, user: Option<&str>, invitee: bool) -> bool {
-        invitee
-            || user.is_some_and(|user| request.is_author(user))
-            || match self {
-                Self::Listing { named_refs } => {
-                    named_refs.contains(&canonical_request_ref(&request.name))
+        match self {
+            Self::Listing { named_refs } => {
+                let name = canonical_request_ref(&request.name);
+                if invitee || user.is_some_and(|user| request.is_author(user)) {
+                    named_refs.is_empty()
+                        || named_refs.iter().any(|prefix| name.starts_with(prefix))
+                } else {
+                    named_refs.contains(&name)
                 }
-                Self::Transfer { wants, shallow } => *shallow || wants.contains(&request.head_oid),
             }
+            Self::Transfer { wants, shallow } => *shallow || wants.contains(&request.head_oid),
+        }
     }
 
     pub fn is_listing(&self) -> bool {
@@ -145,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn fetches_list_only_own_invited_named_or_wanted_requests() {
+    fn listings_offer_own_requests_under_asked_prefixes_and_transfers_only_wanted_heads() {
         let request = open_request();
         let named = GitFetchAsk::Listing {
             named_refs: [canonical_request_ref(&request.name)].into(),
@@ -165,15 +169,33 @@ mod tests {
             wants: vec!["other".to_string()],
             shallow: true,
         };
+        let unrelated_prefix = GitFetchAsk::Listing {
+            named_refs: ["refs/heads/other".to_string(), "refs/tags/".to_string()].into(),
+        };
+        let partial_prefix = GitFetchAsk::Listing {
+            named_refs: [canonical_request_ref(
+                &request.name[..request.name.len() - 1],
+            )]
+            .into(),
+        };
         for (ask, user, invitee, expected) in [
             (&GitFetchAsk::listing(), Some("author"), false, true),
             (&GitFetchAsk::listing(), Some("reader"), true, true),
             (&GitFetchAsk::listing(), Some("reader"), false, false),
             (&GitFetchAsk::listing(), None, false, false),
+            (&other_ref, Some("author"), false, true),
+            (&other_ref, Some("reader"), true, true),
             (&other_ref, Some("reader"), false, false),
+            (&unrelated_prefix, Some("author"), false, false),
+            (&unrelated_prefix, Some("reader"), true, false),
+            (&partial_prefix, Some("author"), false, true),
+            (&partial_prefix, Some("reader"), false, false),
+            (&other_want, Some("author"), false, false),
+            (&other_want, Some("reader"), true, false),
             (&other_want, Some("reader"), false, false),
             (&named, None, false, true),
             (&wanted, Some("reader"), false, true),
+            (&wanted, Some("author"), false, true),
             (&shallow, Some("reader"), false, true),
         ] {
             assert_eq!(

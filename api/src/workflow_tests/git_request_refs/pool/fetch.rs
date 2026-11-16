@@ -55,10 +55,11 @@ async fn cold_fetch_advertises_and_installs_only_active_request_heads() {
         heads.push(head);
     }
     let replica = state.replica_for_tests();
-    let folder = fetch_folder(
+    let folder = fetch_folder_for(
         &replica,
         &authorization_headers(bearer_header()),
         &ViewId::private(),
+        &GitFetchAsk::listing(),
     )
     .await;
     let refs = git_stdout_text(
@@ -287,10 +288,11 @@ async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents(
     .await;
     assert_eq!(closed.status(), StatusCode::OK);
     let replica = state.replica_for_tests();
-    let folder = fetch_folder(
+    let folder = fetch_folder_for(
         &replica,
         &authorization_headers(bearer_header()),
         &ViewId::private(),
+        &GitFetchAsk::listing(),
     )
     .await;
     let refs = git_stdout_text(
@@ -326,4 +328,108 @@ async fn a_cached_copy_whose_head_names_an_unborn_branch_still_advertises_main()
     let folder = fetch_folder(&state, &headers, &ViewId::private()).await;
 
     assert_eq!(ref_head(&folder, "refs/heads/main"), head);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_authors_fetch_of_one_branch_prepares_only_that_request_on_a_cold_replica() {
+    let (state, main, _) =
+        super::super::super::push_intent_completion::published_git_fixture("fetch-asked-only")
+            .await;
+    let source = clone_test_repo(&main, "fetch-asked-only-source", false);
+    let (origin, _server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
+    configure_bearer_header(&source, &remote, &bearer_header());
+    let mut heads = Vec::new();
+    for (name, start) in [
+        ("sibling", "origin/main"),
+        ("built-on-sibling", "sibling"),
+        ("unrelated", "origin/main"),
+    ] {
+        start_request(&state, name).await;
+        run_git(
+            Some(&source),
+            &["checkout", "-B", name, start],
+            "create request branch",
+        )
+        .unwrap();
+        push_change(
+            &source,
+            &remote,
+            &format!("refs/heads/{name}"),
+            &format!("{name}.txt"),
+            name,
+            name,
+        )
+        .unwrap();
+        heads.push(git_head_oid(&source));
+    }
+    let replica = state.replica_for_tests();
+    let headers = authorization_headers(bearer_header());
+    let prepared_refs = |ask: GitFetchAsk| {
+        let replica = replica.clone();
+        let headers = headers.clone();
+        async move {
+            let folder = fetch_folder_for(&replica, &headers, &ViewId::private(), &ask).await;
+            let refs = git_stdout_text(
+                &folder,
+                &["for-each-ref", "--format=%(refname)", "refs/heads"],
+                "prepared fetch refs",
+            )
+            .unwrap();
+            (folder, refs.lines().map(str::to_string).collect::<Vec<_>>())
+        }
+    };
+
+    for ask in [
+        GitFetchAsk::Listing {
+            named_refs: ["refs/heads/built-on-sibling".to_string()].into(),
+        },
+        GitFetchAsk::Transfer {
+            wants: vec![heads[1].clone()],
+            shallow: false,
+        },
+    ] {
+        let (folder, refs) = prepared_refs(ask).await;
+        assert_eq!(refs, ["refs/heads/built-on-sibling", "refs/heads/main"]);
+        assert!(has_commit(&folder, &heads[0]));
+        assert!(has_commit(&folder, &heads[1]));
+        assert!(!has_commit(&folder, &heads[2]));
+    }
+
+    let (replica_origin, _replica_server) = spawn_test_server(&replica).await;
+    let replica_remote = format!("{replica_origin}/git/private/{TEST_REPO_ID}");
+    let reader = TempGitRepo(unique_test_path("fetch-asked-only-reader"));
+    run_git(None, &["init", reader.to_str().unwrap()], "init reader").unwrap();
+    configure_bearer_header(&reader, &replica_remote, &bearer_header());
+    run_git(
+        Some(&reader),
+        &[
+            "-c",
+            "protocol.version=2",
+            "fetch",
+            &replica_remote,
+            "built-on-sibling",
+        ],
+        "fetch one request by name",
+    )
+    .unwrap();
+    assert_eq!(ref_head(&reader, "FETCH_HEAD"), heads[1]);
+    assert!(has_commit(&reader, &heads[0]));
+    let (folder, _) = prepared_refs(GitFetchAsk::Transfer {
+        wants: vec![heads[1].clone()],
+        shallow: false,
+    })
+    .await;
+    assert!(!has_commit(&folder, &heads[2]));
+
+    let (_, refs) = prepared_refs(GitFetchAsk::listing()).await;
+    assert_eq!(
+        refs,
+        [
+            "refs/heads/built-on-sibling",
+            "refs/heads/main",
+            "refs/heads/sibling",
+            "refs/heads/unrelated"
+        ]
+    );
 }
