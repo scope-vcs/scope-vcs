@@ -25,7 +25,7 @@ use scope_domain::{
     requests::{Request, request_visible_to_every_maintainer},
     views::ViewId,
 };
-use scope_postgres::db::PooledRequestPack;
+use scope_postgres::db::{PooledRequest, PooledRequestPack};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -169,33 +169,33 @@ pub(crate) async fn install_missing_request_packs(
         .iter()
         .map(|request| request.id.clone())
         .collect::<Vec<_>>();
-    let mut listed = state
+    let lineage = state
         .metadata
         .repositories()
-        .git_pool_packs_for_requests(incarnation.repository_id(), &request_ids)
-        .await?;
-    let read_repo = match install.repos {
-        PoolRepos::Full(_, _, staging) => staging,
-        PoolRepos::View(_, repo) => repo,
-    };
-    listed.retain(|pack| pack_target(install, pack).is_some());
+        .git_pool_request_lineage(incarnation.repository_id(), &request_ids)
+        .await?
+        .into_iter()
+        .map(|request| (request.id.clone(), request))
+        .collect::<BTreeMap<_, _>>();
     let mut leases = Vec::new();
     if matches!(install.repos, PoolRepos::Full(..)) {
-        for view in listed
-            .iter()
-            .map(|pack| &pack.request_view)
+        for view in lineage
+            .values()
+            .filter(|request| {
+                (request.has_full_scope_packs || request.has_own_view_packs)
+                    && pack_target(install, request, &RequestPackScope::Full).is_some()
+            })
+            .map(|request| &request.view)
             .filter(|view| *view != install.config.views.full())
             .collect::<BTreeSet<_>>()
         {
             leases.extend(install.lease_view_base(state, view).await?);
         }
     }
-    let target = read_repo.to_path_buf();
-    let heads = heads.to_vec();
-    let needed = blocking::run(move || packs_to_catch_up(&target, listed, heads)).await?;
+    let needed = packs_to_catch_up(state, install, &lineage, heads).await?;
     let pack_ids = needed
         .iter()
-        .map(|pack| pack.id.clone())
+        .map(|(_, pack)| pack.id.clone())
         .collect::<Vec<_>>();
     let mut storage = state
         .metadata
@@ -205,14 +205,12 @@ pub(crate) async fn install_missing_request_packs(
         .into_iter()
         .collect::<BTreeMap<_, _>>();
     let mut by_repo = BTreeMap::<((bool, bool), &FsPath), Vec<PooledRequestPack>>::new();
-    for listed in needed {
-        if let Some(repo) = pack_target(install, &listed) {
-            let rank = match install.repos {
-                PoolRepos::Full(repos, _, staging) => (repo != repos.shared, repo == staging),
-                _ => (false, false),
-            };
-            by_repo.entry((rank, repo)).or_default().push(listed);
-        }
+    for (repo, listed) in needed {
+        let rank = match install.repos {
+            PoolRepos::Full(repos, _, staging) => (repo != repos.shared, repo == staging),
+            _ => (false, false),
+        };
+        by_repo.entry((rank, repo)).or_default().push(listed);
     }
     let mut installed = 0;
     for ((_, repo), packs) in by_repo {
@@ -236,39 +234,111 @@ pub(crate) async fn install_missing_request_packs(
     Ok((installed, leases))
 }
 
-fn packs_to_catch_up(
-    objects_repo: &FsPath,
-    mut packs: Vec<PooledRequestPack>,
-    mut heads: Vec<String>,
-) -> Result<Vec<PooledRequestPack>, ApiError> {
-    let present = present_commits(
-        objects_repo,
-        packs.iter().map(|pack| pack.head_oid.as_str()),
-    )?;
-    packs.retain(|pack| !present.contains(&pack.head_oid));
+const MAX_WALK_DEPTH: u32 = 64;
+
+pub(crate) async fn packs_to_catch_up<'a>(
+    state: &AppState,
+    install: &PoolInstall<'a>,
+    lineage: &BTreeMap<String, PooledRequest>,
+    heads: &[String],
+) -> Result<Vec<(&'a FsPath, PooledRequestPack)>, ApiError> {
+    let read_repo = match install.repos {
+        PoolRepos::Full(_, _, staging) => staging,
+        PoolRepos::View(_, repo) => repo,
+    };
+    let request_ids = lineage.keys().cloned().collect::<Vec<_>>();
+    let mut visited = BTreeSet::new();
+    let mut frontier = absent_commits(read_repo, heads.iter().cloned().collect()).await?;
     let mut needed = Vec::new();
-    while let Some(head) = heads.pop() {
-        for pack in packs.extract_if(.., |pack| pack.head_oid == head) {
-            heads.extend(pack.prerequisites.iter().cloned());
-            needed.push(pack);
+    let mut depth = 1;
+    while !frontier.is_empty() {
+        visited.extend(frontier.iter().cloned());
+        let mut ahead = BTreeMap::<String, Vec<(&'a FsPath, PooledRequestPack)>>::new();
+        for pack in state
+            .metadata
+            .repositories()
+            .git_pool_packs_behind(
+                install.incarnation.repository_id(),
+                &request_ids,
+                &frontier.iter().cloned().collect::<Vec<_>>(),
+                depth,
+            )
+            .await?
+        {
+            let target = lineage
+                .get(&pack.request_id)
+                .and_then(|request| pack_target(install, request, &pack.scope));
+            if let Some(target) = target {
+                ahead
+                    .entry(pack.head_oid.clone())
+                    .or_default()
+                    .push((target, pack));
+            }
         }
+        let absent = absent_commits(
+            read_repo,
+            ahead
+                .values()
+                .flatten()
+                .flat_map(|(_, pack)| pack.prerequisites.iter().cloned())
+                .collect(),
+        )
+        .await?;
+        let mut walking = frontier.into_iter().collect::<Vec<_>>();
+        let mut next = BTreeSet::new();
+        while let Some(head) = walking.pop() {
+            for (target, pack) in ahead.remove(&head).unwrap_or_default() {
+                for prerequisite in &pack.prerequisites {
+                    if !absent.contains(prerequisite) || !visited.insert(prerequisite.clone()) {
+                        continue;
+                    }
+                    if ahead.contains_key(prerequisite) {
+                        walking.push(prerequisite.clone());
+                    } else {
+                        next.insert(prerequisite.clone());
+                    }
+                }
+                needed.push((target, pack));
+            }
+        }
+        frontier = next;
+        depth = (depth * 2).min(MAX_WALK_DEPTH);
     }
     Ok(needed)
 }
 
-fn pack_target<'a>(install: &PoolInstall<'a>, listed: &PooledRequestPack) -> Option<&'a FsPath> {
+async fn absent_commits(
+    repo: &FsPath,
+    oids: BTreeSet<String>,
+) -> Result<BTreeSet<String>, ApiError> {
+    let repo = repo.to_path_buf();
+    blocking::run(move || {
+        let present = present_commits(&repo, oids.iter().map(String::as_str))?;
+        Ok(oids
+            .into_iter()
+            .filter(|oid| !present.contains(oid))
+            .collect())
+    })
+    .await
+}
+
+fn pack_target<'a>(
+    install: &PoolInstall<'a>,
+    request: &PooledRequest,
+    pack_scope: &RequestPackScope,
+) -> Option<&'a FsPath> {
     let views = &install.config.views;
-    let view = &listed.request_view;
-    let scope = listed.scope.view();
+    let view = &request.view;
+    let scope = pack_scope.view();
     if views.get(view).is_none() || scope.is_some_and(|pack_view| pack_view != view) {
         return None;
     }
     match install.repos {
         PoolRepos::View(reader, repo) => (scope == Some(reader)).then_some(repo),
         PoolRepos::Full(repos, actor_user_id, staging) => {
-            let shared = request_visible_to_every_maintainer(view, listed.request_submitted, views);
-            let author = listed.request_author_id.as_deref() == Some(actor_user_id);
-            if !shared && !author && !listed.request_invitees.iter().any(|id| id == actor_user_id) {
+            let shared = request_visible_to_every_maintainer(view, request.submitted, views);
+            let author = request.author_id.as_deref() == Some(actor_user_id);
+            if !shared && !author && !request.invitees.iter().any(|id| id == actor_user_id) {
                 return None;
             }
             Some(if scope.is_some() || view != views.full() {

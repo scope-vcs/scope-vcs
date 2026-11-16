@@ -145,7 +145,7 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
     let packs = state
         .metadata
         .repositories()
-        .git_pool_packs_for_requests(TEST_REPO_ID, std::slice::from_ref(&request.id))
+        .request_pool_packs(TEST_REPO_ID, &request.id)
         .await
         .unwrap();
     assert_eq!(packs.len(), 1);

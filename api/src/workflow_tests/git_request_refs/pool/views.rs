@@ -18,7 +18,7 @@ async fn restricted_revisions_use_isolated_view_shelves_across_replicas_and_gene
     let packs = state
         .metadata
         .repositories()
-        .git_pool_packs_for_requests(TEST_REPO_ID, &[REQUEST_ID.to_string()])
+        .request_pool_packs(TEST_REPO_ID, REQUEST_ID)
         .await
         .unwrap();
     assert_eq!(packs.len(), 2);
@@ -152,7 +152,7 @@ async fn restricted_revisions_use_isolated_view_shelves_across_replicas_and_gene
         state
             .metadata
             .repositories()
-            .git_pool_packs_for_requests(TEST_REPO_ID, &[REQUEST_ID.to_string()])
+            .request_pool_packs(TEST_REPO_ID, REQUEST_ID)
             .await
             .unwrap()
             .iter()

@@ -26,7 +26,7 @@ async fn cold_full_reader_installs_restricted_full_pack_with_its_view_prerequisi
     let packs = state
         .metadata
         .repositories()
-        .git_pool_packs_for_requests(TEST_REPO_ID, &[REQUEST_ID.to_string()])
+        .request_pool_packs(TEST_REPO_ID, REQUEST_ID)
         .await
         .unwrap();
     assert!(packs.iter().any(
