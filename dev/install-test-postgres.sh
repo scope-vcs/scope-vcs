@@ -75,7 +75,9 @@ case "$mode" in
       dpkg-deb --extract "$package" /
     done
     ldconfig
-    localedef -i en_US -f UTF-8 en_US.utf8
+    if ! locale -a | grep --quiet --line-regexp en_US.utf8; then
+      localedef -i en_US -f UTF-8 en_US.utf8
+    fi
     "/usr/lib/postgresql/$postgres_major/bin/initdb" --version | grep --fixed-strings "(PostgreSQL) $postgres_version"
     ;;
   *)

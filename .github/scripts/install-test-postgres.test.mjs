@@ -52,13 +52,14 @@ process.stdout.write(version);`);
   writeFileSync(resolve(directory, 'bin/dpkg-query'), dpkgQuery, { mode: 0o755 });
   writeFileSync(resolve(directory, 'bin/dpkg'), dpkg, { mode: 0o755 });
   for (const command of ['ldconfig', 'localedef']) writeFileSync(resolve(directory, 'bin', command), probe('record({ args });'), { mode: 0o755 });
+  writeFileSync(resolve(directory, 'bin/locale'), probe("for (const name of (process.env.LOCALES ?? 'C C.utf8 POSIX').split(' ')) console.log(name);"), { mode: 0o755 });
   writeFileSync(resolve(directory, 'usr/lib/postgresql/18/bin/initdb'), '#!/bin/sh\necho "initdb (PostgreSQL) 18.6 (fixture)"\n', { mode: 0o755 });
   const observed = resolve(directory, 'observed');
   return {
     directory,
     operations: () => readFileSync(observed, 'utf8').trim().split('\n').map(line => JSON.parse(line)),
-    run: mode => spawnSync('bash', [resolve(directory, 'install.sh'), mode, resolve(directory, 'cache')], {
-      env: { ...process.env, PATH: `${directory}/bin:${process.env.PATH}`, OBSERVED: observed }, encoding: 'utf8',
+    run: (mode, env = {}) => spawnSync('bash', [resolve(directory, 'install.sh'), mode, resolve(directory, 'cache')], {
+      env: { ...process.env, PATH: `${directory}/bin:${process.env.PATH}`, OBSERVED: observed, ...env }, encoding: 'utf8',
     }),
   };
 }
@@ -88,12 +89,21 @@ test('cold downloads use signed isolated sources and warm installation unpacks o
     ['liburing2.deb', '/'], ['postgresql-18.deb', '/'],
   ]);
   assert.ok(warm.some(operation => operation.tool === 'ldconfig'));
+  assert.deepEqual(warm.filter(operation => operation.tool === 'localedef').map(operation => operation.args), [['-i', 'en_US', '-f', 'UTF-8', 'en_US.utf8']]);
   assert.match(installed.stdout, /\(PostgreSQL\) 18\.6/);
   writeFileSync(resolve(fixture.directory, 'cache/postgresql-18.deb'), 'corrupt-package');
   const corrupt = fixture.run('install');
   assert.notEqual(corrupt.status, 0);
   assert.match(corrupt.stderr, /checksum did NOT match/);
   assert.equal(fixture.operations().length, cold.length + warm.length);
+});
+
+test('installation keeps an en_US.utf8 locale the runner already has', t => {
+  const fixture = installer(t);
+  assert.equal(fixture.run('download').status, 0);
+  const installed = fixture.run('install', { LOCALES: 'C C.utf8 en_US.utf8 POSIX' });
+  assert.equal(installed.status, 0, installed.stderr);
+  assert.ok(!fixture.operations().some(operation => operation.tool === 'localedef'));
 });
 
 test('a cached server package for another PostgreSQL version is refused before anything is unpacked', t => {
