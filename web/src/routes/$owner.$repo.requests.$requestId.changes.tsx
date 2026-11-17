@@ -16,24 +16,24 @@ import {
   type LoadDiscussionsInput,
   createRequestDiscussionForRequest,
   loadRequestDiscussionsForRequest,
-} from '@/features/requests/request-discussion-api'
-import { RequestAttachmentProvider } from '@/features/requests/request-attachment-context'
+} from '@/features/requests/discussion/request-discussion-api'
+import { RequestAttachmentProvider } from '@/features/requests/attachments/request-attachment-context'
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
-import { loadDiscussionReferencePage } from '@/features/requests/request-changes-discussion-references'
-import { requestChangesResource, requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges } from '@/features/requests/request-changes-resource'
+import { loadDiscussionReferencePage } from '@/features/requests/changes/request-changes-discussion-references'
+import { requestChangesResource, requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges } from '@/features/requests/changes/request-changes-resource'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import {
   RequestChangesWorkbench,
   type RequestChangesSearch,
-} from '@/features/requests/request-changes-workbench'
-import { RequestChangesBodyPending, RequestChangesPending } from '@/features/requests/request-page-pending'
-import { RequestChangesScreen } from '@/features/requests/request-changes-screen'
+} from '@/features/requests/changes/request-changes-workbench'
+import { RequestChangesBodyPending, RequestChangesPending } from '@/features/requests/detail/request-page-pending'
+import { RequestChangesScreen } from '@/features/requests/changes/request-changes-screen'
 import {
   requestChangeSelection,
   requestRevisionPin,
-} from '@/features/requests/request-changes-model'
-import { useRequestState } from '@/features/requests/request-state-context'
-import { requestParamsForRoute } from '@/features/requests/request-route-data'
+} from '@/features/requests/changes/request-changes-model'
+import { useRequestState } from '@/features/requests/detail/request-state-context'
+import { requestParamsForRoute } from '@/features/requests/detail/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { parseRouteFilePathSearch } from '@/lib/route-file'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'

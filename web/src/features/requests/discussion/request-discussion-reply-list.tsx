@@ -1,0 +1,287 @@
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+import { CornerLeftUp, Ellipsis, Reply, RotateCcw } from 'lucide-react'
+import { compactDiscussionSummary } from './discussion-preview-text'
+import { RequestDiscussionByline } from './request-discussion-byline'
+import { RequestDiscussionAuthorAvatar } from './request-discussion-avatar'
+import { RequestDiscussionMarkdown } from './request-discussion-markdown'
+import { REQUEST_DISCUSSION_CONTENT_CLASS } from '../detail/request-content-layout'
+import {
+  replyFragment,
+  sameCalendarDate,
+  shouldGroupReplies,
+} from './request-discussion-reply-presentation'
+import { RelativeTimestamp } from '@/components/timestamp'
+import { formatUnixDayLabel } from '@/lib/date-format'
+import { useHydrated } from '@/lib/use-hydrated'
+import type { RequestDiscussionReplyView } from './request-discussion-types'
+import { discussionAuthorName } from './request-discussion-author'
+
+export function RequestDiscussionReplyList({
+  canReply,
+  discussionCreatedAtUnix,
+  onQuote,
+  onRetry,
+  readThroughPosition,
+  replies,
+  showUnreadBoundary,
+}: {
+  canReply: boolean
+  discussionCreatedAtUnix: number
+  onQuote: (reply: RequestDiscussionReplyView) => void
+  onRetry: (reply: RequestDiscussionReplyView) => void
+  readThroughPosition: number
+  replies: RequestDiscussionReplyView[]
+  showUnreadBoundary: boolean
+}) {
+  const hydrated = useHydrated()
+  const firstUnreadIndex = showUnreadBoundary
+    ? replies.findIndex((reply) => reply.position > readThroughPosition)
+    : -1
+
+  return (
+    <>
+      {replies.map((reply, index) => {
+        const previousReply = replies[index - 1] ?? null
+        const startsNewDate = !sameCalendarDate(
+          previousReply?.created_at_unix ?? discussionCreatedAtUnix,
+          reply.created_at_unix,
+          hydrated,
+        )
+        const startsUnread = index === firstUnreadIndex
+        const grouped = shouldGroupReplies(previousReply, reply, {
+          date: startsNewDate,
+          unread: startsUnread,
+        })
+
+        return (
+          <div key={reply.id}>
+            {startsNewDate ? (
+              <DiscussionBoundary
+                label={formatUnixDayLabel(reply.created_at_unix, hydrated)}
+              />
+            ) : null}
+            {startsUnread ? <DiscussionBoundary label="New" unread /> : null}
+            <DiscussionReply
+              canReply={canReply}
+              grouped={grouped}
+              onQuote={onQuote}
+              onRetry={onRetry}
+              reply={reply}
+            />
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+export function RequestDiscussionUnreadBoundary() {
+  return <DiscussionBoundary label="New" unread />
+}
+
+function DiscussionReply({
+  canReply,
+  grouped,
+  onQuote,
+  onRetry,
+  reply,
+}: {
+  canReply: boolean
+  grouped: boolean
+  onQuote: (reply: RequestDiscussionReplyView) => void
+  onRetry: (reply: RequestDiscussionReplyView) => void
+  reply: RequestDiscussionReplyView
+}) {
+  const canQuote = canReply && !reply.pending
+  const hasActions = canQuote || reply.pending === 'failed'
+
+  return (
+    <div
+      className={cn(
+        'group/message relative grid scroll-mt-32 grid-cols-[minmax(0,1fr)] gap-x-3 rounded-md hover:bg-muted/35 focus-within:bg-muted/35 min-[701px]:grid-cols-[2rem_minmax(0,1fr)] min-[701px]:pr-10 lg:pr-16',
+        grouped ? 'py-0.5' : 'pt-3 pb-1',
+        grouped && hasActions && 'pr-10',
+      )}
+      id={`reply-${reply.id}`}
+      tabIndex={-1}
+    >
+      <span aria-hidden="true" className="hidden min-[701px]:block">
+        {grouped ? null : <RequestDiscussionAuthorAvatar author={reply.author} />}
+      </span>
+
+      <div className="min-w-0">
+        {grouped ? (
+          <span className="sr-only">
+            {discussionAuthorName(reply.author)}, <RelativeTimestamp value={reply.created_at_unix} />
+          </span>
+        ) : null}
+        {!grouped ? (
+          <div className={cn('flex min-w-0 items-start gap-2', hasActions && 'pr-10 min-[701px]:pr-0')}>
+            <span className="min-[701px]:hidden">
+              <RequestDiscussionAuthorAvatar author={reply.author} small />
+            </span>
+            <RequestDiscussionByline
+              author={reply.author}
+              createdAtUnix={reply.created_at_unix}
+            >
+              {reply.pending === 'sending' ? (
+                <span className="text-xs text-muted-foreground">Posting…</span>
+              ) : null}
+              {reply.pending === 'failed' ? (
+                <Badge variant="danger">Failed</Badge>
+              ) : null}
+            </RequestDiscussionByline>
+          </div>
+        ) : null}
+        <ReplyReference reply={reply} />
+        <RequestDiscussionMarkdown
+          className={cn(
+            REQUEST_DISCUSSION_CONTENT_CLASS,
+            grouped ? '' : 'mt-1',
+          )}
+          source={reply.body_markdown}
+        />
+      </div>
+
+      {hasActions ? (
+        <div className="absolute top-1 right-1 hidden items-center rounded-md border border-border bg-background p-0.5 opacity-0 shadow-sm transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 lg:flex">
+          <ReplyActionItems
+            canReply={canQuote}
+            onQuote={onQuote}
+            onRetry={onRetry}
+            reply={reply}
+          />
+        </div>
+      ) : null}
+
+      {hasActions ? (
+        <details className="group/actions absolute top-1 right-1 z-10 lg:hidden">
+          <summary
+            aria-label={`Actions for ${discussionAuthorName(reply.author)}'s reply`}
+            className="grid size-8 cursor-pointer list-none place-items-center rounded-md border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden"
+          >
+            <Ellipsis className="size-4" />
+          </summary>
+          <div className="absolute top-9 right-0 flex min-w-32 flex-col rounded-md border border-border bg-background p-1 shadow-lg">
+            <ReplyActionItems
+              canReply={canQuote}
+              labels
+              onQuote={onQuote}
+              onRetry={onRetry}
+              reply={reply}
+            />
+          </div>
+        </details>
+      ) : null}
+    </div>
+  )
+}
+
+function ReplyActionItems({
+  canReply,
+  labels = false,
+  onQuote,
+  onRetry,
+  reply,
+}: {
+  canReply: boolean
+  labels?: boolean
+  onQuote: (reply: RequestDiscussionReplyView) => void
+  onRetry: (reply: RequestDiscussionReplyView) => void
+  reply: RequestDiscussionReplyView
+}) {
+  const itemClass = cn(
+    'rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+    labels ? 'flex items-center gap-2 px-2 py-1.5 text-xs' : 'p-1.5',
+  )
+  return (
+    <>
+      {canReply ? (
+        <button
+          aria-label={`Reply to ${discussionAuthorName(reply.author)}`}
+          className={itemClass}
+          onClick={(event) => {
+            closeMobileActions(event.currentTarget)
+            onQuote(reply)
+          }}
+          title={`Reply to ${discussionAuthorName(reply.author)}`}
+          type="button"
+        >
+          <Reply className="size-3.5" />
+          {labels ? 'Reply' : null}
+        </button>
+      ) : null}
+      {reply.pending === 'failed' ? (
+        <button
+          aria-label="Retry reply"
+          className={cn(itemClass, 'text-destructive')}
+          onClick={(event) => {
+            closeMobileActions(event.currentTarget)
+            onRetry(reply)
+          }}
+          title="Retry reply"
+          type="button"
+        >
+          <RotateCcw className="size-3.5" />
+          {labels ? 'Retry' : null}
+        </button>
+      ) : null}
+    </>
+  )
+}
+
+function closeMobileActions(element: HTMLElement) {
+  element.closest('details')?.removeAttribute('open')
+}
+
+function ReplyReference({ reply }: { reply: RequestDiscussionReplyView }) {
+  if (reply.reply_to) {
+    return (
+      <a
+        className="my-2 flex min-w-0 items-center gap-1.5 border-l-2 border-border pl-3 text-[13px] text-muted-foreground hover:text-foreground"
+        href={replyFragment(reply.discussion_id, reply.reply_to.id)}
+      >
+        <CornerLeftUp className="size-3 shrink-0" />
+        <span className="max-w-[45%] shrink-0 truncate font-medium text-foreground">
+          {discussionAuthorName(reply.reply_to.author)}
+        </span>
+        <span className="truncate">
+          {compactDiscussionSummary(reply.reply_to.body_markdown)}
+        </span>
+      </a>
+    )
+  }
+  if (!reply.optimistic_reply_to_reply_id) return null
+  return (
+    <span className="my-2 flex items-center gap-1.5 border-l-2 border-border pl-3 text-[13px] text-muted-foreground">
+      <CornerLeftUp className="size-3 shrink-0" />
+      Replying to an earlier message
+    </span>
+  )
+}
+
+function DiscussionBoundary({
+  label,
+  unread = false,
+}: {
+  label: string
+  unread?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        'my-3 flex items-center gap-3 text-xs font-semibold',
+        unread ? 'text-foreground' : 'text-muted-foreground',
+      )}
+    >
+      <hr
+        aria-label={unread ? 'New replies' : `Messages from ${label}`}
+        className={cn('h-px flex-1 border-0', unread ? 'bg-foreground/60' : 'bg-border')}
+        suppressHydrationWarning
+      />
+      <span suppressHydrationWarning>{label}</span>
+      <span className={cn('h-px flex-1', unread ? 'bg-foreground/60' : 'bg-border')} />
+    </div>
+  )
+}

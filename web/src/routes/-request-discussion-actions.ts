@@ -1,7 +1,7 @@
 import { loadOptionalResource } from '@/api/http'
 import { parseLoadDiscussionsInput, parseLoadDiscussionChangesInput } from '@/api/request-inputs'
-import { loadRequestDiscussionChangesForRequest, loadRequestDiscussionsForRequest } from '@/features/requests/request-discussion-api'
-import { includeFocusedDiscussion } from '@/features/requests/request-discussion-model'
+import { loadRequestDiscussionChangesForRequest, loadRequestDiscussionsForRequest } from '@/features/requests/discussion/request-discussion-api'
+import { includeFocusedDiscussion } from '@/features/requests/discussion/request-discussion-model'
 import { createServerFn } from '@tanstack/react-start'
 
 export const loadRequestDiscussionPage = createServerFn({ method: 'GET' })

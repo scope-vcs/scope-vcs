@@ -22,7 +22,7 @@ import {
 } from '../repo-detail/repository-version'
 import { repoCodeCacheKeys, repoCodeRefreshVersion } from '../repo-detail/use-repo-code-resources'
 import { useViewingAs } from '../repo-detail/use-viewing-as'
-import { actorHandle } from '../requests/request-actor'
+import { actorHandle } from '../requests/detail/request-actor'
 import {
   historyEntryOpensCode,
   repositorySearchFeed,

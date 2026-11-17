@@ -16,4 +16,5 @@ test('feature page filenames select the exported function', () => {
   assert.deepEqual(conventionViolations(path, 'export function RepoSettingsPage() {}'), [])
   assert.equal(conventionViolations(path, 'function RepoSettingsPage() {}').length, 1)
   assert.equal(conventionViolations(path, 'export function SettingsPage() {}').length, 1)
+  assert.equal(conventionViolations('src/features/requests/detail/request-detail-page.tsx', 'export function DetailPage() {}').length, 1)
 })

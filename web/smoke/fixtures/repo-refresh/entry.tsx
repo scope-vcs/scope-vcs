@@ -4,9 +4,9 @@ import { useRepoLiveRefresh } from '../../../src/features/repo-detail/repo-live-
 import { repoSummaryResource } from '../../../src/features/repo-detail/repo-summary-resource'
 import { useRepoSummary } from '../../../src/features/repo-detail/use-repo-summary'
 import { repoResourceScope } from '../../../src/features/repo-detail/repo-resource-scope'
-import { useRequestQueue } from '../../../src/features/requests/use-request-queue'
+import { useRequestQueue } from '../../../src/features/requests/workspace/use-request-queue'
 import type { RepoLiveState } from '../../../src/api/types'
-import { requestQueueIdentity, type LoadRequestQueuePage } from '../../../src/features/requests/request-queue-cache'
+import { requestQueueIdentity, type LoadRequestQueuePage } from '../../../src/features/requests/workspace/request-queue-cache'
 
 const repo = {
   id: 'owner/repo', owner_handle: 'owner', name: 'repo', description: null,

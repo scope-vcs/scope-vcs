@@ -1,5 +1,5 @@
 import type { RequestParams } from '@/api/types'
-import { loadRequestDiscussion, requestDiscussionCacheKey } from '@/features/requests/request-discussion-cache'
+import { loadRequestDiscussion, requestDiscussionCacheKey } from '@/features/requests/discussion/request-discussion-cache'
 import { loadRequestDiscussionPage } from './-request-discussion-actions'
 
 export function loadRequestDiscussionRoute(data: RequestParams, scope: string, viewerId: string | null, discussionId?: string) {

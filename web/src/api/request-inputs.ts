@@ -3,21 +3,21 @@ import { parseFilePath } from './file-path-input'
 import { parseReviewDiffRenderBudget } from './review-diff-budget-input'
 import type { ApproveRequestChecksInput, RequestParams } from './types'
 import type { RequestDiscussionLineRange } from './types.generated'
-import type { RequestActionInput } from '../features/requests/request-actions-api'
+import type { RequestActionInput } from '../features/requests/detail/request-actions-api'
 import type {
   AuthorizeRequestAutoMergeInput,
   CancelRequestAutoMergeInput,
-} from '../features/requests/request-auto-merge-api'
+} from '../features/requests/checks/request-auto-merge-api'
 import type {
   CreateDiscussionInput, CreateReplyInput, LoadDiscussionsInput, LoadRepliesInput,
   MarkDiscussionReadInput, RequestDiscussionActionInput, UpdateDescriptionInput,
-} from '../features/requests/request-discussion-api'
+} from '../features/requests/discussion/request-discussion-api'
 import type {
   FinishAttachmentInput,
   GrantAttachmentInput,
   PrepareAttachmentInput,
   RetryAttachmentInput,
-} from '../features/requests/request-attachment-api'
+} from '../features/requests/attachments/request-attachment-api'
 import {
   ApproveRequestChecksRequestValidator,
   AuthorizeRequestAutoMergeRequestValidator,

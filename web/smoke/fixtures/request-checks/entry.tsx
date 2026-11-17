@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useParams } from '@tanstack/react-router'
-import { RequestCiApproval } from '@/features/requests/request-ci-approval'
-import { RequestChecksSection } from '@/features/requests/request-checks-section'
+import { RequestCiApproval } from '@/features/requests/checks/request-ci-approval'
+import { RequestChecksSection } from '@/features/requests/checks/request-checks-section'
 import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
 import '../shared/styles.css'
 

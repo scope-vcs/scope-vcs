@@ -2,7 +2,7 @@ import { createCachedResource } from '@/lib/cached-resource'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { useCallback, useRef, useState } from 'react'
 import type { RequestRevisionListResponse } from '@/api/types.generated'
-import { requestChangesResource, requestChangesSelectionIdentity } from '@/features/requests/request-changes-resource'
+import { requestChangesResource, requestChangesSelectionIdentity } from '@/features/requests/changes/request-changes-resource'
 
 export function ChangesResourceFixture() {
   const [viewerId, setViewerId] = useState('user_clerk_original')

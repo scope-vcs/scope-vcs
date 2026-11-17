@@ -14,14 +14,14 @@ import {
   markRequestDiscussionReadForRequest,
   reopenAndReplyToRequestDiscussionForRequest,
   resolveRequestDiscussionForRequest,
-} from '@/features/requests/request-discussion-api'
-import { RequestDiscussionPageBoundary } from '@/features/requests/request-discussion-page-boundary'
-import { RequestDiscussionView } from '@/features/requests/request-discussion-view'
-import { RequestDiscussionPending } from '@/features/requests/request-page-pending'
+} from '@/features/requests/discussion/request-discussion-api'
+import { RequestDiscussionPageBoundary } from '@/features/requests/discussion/request-discussion-page-boundary'
+import { RequestDiscussionView } from '@/features/requests/discussion/request-discussion-view'
+import { RequestDiscussionPending } from '@/features/requests/detail/request-page-pending'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { createFileRoute, getRouteApi } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { useRequestState } from '@/features/requests/request-state-context'
+import { useRequestState } from '@/features/requests/detail/request-state-context'
 import { loadRequestDiscussionChanges, loadRequestDiscussionPage } from '@/routes/-request-discussion-actions'
 import { MessageSquare } from 'lucide-react'
 

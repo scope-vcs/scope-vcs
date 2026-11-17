@@ -32,7 +32,7 @@ export function conventionViolations(path, source) {
   if (path.startsWith('src/routes/') && path.endsWith('.tsx') && !values.has('Route')) {
     violations.push(`${path}: route file must export Route`)
   }
-  const match = /^src\/features\/[^/]+\/([^/]+)-page\.tsx$/.exec(path)
+  const match = /^src\/features\/(?:[^/]+\/)+([^/]+)-page\.tsx$/.exec(path)
   if (match) {
     const expected = match[1].split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join('') + 'Page'
     if (!functions.has(expected)) violations.push(`${path}: feature page must export function ${expected}`)

@@ -16,22 +16,22 @@ import {
 import {
   authorizeRequestAutoMergeForRequest,
   cancelRequestAutoMergeForRequest,
-} from '@/features/requests/request-auto-merge-api'
+} from '@/features/requests/checks/request-auto-merge-api'
 import {
   type RequestActionCommand,
   performRequestActionForRequest,
-} from '@/features/requests/request-actions-api'
+} from '@/features/requests/detail/request-actions-api'
 import {
   loadRequestActivityForRequest,
   updateRequestDescriptionForRequest,
-} from '@/features/requests/request-discussion-api'
-import { useRequestState } from '@/features/requests/request-state-context'
-import { requestRatingsResource } from '@/features/requests/request-ratings-resource'
-import { reconcileRequestState, requestStateResource } from '@/features/requests/request-state-resource'
-import { RequestDetailPage } from '@/features/requests/request-detail-page'
-import { RequestDetailPagePending } from '@/features/requests/request-page-pending'
+} from '@/features/requests/discussion/request-discussion-api'
+import { useRequestState } from '@/features/requests/detail/request-state-context'
+import { requestRatingsResource } from '@/features/requests/detail/request-ratings-resource'
+import { reconcileRequestState, requestStateResource } from '@/features/requests/detail/request-state-resource'
+import { RequestDetailPage } from '@/features/requests/detail/request-detail-page'
+import { RequestDetailPagePending } from '@/features/requests/detail/request-page-pending'
 import { loadRequestDiscussionRoute } from '@/routes/-request-discussion-loader'
-import { requestParamsForRoute } from '@/features/requests/request-route-data'
+import { requestParamsForRoute } from '@/features/requests/detail/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
 import { repoSummaryIdentity, repoSummaryResource } from '@/features/repo-detail/repo-summary-resource'

@@ -1,5 +1,5 @@
 import { parseRequestAttentionInput } from '@/api/request-attention-input'
-import { updateRequestAttentionForRequest } from '@/features/requests/request-attention-api'
+import { updateRequestAttentionForRequest } from '@/features/requests/workspace/request-attention-api'
 import { loadRequestQueueForRequest } from '@/api/requests'
 import { parseLoadRequestQueueInput } from '@/api/request-queue-input'
 import { createServerFn } from '@tanstack/react-start'

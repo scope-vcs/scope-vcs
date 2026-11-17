@@ -1,7 +1,7 @@
 import { useAuth, useClerk } from '@clerk/tanstack-react-start'
 import { useRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { activateRequestAttachmentDraftViewer } from '@/features/requests/request-attachment-drafts'
+import { activateRequestAttachmentDraftViewer } from '@/features/requests/attachments/request-attachment-drafts'
 import { activateViewer, markSessionReady } from '@/lib/viewer-state'
 export function ViewerSessionBoundary() {
   const { isLoaded, userId } = useAuth()

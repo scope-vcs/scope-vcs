@@ -12,8 +12,8 @@ import {
   loadRequestAttachments,
   prepareRequestAttachment,
   retryRequestAttachment,
-} from '@/features/requests/request-attachment-api'
-import type { RequestAttachmentActions } from '@/features/requests/request-attachment-context'
+} from '@/features/requests/attachments/request-attachment-api'
+import type { RequestAttachmentActions } from '@/features/requests/attachments/request-attachment-context'
 import { createServerFn } from '@tanstack/react-start'
 
 const listRequestAttachments = createServerFn({ method: 'GET' })

@@ -1,15 +1,15 @@
 import type { RepoLiveState } from '@/api/types'
 import type { RequestSummaryResponse } from '@/api/types.generated'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
-import { RequestAttachmentProvider } from '@/features/requests/request-attachment-context'
+import { RequestAttachmentProvider } from '@/features/requests/attachments/request-attachment-context'
 import {
   loadRequestDiscussion,
   requestDiscussionCacheKey,
   requestDiscussionResource,
   requestDiscussionState,
-} from '@/features/requests/request-discussion-cache'
-import type { RequestDiscussionPage, RequestDiscussionView } from '@/features/requests/request-discussion-types'
-import { RequestDiscussionWorkbench } from '@/features/requests/request-discussion-workbench'
+} from '@/features/requests/discussion/request-discussion-cache'
+import type { RequestDiscussionPage, RequestDiscussionView } from '@/features/requests/discussion/request-discussion-types'
+import { RequestDiscussionWorkbench } from '@/features/requests/discussion/request-discussion-workbench'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import {
   RequestDiscussionPageBoundary,
   type RequestDiscussionAvailability,
-} from '@/features/requests/request-discussion-page-boundary'
+} from '@/features/requests/discussion/request-discussion-page-boundary'
 
 function Composer() {
   const [draft, setDraft] = useState('')
