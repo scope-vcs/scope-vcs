@@ -481,3 +481,27 @@ async fn run_and_dependency_changes_reach_members_but_not_public_repo_streams() 
         );
     }
 }
+
+#[tokio::test]
+async fn event_streams_end_when_shutdown_begins_so_connections_can_drain() {
+    let state = test_state_with_readme().await;
+    cache_test_jwks(&state);
+    let response = events(state.clone(), Some(bearer_header())).await;
+    let mut open = response.into_body().into_data_stream();
+    assert!(
+        next_event(&mut open)
+            .await
+            .contains(r#""kind":"Connected""#)
+    );
+
+    state.end_event_streams();
+
+    let ended = tokio::time::timeout(Duration::from_secs(2), open.next())
+        .await
+        .expect("the open stream must end without waiting for a keep-alive");
+    assert!(ended.is_none());
+    let late = events(state, Some(bearer_header())).await;
+    let mut late = late.into_body().into_data_stream();
+    next_event(&mut late).await;
+    assert!(late.next().await.is_none());
+}
