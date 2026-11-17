@@ -43,14 +43,30 @@ impl FakeGitHub {
         comments: Vec<serde_json::Value>,
     ) {
         let mut reported = self.review_comments.lock().unwrap();
-        for comment in &comments {
-            reported.insert(comment["id"].as_u64().unwrap(), comment.clone());
+        for mut comment in comments {
+            comment["pull_request_review_id"] = review["id"].clone();
+            reported.insert(comment["id"].as_u64().unwrap(), comment);
         }
         self.pull_reviews
             .lock()
             .unwrap()
-            .insert(review["id"].as_u64().unwrap(), (review, comments));
+            .insert(review["id"].as_u64().unwrap(), review);
     }
+}
+
+fn review_listing(comment: &serde_json::Value) -> serde_json::Value {
+    let mut listed = comment.clone();
+    for field in [
+        "subject_type",
+        "side",
+        "line",
+        "start_line",
+        "original_line",
+        "original_start_line",
+    ] {
+        listed[field] = serde_json::Value::Null;
+    }
+    listed
 }
 
 fn found(value: Option<serde_json::Value>) -> Response {
@@ -81,13 +97,7 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             get(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  AxumPath((_, _, _, id)): AxumPath<(String, String, u64, u64)>| async move {
-                    found(
-                        fake.pull_reviews
-                            .lock()
-                            .unwrap()
-                            .get(&id)
-                            .map(|(review, _)| review.clone()),
-                    )
+                    found(fake.pull_reviews.lock().unwrap().get(&id).cloned())
                 },
             ),
         )
@@ -96,13 +106,16 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             get(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  AxumPath((_, _, _, id)): AxumPath<(String, String, u64, u64)>| async move {
-                    found(
-                        fake.pull_reviews
-                            .lock()
-                            .unwrap()
-                            .get(&id)
-                            .map(|(_, comments)| serde_json::Value::from(comments.clone())),
-                    )
+                    let mut comments = fake
+                        .review_comments
+                        .lock()
+                        .unwrap()
+                        .values()
+                        .filter(|comment| comment["pull_request_review_id"] == id)
+                        .map(review_listing)
+                        .collect::<Vec<_>>();
+                    comments.sort_by_key(|comment| comment["id"].as_u64());
+                    Json(comments)
                 },
             ),
         )
