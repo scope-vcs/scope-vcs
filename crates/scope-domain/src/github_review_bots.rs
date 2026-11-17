@@ -147,6 +147,14 @@ pub fn github_author_standing(
     }
 }
 
+pub fn awaits_review_bot_listing(standing: &GitHubAuthorStanding, author: &GitHubAccount) -> bool {
+    *standing == GitHubAuthorStanding::Unlisted && author.account_type == GitHubAccountType::Bot
+}
+
+pub fn reply_vouches_for_thread_root(standing: &GitHubAuthorStanding) -> bool {
+    *standing == GitHubAuthorStanding::NeedsPermission
+}
+
 pub fn may_import_github_author(
     standing: &GitHubAuthorStanding,
     permission: Option<GitHubRepositoryPermission>,

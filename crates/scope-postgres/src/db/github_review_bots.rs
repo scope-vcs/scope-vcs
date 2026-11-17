@@ -1,4 +1,7 @@
-use super::{RepositoryStore, github_connections::repository_github_connection};
+use super::{
+    RepositoryStore, github_connections::repository_github_connection,
+    github_skipped_reviews::queue_reviews_of_listed_bots,
+};
 use crate::error::PostgresError;
 use scope_domain::{
     github_review_bots::{
@@ -46,6 +49,7 @@ impl RepositoryStore {
             ))
             .await?;
         }
+        queue_reviews_of_listed_bots(&tx, repo_id).await?;
         tx.commit().await?;
         Ok((bots, context.incarnation()))
     }

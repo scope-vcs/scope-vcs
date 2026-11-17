@@ -198,7 +198,7 @@ export type RepositoryInviteViewerResponse = "ready" | "signed_out" | "wrong_acc
 
 export type AcceptRepositoryInviteResponse = { repo: RepoSummaryResponse, member: RepositoryMemberResponse, };
 
-export type GitHubConnectionResponse = { configured: boolean, connection: GitHubConnectionDetailsResponse | null, required_checks: Array<string>, review_bots: Array<GitHubReviewBotResponse>, can_confirm_public: boolean, can_publish_main: boolean, run_import_count: number, run_import: GitHubRunImportResponse | null, };
+export type GitHubConnectionResponse = { configured: boolean, connection: GitHubConnectionDetailsResponse | null, required_checks: Array<string>, review_bots: Array<GitHubReviewBotResponse>, unlisted_review_bots: Array<GitHubUnlistedReviewBotResponse>, can_confirm_public: boolean, can_publish_main: boolean, run_import_count: number, run_import: GitHubRunImportResponse | null, };
 
 export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, connected_by: RequestActorSummaryResponse | null, connected_at_unix: number, disconnected: GitHubDisconnectionResponse | null, public_on_github: boolean, public_confirmed: boolean, open_review_bot_pull_requests: boolean, review_request_comment: string | null, main_publication: GitHubMainPublicationResponse, };
 
@@ -229,6 +229,8 @@ export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
 
 export type GitHubReviewBotResponse = { login: string, required: boolean, };
+
+export type GitHubUnlistedReviewBotResponse = { login: string, avatar_url: string | null, review_count: number, pull_request_count: number, last_skipped_at_unix: number, };
 
 export type SetGitHubReviewBotsRequest = { bots: Array<GitHubReviewBotRequest>, };
 

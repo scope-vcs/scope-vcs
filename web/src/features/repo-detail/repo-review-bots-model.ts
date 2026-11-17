@@ -1,4 +1,4 @@
-import type { GitHubReviewBotResponse } from '@/api/types.generated'
+import type { GitHubReviewBotResponse, GitHubUnlistedReviewBotResponse } from '@/api/types.generated'
 
 const REVIEW_BOTS_LIMIT = 20
 const LOGIN_MAX_CHARS = 39
@@ -53,4 +53,25 @@ export function withReviewBotRequired(
   required: boolean,
 ): GitHubReviewBotResponse[] {
   return bots.map((bot) => bot.login === login ? { ...bot, required } : bot)
+}
+
+export function canListReviewBot(bots: GitHubReviewBotResponse[]) {
+  return bots.length < REVIEW_BOTS_LIMIT
+}
+
+export function withListedReviewBot(bots: GitHubReviewBotResponse[], login: string): GitHubReviewBotResponse[] {
+  return [...bots, { login, required: false }]
+}
+
+export function draftWithReviewBot(draft: string, login: string) {
+  const key = login.toLowerCase()
+  if (reviewBotLogins(draft).some((drafted) => drafted.toLowerCase() === key)) return draft
+  const kept = draft.trimEnd()
+  return kept ? `${kept}\n${login}` : login
+}
+
+export function skippedReviewsText(bot: GitHubUnlistedReviewBotResponse) {
+  const reviews = bot.review_count === 1 ? '1 review' : `${bot.review_count} reviews`
+  const pulls = bot.pull_request_count === 1 ? '1 pull request' : `${bot.pull_request_count} pull requests`
+  return `Skipped ${reviews} on ${pulls}`
 }

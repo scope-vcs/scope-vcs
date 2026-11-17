@@ -34,7 +34,7 @@ function github(
       ...connection,
     },
     required_checks: [],
-    review_bots: [],
+    review_bots: [], unlisted_review_bots: [],
     can_confirm_public: true,
     can_publish_main,
    
