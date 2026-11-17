@@ -386,7 +386,7 @@ test('completed stream reconnect delays release abort listeners before reconnect
   const { default: Events } = await import('node:events')
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
   const controller = new AbortController()
-  let connections = 0
+  const listenersAtConnect: number[] = []
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -397,9 +397,8 @@ test('completed stream reconnect delays release abort listeners before reconnect
   try {
     await runRepoEventStream({
       connect: async () => {
-        assert.equal(Events.getEventListeners(controller.signal, 'abort').length, 0)
-        connections += 1
-        if (connections === 20) controller.abort()
+        listenersAtConnect.push(Events.getEventListeners(controller.signal, 'abort').length)
+        if (listenersAtConnect.length === 20) controller.abort()
         return { type: 'transport' }
       },
       onDiagnostic: () => {},
@@ -407,7 +406,7 @@ test('completed stream reconnect delays release abort listeners before reconnect
       onInterrupted: () => {},
       signal: controller.signal,
     })
-    assert.equal(connections, 20)
+    assert.deepEqual(listenersAtConnect, Array.from({ length: 20 }, () => 0))
     assert.equal(Events.getEventListeners(controller.signal, 'abort').length, 0)
   } finally {
     if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
