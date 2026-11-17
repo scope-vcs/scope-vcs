@@ -5,14 +5,13 @@ import { useCallback, useEffect, useRef } from 'react'
 import { runRepoEventStream, streamRepoEvents } from './repo-event-stream'
 import { repoResourceScope } from './repo-resource-scope'
 import { invalidateRepoResources, resyncTopics, topicsOf } from './repo-resource'
-import { repoSummaryChangedBy, repoSummaryResource } from './repo-summary-resource'
 
 type RepoChangeListener = (event: RepoChangeEvent) => void
 export type SubscribeToRepoChanges = (
   listener: RepoChangeListener,
 ) => () => void
 
-export function useRepoLiveRefresh(live: RepoLiveState | null, summaryIdentity: string) {
+export function useRepoLiveRefresh(live: RepoLiveState | null) {
   const { getToken, isLoaded, userId } = useAuth()
   const scope = live && isLoaded ? repoResourceScope(live.repo, userId ?? null) : null
   const repoId = live?.repo.id
@@ -26,7 +25,7 @@ export function useRepoLiveRefresh(live: RepoLiveState | null, summaryIdentity: 
   }, [])
 
   useEffect(() => () => {
-    if (scope) invalidateRepoResources(scope, resyncTopics())
+    if (scope) invalidateRepoResources(scope, resyncTopics().filter(({ topic }) => topic !== 'summary'))
   }, [scope])
 
   useEffect(() => {
@@ -45,16 +44,11 @@ export function useRepoLiveRefresh(live: RepoLiveState | null, summaryIdentity: 
       }
     }
     const onEvent = (event: RepoChangeEvent) => {
-      if (event.repo_id === repoId) {
-        const summaryPending = repoSummaryChangedBy(event, repoSummaryResource.peek(summaryIdentity))
-        if (summaryPending) repoSummaryResource.invalidate(summaryIdentity)
-        invalidateRepoResources(scope, topicsOf(event, { summaryPending, versioned }))
-      }
+      if (event.repo_id === repoId) invalidateRepoResources(scope, topicsOf(event, { versioned }))
       notifyListeners(event)
     }
     const onStreamInterrupted = () => {
-      invalidateRepoResources(scope, resyncTopics({ summaryPending: true, versioned }))
-      repoSummaryResource.invalidate(summaryIdentity)
+      invalidateRepoResources(scope, resyncTopics({ versioned }))
       const event: RepoChangeEvent = {
         incarnation_id: 'local-stream-interruption',
         kind: 'Lagged',
@@ -72,7 +66,7 @@ export function useRepoLiveRefresh(live: RepoLiveState | null, summaryIdentity: 
       signal: controller.signal,
     })
     return () => controller.abort()
-  }, [getToken, repoId, scope, summaryIdentity, eventStreamUrl, tokenTemplate, versioned])
+  }, [getToken, repoId, scope, eventStreamUrl, tokenTemplate, versioned])
 
   const acceptedRef = useRef<{ live: RepoLiveState; scope: string } | null>(null)
   useEffect(() => {

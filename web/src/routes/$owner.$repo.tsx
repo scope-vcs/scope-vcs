@@ -50,7 +50,7 @@ function RepoLayoutRoute() {
     load: useCallback((signal: AbortSignal) => loadRepoSummaryState({ owner, repo }, signal), [owner, repo]),
     onRejected: useCallback(() => void router.invalidate(), [router]),
   })
-  const subscribe = useRepoLiveRefresh(live, identity)
+  const subscribe = useRepoLiveRefresh(live)
   return (
     <RepoLayoutProvider live={live} subscribe={subscribe} summaryIdentity={identity}>
       <RepositoryHtmlPreviewProvider>

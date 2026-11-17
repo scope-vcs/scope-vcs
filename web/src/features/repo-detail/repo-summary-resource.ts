@@ -1,14 +1,21 @@
 import { HttpError, InvalidApiResponseError } from '../../api/http'
 import type { RepoLiveState, RepoParams } from '../../api/types'
-import type { RepoChangeEvent } from '../../api/types.generated'
-import { createCachedResource } from '../../lib/cached-resource'
 import { fetchServerFunction, StaleBuildError } from '../../lib/stale-build'
+import { createRepoResource } from './repo-resource'
+import { repoResourceScopeRepoId } from './repo-resource-scope'
 
 export type RepoSummaryLoadResult = { live: RepoLiveState } | { unavailable: string }
 
 class RepoSummaryUnavailable extends Error {}
 
-export const repoSummaryResource = createCachedResource<RepoLiveState>({
+export const repoSummaryResource = createRepoResource<RepoLiveState>({
+  invalidatedBy: ['summary'],
+  supersedes: ['requestList'],
+  keyIn: (scope, { snapshot }) => snapshot.value?.repo.id === repoResourceScopeRepoId(scope) ? [] : null,
+  affectedBy: ({ version }, _key, { snapshot }) => version === undefined
+    || snapshot.value === null
+    || snapshot.value.repo.access.actor === 'Public'
+    || version > snapshot.value.repo.change_version,
   maxEntries: 8,
   coalesceInvalidations: true,
 })
@@ -46,14 +53,4 @@ export function loadRepoSummary(identity: string, load: (signal: AbortSignal) =>
 
 export function forgetRepoSummary(identity: string) {
   repoSummaryResource.removeMatching((retained) => retained === identity)
-}
-
-export function repoSummaryChangedBy(event: RepoChangeEvent, summary: RepoLiveState | null) {
-  const { kind } = event
-  if (kind === 'GitHubWorkflowRunsChanged') return false
-  if (typeof kind === 'object' && ('GitHubWorkflowRunChanged' in kind || 'RequestTimelineChanged' in kind)) return false
-  if (kind === 'Connected' || kind === 'Lagged' || event.version === 0) return true
-  return summary === null
-    || summary.repo.access.actor === 'Public'
-    || event.version > summary.repo.change_version
 }

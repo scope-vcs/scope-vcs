@@ -43,7 +43,7 @@ function Queue({ current }: { current: RepoLiveState }) {
 function App({ initial }: { initial: RepoLiveState }) {
   const current = useRepoSummary({ identity: summaryIdentity, initial, load: summary, onRejected: ignoreRejection })
   const [visible, setVisible] = useState(true)
-  useRepoLiveRefresh(current, summaryIdentity)
+  useRepoLiveRefresh(current)
   Object.assign(window, { fixture: {
     server, refresh,
     navigate: () => setVisible(value => !value),
