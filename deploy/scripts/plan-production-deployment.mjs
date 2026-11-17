@@ -130,9 +130,10 @@ function main() {
     if (outputPath) appendFileSync(outputPath, line);
     else process.stdout.write(line);
   }
-  const backendLine = `backend_selected=${backendSelected(selection)}\n`;
-  if (outputPath) appendFileSync(outputPath, backendLine);
-  else process.stdout.write(backendLine);
+  const summaryLines = `backend_selected=${backendSelected(selection)}\n`
+    + `selected=${JSON.stringify(COMPONENTS.filter((component) => selection[component]))}\n`;
+  if (outputPath) appendFileSync(outputPath, summaryLines);
+  else process.stdout.write(summaryLines);
 
   if (summaryPath) {
     const selected = Object.entries(selection)

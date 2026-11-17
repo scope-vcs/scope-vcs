@@ -25,7 +25,6 @@ const REPLICAS = [
   workflowReplica(".github/workflows/release.yml", 2),
   workflowReplica(".github/workflows/scope-cli-build.yml", 3),
   workflowReplica(".github/workflows/scope-integration-ci.yml", 3),
-  workflowReplica(".github/workflows/prepare-smoke-tools.yml"),
   {
     path: "media-worker/Dockerfile",
     label: "Rust base image",

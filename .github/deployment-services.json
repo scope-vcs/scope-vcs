@@ -195,11 +195,10 @@
     },
     "release": {
       "files": [
-        ".github/workflows/prepare-smoke-tools.yml",
         ".github/workflows/release.yml",
         ".github/workflows/prepare-release.yml",
-        ".github/workflows/deploy-staging.yml",
         "deploy/scripts/prepare-release-images.sh",
+        "deploy/scripts/deploy-production-railway.sh",
         "deploy/scripts/run-bounded-image-builds.sh",
         "deploy/scripts/merge-prepared-release.mjs",
         ".github/actions/install-reviewed-git/action.yml",
@@ -218,7 +217,6 @@
         "deploy/railway/worker.Dockerfile",
         ".github/workflows/scope-api-ci.yml",
         ".github/workflows/rust-workspace-checks.yml",
-        ".github/workflows/deploy-backend.yml",
         "dev/checks/backend",
         "dev/checks/advisories",
         "deny.toml",
@@ -227,8 +225,7 @@
         "deploy/scripts/check-backend-binary-sizes.mjs",
         "deploy/scripts/prepare-railway-artifact.sh",
         "deploy/scripts/extract-railway-release.py",
-        "deploy/scripts/railway-artifact.mjs",
-        "deploy/scripts/deploy-monitored-railway.sh"
+        "deploy/scripts/railway-artifact.mjs"
       ],
       "prefixes": [
         "crates/",
@@ -248,7 +245,6 @@
         ".github/workflows/warm-ci-caches.yml",
         ".github/scripts/scan-image.sh",
         ".github/scripts/scan-report.mjs",
-        ".github/workflows/deploy-backend.yml",
         "dev/checks/backend",
         "dev/checks/advisories",
         "deny.toml",
@@ -257,8 +253,7 @@
         "dev/local-process.py",
         "dev/local-identity.py",
         "dev/dotenv.sh",
-        "deploy/railway/reconcile-media.mjs",
-        "deploy/scripts/deploy-monitored-railway.sh"
+        "deploy/railway/reconcile-media.mjs"
       ],
       "prefixes": [
         "media-worker/",
@@ -281,7 +276,6 @@
         "deploy/railway/prebuilt.Dockerfile",
         ".github/workflows/scope-api-ci.yml",
         ".github/workflows/rust-workspace-checks.yml",
-        ".github/workflows/deploy-backend.yml",
         "dev/checks/backend",
         "dev/checks/advisories",
         "deny.toml",
@@ -294,8 +288,7 @@
         "deploy/scripts/prepare-railway-artifact.sh",
         "deploy/scripts/extract-railway-release.py",
         "deploy/scripts/railway-artifact.mjs",
-        "dev/checks/contract",
-        "deploy/scripts/deploy-monitored-railway.sh"
+        "dev/checks/contract"
       ],
       "prefixes": [
         "api/",
@@ -316,7 +309,6 @@
         "rust-toolchain.toml",
         ".github/workflows/scope-api-ci.yml",
         ".github/workflows/rust-workspace-checks.yml",
-        ".github/workflows/deploy-backend.yml",
         "dev/checks/backend",
         "dev/checks/advisories",
         "deny.toml",
@@ -329,8 +321,7 @@
         "deploy/railway/reconcile-media.mjs",
         "dev/local-process.py",
         "dev/local-identity.py",
-        "dev/dotenv.sh",
-        "deploy/scripts/deploy-monitored-railway.sh"
+        "dev/dotenv.sh"
       ],
       "prefixes": [
         "media-service/",
@@ -345,7 +336,6 @@
         "deploy/railway/prebuilt.Dockerfile",
         ".github/workflows/scope-api-ci.yml",
         ".github/workflows/rust-workspace-checks.yml",
-        ".github/workflows/deploy-backend.yml",
         "dev/checks/backend",
         "dev/checks/advisories",
         "deny.toml",
@@ -354,8 +344,7 @@
         "deploy/scripts/check-backend-binary-sizes.mjs",
         "deploy/scripts/prepare-railway-artifact.sh",
         "deploy/scripts/extract-railway-release.py",
-        "deploy/scripts/railway-artifact.mjs",
-        "deploy/scripts/deploy-monitored-railway.sh"
+        "deploy/scripts/railway-artifact.mjs"
       ],
       "prefixes": [
         "crates/",
@@ -368,7 +357,6 @@
         "Cargo.toml",
         "deploy/railway/web.Dockerfile",
         ".github/workflows/scope-web-ci.yml",
-        ".github/workflows/deploy-web.yml",
         ".github/workflows/scope-integration-ci.yml",
         ".github/workflows/media-codec-cache.yml",
         ".github/actions/install-media-codecs/action.yml",
@@ -387,7 +375,6 @@
         "dev/local-process.py",
         "dev/local-identity.py",
         "dev/dotenv.sh",
-        "deploy/scripts/deploy-monitored-railway.sh",
         "deploy/scripts/deployment-components.mjs",
         ".github/actions/install-reviewed-git/action.yml",
         ".github/workflows/reviewed-git-cache.yml"
@@ -476,15 +463,7 @@
   },
   "releaseAvailability": {
     "production": {
-      "webOrigin": "https://scopevcs.com",
-      "apiOrigin": "https://api.scopevcs.com",
-      "fixture": {
-        "owner": "adamblumoff",
-        "repo": "scope-vcs",
-        "filePath": "/README.md",
-        "expectedText": "# Scope",
-        "expectedRequestIds": []
-      }
+      "apiOrigin": "https://api.scopevcs.com"
     }
   },
   "releasePolicy": {

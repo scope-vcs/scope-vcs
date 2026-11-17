@@ -15,9 +15,6 @@ on:
       prepare_web:
         type: boolean
         default: false
-      prepared_run_id:
-        type: string
-        default: ""
       media_worker_image:
         type: string
         default: ""
@@ -44,36 +41,24 @@ jobs:
         with:
           node-version: 26
 
-      - name: Restore selected immutable release
-        if: inputs.prepared_run_id != ''
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: selected-release-${{ inputs.source_sha }}
-
-      - name: Use validated release manifest
-        if: inputs.prepared_run_id != ''
-        run: mv selected-release.json prepared-release.json
-
       - name: Download backend binaries
-        if: inputs.prepare_backend && inputs.prepared_run_id == ''
+        if: inputs.prepare_backend
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: backend-release-${{ inputs.source_sha }}
           path: artifacts/backend
 
       - name: Download web runtime
-        if: inputs.prepare_web && inputs.prepared_run_id == ''
+        if: inputs.prepare_web
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: web-release-${{ inputs.source_sha }}
           path: artifacts/web
 
       - name: Set up image builder
-        if: inputs.prepared_run_id == ''
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Authenticate image publishing
-        if: inputs.prepared_run_id == ''
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
@@ -81,7 +66,6 @@ jobs:
           password: ${{ github.token }}
 
       - name: Prepare immutable release images
-        if: inputs.prepared_run_id == ''
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}

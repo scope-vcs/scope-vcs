@@ -148,11 +148,6 @@ test("changes select the required deployment lanes", () => {
       { "cli-downloads": true, "cli-distribution": true },
     ],
     [
-      "backend workflow changes rebuild every backend service",
-      [".github/workflows/deploy-backend.yml"],
-      { "run-worker": true, "media-worker": true, "git-router": true, "media-api": true, api: true },
-    ],
-    [
       "artifact-shaping scripts select the lanes they package",
       [".github/scripts/select-cli-distribution-targets.mjs"],
       { "cli-downloads": true, "cli-distribution": true },
@@ -161,11 +156,6 @@ test("changes select the required deployment lanes", () => {
       "release preparation scripts rebuild every prepared image",
       ["deploy/scripts/prepare-railway-artifact.sh", "deploy/scripts/deployment-components.mjs"],
       { "run-worker": true, "git-router": true, "media-api": true, api: true, web: true, "cli-downloads": true },
-    ],
-    [
-      "the production deploy wrapper reruns every service it activates",
-      ["deploy/scripts/deploy-monitored-railway.sh"],
-      { "run-worker": true, "media-worker": true, "git-router": true, "media-api": true, api: true, web: true },
     ],
     [
       "check entrypoints select the lane they gate",
@@ -184,7 +174,7 @@ test("changes select the required deployment lanes", () => {
     ],
     [
       "deploy-time and operations scripts are gated by the always-on operations checks",
-      ["deploy/scripts/deploy-backend-railway.sh", "deploy/scripts/staging-baseline.sh", "bench/railway-load.mjs", "dev/checks/ops", "dev/analytics/reports.mjs"],
+      ["deploy/scripts/deploy-preview-railway.sh", "deploy/scripts/stop-railway-writers.sh", "bench/railway-load.mjs", "dev/checks/ops", "dev/analytics/reports.mjs"],
       {},
     ],
   ];
@@ -211,7 +201,7 @@ test("manual component and all scopes are explicit", () => {
 test("planner emits backend and CLI distribution workflow outputs", () => {
   for (const [scope, expected] of [
     ["cli-downloads", ["cli=true", "cli_distribution=true", "backend_selected=false"]],
-    ["api", ["api=true", "backend_selected=true"]],
+    ["api", ["api=true", "backend_selected=true", 'selected=["api"]']],
   ]) {
     const output = execFileSync(process.execPath, [
       fileURLToPath(new URL("./plan-production-deployment.mjs", import.meta.url)),
