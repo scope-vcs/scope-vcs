@@ -1,17 +1,44 @@
 use super::{MergeRequestCommand, RequestMergeFailure};
 use crate::{error::ApiError, state::AppState};
-use scope_domain::{
-    repository::access::RepositoryActor,
-    requests::{
-        MergeGateAuthority, MergeGateInput, Request, RequestMergeSubject, RequestViewer,
-        evaluate_merge_gate, request_policy,
-    },
+use scope_domain::requests::{
+    MergeFacts, MergeReadinessFacts, MergeRefusal, MergeStep, Request, RequestActor, decide_merge,
 };
 
 pub(super) struct CheckedMerge {
     pub(super) context: scope_domain::repository::access::RepositoryAccessContext,
     pub(super) request: Request,
     is_invitee: bool,
+}
+
+impl CheckedMerge {
+    fn decide(
+        &self,
+        command: &MergeRequestCommand,
+        step: MergeStep<'_>,
+    ) -> Result<(), RequestMergeFailure> {
+        match decide_merge(
+            MergeFacts {
+                request: &self.request,
+                repository_id: &self.context.record.id,
+                repository_lifecycle: self.context.record.lifecycle_state,
+                actor: RequestActor {
+                    access: &self.context.access,
+                    is_invitee: self.is_invitee,
+                    views: &self.context.views,
+                },
+                actor_user_id: &command.actor_user_id,
+            },
+            step,
+        ) {
+            Ok(_) => Ok(()),
+            Err(MergeRefusal::Rejected(error)) => Err(ApiError::from(error).into()),
+            Err(
+                MergeRefusal::RepositoryMoved
+                | MergeRefusal::ReadinessUnavailable
+                | MergeRefusal::AutoMergeStopped { .. },
+            ) => Err(ApiError::internal_message("merge gate refused like a commit").into()),
+        }
+    }
 }
 
 pub(super) async fn authorize_merge(
@@ -25,7 +52,6 @@ pub(super) async fn authorize_merge(
         Some(&command.actor_user_id),
     )
     .await?;
-    let access = &context.access;
     let request = state
         .metadata
         .requests()
@@ -37,31 +63,18 @@ pub(super) async fn authorize_merge(
         .requests()
         .request_is_invitee(&request.id, &command.actor_user_id)
         .await?;
-    let viewer = RequestViewer::new(access.clone(), Some(&command.actor_user_id), is_invitee);
-    let policy = request_policy(&request, viewer.clone(), &context.views);
-    if request.repo_id != context.record.id || !policy.exact_visible {
-        return Err(ApiError::not_found("request not found").into());
-    }
-    if !policy.permissions.can_merge {
-        if matches!(access.actor, RepositoryActor::Public) {
-            return Err(ApiError::forbidden("repo maintainer required").into());
-        }
-        return Err(ApiError::conflict("request cannot be merged").into());
-    }
-    if command
-        .expected_head_oid
-        .as_ref()
-        .is_some_and(|expected| *expected != request.head_oid)
-    {
-        return Err(
-            ApiError::conflict("request has a new revision; review it before merging").into(),
-        );
-    }
-    Ok(CheckedMerge {
+    let checked = CheckedMerge {
         context,
         request,
         is_invitee,
-    })
+    };
+    checked.decide(
+        command,
+        MergeStep::Authorize {
+            expected_head_oid: command.expected_head_oid.as_deref(),
+        },
+    )?;
+    Ok(checked)
 }
 
 pub(super) async fn ensure_checks_cleared(
@@ -70,41 +83,27 @@ pub(super) async fn ensure_checks_cleared(
     checked: &CheckedMerge,
 ) -> Result<(), RequestMergeFailure> {
     let CheckedMerge {
-        context,
-        request,
-        is_invitee,
+        context, request, ..
     } = checked;
-    let viewer = RequestViewer::new(
-        context.access.clone(),
-        Some(&command.actor_user_id),
-        *is_invitee,
-    );
     let checks = crate::use_cases::request_checks::checks_view(state, &context.record, request)
         .await?
         .outcome;
-    let decision = evaluate_merge_gate(MergeGateInput::RequestMerge {
-        repository_lifecycle: context.record.lifecycle_state,
-        subject: RequestMergeSubject::new(
-            request,
-            &state
-                .metadata
-                .requests()
-                .request_view_mains(&request.repo_id)
-                .await?,
-        ),
-        viewer: &viewer,
-        views: &context.views,
-        checks,
-        reviews: state
-            .metadata
-            .requests()
-            .request_reviews_outcome(request, &context.views)
-            .await?,
-    });
-    if decision.authority() != Some(MergeGateAuthority::RequestMerge) {
-        return Err(
-            ApiError::conflict(decision.refusal().unwrap_or("request CI has not cleared")).into(),
-        );
-    }
-    Ok(())
+    let view_mains = state
+        .metadata
+        .requests()
+        .request_view_mains(&request.repo_id)
+        .await?;
+    let reviews = state
+        .metadata
+        .requests()
+        .request_reviews_outcome(request, &context.views)
+        .await?;
+    checked.decide(
+        command,
+        MergeStep::Clear(MergeReadinessFacts {
+            view_mains: &view_mains,
+            checks,
+            reviews,
+        }),
+    )
 }
