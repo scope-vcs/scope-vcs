@@ -1,6 +1,7 @@
 use super::{
     RepositoryStore, RequestStore,
     integer_columns::{i64_to_u64, u64_to_i64},
+    locks::{acquire_aggregate_lock, acquire_shared_repository_lock},
     request_discussion_actors::save_github_accounts,
 };
 use crate::error::PostgresError;
@@ -45,6 +46,8 @@ impl RequestStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let tx = self.db.begin().await?;
+        acquire_shared_repository_lock(&tx, &review.repo_id).await?;
+        acquire_aggregate_lock(&tx, "github-connection", &review.repo_id).await?;
         save_github_accounts(&tx, std::slice::from_ref(author), now_unix).await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -66,6 +69,7 @@ impl RequestStore {
             ],
         ))
         .await?;
+        queue_reviews_of_listed_bots(&tx, &review.repo_id).await?;
         tx.commit().await?;
         Ok(())
     }

@@ -2,7 +2,11 @@ use super::super::super::fake_github::{github_api, github_json, webhook};
 use super::*;
 use crate::use_cases::github_review_imports::import_due_github_reviews;
 use scope_api_contract::routes::repo_request_action;
-use scope_domain::github_review_bots::GitHubReviewBotInput;
+use scope_domain::{
+    github_account::{GitHubAccount, GitHubAccountType},
+    github_review_bots::GitHubReviewBotInput,
+};
+use scope_postgres::db::SkipGitHubReview;
 
 const BOT_ID: u64 = 136622811;
 const REVIEW_ID: u64 = 101;
@@ -521,4 +525,40 @@ async fn a_writer_reply_brings_in_the_unlisted_comment_it_answers() {
             .iter()
             .all(|thread| thread["client_discussion_id"] != "github:review-comment:702")
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_review_skipped_after_its_bot_was_listed_still_imports() {
+    let owner = owner_request("review-import-late-skip", &[]).await;
+    list_review_bots(&owner, &["greptile-apps[bot]"]).await;
+    let head = owner.head();
+    owner.fake.report_pull_review(
+        review(REVIEW_ID, bot(), &head),
+        vec![line_comment(801, &head, "request.txt", None, 1)],
+    );
+    owner
+        .state
+        .metadata
+        .requests()
+        .skip_github_review(
+            &SkipGitHubReview {
+                request_id: owner.request_id.clone(),
+                review_id: REVIEW_ID,
+                repo_id: TEST_REPO_ID.to_string(),
+                github_repository_id: GITHUB_REPOSITORY_ID,
+                pull_number: 1,
+            },
+            &GitHubAccount::new(BOT_ID, "greptile-apps[bot]", GitHubAccountType::Bot, None)
+                .unwrap(),
+            unix_now(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        github_json(&owner.state, "GET", "").await["unlisted_review_bots"],
+        serde_json::json!([])
+    );
+    assert_eq!(import_pass(&owner).await, 1);
+    by_client_id(&threads(&owner).await, "github:review-comment:801");
 }
