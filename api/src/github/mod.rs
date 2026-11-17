@@ -9,7 +9,7 @@ mod reviews;
 pub(crate) mod setup_tokens;
 pub(crate) mod webhook;
 
-pub(crate) use client::GitHubRepository;
+pub(crate) use client::{GitHubRepository, RATE_LIMIT_MESSAGE};
 use config::GitHubAppConfig;
 use jsonwebtoken::EncodingKey;
 pub(crate) use push::GitHubPublishFailure;

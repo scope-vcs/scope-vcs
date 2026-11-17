@@ -118,8 +118,50 @@ pub fn main_publication_contains_merge<E>(
     }
 }
 
-pub fn github_push_retry_at(push: &GitHubPush, now_unix: u64) -> Option<u64> {
-    github_retry_at(push.attempts, now_unix)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GitHubPushFailure {
+    Retryable,
+    RateLimited { reset_at_unix: u64 },
+    Permanent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GitHubPushNextAttempt {
+    Counted { at_unix: u64 },
+    AfterRateLimit { at_unix: u64 },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitHubPushResult {
+    Succeeded,
+    Failed {
+        error: String,
+        next_attempt: Option<GitHubPushNextAttempt>,
+    },
+}
+
+impl GitHubPushResult {
+    pub fn failed(
+        push: &GitHubPush,
+        error: String,
+        failure: GitHubPushFailure,
+        now_unix: u64,
+    ) -> Self {
+        let next_attempt = match failure {
+            GitHubPushFailure::Retryable => github_retry_at(push.attempts, now_unix)
+                .map(|at_unix| GitHubPushNextAttempt::Counted { at_unix }),
+            GitHubPushFailure::RateLimited { reset_at_unix } => {
+                Some(GitHubPushNextAttempt::AfterRateLimit {
+                    at_unix: reset_at_unix.max(now_unix.saturating_add(1)),
+                })
+            }
+            GitHubPushFailure::Permanent => None,
+        };
+        Self::Failed {
+            error,
+            next_attempt,
+        }
+    }
 }
 
 pub fn github_retry_at(attempts: u32, now_unix: u64) -> Option<u64> {

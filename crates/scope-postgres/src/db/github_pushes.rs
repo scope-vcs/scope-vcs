@@ -1,12 +1,13 @@
 use super::{
     RepositoryStore, RequestStore, acquire_aggregate_lock,
     entities::decode_enum,
-    github_read_queue::{GitHubJobOutcome, prefixed_columns},
-    integer_columns::{i32_to_u32, i64_to_u64, u64_to_i64},
+    github_read_queue::prefixed_columns,
+    integer_columns::{i32_to_u32, i64_to_u64, optional_u64_to_i64, u64_to_i64},
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
-    GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, Request,
+    GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushNextAttempt, GitHubPushResult,
+    GitHubPushState, Request,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
 
@@ -208,25 +209,26 @@ impl RequestStore {
         &self,
         id: &str,
         claim_token: &str,
-        outcome: GitHubJobOutcome,
+        result: GitHubPushResult,
         now_unix: u64,
     ) -> Result<Option<GitHubPush>, PostgresError> {
         let now = u64_to_i64(now_unix, "GitHub push time")?;
-        let (state, next_attempt, last_error) = match outcome {
-            GitHubJobOutcome::Succeeded(()) => ("succeeded", None, None),
-            GitHubJobOutcome::Failed {
+        let (state, next_attempt, uncounted_attempts, last_error) = match result {
+            GitHubPushResult::Succeeded => ("succeeded", None, 0, None),
+            GitHubPushResult::Failed {
                 error,
-                retry_at_unix: Some(retry_at),
-            } => (
-                "queued",
-                Some(u64_to_i64(retry_at, "GitHub push retry time")?),
-                Some(error),
-            ),
-            GitHubJobOutcome::Failed {
+                next_attempt: Some(GitHubPushNextAttempt::Counted { at_unix }),
+            } => ("queued", Some(at_unix), 0, Some(error)),
+            GitHubPushResult::Failed {
                 error,
-                retry_at_unix: None,
-            } => ("failed", None, Some(error)),
+                next_attempt: Some(GitHubPushNextAttempt::AfterRateLimit { at_unix }),
+            } => ("queued", Some(at_unix), 1, Some(error)),
+            GitHubPushResult::Failed {
+                error,
+                next_attempt: None,
+            } => ("failed", None, 0, Some(error)),
         };
+        let next_attempt = optional_u64_to_i64(next_attempt, "GitHub push retry time")?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         if blocked_request_push(&tx, id).await? {
             return Ok(None);
@@ -237,6 +239,7 @@ impl RequestStore {
                 "UPDATE scope_github_pushes
                     SET state = $3, lease_until_unix = NULL, claim_token = NULL,
                         next_attempt_at_unix = coalesce($4, next_attempt_at_unix),
+                        attempts = attempts - $7,
                         last_error = $5, updated_at_unix = greatest($6, updated_at_unix)
                   WHERE id = $1 AND claim_token = $2 AND state = 'running'
               RETURNING {SELECT_PUSH}"
@@ -248,6 +251,7 @@ impl RequestStore {
                 next_attempt.into(),
                 last_error.into(),
                 now.into(),
+                uncounted_attempts.into(),
             ],
         ))
         .one(&tx)

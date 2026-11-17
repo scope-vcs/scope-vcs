@@ -20,6 +20,13 @@ pub(in crate::workflow_tests) struct FakeCheckSources {
     pub(in crate::workflow_tests) ruleset_contexts: Mutex<Vec<String>>,
     pub(in crate::workflow_tests) workflows: Mutex<Vec<serde_json::Value>>,
     pub(in crate::workflow_tests) rulesets_need_a_paid_plan: AtomicBool,
+    pub(in crate::workflow_tests) repository_read_refusal: Mutex<Option<RepositoryReadRefusal>>,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::workflow_tests) enum RepositoryReadRefusal {
+    RateLimitedUntil(u64),
+    Unavailable,
 }
 
 impl Default for FakeCheckSources {
@@ -33,6 +40,7 @@ impl Default for FakeCheckSources {
             ruleset_contexts: Mutex::default(),
             workflows: Mutex::default(),
             rulesets_need_a_paid_plan: AtomicBool::default(),
+            repository_read_refusal: Mutex::default(),
         }
     }
 }
@@ -66,6 +74,25 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                     });
                     if suspended {
                         return StatusCode::FORBIDDEN.into_response();
+                    }
+                    match fake.check_sources.repository_read_refusal.lock().unwrap().take() {
+                        Some(RepositoryReadRefusal::RateLimitedUntil(reset)) => {
+                            return (
+                                StatusCode::FORBIDDEN,
+                                [
+                                    ("x-ratelimit-remaining", "0".to_string()),
+                                    ("x-ratelimit-reset", reset.to_string()),
+                                ],
+                                Json(serde_json::json!({
+                                    "message": "API rate limit exceeded for installation ID 7."
+                                })),
+                            )
+                                .into_response();
+                        }
+                        Some(RepositoryReadRefusal::Unavailable) => {
+                            return StatusCode::BAD_GATEWAY.into_response();
+                        }
+                        None => {}
                     }
                     fake.installation_repositories
                         .lock()

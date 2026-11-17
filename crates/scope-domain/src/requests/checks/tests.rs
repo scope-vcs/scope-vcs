@@ -492,22 +492,32 @@ fn the_push_status_follows_the_latest_push_of_the_tested_commit() {
 }
 
 #[test]
-fn failed_pushes_back_off_and_then_give_up() {
-    let retry_at = |attempts| {
-        github_push_retry_at(
-            &GitHubPush {
-                attempts,
-                ..push(HEAD, GitHubPushState::Running, None)
-            },
-            100,
-        )
+fn failed_pushes_back_off_and_give_up_unless_github_is_rate_limiting() {
+    let next_attempt = |attempts, failure| {
+        let running = GitHubPush {
+            attempts,
+            ..push(HEAD, GitHubPushState::Running, None)
+        };
+        match GitHubPushResult::failed(&running, "refused".into(), failure, 100) {
+            GitHubPushResult::Failed { next_attempt, .. } => next_attempt,
+            GitHubPushResult::Succeeded => unreachable!("a failure never succeeds"),
+        }
     };
-    assert_eq!(retry_at(1), Some(130));
-    assert_eq!(retry_at(2), Some(220));
-    assert_eq!(retry_at(3), Some(700));
-    assert_eq!(retry_at(4), Some(1900));
-    assert_eq!(retry_at(5), None);
-    assert_eq!(retry_at(0), None);
+    let counted = |at_unix| Some(GitHubPushNextAttempt::Counted { at_unix });
+    let retryable = GitHubPushFailure::Retryable;
+    assert_eq!(next_attempt(1, retryable), counted(130));
+    assert_eq!(next_attempt(2, retryable), counted(220));
+    assert_eq!(next_attempt(3, retryable), counted(700));
+    assert_eq!(next_attempt(4, retryable), counted(1900));
+    assert_eq!(next_attempt(5, retryable), None);
+    assert_eq!(next_attempt(0, retryable), None);
+    assert_eq!(next_attempt(1, GitHubPushFailure::Permanent), None);
+    for (reset_at_unix, at_unix) in [(4_000, 4_000), (50, 101)] {
+        assert_eq!(
+            next_attempt(5, GitHubPushFailure::RateLimited { reset_at_unix }),
+            Some(GitHubPushNextAttempt::AfterRateLimit { at_unix })
+        );
+    }
 }
 
 #[test]
