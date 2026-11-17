@@ -3,9 +3,11 @@ import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { actionableFindings } from './scan-report.mjs';
 
+const lockfiles = { workspace: ['--format', 'json'], cli: ['--format', 'json'], web: [] };
+
 export function checkMainAdvisories(run = spawnSync) {
-  return ['workspace', 'cli'].map(target => {
-    const result = run('./dev/checks/advisories', [target, '--format', 'json'], {
+  return Object.entries(lockfiles).map(([target, options]) => {
+    const result = run('./dev/checks/advisories', [target, ...options], {
       encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
     });
     const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
@@ -45,7 +47,7 @@ export function advisoryIssueBody({ checks, runUrl, sha }) {
     }
     lines.push(...findings, '');
     if (check.status !== 0 && !findings.size) {
-      lines.push('No advisory IDs were available. The check failed before producing advisory diagnostics.', '',
+      lines.push('No advisory IDs could be read from the check. Its output ends:', '',
         '```text', (check.error ?? check.output).slice(-4000).replaceAll('```', "'''"), '```', '');
     }
   }

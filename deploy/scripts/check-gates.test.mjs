@@ -28,33 +28,37 @@ function commands(gate, ...args) {
 
 test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
   const backend = commands('backend');
-  assert.ok(backend.includes('cargo deny --locked check advisories'));
   assert.ok(backend.includes('cargo deny --locked check bans sources'));
   assert.ok(backend.includes('cargo shear --locked --deny-warnings'));
-  assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --exclude api --locked'));
   const [apiFilter] = backend.find((command) => command.startsWith('cargo test -p api --locked --lib -- ')).split(' ').slice(-1);
   assert.ok(backend.includes(`cargo test -p api --locked -- --skip ${apiFilter}`));
   assert.ok(backend.includes('cargo test -p api --features local-dev --locked dev::'));
   assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
 });
 
-test('the daily main advisory job runs both PR advisory commands with only JSON formatting added', () => {
-  const workflow = read('.github/workflows/main-advisories.yml');
-  assert.match(workflow, /schedule:\n    - cron: '[^']+ \* \* \*'/);
-  assert.match(workflow, /if: github.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /run: \.\/dev\/install-cargo-tools\.sh/);
-  assert.match(workflow, /run: node \.github\/scripts\/main-advisories.mjs "\$RUNNER_TEMP\/main-advisories.json"/);
-  const scheduled = checkMainAdvisories((file, args) => ({
+test('releases and the daily main run check every lockfile for advisories, and request gates check none', () => {
+  const daily = read('.github/workflows/main-advisories.yml');
+  assert.match(daily, /schedule:\n    - cron: '[^']+ \* \* \*'/);
+  assert.match(daily, /if: github.ref == 'refs\/heads\/main'/);
+  const release = read('.github/workflows/validate.yml').split('\n  dependency-advisories:\n')[1].split('\n  production-validation-gate:\n')[0];
+  assert.match(release, /if: \$\{\{ inputs\.release && !inputs\.reuse_artifacts \}\}\n/);
+  for (const workflow of [daily, release]) {
+    assert.match(workflow, /run: \.\/dev\/install-cargo-tools\.sh/);
+    assert.match(workflow, /uses: pnpm\/action-setup@/);
+    assert.match(workflow, /run: node \.github\/scripts\/main-advisories\.mjs "\$RUNNER_TEMP\/[\w-]+\.json"/);
+  }
+  const checked = checkMainAdvisories((file, args) => ({
     status: 0, stdout: commands(basename(file), ...args).join('\n'),
   }));
-  const gated = ['backend', 'cli'].flatMap(gate => commands(gate).filter(line => line.startsWith('cargo deny ') && line.endsWith(' check advisories')));
-  assert.deepEqual(scheduled.map(check => check.output.trim().replace(' --format json', '')), gated);
-  const selected = classifyChanges(manifest, ['dev/checks/advisories']);
-  for (const gate of ['backend', 'cli']) {
-    for (const [component, required] of Object.entries(classifyChanges(manifest, [`dev/checks/${gate}`]))) {
-      if (required) assert.equal(selected[component], true, `${component} must check shared advisory changes`);
-    }
+  assert.deepEqual(checked.map(check => check.output.trim()), [
+    'cargo deny --locked --format json check advisories',
+    'cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml --format json check advisories',
+    'pnpm audit --audit-level high',
+  ]);
+  for (const gate of ['backend', 'cli', 'web']) {
+    assert.deepEqual(commands(gate).filter(line => /advisories|audit/.test(line)), [], gate);
   }
+  assert.doesNotMatch(JSON.stringify(JSON.parse(read('web/package.json')).scripts), /audit/);
 });
 
 test('releases and the daily main run scan the media worker image, and request validation does not', () => {
@@ -100,16 +104,15 @@ test('the backend gate bounds PostgreSQL test concurrency on larger hosts', () =
   }
 });
 
-test('web gate includes resource, Hooks, convention and advisory checks; backend owns the contract; CLI and integration retain their coverage', () => {
+test('web gate includes resource, Hooks and convention checks; backend owns the contract; CLI and integration retain their coverage', () => {
   assert.deepEqual(commands('web'), [
     'pnpm test', 'pnpm check', 'pnpm build',
   ]);
   const webChecks = JSON.parse(read('web/package.json')).scripts.check;
-  assert.equal(webChecks, 'pnpm typecheck && pnpm check:resource-boundary && pnpm check:lint && pnpm check:conventions && pnpm check:advisories');
+  assert.equal(webChecks, 'pnpm typecheck && pnpm check:resource-boundary && pnpm check:lint && pnpm check:conventions');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   const cliCommands = commands('cli');
   assert.ok(cliCommands.includes('cargo fmt --manifest-path cli/Cargo.toml -- --check'));
-  assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check advisories'));
   assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check bans sources'));
   assert.ok(cliCommands.includes('cargo shear --locked --deny-warnings cli'));
   assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
@@ -621,13 +624,15 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
     'server-validation': ['backend', 'web'],
     'cli-validation': ['cli'],
     'integration-validation': ['web', 'cli', 'media_smoke'],
+    'dependency-advisories': ['release'],
   };
-  for (const mask of Array.from({ length: 16 }, (_, i) => i)) {
+  for (const mask of Array.from({ length: 32 }, (_, i) => i)) {
     const inputs = Object.fromEntries(['backend', 'web', 'cli', 'media_smoke'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
     inputs.reuse_artifacts = false;
     inputs.validate_server = true;
+    inputs.release = Boolean(mask & 16);
     const needs = Object.fromEntries(Object.entries(selectedBy).map(([name, keys]) => [name, {
-      result: keys.some((key) => inputs[key] === 'true') ? 'success' : 'skipped',
+      result: keys.some((key) => String(inputs[key]) === 'true') ? 'success' : 'skipped',
     }]));
     needs['server-validation'].result = 'success';
     assert.equal(evaluate(inputs, needs), true, `selection ${mask}`);
