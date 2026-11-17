@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 const directory = 'crates/scope-postgres/src/migrations';
 const lockPath = `${directory}/sources.lock.json`;
+const mainRef = 'origin/main';
 export const migrationDigest = (contents) => createHash('sha256').update(contents).digest('hex');
 const isDefinition = (name) => /^m\d+_[a-z0-9_]+\.(rs|sql)$/.test(name);
 export const retiredLockEntries = new Set([
@@ -47,12 +48,16 @@ export function checkMigrationSources(sources, locked, previous = {}) {
   return errors;
 }
 
+function mainBase() {
+  try {
+    return execFileSync('git', ['merge-base', mainRef, 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (cause) {
+    throw new Error(`Cannot compare migration locks: HEAD has no merge base with ${mainRef}. Fetch main and try again.`, { cause });
+  }
+}
+
 function previousLock() {
-  const event = process.env.GITHUB_EVENT_PATH
-    ? JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')) : {};
-  const base = event.pull_request?.base?.sha;
-  if (!base) return {};
-  if (!/^[a-f0-9]{40}$/.test(base)) throw new Error('Invalid pull request base SHA');
+  const base = mainBase();
   const entry = execFileSync('git', ['ls-tree', base, '--', lockPath], { encoding: 'utf8' });
   const isInitialLockAdoption = !entry.trim();
   if (isInitialLockAdoption) return {};

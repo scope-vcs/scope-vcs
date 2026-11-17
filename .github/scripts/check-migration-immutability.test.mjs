@@ -60,7 +60,7 @@ test('only explicitly retired lock entries may disappear from the base lock', ()
   assert.match(checkMigrationSources(sources, locked, { ...locked, [baseline]: migrationDigest('other') }).join('\n'), /m0084_current_schema_baseline.sql: an existing migration lock cannot change or disappear/);
 });
 
-test('the CLI reads the PR base lock even when both migration and current checksum change', () => {
+test('the CLI compares against the lock where HEAD left main, even when both migration and checksum change', () => {
   const root = mkdtempSync(join(tmpdir(), 'scope-migration-lock-'));
   const directory = join(root, 'crates/scope-postgres/src/migrations');
   const script = fileURLToPath(new URL('./check-migration-immutability.mjs', import.meta.url));
@@ -69,20 +69,25 @@ test('the CLI reads the PR base lock even when both migration and current checks
     for (const [path, contents] of Object.entries(sources)) writeFileSync(join(directory, path), contents);
     writeFileSync(join(directory, 'sources.lock.json'), JSON.stringify(locked));
     const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    git(['init']); git(['add', '.']);
-    git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@scope.test', 'commit', '-m', 'Freeze migration sources']);
-    const base = git(['rev-parse', 'HEAD']).trim();
-    const event = join(root, 'event.json');
-    writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } }));
-    const run = () => spawnSync(process.execPath, [script], {
-      cwd: root, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_PATH: event },
-    });
+    const commit = (message) => {
+      git(['add', '.']);
+      git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@scope.test', 'commit', '-m', message]);
+    };
+    const run = () => spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });
+    git(['init']);
+    commit('Freeze migration sources');
+    const missingMain = run();
+    assert.equal(missingMain.status, 1);
+    assert.match(missingMain.stderr, /no merge base with origin\/main/);
+    git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    git(['checkout', '-b', 'scope/requests/req_example']);
     assert.equal(run().status, 0);
     writeFileSync(join(directory, name), 'changed');
     writeFileSync(join(directory, 'sources.lock.json'), JSON.stringify({ ...locked, [name]: migrationDigest('changed') }));
-    const result = run();
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /existing migration lock cannot change/);
+    commit('Edit a locked migration');
+    const relocked = run();
+    assert.equal(relocked.status, 1);
+    assert.match(relocked.stderr, /existing migration lock cannot change/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
