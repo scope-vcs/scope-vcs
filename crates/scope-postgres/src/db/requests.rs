@@ -2,7 +2,7 @@ use super::{
     CloseRequestCommand, EditRequestIdentityCommand, RequestStore, acquire_aggregate_lock,
     request_access::{
         authorize_start_request, ensure_user_exists, lock_request_repository, repo_by_id,
-        request_policy_for_user,
+        request_actor,
     },
     request_auto_merge::{
         automatic_event_id, lock_active_intent_for_request, persist_existing_auto_merge_mutation,
@@ -152,11 +152,8 @@ impl RequestStore {
         let (repo, request) =
             lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;
-        let mut input = input;
-        input.actor_can_edit = request_policy_for_user(&tx, &repo, &request, &input.actor_user_id)
-            .await?
-            .branch_mutable;
-        let mutation = record_working_request_upload(request, input)?;
+        let actor = request_actor(&tx, &repo, &request, &input.actor_user_id).await?;
+        let mutation = record_working_request_upload(request, actor, input)?;
         save_request_row(&tx, &mutation.request).await?;
         tx.commit().await?;
         Ok(mutation)
@@ -315,13 +312,11 @@ impl RequestStore {
             _ => None,
         };
         let now_unix = input.now_unix;
-        input.actor_can_edit = request_policy_for_user(&tx, &repo, &request, &input.actor_user_id)
-            .await?
-            .branch_mutable;
+        let actor = request_actor(&tx, &repo, &request, &input.actor_user_id).await?;
         let event_id_exists = request_event_by_id(&tx, &input.event_id).await?.is_some();
         let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
         let actor_user_id = input.actor_user_id.clone();
-        let mut mutation = record_request_revision(request, event_id_exists, input)?;
+        let mut mutation = record_request_revision(request, actor, event_id_exists, input)?;
         if let Some(parent) = publication.parent.as_ref() {
             let evidence = parent.stack_status.requires_restack();
             let integration_conflict = mutation.request.stack_status
@@ -400,19 +395,15 @@ impl RequestStore {
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let actor_can_edit_identity =
-            request_policy_for_user(&tx, &repo, &request, &command.actor_user_id)
-                .await?
-                .permissions
-                .can_edit_identity;
+        let actor = request_actor(&tx, &repo, &request, &command.actor_user_id).await?;
         let event_id_exists = request_event_by_id(&tx, &command.event_id).await?.is_some();
         let mutation = edit_request_identity(
             request,
+            actor,
             event_id_exists,
             EditRequestIdentityInput {
                 request_id: command.request_id,
                 actor_user_id: command.actor_user_id,
-                actor_can_edit_identity,
                 event_id: command.event_id,
                 title: command.title,
                 description_markdown: command.description_markdown,

@@ -37,7 +37,6 @@ async fn revision_window_bounds_recent_rows_and_keeps_an_explicit_older_revision
                 new_base_stack_depth: None,
                 request_id: "req_1".to_string(),
                 actor_user_id: "user_public".to_string(),
-                actor_can_edit: true,
                 expected_old_head_oid: Some(old_head),
                 new_head_oid: new_head.clone(),
                 git_facts: RequestRevisionGitFacts {
@@ -83,7 +82,6 @@ async fn rewritten_revision_moves_the_stored_request_base() {
             new_base_stack_depth: None,
             request_id: "req_1".to_string(),
             actor_user_id: "user_public".to_string(),
-            actor_can_edit: true,
             expected_old_head_oid: Some("head".to_string()),
             new_head_oid: "rebased".to_string(),
             git_facts: RequestRevisionGitFacts {
@@ -533,7 +531,6 @@ async fn close_draft_request_deletes_request_and_events() {
                 new_base_stack_depth: None,
                 request_id: "req_1".to_string(),
                 actor_user_id: "user_public".to_string(),
-                actor_can_edit: false,
                 expected_old_head_oid: Some("head".to_string()),
                 new_head_oid: "head-2".to_string(),
                 git_facts: RequestRevisionGitFacts {
@@ -770,7 +767,6 @@ pub(crate) fn public_upload_input() -> RecordWorkingRequestUploadInput {
     RecordWorkingRequestUploadInput {
         request_id: "req_1".to_string(),
         actor_user_id: "user_public".to_string(),
-        actor_can_edit: true,
         expected_old_head_oid: None,
         new_head_oid: "head".to_string(),
         now_unix: 3,

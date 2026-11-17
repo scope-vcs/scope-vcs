@@ -1,5 +1,5 @@
 use super::{
-    REQUEST_DESCRIPTION_MAX_BYTES, REQUEST_TITLE_MAX_BYTES, Request, RequestEvent,
+    REQUEST_DESCRIPTION_MAX_BYTES, REQUEST_TITLE_MAX_BYTES, Request, RequestActor, RequestEvent,
     RequestEventKind, RequestEventPayload, RequestIdentityAuditFact, RequestTimelineMutation,
     advance_request_activity, ensure_event_id_available, ensure_request_matches,
     validate_body_size, validate_required,
@@ -11,7 +11,6 @@ use sha2::{Digest, Sha256};
 pub struct EditRequestIdentityInput {
     pub request_id: String,
     pub actor_user_id: String,
-    pub actor_can_edit_identity: bool,
     pub event_id: String,
     pub title: Option<String>,
     pub description_markdown: Option<String>,
@@ -21,6 +20,7 @@ pub struct EditRequestIdentityInput {
 
 pub fn edit_request_identity(
     mut request: Request,
+    actor: RequestActor<'_>,
     event_id_exists: bool,
     input: EditRequestIdentityInput,
 ) -> Result<RequestTimelineMutation, DomainError> {
@@ -28,7 +28,10 @@ pub fn edit_request_identity(
     validate_required("actor user id", &input.actor_user_id)?;
     validate_required("event id", &input.event_id)?;
     ensure_event_id_available(event_id_exists)?;
-    if !input.actor_can_edit_identity {
+    if !actor
+        .permissions(&request, &input.actor_user_id)
+        .can_edit_identity
+    {
         return Err(DomainError::forbidden("request edit access required"));
     }
     if input.title.is_none() && input.description_markdown.is_none() {

@@ -1,10 +1,12 @@
 use super::requests::*;
-use crate::requests::fixtures::{open_request, pushed_draft, submit_input, working_request};
+use crate::requests::fixtures::{
+    author_actor, open_request, pushed_draft, submit_input, working_request,
+};
 
 #[test]
 fn author_submits_a_pushed_draft_exactly_once() {
     let request = pushed_draft(RequestActorRole::Public);
-    let submitted = submit_request(&request, submit_input()).unwrap();
+    let submitted = submit_request(&request, author_actor(), submit_input()).unwrap();
 
     assert_eq!(submitted.request.state(), RequestState::Open);
     assert_eq!(submitted.request.submitted_at_unix, Some(20));
@@ -13,18 +15,24 @@ fn author_submits_a_pushed_draft_exactly_once() {
         submitted.events[0].payload,
         RequestEventPayload::Submitted { ref head_oid } if head_oid == "head"
     ));
-    assert!(submit_request(&submitted.request, submit_input()).is_err());
+    assert!(submit_request(&submitted.request, author_actor(), submit_input()).is_err());
 }
 
 #[test]
 fn submission_requires_the_author_and_a_pushed_snapshot() {
     let mut input = submit_input();
     input.actor_user_id = "maintainer".to_string();
-    input.actor_is_author = false;
-    assert!(submit_request(&pushed_draft(RequestActorRole::Member), input).is_err());
+    assert!(
+        submit_request(
+            &pushed_draft(RequestActorRole::Member),
+            author_actor(),
+            input
+        )
+        .is_err()
+    );
 
     let draft = working_request();
-    assert!(submit_request(&draft, submit_input()).is_err());
+    assert!(submit_request(&draft, author_actor(), submit_input()).is_err());
 }
 
 #[test]

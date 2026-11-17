@@ -61,7 +61,6 @@ where
     let projected = replace_attachment_bindings(
         request_id,
         actor_user_id,
-        true,
         target.clone(),
         markdown,
         &attachments,

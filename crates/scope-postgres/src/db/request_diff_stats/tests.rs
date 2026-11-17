@@ -15,7 +15,6 @@ async fn revise(store: &MetadataStore, old_head: &str, new_head: &str) -> String
             new_base_stack_depth: None,
             request_id: "req_1".to_string(),
             actor_user_id: "user_public".to_string(),
-            actor_can_edit: true,
             expected_old_head_oid: Some(old_head.to_string()),
             new_head_oid: new_head.to_string(),
             git_facts: RequestRevisionGitFacts {

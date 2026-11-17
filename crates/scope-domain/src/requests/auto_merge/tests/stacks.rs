@@ -58,10 +58,12 @@ fn same_view_child_intent_waits_for_parent_with_green_or_undecided_checks() {
                 Some(&saved),
                 None,
                 readiness,
-                true
+                fixtures::owner_viewer("maintainer"),
+                fixtures::actor_views(),
             ));
             let enabled = authorize_request_auto_merge(
                 &request,
+                fixtures::owner_actor(),
                 &saved,
                 None,
                 AuthorizeRequestAutoMergeInput {
@@ -106,11 +108,13 @@ fn terminal_child_checks_stop_before_parent_waiting_and_cannot_be_authorized() {
                 Some(&saved),
                 None,
                 readiness,
-                true
+                fixtures::owner_viewer("maintainer"),
+                fixtures::actor_views(),
             ));
             assert!(
                 authorize_request_auto_merge(
                     &request,
+                    fixtures::owner_actor(),
                     &saved,
                     None,
                     AuthorizeRequestAutoMergeInput {
@@ -155,7 +159,16 @@ fn dependency_blocks_stop_the_child_with_the_owned_reason_even_with_failed_check
             request_readiness(&request, RequestChecksOutcome::Failed),
             RequestAutoMergeReadiness::Stop(reason)
         );
-        assert!(authorize_request_auto_merge(&request, &saved, None, authorize_input()).is_err());
+        assert!(
+            authorize_request_auto_merge(
+                &request,
+                fixtures::owner_actor(),
+                &saved,
+                None,
+                authorize_input()
+            )
+            .is_err()
+        );
     }
 }
 
@@ -172,16 +185,17 @@ fn restricted_child_requires_an_authorized_maintainer_for_stack_intent() {
             Some(&saved),
             None,
             readiness,
-            false
+            fixtures::public_viewer("maintainer"),
+            fixtures::actor_views(),
         ));
         assert_eq!(
             authorize_request_auto_merge(
                 &request,
+                fixtures::author_actor(),
                 &saved,
                 None,
                 AuthorizeRequestAutoMergeInput {
                     readiness,
-                    actor_can_merge: false,
                     ..authorize_input()
                 }
             )

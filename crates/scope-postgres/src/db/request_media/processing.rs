@@ -15,7 +15,7 @@ use crate::{
     db::{
         locks::acquire_shared_repository_lock,
         repo_change_notifications::POSTGRES_REPO_CHANGE_CHANNEL,
-        request_access::{lock_request_repository, request_policy_for_user},
+        request_access::{lock_request_repository, request_actor},
     },
     error::PostgresError,
     job_trace::QueuedTrace,
@@ -148,16 +148,16 @@ impl MediaStore {
                 return Ok(ProcessingClaim::Retry);
             }
         }
-        if attachment.state == RequestAttachmentState::Uploaded {
+        if matches!(
+            attachment.state,
+            RequestAttachmentState::Uploaded | RequestAttachmentState::Failed
+        ) {
             attachment = transition_attachment(
                 &attachment,
                 RequestAttachmentState::Processing,
                 None,
                 now_unix,
             )?;
-            save_attachment(&tx, &attachment, None).await?;
-        } else if attachment.state == RequestAttachmentState::Failed {
-            attachment = retry_attachment_processing(&attachment, true, now_unix)?;
             save_attachment(&tx, &attachment, None).await?;
         }
         let generation = old_generation.checked_add(1).ok_or_else(|| {
@@ -526,7 +526,8 @@ impl MediaStore {
         {
             return Err(PostgresError::not_found("request attachment not found"));
         }
-        let policy = request_policy_for_user(&tx, &repo, &request, actor_user_id).await?;
+        let actor = request_actor(&tx, &repo, &request, actor_user_id).await?;
+        let policy = actor.policy(&request, actor_user_id);
         let existing_operation = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -552,11 +553,8 @@ impl MediaStore {
             tx.commit().await?;
             return Ok(attachment);
         }
-        let next = retry_attachment_processing(
-            &attachment,
-            attachment.target.writable_with(&policy.permissions),
-            now_unix,
-        )?;
+        let next =
+            retry_attachment_processing(&attachment, &request, actor, actor_user_id, now_unix)?;
         save_attachment(&tx, &next, None).await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,

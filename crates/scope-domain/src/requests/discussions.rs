@@ -2,11 +2,10 @@ use super::discussion_anchor::RequestDiscussionAnchor;
 use super::discussion_authors::{RequestDiscussionAuthor, RequestDiscussionResolver};
 use super::{
     REQUEST_DISCUSSION_BODY_MAX_BYTES, REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES, Request,
-    RequestEvent, RequestEventKind, RequestEventPayload, advance_request_activity,
+    RequestActor, RequestEvent, RequestEventKind, RequestEventPayload, advance_request_activity,
     ensure_request_matches, next_request_activity_position, validate_body_size, validate_required,
 };
 use crate::error::DomainError;
-use crate::views::ViewId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,7 +55,6 @@ pub struct CreateRequestDiscussionInput {
     pub request_id: String,
     pub id: String,
     pub actor_user_id: String,
-    pub actor_can_participate: bool,
     pub client_discussion_id: String,
     pub body_markdown: String,
     pub anchor: Option<RequestDiscussionAnchor>,
@@ -77,7 +75,6 @@ pub struct CreateRequestDiscussionReplyInput {
     pub discussion_id: String,
     pub id: String,
     pub actor_user_id: String,
-    pub actor_can_participate: bool,
     pub client_reply_id: String,
     pub body_markdown: String,
     pub reply_to_reply_id: Option<String>,
@@ -99,8 +96,6 @@ pub struct RequestDiscussionTransitionInput {
     pub request_id: String,
     pub discussion_id: String,
     pub actor_user_id: String,
-    pub actor_is_maintainer: bool,
-    pub actor_can_transition: bool,
     pub event_id: String,
     pub now_unix: u64,
 }
@@ -118,9 +113,6 @@ pub struct ReopenAndReplyToRequestDiscussionInput {
     pub discussion_id: String,
     pub reply_id: String,
     pub actor_user_id: String,
-    pub actor_is_maintainer: bool,
-    pub actor_can_transition: bool,
-    pub actor_can_participate: bool,
     pub event_id: String,
     pub client_reply_id: String,
     pub body_markdown: String,
@@ -138,6 +130,7 @@ pub struct MarkRequestDiscussionReadInput {
 
 pub fn create_request_discussion(
     mut request: Request,
+    actor: RequestActor<'_>,
     discussion_id_exists: bool,
     input: CreateRequestDiscussionInput,
 ) -> Result<CreateRequestDiscussionMutation, DomainError> {
@@ -153,7 +146,10 @@ pub fn create_request_discussion(
         .as_ref()
         .map(RequestDiscussionAnchor::validate)
         .transpose()?;
-    if !input.actor_can_participate {
+    if !actor
+        .permissions(&request, &input.actor_user_id)
+        .can_open_discussion
+    {
         return Err(DomainError::forbidden("request discussion access required"));
     }
     if discussion_id_exists {
@@ -187,6 +183,7 @@ pub fn create_request_discussion(
 
 pub fn create_request_discussion_reply(
     mut request: Request,
+    actor: RequestActor<'_>,
     mut discussion: RequestDiscussion,
     quoted_reply: Option<&RequestDiscussionReply>,
     reply_id_exists: bool,
@@ -200,7 +197,10 @@ pub fn create_request_discussion_reply(
         &input.client_reply_id,
         &input.body_markdown,
     )?;
-    if !input.actor_can_participate {
+    if !actor
+        .permissions(&request, &input.actor_user_id)
+        .can_reply_to_discussion
+    {
         return Err(DomainError::forbidden("request discussion access required"));
     }
     if reply_id_exists {
@@ -247,11 +247,13 @@ pub fn create_request_discussion_reply(
 
 pub fn resolve_request_discussion(
     request: Request,
+    actor: RequestActor<'_>,
     discussion: RequestDiscussion,
     input: RequestDiscussionTransitionInput,
 ) -> Result<RequestDiscussionMutation, DomainError> {
     transition_discussion(
         request,
+        actor,
         discussion,
         input,
         RequestDiscussionStatus::Resolved,
@@ -260,19 +262,30 @@ pub fn resolve_request_discussion(
 
 pub fn reopen_request_discussion(
     request: Request,
+    actor: RequestActor<'_>,
     discussion: RequestDiscussion,
     input: RequestDiscussionTransitionInput,
 ) -> Result<RequestDiscussionMutation, DomainError> {
-    transition_discussion(request, discussion, input, RequestDiscussionStatus::Open)
+    transition_discussion(
+        request,
+        actor,
+        discussion,
+        input,
+        RequestDiscussionStatus::Open,
+    )
 }
 
 pub fn reopen_and_reply_to_request_discussion(
     mut request: Request,
+    actor: RequestActor<'_>,
     mut discussion: RequestDiscussion,
     quoted_reply: Option<&RequestDiscussionReply>,
     input: ReopenAndReplyToRequestDiscussionInput,
 ) -> Result<CreateRequestDiscussionReplyMutation, DomainError> {
-    if !input.actor_can_participate {
+    if !actor
+        .permissions(&request, &input.actor_user_id)
+        .can_reply_to_discussion
+    {
         return Err(DomainError::forbidden("request discussion access required"));
     }
     validate_reply_input(
@@ -285,7 +298,7 @@ pub fn reopen_and_reply_to_request_discussion(
     )?;
     validate_required("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
-    ensure_request_discussion_transition_allowed(&request, input.actor_can_transition)?;
+    ensure_request_discussion_transition_allowed(&request, actor, &input.actor_user_id)?;
     let position = next_request_activity_position(&request)?;
     validate_reply_target(
         &discussion,
@@ -299,7 +312,7 @@ pub fn reopen_and_reply_to_request_discussion(
         &discussion,
         &request,
         &input.actor_user_id,
-        input.actor_is_maintainer,
+        actor.access.is_maintainer(),
     )?;
     if discussion.status != RequestDiscussionStatus::Resolved {
         return Err(DomainError::conflict("request discussion is already open"));
@@ -374,19 +387,20 @@ pub fn mark_request_discussion_read(
 
 fn transition_discussion(
     mut request: Request,
+    actor: RequestActor<'_>,
     mut discussion: RequestDiscussion,
     input: RequestDiscussionTransitionInput,
     target: RequestDiscussionStatus,
 ) -> Result<RequestDiscussionMutation, DomainError> {
     validate_required("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
-    ensure_request_discussion_transition_allowed(&request, input.actor_can_transition)?;
+    ensure_request_discussion_transition_allowed(&request, actor, &input.actor_user_id)?;
     ensure_discussion_matches(&discussion, &input.request_id, &input.discussion_id)?;
     ensure_can_transition(
         &discussion,
         &request,
         &input.actor_user_id,
-        input.actor_is_maintainer,
+        actor.access.is_maintainer(),
     )?;
     if discussion.status == target {
         return Err(DomainError::conflict(match target {
@@ -457,16 +471,15 @@ fn ensure_can_transition(
 
 pub fn ensure_request_discussion_transition_allowed(
     request: &Request,
-    actor_can_transition: bool,
+    actor: RequestActor<'_>,
+    actor_user_id: &str,
 ) -> Result<(), DomainError> {
-    if !actor_can_transition {
+    if !actor
+        .permissions(request, actor_user_id)
+        .can_transition_discussion
+    {
         return Err(DomainError::forbidden(
             "request discussion resolution access required",
-        ));
-    }
-    if request.view == ViewId::private() && request.is_terminal() {
-        return Err(DomainError::conflict(
-            "completed private request discussions are read-only",
         ));
     }
     Ok(())

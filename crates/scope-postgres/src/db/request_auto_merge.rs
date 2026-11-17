@@ -9,10 +9,10 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
-    AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, MergeGateInput,
+    AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, MergeGateInput, RequestActor,
     RequestAutoMergeIntent, RequestAutoMergeMutation, RequestAutoMergeStopReason,
     RequestMergeSubject, RequestViewer, authorize_request_auto_merge, cancel_request_auto_merge,
-    evaluate_merge_gate, request_auto_merge_readiness, request_checks_outcome, request_policy,
+    evaluate_merge_gate, request_auto_merge_readiness, request_checks_outcome,
     stop_request_auto_merge,
 };
 use sea_orm::{
@@ -93,9 +93,6 @@ impl RequestStore {
             .ok_or_else(|| PostgresError::conflict("request has no recorded revision"))?;
         let current = lock_active_intent_for_request(&tx, &request.id).await?;
         let viewer = RequestViewer::new(repo.access.clone(), Some(&command.actor_user_id), false);
-        let actor_can_merge = request_policy(&request, viewer.clone(), &repo.views)
-            .permissions
-            .can_merge;
         let evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
             .await?
             .filter(|evaluation| {
@@ -126,6 +123,11 @@ impl RequestStore {
         });
         let mutation = authorize_request_auto_merge(
             &request,
+            RequestActor {
+                access: &repo.access,
+                is_invitee: false,
+                views: &repo.views,
+            },
             &revision,
             current.as_ref().map(|row| &row.intent),
             AuthorizeRequestAutoMergeInput {
@@ -133,7 +135,6 @@ impl RequestStore {
                 repo_id: request.repo_id.clone(),
                 repository_incarnation_id: repo.record.incarnation_id.clone(),
                 request_id: command.request_id,
-                actor_can_merge,
                 readiness: request_auto_merge_readiness(gate),
                 actor_user_id: command.actor_user_id,
                 expected_revision_id: command.expected_revision_id,

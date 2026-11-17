@@ -104,7 +104,6 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
             new_base_stack_depth: None,
             request_id: request_id.into(),
             actor_user_id: "user_public".into(),
-            actor_can_edit: true,
             expected_old_head_oid: Some(request.head_oid.clone()),
             new_head_oid: request.head_oid.clone(),
             git_facts: RequestRevisionGitFacts {
@@ -134,7 +133,6 @@ async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &st
             new_base_stack_depth: None,
             request_id: request_id.into(),
             actor_user_id: "user_public".into(),
-            actor_can_edit: true,
             expected_old_head_oid: Some(request.head_oid),
             new_head_oid: head_oid.into(),
             git_facts: RequestRevisionGitFacts {
@@ -404,7 +402,6 @@ async fn recovery_pages_advance_past_unrepaired_requests_and_restart_from_the_be
                 new_base_stack_depth: None,
                 request_id: request_id.into(),
                 actor_user_id: "user_public".into(),
-                actor_can_edit: true,
                 expected_old_head_oid: Some(request.head_oid),
                 new_head_oid: HEAD_A_CURRENT.into(),
                 git_facts: RequestRevisionGitFacts {

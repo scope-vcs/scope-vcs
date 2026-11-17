@@ -111,7 +111,6 @@ async fn record_revision(
             new_base_stack_depth: None,
             request_id: request_id.to_string(),
             actor_user_id: actor_user_id.to_string(),
-            actor_can_edit: true,
             expected_old_head_oid: expected_old_head_oid.map(str::to_string),
             new_head_oid: new_head_oid.to_string(),
             git_facts: RequestRevisionGitFacts {

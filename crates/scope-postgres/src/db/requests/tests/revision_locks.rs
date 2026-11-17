@@ -19,7 +19,6 @@ fn independent_revision(new_head: &str) -> RecordRequestRevisionInput {
         new_base_stack_depth: None,
         request_id: "req_independent".to_string(),
         actor_user_id: "user_public".to_string(),
-        actor_can_edit: true,
         expected_old_head_oid: Some("base".to_string()),
         new_head_oid: new_head.to_string(),
         git_facts: RequestRevisionGitFacts {

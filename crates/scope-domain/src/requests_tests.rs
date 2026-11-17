@@ -3,7 +3,7 @@ use crate::views::{ViewId, Views};
 use crate::{
     error::DomainErrorKind,
     repository::access::{RepositoryAccess, RepositoryActor},
-    requests::fixtures::{access, open_request, start_input},
+    requests::fixtures::{access, author_actor, open_request, owner_actor, start_input},
 };
 
 #[test]
@@ -107,13 +107,13 @@ fn open_request_edits_and_revisions_stay_open() {
     let request = open_request();
     let revised = record_request_revision(
         request,
+        owner_actor(),
         false,
         RecordRequestRevisionInput {
             new_base: None,
             new_base_stack_depth: None,
             request_id: "request_1".to_string(),
             actor_user_id: "author".to_string(),
-            actor_can_edit: true,
             expected_old_head_oid: Some("head".to_string()),
             new_head_oid: "head-2".to_string(),
             git_facts: RequestRevisionGitFacts {
@@ -301,11 +301,13 @@ fn completed_discussion_transitions_are_allowed_only_in_public_requests() {
 
         let resolve = resolve_request_discussion(
             request.clone(),
+            owner_actor(),
             open,
             transition_input("discussion_open", "event_completed_resolve", 31),
         );
         let reopen = reopen_request_discussion(
             request,
+            owner_actor(),
             resolved,
             transition_input("discussion_resolved", "event_completed_reopen", 32),
         );
@@ -320,8 +322,8 @@ fn completed_discussion_transitions_are_allowed_only_in_public_requests() {
             assert_eq!(reopened.request.state(), RequestState::Closed);
             assert_eq!(reopened.discussion.status, RequestDiscussionStatus::Open);
         } else {
-            assert_eq!(resolve.unwrap_err().kind, DomainErrorKind::Conflict);
-            assert_eq!(reopen.unwrap_err().kind, DomainErrorKind::Conflict);
+            assert_eq!(resolve.unwrap_err().kind, DomainErrorKind::Forbidden);
+            assert_eq!(reopen.unwrap_err().kind, DomainErrorKind::Forbidden);
         }
     }
 }
@@ -332,12 +334,12 @@ fn completed_request_discussions(
     let create = |request, id: &str| {
         create_request_discussion(
             request,
+            owner_actor(),
             false,
             CreateRequestDiscussionInput {
                 request_id: "request_1".to_string(),
                 id: id.to_string(),
                 actor_user_id: "author".to_string(),
-                actor_can_participate: true,
                 client_discussion_id: format!("client_{id}"),
                 body_markdown: "Review this invariant".to_string(),
                 anchor: None,
@@ -350,6 +352,7 @@ fn completed_request_discussions(
     let to_resolve = create(open.request, "discussion_resolved");
     let resolved = resolve_request_discussion(
         to_resolve.request,
+        owner_actor(),
         to_resolve.discussion,
         transition_input("discussion_resolved", "event_initial_resolve", 22),
     )
@@ -476,25 +479,30 @@ fn discussion_creation_checks_access_before_id_collision() {
     let input = CreateRequestDiscussionInput {
         request_id: "request_1".to_string(),
         id: "discussion_1".to_string(),
-        actor_user_id: "author".to_string(),
-        actor_can_participate: false,
+        actor_user_id: "outsider".to_string(),
         client_discussion_id: "client_1".to_string(),
         body_markdown: "Review".to_string(),
         anchor: None,
         now_unix: 21,
     };
     assert_eq!(
-        create_request_discussion(open_request(), true, input.clone())
-            .unwrap_err()
-            .kind,
+        create_request_discussion(
+            crate::requests::fixtures::working_request(),
+            author_actor(),
+            true,
+            input.clone()
+        )
+        .unwrap_err()
+        .kind,
         crate::error::DomainErrorKind::Forbidden
     );
     assert_eq!(
         create_request_discussion(
-            open_request(),
+            crate::requests::fixtures::working_request(),
+            author_actor(),
             true,
             CreateRequestDiscussionInput {
-                actor_can_participate: true,
+                actor_user_id: "author".to_string(),
                 ..input
             }
         )
@@ -540,8 +548,6 @@ fn transition_input(
         request_id: "request_1".to_string(),
         discussion_id: discussion_id.into(),
         actor_user_id: "maintainer".to_string(),
-        actor_is_maintainer: true,
-        actor_can_transition: true,
         event_id: event_id.to_string(),
         now_unix,
     }

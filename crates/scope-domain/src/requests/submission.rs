@@ -1,6 +1,6 @@
 use super::{
-    GitHubPullRequest, Request, RequestEvent, RequestEventKind, RequestEventPayload, RequestState,
-    validate_required,
+    GitHubPullRequest, Request, RequestActor, RequestEvent, RequestEventKind, RequestEventPayload,
+    RequestState, validate_required,
 };
 use crate::{error::DomainError, github_connection::GitHubConnection};
 
@@ -14,8 +14,6 @@ pub struct RequestLifecycleMutation {
 pub struct SubmitRequestInput {
     pub request_id: String,
     pub actor_user_id: String,
-    pub actor_is_author: bool,
-    pub actor_can_submit: bool,
     pub event_id: String,
     pub now_unix: u64,
 }
@@ -61,11 +59,12 @@ pub struct MergeRequestInput<'a> {
 
 pub fn submit_request(
     request: &Request,
+    actor: RequestActor<'_>,
     input: SubmitRequestInput,
 ) -> Result<RequestLifecycleMutation, DomainError> {
     validate_command(request, &input.request_id, &input.actor_user_id)?;
     validate_required("request event id", &input.event_id)?;
-    if !input.actor_is_author || !request.is_author(&input.actor_user_id) {
+    if !request.is_author(&input.actor_user_id) {
         return Err(DomainError::forbidden(
             "only the request author can submit it",
         ));
@@ -73,7 +72,7 @@ pub fn submit_request(
     if request.state() != RequestState::Draft {
         return Err(DomainError::conflict("request has already been submitted"));
     }
-    if !input.actor_can_submit {
+    if !actor.permissions(request, &input.actor_user_id).can_submit {
         return Err(DomainError::forbidden("request submission access required"));
     }
     if request.pushed_at_unix.is_none() {

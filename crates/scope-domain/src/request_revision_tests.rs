@@ -1,4 +1,7 @@
-use super::requests::{fixtures::start_input, *};
+use super::requests::{
+    fixtures::{owner_actor, start_input},
+    *,
+};
 use crate::views::ViewId;
 
 fn uploaded_request() -> Request {
@@ -17,10 +20,10 @@ fn uploaded_request() -> Request {
     .unwrap();
     record_working_request_upload(
         started.request,
+        owner_actor(),
         RecordWorkingRequestUploadInput {
             request_id: "request_change".to_string(),
             actor_user_id: "author".to_string(),
-            actor_can_edit: true,
             expected_old_head_oid: None,
             new_head_oid: "head-1".to_string(),
             now_unix: 11,
@@ -33,13 +36,13 @@ fn uploaded_request() -> Request {
 fn revise(git_facts: RequestRevisionGitFacts) -> RequestRevisionMutation {
     record_request_revision(
         uploaded_request(),
+        owner_actor(),
         false,
         RecordRequestRevisionInput {
             new_base: None,
             new_base_stack_depth: None,
             request_id: "request_change".to_string(),
             actor_user_id: "author".to_string(),
-            actor_can_edit: true,
             expected_old_head_oid: Some("head-1".to_string()),
             new_head_oid: "head-2".to_string(),
 

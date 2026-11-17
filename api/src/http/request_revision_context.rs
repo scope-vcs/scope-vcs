@@ -147,7 +147,6 @@ pub(crate) async fn publish(
                     RecordRequestRevisionInput {
                         request_id: request.id.clone(),
                         actor_user_id: actor.id.clone(),
-                        actor_can_edit: false,
                         expected_old_head_oid: Some(context.expected_head_oid.clone()),
                         new_head_oid: context.expected_head_oid.clone(),
                         new_base: Some(base),

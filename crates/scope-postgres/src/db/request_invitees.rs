@@ -1,6 +1,6 @@
 use super::{
     RequestStore, entities,
-    request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
+    request_access::{ensure_user_exists, lock_request_repository, request_actor},
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
@@ -76,9 +76,8 @@ impl RequestStore {
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let decision =
-            request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        ensure_exact_visibility(decision.exact_visible)?;
+        let actor = request_actor(&tx, &repo, &request, &command.actor_user_id).await?;
+        ensure_exact_visibility(actor.policy(&request, &command.actor_user_id).exact_visible)?;
         let target = user_by_exact_handle(&tx, &command.target_handle)
             .await?
             .ok_or_else(|| PostgresError::not_found("user not found"))?;
@@ -90,7 +89,6 @@ impl RequestStore {
             AddRequestInviteeInput {
                 actor_user_id: command.actor_user_id,
                 target_user_id: target.id.clone(),
-                actor_can_manage_invitees: decision.permissions.can_manage_invitees,
                 target_is_maintainer: super::request_access::repo_by_id(
                     &tx,
                     &repo.record.id,
@@ -101,7 +99,7 @@ impl RequestStore {
                 .is_maintainer(),
                 now_unix: command.now_unix,
             },
-            &repo.views,
+            actor,
         )?;
         insert_request_invitee(&tx, &invitee).await?;
         tx.commit().await?;
@@ -120,9 +118,8 @@ impl RequestStore {
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let decision =
-            request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        ensure_exact_visibility(decision.exact_visible)?;
+        let actor = request_actor(&tx, &repo, &request, &command.actor_user_id).await?;
+        ensure_exact_visibility(actor.policy(&request, &command.actor_user_id).exact_visible)?;
         let target = user_by_exact_handle(&tx, &command.target_handle)
             .await?
             .ok_or_else(|| PostgresError::not_found("user not found"))?;
@@ -133,9 +130,8 @@ impl RequestStore {
             RemoveRequestInviteeInput {
                 actor_user_id: command.actor_user_id,
                 target_user_id: target.id.clone(),
-                actor_can_manage_invitees: decision.permissions.can_manage_invitees,
             },
-            &repo.views,
+            actor,
         )?;
         delete_request_invitee(&tx, &invitee.request_id, &invitee.user_id).await?;
         tx.commit().await?;
@@ -153,28 +149,23 @@ impl RequestStore {
         let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
-        let actor = user_by_id(&tx, &command.actor_user_id)
+        let user = user_by_id(&tx, &command.actor_user_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("user not found"))?;
-        let decision =
-            request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        ensure_exact_visibility(decision.exact_visible)?;
+        let actor = request_actor(&tx, &repo, &request, &command.actor_user_id).await?;
+        ensure_exact_visibility(actor.policy(&request, &command.actor_user_id).exact_visible)?;
         let invitees = request_invitee_map(&tx, &request.id).await?;
         let invitee = leave_request(
             &request,
             invitees.get(&command.actor_user_id).cloned(),
             LeaveRequestInput {
                 actor_user_id: command.actor_user_id,
-                actor_can_leave_request: decision.permissions.can_leave_request,
             },
-            &repo.views,
+            actor,
         )?;
         delete_request_invitee(&tx, &invitee.request_id, &invitee.user_id).await?;
         tx.commit().await?;
-        Ok(RequestInviteeRead {
-            invitee,
-            user: actor,
-        })
+        Ok(RequestInviteeRead { invitee, user })
     }
 }
 

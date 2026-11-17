@@ -86,7 +86,6 @@ fn authorize_input() -> AuthorizeRequestAutoMergeInput {
         repository_incarnation_id: "incarnation_1".into(),
         request_id: "request_1".into(),
         actor_user_id: "maintainer".into(),
-        actor_can_merge: true,
         readiness: RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::ChecksPending),
         expected_revision_id: "revision_1".into(),
         expected_head_oid: HEAD.into(),
@@ -96,30 +95,61 @@ fn authorize_input() -> AuthorizeRequestAutoMergeInput {
 }
 
 fn active_intent() -> RequestAutoMergeIntent {
-    authorize_request_auto_merge(&open_request(), &revision(HEAD), None, authorize_input())
-        .unwrap()
-        .intent
+    authorize_request_auto_merge(
+        &open_request(),
+        fixtures::owner_actor(),
+        &revision(HEAD),
+        None,
+        authorize_input(),
+    )
+    .unwrap()
+    .intent
 }
 
 #[test]
 fn authorize_is_bound_to_the_exact_revision_and_head() {
     let mut request = open_request();
     request.updated_at_unix = 10;
-    let enabled =
-        authorize_request_auto_merge(&request, &revision(HEAD), None, authorize_input()).unwrap();
+    let enabled = authorize_request_auto_merge(
+        &request,
+        fixtures::owner_actor(),
+        &revision(HEAD),
+        None,
+        authorize_input(),
+    )
+    .unwrap();
     assert_eq!(enabled.intent.status, RequestAutoMergeIntentStatus::Active);
     assert_eq!(enabled.event.kind, RequestEventKind::AutoMergeEnabled);
     assert_eq!(enabled.request.activity_version, 3);
 
     let mut stale_revision = authorize_input();
     stale_revision.expected_revision_id = "revision_0".into();
-    assert!(authorize_request_auto_merge(&request, &revision(HEAD), None, stale_revision).is_err());
-    let mut stale_head = authorize_input();
-    stale_head.expected_head_oid = OTHER_HEAD.into();
-    assert!(authorize_request_auto_merge(&request, &revision(HEAD), None, stale_head).is_err());
     assert!(
         authorize_request_auto_merge(
             &request,
+            fixtures::owner_actor(),
+            &revision(HEAD),
+            None,
+            stale_revision
+        )
+        .is_err()
+    );
+    let mut stale_head = authorize_input();
+    stale_head.expected_head_oid = OTHER_HEAD.into();
+    assert!(
+        authorize_request_auto_merge(
+            &request,
+            fixtures::owner_actor(),
+            &revision(HEAD),
+            None,
+            stale_head
+        )
+        .is_err()
+    );
+    assert!(
+        authorize_request_auto_merge(
+            &request,
+            fixtures::owner_actor(),
             &revision(HEAD),
             Some(&active_intent()),
             authorize_input(),
@@ -134,7 +164,14 @@ fn revision_identity_prevents_a_b_a_authorization_reuse() {
     let mut later_same_head = revision(HEAD);
     later_same_head.id = "revision_3".into();
     assert!(
-        authorize_request_auto_merge(&request, &later_same_head, None, authorize_input()).is_err()
+        authorize_request_auto_merge(
+            &request,
+            fixtures::owner_actor(),
+            &later_same_head,
+            None,
+            authorize_input()
+        )
+        .is_err()
     );
 }
 
@@ -289,14 +326,16 @@ fn only_open_requests_with_a_current_revision_and_maintainer_can_enable() {
         Some(&revision(HEAD)),
         None,
         waiting,
-        true
+        fixtures::owner_viewer("maintainer"),
+        fixtures::actor_views(),
     ));
     assert!(!request_auto_merge_can_enable(
         &request,
         Some(&revision(HEAD)),
         None,
         waiting,
-        false
+        fixtures::public_viewer("maintainer"),
+        fixtures::actor_views(),
     ));
     request.closed_at_unix = Some(3);
     request.closed_by_user_id = Some("maintainer".into());
@@ -306,7 +345,8 @@ fn only_open_requests_with_a_current_revision_and_maintainer_can_enable() {
         Some(&revision(HEAD)),
         None,
         waiting,
-        true
+        fixtures::owner_viewer("maintainer"),
+        fixtures::actor_views(),
     ));
 }
 
@@ -323,7 +363,8 @@ fn auto_merge_is_offered_only_while_checks_are_undecided() {
             Some(&revision(HEAD)),
             None,
             readiness,
-            true
+            fixtures::owner_viewer("maintainer"),
+            fixtures::actor_views(),
         ));
     }
 }

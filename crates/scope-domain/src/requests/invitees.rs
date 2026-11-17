@@ -1,4 +1,4 @@
-use super::{Request, RequestInvitee, validate_required};
+use super::{Request, RequestActor, RequestInvitee, validate_required};
 use crate::error::DomainError;
 use crate::views::Views;
 
@@ -8,7 +8,6 @@ pub const REQUEST_ACTIVE_INVITEE_LIMIT: usize = 30;
 pub struct AddRequestInviteeInput {
     pub actor_user_id: String,
     pub target_user_id: String,
-    pub actor_can_manage_invitees: bool,
     pub target_is_maintainer: bool,
     pub now_unix: u64,
 }
@@ -17,13 +16,11 @@ pub struct AddRequestInviteeInput {
 pub struct RemoveRequestInviteeInput {
     pub actor_user_id: String,
     pub target_user_id: String,
-    pub actor_can_manage_invitees: bool,
 }
 
 #[derive(Clone, Debug)]
 pub struct LeaveRequestInput {
     pub actor_user_id: String,
-    pub actor_can_leave_request: bool,
 }
 
 pub fn add_request_invitee(
@@ -31,12 +28,15 @@ pub fn add_request_invitee(
     target_is_invitee: bool,
     active_invitee_count: usize,
     input: AddRequestInviteeInput,
-    views: &Views,
+    actor: RequestActor<'_>,
 ) -> Result<RequestInvitee, DomainError> {
-    validate_invitee_request(request, views)?;
+    validate_invitee_request(request, actor.views)?;
     validate_required("actor user id", &input.actor_user_id)?;
     validate_required("invitee user id", &input.target_user_id)?;
-    if !input.actor_can_manage_invitees {
+    if !actor
+        .permissions(request, &input.actor_user_id)
+        .can_manage_invitees
+    {
         return Err(DomainError::forbidden(
             "request invite management access required",
         ));
@@ -72,12 +72,15 @@ pub fn remove_request_invitee(
     request: &Request,
     invitee: Option<RequestInvitee>,
     input: RemoveRequestInviteeInput,
-    views: &Views,
+    actor: RequestActor<'_>,
 ) -> Result<RequestInvitee, DomainError> {
-    validate_invitee_request(request, views)?;
+    validate_invitee_request(request, actor.views)?;
     validate_required("actor user id", &input.actor_user_id)?;
     validate_required("invitee user id", &input.target_user_id)?;
-    if !input.actor_can_manage_invitees {
+    if !actor
+        .permissions(request, &input.actor_user_id)
+        .can_manage_invitees
+    {
         return Err(DomainError::forbidden(
             "request invite management access required",
         ));
@@ -93,11 +96,14 @@ pub fn leave_request(
     request: &Request,
     invitee: Option<RequestInvitee>,
     input: LeaveRequestInput,
-    views: &Views,
+    actor: RequestActor<'_>,
 ) -> Result<RequestInvitee, DomainError> {
-    validate_invitee_request(request, views)?;
+    validate_invitee_request(request, actor.views)?;
     validate_required("actor user id", &input.actor_user_id)?;
-    if !input.actor_can_leave_request {
+    if !actor
+        .permissions(request, &input.actor_user_id)
+        .can_leave_request
+    {
         return Err(DomainError::forbidden("request leave access required"));
     }
     invitee
@@ -131,17 +137,15 @@ fn validate_invitee_request(request: &Request, views: &Views) -> Result<(), Doma
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::requests::fixtures::open_request;
+    use crate::requests::fixtures::{author_actor, invitee_actor, open_request};
     use crate::views::ViewId;
 
     #[test]
     fn invitee_facts_preserve_duplicate_limit_and_authorization_order() {
-        let views = Views::builtin();
         let request = open_request();
         let mut input = AddRequestInviteeInput {
-            actor_user_id: request.author_user_id.clone().unwrap(),
+            actor_user_id: "outsider".to_string(),
             target_user_id: "guest".to_string(),
-            actor_can_manage_invitees: false,
             target_is_maintainer: false,
             now_unix: 21,
         };
@@ -151,20 +155,20 @@ mod tests {
                 true,
                 REQUEST_ACTIVE_INVITEE_LIMIT,
                 input.clone(),
-                &views
+                author_actor()
             )
             .unwrap_err()
             .kind,
             crate::error::DomainErrorKind::Forbidden
         );
-        input.actor_can_manage_invitees = true;
+        input.actor_user_id = request.author_user_id.clone().unwrap();
         assert_eq!(
             add_request_invitee(
                 &request,
                 true,
                 REQUEST_ACTIVE_INVITEE_LIMIT,
                 input.clone(),
-                &views
+                author_actor()
             )
             .unwrap_err()
             .message,
@@ -176,7 +180,7 @@ mod tests {
                 false,
                 REQUEST_ACTIVE_INVITEE_LIMIT,
                 input.clone(),
-                &views
+                author_actor()
             )
             .is_err()
         );
@@ -185,19 +189,24 @@ mod tests {
             false,
             REQUEST_ACTIVE_INVITEE_LIMIT - 1,
             input,
-            &views,
+            author_actor(),
         )
         .unwrap();
         let leave = LeaveRequestInput {
             actor_user_id: "guest".to_string(),
-            actor_can_leave_request: true,
         };
         assert_eq!(
-            leave_request(&request, Some(invitee.clone()), leave.clone(), &views).unwrap(),
+            leave_request(
+                &request,
+                Some(invitee.clone()),
+                leave.clone(),
+                invitee_actor()
+            )
+            .unwrap(),
             invitee
         );
         assert_eq!(
-            leave_request(&request, None, leave, &views)
+            leave_request(&request, None, leave, invitee_actor())
                 .unwrap_err()
                 .kind,
             crate::error::DomainErrorKind::NotFound
@@ -206,7 +215,6 @@ mod tests {
 
     #[test]
     fn invitees_stay_a_feature_of_the_anyone_view() {
-        let views = crate::requests::fixtures::views_with_agent();
         for view in [crate::requests::fixtures::agent(), ViewId::private()] {
             let mut request = open_request();
             request.view = view;
@@ -217,11 +225,10 @@ mod tests {
                 AddRequestInviteeInput {
                     actor_user_id: "author".to_string(),
                     target_user_id: "guest".to_string(),
-                    actor_can_manage_invitees: true,
                     target_is_maintainer: false,
                     now_unix: 21,
                 },
-                &views,
+                author_actor(),
             )
             .unwrap_err();
             assert_eq!(

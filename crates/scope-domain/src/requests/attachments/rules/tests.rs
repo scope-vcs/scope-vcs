@@ -1,25 +1,28 @@
 use super::*;
+use crate::requests::fixtures::{open_request, owner_actor};
 
 fn prepared() -> RequestAttachment {
-    validate_prepare_attachment(PrepareRequestAttachmentInput {
-        attachment_id: "att_1".into(),
-        repository_id: "repo_1".into(),
-        request_id: "req_1".into(),
-        uploader_user_id: "user_1".into(),
-        upload_id: "upload_1".into(),
-        operation_id: "operation_1".into(),
-        target: RequestAttachmentTarget::Description,
-        filename: "proof.png".into(),
-        declared_media_type: "image/png".into(),
-        size_bytes: 10,
-        sha256: "a".repeat(64),
-        actor_can_write_target: true,
-        request_is_open: true,
-        target_attachment_count: 0,
-        request_source_bytes: 0,
-        repository_reserved_bytes: 0,
-        now_unix: 10,
-    })
+    validate_prepare_attachment(
+        &open_request(),
+        owner_actor(),
+        PrepareRequestAttachmentInput {
+            attachment_id: "att_1".into(),
+            repository_id: "repo_1".into(),
+            request_id: "req_1".into(),
+            uploader_user_id: "user_1".into(),
+            upload_id: "upload_1".into(),
+            operation_id: "operation_1".into(),
+            target: RequestAttachmentTarget::Description,
+            filename: "proof.png".into(),
+            declared_media_type: "image/png".into(),
+            size_bytes: 10,
+            sha256: "a".repeat(64),
+            target_attachment_count: 0,
+            request_source_bytes: 0,
+            repository_reserved_bytes: 0,
+            now_unix: 10,
+        },
+    )
     .unwrap()
     .attachment
 }
@@ -88,18 +91,16 @@ fn prepare_enforces_media_and_aggregate_limits() {
         declared_media_type: "image/png".into(),
         size_bytes: 26 * 1024 * 1024,
         sha256: "a".repeat(64),
-        actor_can_write_target: true,
-        request_is_open: true,
         target_attachment_count: 0,
         request_source_bytes: 0,
         repository_reserved_bytes: 0,
         now_unix: 10,
     };
-    assert!(validate_prepare_attachment(input.clone()).is_err());
+    assert!(validate_prepare_attachment(&open_request(), owner_actor(), input.clone()).is_err());
     input.size_bytes = 1;
     input.repository_reserved_bytes =
         RequestAttachmentLimits::default().max_repository_storage_bytes;
-    assert!(validate_prepare_attachment(input).is_err());
+    assert!(validate_prepare_attachment(&open_request(), owner_actor(), input).is_err());
 }
 
 #[test]
@@ -116,17 +117,15 @@ fn prepare_bounds_untrusted_metadata() {
         declared_media_type: "image/png".into(),
         size_bytes: 10,
         sha256: "a".repeat(64),
-        actor_can_write_target: true,
-        request_is_open: true,
         target_attachment_count: 0,
         request_source_bytes: 0,
         repository_reserved_bytes: 0,
         now_unix: 10,
     };
-    assert!(validate_prepare_attachment(input.clone()).is_err());
+    assert!(validate_prepare_attachment(&open_request(), owner_actor(), input.clone()).is_err());
     input.operation_id = "operation_1".into();
     input.filename = "folder/proof.png".into();
-    assert!(validate_prepare_attachment(input).is_err());
+    assert!(validate_prepare_attachment(&open_request(), owner_actor(), input).is_err());
 }
 
 #[test]
@@ -188,7 +187,6 @@ fn binding_comes_only_from_markdown_and_cannot_cross_targets() {
     let bindings = replace_attachment_bindings(
         "req_1",
         "user_1",
-        true,
         target,
         "![proof](/request-attachments/att_1)",
         std::slice::from_ref(&upload),
@@ -202,7 +200,6 @@ fn binding_comes_only_from_markdown_and_cannot_cross_targets() {
         replace_attachment_bindings(
             "req_1",
             "user_1",
-            true,
             RequestAttachmentBindingTarget::Discussion {
                 discussion_id: "disc_1".into(),
             },
@@ -304,7 +301,7 @@ fn rejected_is_terminal_but_retryable_failure_can_restart() {
     )
     .unwrap();
     assert_eq!(
-        retry_attachment_processing(&failed, true, 13)
+        retry_attachment_processing(&failed, &open_request(), owner_actor(), "user_1", 13)
             .unwrap()
             .state,
         RequestAttachmentState::Processing
@@ -320,5 +317,8 @@ fn rejected_is_terminal_but_retryable_failure_can_restart() {
         12,
     )
     .unwrap();
-    assert!(retry_attachment_processing(&rejected, true, 13).is_err());
+    assert!(
+        retry_attachment_processing(&rejected, &open_request(), owner_actor(), "user_1", 13)
+            .is_err()
+    );
 }

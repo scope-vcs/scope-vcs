@@ -15,7 +15,7 @@ use scope_api_contract::{
     RequestAutoMergeIntentResponse, RequestAutoMergeResponse,
 };
 use scope_domain::requests::{
-    RequestViewer, request_auto_merge_can_cancel, request_auto_merge_can_enable, request_policy,
+    RequestViewer, request_auto_merge_can_cancel, request_auto_merge_can_enable,
 };
 
 pub(crate) async fn get(
@@ -98,15 +98,13 @@ pub(crate) fn snapshot_response(
     };
     let views = &snapshot.repository.views;
     let users = &snapshot.users;
-    let can_merge = request_policy(&snapshot.request, viewer.clone(), views)
-        .permissions
-        .can_merge;
     let can_enable = request_auto_merge_can_enable(
         &snapshot.request,
         snapshot.revision.as_ref(),
         snapshot.auto_merge.as_ref(),
         readiness(&viewer),
-        can_merge,
+        viewer.clone(),
+        views,
     );
     let can_cancel = request_auto_merge_can_cancel(
         &snapshot.request,

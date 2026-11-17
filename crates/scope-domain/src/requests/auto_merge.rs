@@ -1,9 +1,11 @@
 use super::{
-    Request, RequestCheckEvaluation, RequestEvent, RequestEventKind, RequestEventPayload,
-    RequestRevision, RequestState, advance_request_activity, validate_required,
+    Request, RequestActor, RequestCheckEvaluation, RequestEvent, RequestEventKind,
+    RequestEventPayload, RequestRevision, RequestState, RequestViewer, advance_request_activity,
+    request_policy, validate_required,
 };
 use crate::error::DomainError;
 use crate::requests::validate_git_oid;
+use crate::views::Views;
 use serde::{Deserialize, Serialize};
 
 mod check_failures;
@@ -218,7 +220,6 @@ pub struct AuthorizeRequestAutoMergeInput {
     pub repository_incarnation_id: String,
     pub request_id: String,
     pub actor_user_id: String,
-    pub actor_can_merge: bool,
     pub readiness: RequestAutoMergeReadiness,
     pub expected_revision_id: String,
     pub expected_head_oid: String,
@@ -248,14 +249,15 @@ pub fn request_auto_merge_can_enable(
     revision: Option<&RequestRevision>,
     current_intent: Option<&RequestAutoMergeIntent>,
     readiness: RequestAutoMergeReadiness,
-    actor_can_merge: bool,
+    viewer: RequestViewer<'_>,
+    views: &Views,
 ) -> bool {
     readiness.waiting_reason().is_some()
         && request_auto_merge_eligibility(
             request,
             revision,
             current_intent,
-            actor_can_merge,
+            request_policy(request, viewer, views).permissions.can_merge,
             readiness,
         )
         .is_ok()
@@ -277,6 +279,7 @@ pub fn request_auto_merge_can_cancel(
 
 pub fn authorize_request_auto_merge(
     request: &Request,
+    actor: RequestActor<'_>,
     revision: &RequestRevision,
     current_intent: Option<&RequestAutoMergeIntent>,
     input: AuthorizeRequestAutoMergeInput,
@@ -309,7 +312,7 @@ pub fn authorize_request_auto_merge(
         request,
         Some(revision),
         current_intent,
-        input.actor_can_merge,
+        actor.permissions(request, &input.actor_user_id).can_merge,
         input.readiness,
     )?;
     if revision.id != input.expected_revision_id || request.head_oid != input.expected_head_oid {
