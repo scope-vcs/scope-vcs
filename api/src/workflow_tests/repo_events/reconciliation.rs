@@ -1,4 +1,5 @@
 use super::*;
+use crate::after_commit::AfterCommit;
 use crate::auth::cli::CliAuthService;
 use scope_domain::requests::EditRequestIdentityInput;
 use scope_domain::views::ViewId;
@@ -76,10 +77,10 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
     )
     .await
     .unwrap();
-    writer.publish_request_summary_refresh(
+    writer.after_commit([AfterCommit::request_summary(
         &test_repo_incarnation(),
         RepoChangeReason::RequestIdentityEdited,
-    );
+    )]);
     assert_eq!(
         find_repo(&reader, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await

@@ -1,11 +1,11 @@
 mod snapshot;
 
 use crate::{
+    after_commit::AfterCommit,
     background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness, StopSignal},
     error::ApiError,
     state::AppState,
 };
-use scope_api_contract::{RepoChangeEvent, RepoChangeKind};
 use scope_dependency_analyzer::{ANALYZE_COMMAND, MAX_OUTPUT_BYTES};
 use scope_domain::dependency_analysis::{AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION};
 use scope_git_process::{ProcessCancellation, ProcessLimits, run_cancellable};
@@ -252,15 +252,10 @@ async fn analyze(
 }
 
 fn publish_change(state: &AppState, claim: &DependencyAnalysisClaim) {
-    state.publish_repo_event(
-        RepoChangeEvent {
-            repo_id: claim.incarnation.repository_id().to_string(),
-            incarnation_id: claim.incarnation.incarnation_id().to_string(),
-            version: claim.change_version,
-            kind: RepoChangeKind::DependenciesChanged,
-        },
-        "dependency report change",
-    );
+    state.after_commit([AfterCommit::dependencies_changed(
+        &claim.incarnation,
+        claim.change_version,
+    )]);
 }
 
 #[cfg(test)]

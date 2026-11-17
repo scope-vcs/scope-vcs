@@ -4,6 +4,7 @@ pub(crate) mod main_push;
 pub(crate) mod request_ref;
 mod view_main_push;
 
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
     error::ApiError,
     git::{
@@ -424,27 +425,27 @@ async fn complete_main_push(
     let committed_incarnation = persisted.incarnation.clone();
     let committed_git_head = persisted.head;
     let event = if first_push {
-        state.product_analytics.capture(
+        state.after_commit([AfterCommit::Analytics(
             scope_product_analytics::ProductEvent::repository_initialized(
                 &author_id,
                 committed_incarnation.incarnation_id(),
             ),
-        );
+        )]);
         RepoChangeReason::FirstPushApplied
     } else {
-        state
-            .product_analytics
-            .capture(scope_product_analytics::ProductEvent::repository_pushed(
+        state.after_commit([AfterCommit::Analytics(
+            scope_product_analytics::ProductEvent::repository_pushed(
                 &author_id,
                 committed_incarnation.incarnation_id(),
-            ));
+            ),
+        )]);
         RepoChangeReason::PushReceived
     };
-    state.publish_repo_change(
+    state.after_commit([AfterCommit::repo_change(
         &committed_incarnation,
         committed_git_head.change_version,
         event,
-    );
+    )]);
     tracing::info!(
         owner,
         repo = repo_name,
@@ -455,11 +456,10 @@ async fn complete_main_push(
         "git receive-pack main update persisted"
     );
     if persisted.completed_landed_requests > 0 {
-        state.wakeups.auto_merge.notify_one();
-        state.publish_request_summary_refresh(
-            &committed_incarnation,
-            RepoChangeReason::RequestMerged,
-        );
+        state.after_commit([
+            AfterCommit::Wake(Wakeup::AutoMerge),
+            AfterCommit::request_summary(&committed_incarnation, RepoChangeReason::RequestMerged),
+        ]);
     }
     if !first_push {
         crate::use_cases::request_checks::renew_stale_check_commits_in_background(

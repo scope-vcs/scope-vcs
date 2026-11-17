@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{error::ApiError, state::AppState};
 use scope_product_analytics::{
     EventSource, OperationFailureReason, ProductActor, ProductEvent, ProductOperation,
@@ -41,7 +42,7 @@ impl ObservedOperation<'_> {
         if let Some(request_id) = self.request_id {
             event = event.with_request_id(request_id);
         }
-        state.product_analytics.capture(event);
+        state.after_commit([AfterCommit::Analytics(event)]);
     }
 }
 

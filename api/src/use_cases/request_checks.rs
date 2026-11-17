@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
     background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness},
     error::ApiError,
@@ -429,10 +430,10 @@ pub(crate) async fn publish_request_checks_change(
     mutation: &RequestChecksMutation,
 ) {
     if mutation.queued_github_push {
-        state.wakeups.github_pushes.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::GitHubPushes)]);
     }
     state
-        .publish_request_state_refresh(incarnation, &mutation.evaluation.request_id)
+        .after_commit_request_state(incarnation, &mutation.evaluation.request_id)
         .await;
 }
 
@@ -505,7 +506,7 @@ pub(crate) async fn reconcile_request_checks_once(
                     .record_request_workflow_changes(&repo.incarnation(), &request, changed)
                     .await?
                 {
-                    state.publish_known_request_state_refresh(&repo.incarnation(), &request);
+                    state.after_commit([AfterCommit::request_state(&repo.incarnation(), &request)]);
                 }
             }
             Ok::<_, ApiError>(view.evaluation.is_some())

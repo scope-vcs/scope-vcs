@@ -24,40 +24,14 @@ pub enum RepoEffect {
     DeleteSourceBlobs(Vec<SourceBlob>),
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RepoEffects {
-    effects: Vec<RepoEffect>,
-}
-
-impl RepoEffects {
-    pub fn is_empty(&self) -> bool {
-        self.effects.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &RepoEffect> {
-        self.effects.iter()
-    }
-
-    fn delete_repo_storage(&mut self, cleanup: RepoStorageCleanup) {
-        self.effects.push(RepoEffect::DeleteRepoStorage(cleanup));
-    }
-
-    fn delete_source_blobs(&mut self, blobs: impl IntoIterator<Item = SourceBlob>) {
-        let blobs = blobs.into_iter().collect::<Vec<_>>();
-        if !blobs.is_empty() {
-            self.effects.push(RepoEffect::DeleteSourceBlobs(blobs));
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RepoMutation<T> {
     pub result: T,
-    pub effects: RepoEffects,
+    pub effects: Vec<RepoEffect>,
 }
 
 impl<T> RepoMutation<T> {
-    fn new(result: T, effects: RepoEffects) -> Self {
+    fn new(result: T, effects: Vec<RepoEffect>) -> Self {
         Self { result, effects }
     }
 }
@@ -139,13 +113,15 @@ pub fn delete_repo(
     name: &str,
 ) -> Result<RepoMutation<String>, DomainError> {
     ensure_repo_delete_owner(repo, user_id, owner, name)?;
-    let mut effects = RepoEffects::default();
-    effects.delete_repo_storage(RepoStorageCleanup {
+    let mut effects = vec![RepoEffect::DeleteRepoStorage(RepoStorageCleanup {
         owner_handle: owner.to_string(),
         repo_name: name.to_string(),
         incarnation: repo.incarnation(),
-    });
-    effects.delete_source_blobs(repo.source_blobs());
+    })];
+    let source_blobs = repo.source_blobs().into_iter().collect::<Vec<_>>();
+    if !source_blobs.is_empty() {
+        effects.push(RepoEffect::DeleteSourceBlobs(source_blobs));
+    }
     Ok(RepoMutation::new(repo.record.id.clone(), effects))
 }
 
@@ -184,16 +160,14 @@ mod tests {
         assert_eq!(mutation.result, repo.record.id);
         assert_eq!(
             mutation.effects,
-            RepoEffects {
-                effects: vec![
-                    RepoEffect::DeleteRepoStorage(RepoStorageCleanup {
-                        owner_handle: owner.handle,
-                        repo_name: "repo".to_string(),
-                        incarnation: repo.incarnation(),
-                    }),
-                    RepoEffect::DeleteSourceBlobs(vec![snapshot]),
-                ],
-            }
+            vec![
+                RepoEffect::DeleteRepoStorage(RepoStorageCleanup {
+                    owner_handle: owner.handle,
+                    repo_name: "repo".to_string(),
+                    incarnation: repo.incarnation(),
+                }),
+                RepoEffect::DeleteSourceBlobs(vec![snapshot]),
+            ]
         );
     }
 

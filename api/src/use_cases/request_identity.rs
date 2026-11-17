@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{error::ApiError, repo_events::RepoChangeReason, state::AppState};
 use scope_domain::{
     repository::access::RepositoryAccessContext,
@@ -15,10 +16,10 @@ pub(crate) async fn edit_request_identity(
         input,
     )
     .await?;
-    state.publish_request_summary_refresh(
+    state.after_commit([AfterCommit::request_summary(
         &repo.incarnation(),
         RepoChangeReason::RequestIdentityEdited,
-    );
+    )]);
     Ok(mutation)
 }
 

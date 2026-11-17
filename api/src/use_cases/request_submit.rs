@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     error::ApiError, operation_analytics::ObservedOperation, persistence::unix_now,
     repo_events::RepoChangeReason, state::AppState,
@@ -28,16 +29,16 @@ pub(crate) async fn submit_request(
     }
     .run(state, persist(state, request, actor_user_id))
     .await?;
-    state
-        .product_analytics
-        .capture(ProductEvent::request_submitted(
+    state.after_commit([
+        AfterCommit::Analytics(ProductEvent::request_submitted(
             actor_user_id,
             repo.incarnation().incarnation_id(),
             &request.id,
             request.view.clone(),
             request_actor_role(repo.access.clone()),
-        ));
-    state.publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestSubmitted);
+        )),
+        AfterCommit::request_summary(&repo.incarnation(), RepoChangeReason::RequestSubmitted),
+    ]);
     Ok(mutation)
 }
 

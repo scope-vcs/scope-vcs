@@ -1,4 +1,5 @@
 use super::github_pushes::{JobFailure, job_outcome, refresh_github_visibility};
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     auth::tokens::random_token,
@@ -566,16 +567,18 @@ pub(super) fn call_failure(error: PullRequestCallError) -> JobFailure {
 
 async fn publish_pull_request_change(state: &AppState, carrier: &GitHubPullRequest, landed: bool) {
     if landed {
-        state.wakeups.auto_merge.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::AutoMerge)]);
     }
     match state.repository_incarnation(&carrier.repo_id).await {
         Ok(Some(incarnation)) => {
             if landed {
-                state
-                    .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged);
+                state.after_commit([AfterCommit::request_summary(
+                    &incarnation,
+                    RepoChangeReason::RequestMerged,
+                )]);
             }
             state
-                .publish_request_state_refresh(&incarnation, &carrier.request_id)
+                .after_commit_request_state(&incarnation, &carrier.request_id)
                 .await;
         }
         Ok(None) => {}
@@ -598,7 +601,7 @@ pub(crate) async fn note_github_pull_request_delivery(
         .requeue_github_pull_request(github_repository_id, request_id, unix_now()?)
         .await?
     {
-        state.wakeups.github_pull_requests.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::GitHubPullRequests)]);
     }
     Ok(())
 }

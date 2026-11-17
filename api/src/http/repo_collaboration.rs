@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
     auth::{
         scope::{optional_scope_user, require_scope_user},
@@ -74,7 +75,7 @@ pub(crate) async fn create_repository_invite(
         RepoChangeReason::InviteUpdated,
     )
     .await;
-    state.wakeups.invite_emails.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::InviteEmails)]);
 
     Ok(Json(response))
 }
@@ -106,7 +107,7 @@ pub(crate) async fn create_repository_invite_email(
         RepoChangeReason::InviteUpdated,
     )
     .await;
-    state.wakeups.invite_emails.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::InviteEmails)]);
 
     Ok(Json(response))
 }
@@ -260,11 +261,11 @@ pub(crate) async fn accept_repository_invite(
     let (repo, outcome) = accept_invite(&state, &token_hash, user.clone(), now).await?;
     let member = match outcome {
         AcceptRepositoryInviteOutcome::Accepted(member) => {
-            state.publish_repo_change(
+            state.after_commit([AfterCommit::repo_change(
                 &repo.incarnation(),
                 repo.record.change_version,
                 RepoChangeReason::MemberAdded,
-            );
+            )]);
             member
         }
         AcceptRepositoryInviteOutcome::AlreadyAccepted(member) => member,

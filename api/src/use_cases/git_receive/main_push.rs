@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
     error::ApiError,
     git::{
@@ -148,7 +149,7 @@ pub(crate) async fn persist_main_push(
     {
         tracing::info!("committed focused content-only push transaction");
         if git_head.queued_main_publication {
-            state.wakeups.github_pushes.notify_one();
+            state.after_commit([AfterCommit::Wake(Wakeup::GitHubPushes)]);
         }
         return Ok(PersistedGitPush {
             incarnation: incarnation.clone(),
@@ -247,7 +248,7 @@ pub(crate) async fn persist_main_push(
         "committed reviewed push transaction"
     );
     if git_head.queued_main_publication {
-        state.wakeups.github_pushes.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::GitHubPushes)]);
     }
     Ok(PersistedGitPush {
         incarnation: incarnation.clone(),

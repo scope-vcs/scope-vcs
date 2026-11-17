@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     auth::{
         clerk::{ClerkIdentity, bearer_token},
@@ -62,9 +63,9 @@ async fn reconcile_clerk_scope_user(
 ) -> Result<UserAccount, ApiError> {
     let resolution = state.metadata.auth().resolve_clerk_user(identity).await?;
     if resolution.created {
-        state
-            .product_analytics
-            .capture(ProductEvent::account_created(&resolution.user.id));
+        state.after_commit([AfterCommit::Analytics(ProductEvent::account_created(
+            &resolution.user.id,
+        ))]);
     }
     Ok(resolution.user)
 }

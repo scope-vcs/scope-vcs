@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{error::ApiError, repo_events::RepoChangeReason, state::AppState};
 use scope_domain::repository::access::RepositoryAccessContext;
 use scope_postgres::db::{
@@ -14,10 +15,10 @@ pub(crate) async fn add_request_invitee(
         .requests()
         .add_request_invitee(command)
         .await?;
-    state.publish_request_summary_refresh(
+    state.after_commit([AfterCommit::request_summary(
         &repo.incarnation(),
         RepoChangeReason::RequestInviteeAdded,
-    );
+    )]);
     Ok(invitee)
 }
 
@@ -31,9 +32,9 @@ pub(crate) async fn remove_request_invitee(
         .requests()
         .remove_request_invitee(command)
         .await?;
-    state.publish_request_summary_refresh(
+    state.after_commit([AfterCommit::request_summary(
         &repo.incarnation(),
         RepoChangeReason::RequestInviteeRemoved,
-    );
+    )]);
     Ok(invitee)
 }

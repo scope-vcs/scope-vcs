@@ -2,24 +2,17 @@ use super::cleanup_queue::queue::{
     queue_pending_repo_storage_cleanup_row, queue_pending_source_blob_deletion_rows,
 };
 use sea_orm::ConnectionTrait;
-use {
-    crate::error::PostgresError,
-    scope_domain::repo_actions::{RepoEffect, RepoEffects},
-};
+use {crate::error::PostgresError, scope_domain::repo_actions::RepoEffect};
 
 pub(super) async fn save_repo_effects<C>(
     conn: &C,
-    effects: &RepoEffects,
+    effects: &[RepoEffect],
     now_unix: u64,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
-    if effects.is_empty() {
-        return Ok(());
-    }
-
-    for effect in effects.iter() {
+    for effect in effects {
         match effect {
             RepoEffect::DeleteRepoStorage(cleanup) => {
                 queue_pending_repo_storage_cleanup_row(conn, cleanup.clone(), now_unix).await?;

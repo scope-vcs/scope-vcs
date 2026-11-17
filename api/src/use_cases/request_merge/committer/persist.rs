@@ -1,6 +1,7 @@
 use super::{
     LandedMerge, MERGE_ATTEMPTS, PreparedRequestMerge, QueuedMerge, discard_all, fail_all,
 };
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
     error::ApiError, git::pool_pack::StagedPoolPack, persistence::unix_now,
     repo_events::RepoChangeReason, state::AppState,
@@ -66,7 +67,7 @@ pub(super) async fn persist_batch(
     for (mutation, persisted) in landed.into_iter().zip(persisting.by_ref()) {
         let command = &persisted.merge.submission.command;
         if mutation.queued_main_publication {
-            state.wakeups.github_pushes.notify_one();
+            state.after_commit([AfterCommit::Wake(Wakeup::GitHubPushes)]);
         }
         crate::use_cases::git_receive::best_effort_sync_cache(
             state,
@@ -79,11 +80,11 @@ pub(super) async fn persist_batch(
         )
         .await;
         persisted.staged_pack.finish(state).await;
-        state.publish_repo_change(
+        state.after_commit([AfterCommit::repo_change(
             &persisted.incarnation,
             mutation.git_head.change_version,
             RepoChangeReason::RequestMerged,
-        );
+        )]);
         landed_in.get_or_insert_with(|| {
             (
                 persisted.incarnation.clone(),
@@ -94,7 +95,7 @@ pub(super) async fn persist_batch(
         let QueuedMerge {
             submission, reply, ..
         } = persisted.merge;
-        state.product_analytics.capture(submission.analytics_event);
+        state.after_commit([AfterCommit::Analytics(submission.analytics_event)]);
         landed_replies.push((
             reply,
             LandedMerge {
@@ -104,7 +105,10 @@ pub(super) async fn persist_batch(
         ));
     }
     if let Some((incarnation, owner, repo_name)) = landed_in {
-        state.publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged);
+        state.after_commit([AfterCommit::request_summary(
+            &incarnation,
+            RepoChangeReason::RequestMerged,
+        )]);
         crate::use_cases::request_checks::renew_stale_check_commits_in_background(
             state, &owner, &repo_name,
         );

@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{error::ApiError, state::AppState};
 use scope_domain::{github_connection::GitHubConnection, requests::github_retry_at};
 use scope_postgres::db::GitHubWorkflowRunReadJob;
@@ -143,7 +144,7 @@ pub(crate) async fn publish(
         .repository_incarnation(&connection.repository_id)
         .await?
     {
-        state.publish_github_workflow_runs_change(&incarnation);
+        state.after_commit([AfterCommit::github_workflow_runs(&incarnation)]);
     }
     Ok(())
 }

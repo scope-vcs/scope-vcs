@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::git::command::git_is_ancestor;
 use crate::{
@@ -148,7 +149,7 @@ pub(crate) async fn run_claimed_push(
     {
         Ok(Some(finished)) => {
             if finished.state == GitHubPushState::Succeeded {
-                state.wakeups.github_pull_requests.notify_one();
+                state.after_commit([AfterCommit::Wake(Wakeup::GitHubPullRequests)]);
             }
             publish_push_change(state, push).await
         }
@@ -239,10 +240,10 @@ pub(crate) async fn refresh_github_visibility(
             .apply_github_repository_visibility(connection.github_repository_id, repository.private)
             .await?
     {
-        state.publish_request_summary_refresh(
+        state.after_commit([AfterCommit::request_summary(
             &incarnation,
             RepoChangeReason::GitHubConnectionChanged,
-        );
+        )]);
     }
     Ok(Some(refreshed))
 }
@@ -449,7 +450,7 @@ async fn wait_for_pull_requests_based_on(
             store
                 .defer_github_branch_deletion(&push.id, claim_token, reason, now_unix)
                 .await?;
-            state.wakeups.github_pull_requests.notify_one();
+            state.after_commit([AfterCommit::Wake(Wakeup::GitHubPullRequests)]);
             Err(JobFailure::Deferred)
         }
     }
@@ -506,14 +507,14 @@ async fn publish_push_change(state: &AppState, push: &GitHubPush) {
     ) {
         (Ok(Some(incarnation)), GitHubBranch::Request(request_id)) => {
             state
-                .publish_request_state_refresh(&incarnation, request_id)
+                .after_commit_request_state(&incarnation, request_id)
                 .await;
         }
         (Ok(Some(incarnation)), GitHubBranch::Main) => {
-            state.publish_request_summary_refresh(
+            state.after_commit([AfterCommit::request_summary(
                 &incarnation,
                 RepoChangeReason::GitHubConnectionChanged,
-            );
+            )]);
         }
         (Ok(None), _) => {}
         (Err(error), _) => tracing::warn!(

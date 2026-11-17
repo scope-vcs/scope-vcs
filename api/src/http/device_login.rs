@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     auth::{
         clerk::bearer_token,
@@ -83,12 +84,10 @@ pub(crate) async fn poll_cli_device_login(
             expires_at_unix,
             identity,
         } => {
-            state
-                .product_analytics
-                .capture(ProductEvent::cli_session_created(
-                    &identity.user_id,
-                    CliSessionMethod::Device,
-                ));
+            state.after_commit([AfterCommit::Analytics(ProductEvent::cli_session_created(
+                &identity.user_id,
+                CliSessionMethod::Device,
+            ))]);
             Ok(Json(DeviceLoginPollResponse {
                 status: DeviceLoginStatus::Complete,
                 session_token: Some(session_token),

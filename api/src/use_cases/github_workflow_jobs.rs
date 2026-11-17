@@ -1,4 +1,5 @@
 use super::github_job_logs;
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::{
@@ -91,7 +92,7 @@ pub(crate) async fn run_jobs(
                 now_unix,
             )
             .await?;
-        state.wakeups.github_job_reads.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::GitHubJobReads)]);
     }
     if connection.is_connected() {
         github_job_logs::queue_readable_logs(state, &jobs, now_unix).await?;
@@ -266,7 +267,10 @@ pub(super) async fn publish(
         .repository_incarnation(&connection.repository_id)
         .await?
     {
-        state.publish_github_workflow_run_change(&incarnation, github_run_id);
+        state.after_commit([AfterCommit::github_workflow_run(
+            &incarnation,
+            github_run_id,
+        )]);
     }
     Ok(())
 }

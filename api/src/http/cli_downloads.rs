@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::state::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -62,16 +63,16 @@ pub(crate) async fn download(
         return StatusCode::NOT_FOUND.into_response();
     };
     if method == Method::GET {
-        state
-            .product_analytics
-            .capture(ProductEvent::cli_artifact_downloaded(CliArtifactDownload {
+        state.after_commit([AfterCommit::Analytics(
+            ProductEvent::cli_artifact_downloaded(CliArtifactDownload {
                 version: &release,
                 artifact: &target.artifact,
                 target_triple: &target.triple,
                 os: &target.os,
                 arch: &target.arch,
                 installer: CliInstaller::from_query(query.installer.as_deref()),
-            }));
+            }),
+        )]);
     }
     (
         StatusCode::FOUND,

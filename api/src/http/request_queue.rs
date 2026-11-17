@@ -5,6 +5,7 @@ use super::{
         request_actor_summary_response, request_list_item_response, request_list_row_subject,
     },
 };
+use crate::after_commit::AfterCommit;
 use crate::auth::{scope::require_scope_user, viewer::Viewer};
 use crate::repo_events::RepoChangeReason;
 use crate::{error::ApiError, state::AppState};
@@ -316,10 +317,10 @@ pub(crate) async fn apply_attention(
             now_unix: crate::persistence::unix_now()?,
         })
         .await?;
-    state.publish_request_summary_refresh(
+    state.after_commit([AfterCommit::request_summary(
         &repo.incarnation(),
         RepoChangeReason::RequestAttentionChanged,
-    );
+    )]);
     let claimer = if let Some(claim) = &result.claim {
         let users = state
             .metadata

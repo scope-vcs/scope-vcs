@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     error::ApiError,
     persistence::unix_now,
@@ -127,17 +128,15 @@ pub(crate) async fn create_discussion(
     )
     .await?;
     if mutation.created {
-        state
-            .product_analytics
-            .capture(ProductEvent::discussion_created(
-                &command.actor_user_id,
-                context.repo.incarnation().incarnation_id(),
-                &context.request.id,
-                &mutation.discussion.id,
-                context.request.view.clone(),
-                request_actor_role(context.repo.access.clone()),
-                mutation.discussion.anchor.is_some(),
-            ));
+        state.after_commit([AfterCommit::Analytics(ProductEvent::discussion_created(
+            &command.actor_user_id,
+            context.repo.incarnation().incarnation_id(),
+            &context.request.id,
+            &mutation.discussion.id,
+            context.request.view.clone(),
+            request_actor_role(context.repo.access.clone()),
+            mutation.discussion.anchor.is_some(),
+        ))]);
     }
     let discussion_id = mutation.discussion.id.clone();
     let through_position = mutation.discussion.last_activity_position;
@@ -204,16 +203,14 @@ pub(crate) async fn transition_discussion(
     )
     .await?;
     if matches!(command.transition, DiscussionTransition::Resolve) {
-        state
-            .product_analytics
-            .capture(ProductEvent::discussion_resolved(
-                &command.actor_user_id,
-                context.repo.incarnation().incarnation_id(),
-                &context.request.id,
-                &command.discussion_id,
-                context.request.view.clone(),
-                request_actor_role(context.repo.access.clone()),
-            ));
+        state.after_commit([AfterCommit::Analytics(ProductEvent::discussion_resolved(
+            &command.actor_user_id,
+            context.repo.incarnation().incarnation_id(),
+            &context.request.id,
+            &command.discussion_id,
+            context.request.view.clone(),
+            request_actor_role(context.repo.access.clone()),
+        ))]);
     }
     let through_position = discussion.last_activity_position;
     publish_timeline_change(
@@ -364,16 +361,16 @@ async fn reply_mutation_result(
     let discussion_id = mutation.discussion.id;
     let reply = mutation.reply;
     if mutation.created {
-        state
-            .product_analytics
-            .capture(ProductEvent::discussion_reply_created(
+        state.after_commit([AfterCommit::Analytics(
+            ProductEvent::discussion_reply_created(
                 actor_user_id,
                 context.repo.incarnation().incarnation_id(),
                 &context.request.id,
                 &discussion_id,
                 context.request.view.clone(),
                 request_actor_role(context.repo.access.clone()),
-            ));
+            ),
+        )]);
     }
     publish_timeline_change(state, context, discussion_id.clone(), reply.position);
     let discussion = load_discussion_result(state, context, &discussion_id, actor_user_id).await?;
@@ -422,13 +419,13 @@ fn publish_timeline_change(
     discussion_id: String,
     through_position: u64,
 ) {
-    state.publish_request_timeline_change(
+    state.after_commit([AfterCommit::request_timeline(
         &context.repo.incarnation(),
         context.request.id.clone(),
         discussion_id,
         through_position,
         context.request.view.clone(),
-    );
+    )]);
 }
 
 async fn ensure_discussion_in_request(

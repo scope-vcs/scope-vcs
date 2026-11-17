@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{error::ApiError, repo_events::RepoChangeReason, state::AppState};
 use scope_domain::{
     account::UserAccount, repo_collaboration::AcceptRepositoryInviteOutcome,
@@ -18,12 +19,9 @@ pub(crate) async fn accept_repository_invite(
         .accept_repository_invite(token_hash, user.clone(), now_unix)
         .await?;
     if matches!(outcome, AcceptRepositoryInviteOutcome::Accepted(_)) {
-        state
-            .product_analytics
-            .capture(ProductEvent::repository_invite_accepted(
-                &user.id,
-                &repo.record.incarnation_id,
-            ));
+        state.after_commit([AfterCommit::Analytics(
+            ProductEvent::repository_invite_accepted(&user.id, &repo.record.incarnation_id),
+        )]);
     }
     Ok((repo, outcome))
 }
@@ -44,6 +42,10 @@ pub(crate) async fn publish_committed_mutation<T>(
     mutation: RepositoryCollaborationMutation<T>,
     reason: RepoChangeReason,
 ) -> T {
-    state.publish_repo_change(&mutation.incarnation, mutation.change_version, reason);
+    state.after_commit([AfterCommit::repo_change(
+        &mutation.incarnation,
+        mutation.change_version,
+        reason,
+    )]);
     mutation.value
 }
