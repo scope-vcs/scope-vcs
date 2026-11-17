@@ -110,9 +110,12 @@ test('a live refresh in flight leaves the reader where they scrolled', async () 
   const summaryRequested = new Promise((resolve) => { markSummaryRequested = resolve })
   const summaryHeld = new Promise((resolve) => { releaseSummary = resolve })
   const isSummary = (request) => serverFunctionName(request) === 'loadRepoLiveState_createServerFn_handler'
+  const LIVE_REFRESH_SUMMARY = 2
+  let summaryRequests = 0
   try {
     await withPage(requestPath, async (page) => {
       await summaryRequested
+      await page.getByRole('region', { name: 'Request discussion' }).waitFor()
       const mainContent = page.locator('#main-content')
       const scrollTop = await mainContent.evaluate((element) => {
         element.scrollTop = 300
@@ -128,6 +131,8 @@ test('a live refresh in flight leaves the reader where they scrolled', async () 
       settle: false,
       prepare: (page) => page.route('**/_serverFn/**', async (route) => {
         if (!isSummary(route.request())) return route.fallback()
+        summaryRequests += 1
+        if (summaryRequests !== LIVE_REFRESH_SUMMARY) return route.fallback()
         markSummaryRequested()
         const response = await route.fetch()
         await summaryHeld
