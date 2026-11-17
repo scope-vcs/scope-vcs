@@ -525,7 +525,7 @@ impl GitHubApp {
         path: &str,
         route: &'static str,
     ) -> Result<Option<T>, ApiError> {
-        self.rate_limit_pauses.check(installation_id, unix_now()?)?;
+        self.rate_limit_pauses.check(installation_id)?;
         let Some(token) = self.installation_token(installation_id).await? else {
             return Ok(None);
         };
@@ -540,7 +540,7 @@ impl GitHubApp {
         route: &'static str,
         items: impl Fn(P) -> Vec<T>,
     ) -> Result<Option<Vec<T>>, ApiError> {
-        self.rate_limit_pauses.check(installation_id, unix_now()?)?;
+        self.rate_limit_pauses.check(installation_id)?;
         let Some(token) = self.installation_token(installation_id).await? else {
             return Ok(None);
         };

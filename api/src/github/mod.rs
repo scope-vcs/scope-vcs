@@ -80,8 +80,16 @@ impl GitHubApp {
             oauth_authorize_url,
             git_url: git_url.trim_end_matches('/').to_string(),
             installation_tokens: Mutex::default(),
-            rate_limit_pauses: rate_limit_pauses::RateLimitPauses::default(),
+            rate_limit_pauses: rate_limit_pauses::RateLimitPauses::new(std::sync::Arc::new(
+                crate::persistence::unix_now,
+            )),
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_rate_limit_clock(mut self, now_unix: rate_limit_pauses::UnixClock) -> Self {
+        self.rate_limit_pauses = rate_limit_pauses::RateLimitPauses::new(now_unix);
+        self
     }
 
     pub(crate) fn setup_tokens(&self) -> &SetupTokenSigner {

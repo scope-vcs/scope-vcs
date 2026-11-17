@@ -61,7 +61,7 @@ async fn deliveries_are_answered_before_any_github_read_and_one_commit_is_read_o
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_rate_limit_keeps_deliveries_and_stops_github_reads_before_the_reset() {
+async fn a_rate_limit_keeps_deliveries_stops_github_reads_and_resumes_at_the_reset() {
     let request = pushed_request("deliveries-rate-limited").await;
     let (state, fake) = (&request.state, &request.fake);
     let now = unix_now();
@@ -69,53 +69,31 @@ async fn a_rate_limit_keeps_deliveries_and_stops_github_reads_before_the_reset()
     *fake.check_runs_rate_limited_until.lock().unwrap() = Some(reset);
 
     queue_check_run(&request, "refused").await;
-    assert_eq!(process_at(state, now).await, 1);
+    assert_eq!(process_at(state, unix_now()).await, 1);
     assert_eq!(fake.check_run_reads.load(Ordering::SeqCst), 1);
 
     queue_check_run(&request, "arrived-while-limited").await;
-    assert_eq!(process_at(state, now).await, 1);
+    assert_eq!(process_at(state, unix_now()).await, 1);
     assert_eq!(process_at(state, reset - 1).await, 0);
-    assert_eq!(fake.check_run_reads.load(Ordering::SeqCst), 1);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn paused_reads_resume_after_the_reset_and_the_deliveries_complete() {
-    let request = pushed_request("deliveries-resume").await;
-    let (state, fake) = (&request.state, &request.fake);
-    let refused_at = unix_now();
-    *fake.check_runs_rate_limited_until.lock().unwrap() = Some(refused_at);
-
-    queue_check_run(&request, "refused").await;
-    queue_check_run(&request, "also-waiting").await;
-    assert_eq!(process_at(state, refused_at).await, 2);
     assert_eq!(fake.check_run_reads.load(Ordering::SeqCst), 1);
     assert_eq!(first_check_status(&request).await, serde_json::Value::Null);
 
     *fake.check_runs_rate_limited_until.lock().unwrap() = None;
-    let reopened_at = unix_now() + 2;
-    while unix_now() < reopened_at {
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
-
-    assert_eq!(
-        process_due_github_deliveries(state, crate::persistence::unix_now)
-            .await
-            .unwrap(),
-        2
-    );
+    fake.client_clock_unix.store(reset, Ordering::SeqCst);
+    assert_eq!(process_at(state, reset).await, 2);
     assert_eq!(fake.check_run_reads.load(Ordering::SeqCst), 2);
     assert_eq!(first_check_status(&request).await, "in_progress");
-    assert_eq!(process_at(state, reopened_at + 3_600).await, 0);
+    assert_eq!(process_at(state, reset + 3_600).await, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_read_github_could_not_serve_is_retried_on_the_usual_schedule() {
     let request = pushed_request("deliveries-retried").await;
     let (state, fake) = (&request.state, &request.fake);
-    let now = unix_now();
     fake.check_runs_unavailable.store(true, Ordering::SeqCst);
 
     queue_check_run(&request, "unserved").await;
+    let now = unix_now();
     assert_eq!(process_at(state, now).await, 1);
     assert_eq!(first_check_status(&request).await, serde_json::Value::Null);
 

@@ -71,6 +71,7 @@ pub(super) struct FakeGitHub {
     pub(super) check_run_reads: AtomicUsize,
     pub(super) check_runs_unavailable: AtomicBool,
     pub(super) check_runs_rate_limited_until: Mutex<Option<u64>>,
+    pub(super) client_clock_unix: Arc<std::sync::atomic::AtomicU64>,
     workflow_runs: Mutex<HashMap<String, Vec<serde_json::Value>>>,
     pub(super) workflow_run_unavailable: AtomicBool,
     workflow_jobs: Mutex<HashMap<u64, Vec<serde_json::Value>>>,
@@ -254,8 +255,16 @@ impl FakeGitHub {
             webhook_secret: WEBHOOK_SECRET.to_string(),
         };
         let git_url = fake.git_root.0.path().to_str().unwrap().to_string();
+        let client_clock_unix = fake.client_clock_unix.clone();
         state.github = Some(Arc::new(
-            GitHubApp::new(config, &url, &url, &git_url).unwrap(),
+            GitHubApp::new(config, &url, &url, &git_url)
+                .unwrap()
+                .with_rate_limit_clock(Arc::new(move || {
+                    match client_clock_unix.load(Ordering::SeqCst) {
+                        0 => crate::persistence::unix_now(),
+                        set_unix => Ok(set_unix),
+                    }
+                })),
         ));
         fake
     }
