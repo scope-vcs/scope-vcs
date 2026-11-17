@@ -1,20 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-
-import { RAILWAY_COMPONENTS, RAILWAY_CONFIG_PATHS } from "./deployment-components.mjs";
 
 import {
   assertEffectiveRailwayDeployConfig,
   assertHealthyRailwayService,
   railwayServicesFromStatus,
   railwayServiceIsStopped,
-  verifyProductionRailwayServices,
 } from "./railway-service-health.mjs";
 
-const SOURCE_SHA = "a".repeat(40);
 const expectedDeploy = {
   healthcheckPath: "/readyz",
   healthcheckTimeout: 60,
@@ -208,100 +201,4 @@ test("effective deployment config must contain and match every transition settin
     ),
     /effective deploy\.healthcheckPath is "\/healthz", expected "\/readyz"/,
   );
-});
-
-test("production verification binds every live service to durable Railway evidence", () => {
-  const manifest = { services: {} };
-  const deployments = {};
-  const services = [];
-  const serviceConfigs = {};
-  for (const component of RAILWAY_COMPONENTS) {
-    manifest.services[component] = { id: component };
-    deployments[component] = {
-      sourceSha: SOURCE_SHA,
-      provider: "railway",
-      evidenceId: `deployment-${component}`,
-      ...(component === "media-worker" ? { artifactDigest: `sha256:${"b".repeat(64)}` } : {}),
-    };
-    const service = healthyService(component);
-    if (component === "cli-downloads") service.effectiveDeploy = undefined;
-    services.push(service);
-    if (RAILWAY_CONFIG_PATHS[component]) {
-      serviceConfigs[component] = { deploy: expectedDeploy };
-    }
-  }
-
-  assert.deepEqual(
-    verifyProductionRailwayServices({ deployments, manifest, serviceConfigs, services })
-      .map(({ component }) => component),
-    RAILWAY_COMPONENTS,
-  );
-
-  const incompleteConfigs = { ...serviceConfigs };
-  delete incompleteConfigs["git-router"];
-  assert.throws(
-    () => verifyProductionRailwayServices({
-      deployments,
-      manifest,
-      serviceConfigs: incompleteConfigs,
-      services,
-    }),
-    /git-router is missing expected Railway config/,
-  );
-
-  delete deployments.web;
-  assert.throws(
-    () => verifyProductionRailwayServices({
-      deployments,
-      manifest,
-      serviceConfigs,
-      services,
-    }),
-    /web has no exact Railway deployment evidence/,
-  );
-});
-
-
-test("production CLI verifies canonical receipts against the checked-in manifest and Railway status", () => {
-  const root = fileURLToPath(new URL("../../", import.meta.url));
-  const manifest = JSON.parse(readFileSync(new URL("../../.github/deployment-services.json", import.meta.url), "utf8"));
-  const configPaths = {
-    "run-worker": "worker/railway.json",
-    "git-router": "repo-router/railway.json", "media-api": "media-service/railway.json",
-    "media-worker": "media-worker/railway.json", api: "api/railway.json", web: "web/railway.json",
-  };
-  const deployments = Object.fromEntries(Object.keys(manifest.services).map(component => [component, {
-    sourceSha: SOURCE_SHA, provider: "railway", evidenceId: `live-${component}`,
-    ...(component === "media-worker" ? { artifactDigest: `sha256:${"b".repeat(64)}` } : {}),
-  }]));
-  const state = { environments: { edges: [{ node: {
-    id: manifest.environments.production.environmentId, name: "production",
-    serviceInstances: { edges: Object.entries(manifest.services).map(([component, service]) => ({ node: {
-      serviceId: service.id, serviceName: service.name, numReplicas: 1,
-      activeDeployments: [{ id: deployments[component].evidenceId, status: "SUCCESS", deploymentStopped: false,
-        instances: [{ status: "RUNNING" }], meta: { serviceManifest: { deploy: {
-          ...(configPaths[component] ? JSON.parse(readFileSync(`${root}${configPaths[component]}`, "utf8")).deploy : {}),
-          numReplicas: 1, multiRegionConfig: { test: { numReplicas: 1 } },
-        } } },
-      }],
-    } })) },
-  } }] } };
-  const run = () => spawnSync(process.execPath, [fileURLToPath(new URL("./railway-service-health.mjs", import.meta.url))], {
-    cwd: root, encoding: "utf8", env: { ...process.env,
-      SCOPE_RAILWAY_SERVICES_JSON: JSON.stringify(state),
-      SCOPE_DEPLOYMENT_MANIFEST_JSON: JSON.stringify(manifest),
-      SCOPE_PRODUCTION_DEPLOYMENTS_JSON: JSON.stringify(deployments),
-    },
-  });
-  const success = run();
-  assert.equal(success.status, 0, success.stderr);
-  assert.deepEqual(JSON.parse(success.stdout).map(({ component }) => component).sort(), Object.keys(manifest.services).sort());
-  delete deployments["media-worker"].artifactDigest;
-  const missingDigest = run();
-  assert.equal(missingDigest.status, 1);
-  assert.match(missingDigest.stderr, /media-worker has no exact OCI artifact evidence/);
-  deployments["media-worker"].artifactDigest = "sha256:invalid";
-  const invalidDigest = run();
-  assert.equal(invalidDigest.status, 1);
-  assert.match(invalidDigest.stderr, /media-worker has no exact OCI artifact evidence/);
 });

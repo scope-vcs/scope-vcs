@@ -3,7 +3,6 @@
     "cliVersion": "5.60.0",
     "releaseImagePrefix": "railway-private",
     "projectId": "45dd67fa-6d69-48ad-9680-1313d41b4490",
-    "runtimeGroupId": "74120aef-735e-4959-bf8d-5cd36d10cab1",
     "databaseServiceId": "44c41a90-2d1a-4a1b-85c9-6af85d179be3",
     "maintenanceServiceId": "bd90e5e7-80f3-4082-b0fb-2b4e89efc858",
     "regionId": "us-east4-eqdc4a"
@@ -467,12 +466,8 @@
     }
   },
   "releasePolicy": {
-    "maintenanceEnabled": true,
-    "maintenanceWarningSeconds": 1800,
-    "writerDrainTimeoutSeconds": 120,
     "migrationLockTimeoutSeconds": 120,
-    "migrationStatementTimeoutSeconds": 3600,
-    "postReleaseObservationSeconds": 60
+    "migrationStatementTimeoutSeconds": 3600
   },
   "environments": {
     "production": {
@@ -483,10 +478,6 @@
     "staging": {
       "environmentId": "f6cdb01a-7a42-40ff-b799-bffe254191b2",
       "environmentName": "staging",
-      "apiReplicas": 3,
-      "apiDomain": "scope-api-staging.up.railway.app",
-      "routerDomain": "scope-git-router-staging.up.railway.app",
-      "routerReplicas": 1,
       "webDomain": "scope-web-staging.up.railway.app"
     }
   }

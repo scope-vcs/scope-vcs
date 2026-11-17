@@ -128,15 +128,3 @@ appendFileSync(evidencePath, `${JSON.stringify({
   evidenceId: deploymentId,
   artifactDigest: match[1],
 })}\n`);
-
-if (process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE) {
-  const deploymentsPath = process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE;
-  execFileSync("flock", ["-x", `${deploymentsPath}.lock`, process.execPath, "-e", `
-    const { readFileSync, renameSync, writeFileSync } = require("node:fs");
-    const [path, component, id] = process.argv.slice(1);
-    const active = JSON.parse(readFileSync(path, "utf8"));
-    active[component] = id;
-    writeFileSync(\`\${path}.tmp.\${process.pid}\`, \`\${JSON.stringify(active)}\\n\`);
-    renameSync(\`\${path}.tmp.\${process.pid}\`, path);
-  `, deploymentsPath, component, deploymentId], { stdio: "inherit" });
-}

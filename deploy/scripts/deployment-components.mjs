@@ -8,10 +8,6 @@ const manifest = JSON.parse(readFileSync(new URL('../../.github/deployment-servi
 
 export const RAILWAY_COMPONENTS = Object.keys(manifest.services);
 export const BACKEND_COMPONENTS = RAILWAY_COMPONENTS.filter(component => deploymentComponent(component).backend);
-export const APPLICATION_COMPONENTS = RAILWAY_COMPONENTS.filter(component => component !== 'cli-downloads');
-export const RAILWAY_CONFIG_PATHS = Object.fromEntries(RAILWAY_COMPONENTS
-  .filter(component => deploymentComponent(component).verifyTransitionConfig)
-  .map(component => [component, deploymentComponent(component).runtimeConfig]));
 
 export function deploymentComponent(component) {
   const definition = manifest.services[component]?.deployment;

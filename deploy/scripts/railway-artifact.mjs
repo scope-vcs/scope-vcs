@@ -1,10 +1,9 @@
-import { retryRailway } from './railway-retry.mjs';
 import { mutateRailway } from './railway-client.mjs';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { readRailway } from './railway-read.mjs';
-import { APPLICATION_COMPONENTS, RAILWAY_COMPONENTS, deploymentComponent, loadComponentConfig } from './deployment-components.mjs';
+import { RAILWAY_COMPONENTS, deploymentComponent, loadComponentConfig } from './deployment-components.mjs';
 
 const digestReference = /^[a-z0-9][a-z0-9./_-]*@sha256:[a-f0-9]{64}$/;
 const sourceRevision = /^[a-f0-9]{40}$/;
@@ -159,32 +158,6 @@ export function artifactDeploymentInput(component, artifact, config, { registryC
   return input;
 }
 
-export function configureStagingRegistry(manifest, credentials, railway = runRailway) {
-  if (!credentials?.username && !credentials?.password) return { configured: false };
-  if (!credentials.username || !credentials.password) throw new Error('Both registry username and password are required.');
-  const environmentId = manifest?.environments?.staging?.environmentId;
-  const productionId = manifest?.environments?.production?.environmentId;
-  const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
-  if (!uuid.test(environmentId ?? '') || !uuid.test(productionId ?? '') || environmentId === productionId) {
-    throw new Error('Registry configuration requires a distinct, explicit staging environment.');
-  }
-  const serviceIds = APPLICATION_COMPONENTS.map((component) => {
-    const id = manifest.services?.[component]?.id;
-    if (!uuid.test(id ?? '')) throw new Error(`Staging registry configuration is missing ${component} service ID.`);
-    return id;
-  });
-  if (new Set(serviceIds).size !== serviceIds.length) throw new Error('Staging registry service IDs must be distinct.');
-  for (const serviceId of serviceIds) {
-    retryRailway(() => {
-      const result = railway('mutation ConfigureRegistry($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}', {
-        serviceId, environmentId, input: { registryCredentials: credentials },
-      });
-      if (result.errors?.length || result.data?.serviceInstanceUpdate !== true) throw new Error('Railway did not confirm staging registry configuration.');
-    });
-  }
-  return { configured: true, serviceCount: serviceIds.length };
-}
-
 export function activateArtifact(release, component, environmentId, { config, services, registryCredentials, railway = runRailway } = {}) {
   validatePreparedRelease(release, { components: [component], services });
   if (!environmentId) throw new Error('An explicit Railway environment ID is required.');
@@ -218,9 +191,6 @@ async function main() {
   } else if (command === 'verify-private-package') {
     const manifest = loadDeploymentManifest();
     await verifyPrivateReleasePackage(manifest, process.env.GITHUB_REPOSITORY, file, { token: process.env.GITHUB_TOKEN });
-  } else if (command === 'configure-staging-registry') {
-    const manifest = loadDeploymentManifest();
-    configureStagingRegistry(manifest, { username: process.env.SCOPE_RAILWAY_REGISTRY_USERNAME, password: process.env.SCOPE_RAILWAY_REGISTRY_PASSWORD });
   } else if (command === 'record') {
     const [component, image, sourceSha, serviceId] = args;
     let release;
@@ -259,7 +229,7 @@ async function main() {
       const password = process.env.SCOPE_RAILWAY_REGISTRY_PASSWORD;
       const registryCredentials = username || password ? { username, password } : undefined;
       console.log(JSON.stringify(activateArtifact(release, component, environmentId, { config, services, registryCredentials })));
-    } else throw new Error('usage: railway-artifact.mjs <validate|record|activate|verify|verify-maintenance|configure-staging-registry|image-repository|verify-private-package> <manifest> <arguments...>');
+    } else throw new Error('usage: railway-artifact.mjs <validate|record|activate|verify|verify-maintenance|image-repository|verify-private-package> <manifest> <arguments...>');
   }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

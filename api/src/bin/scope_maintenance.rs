@@ -1,6 +1,6 @@
 use scope_postgres::db::{
     MigrationLimits, apply_maintenance_migrations, migration_plan, migration_preflight,
-    terminate_metadata_writer_sessions, verify_schema, verify_writer_fence_available,
+    verify_schema,
 };
 
 const USAGE: &str = r#"usage: scope-maintenance <command>
@@ -10,8 +10,6 @@ commands:
   preflight                   validate baseline schema and print plan without persisting changes
   plan                        print the pending migration plan as JSON (read-only)
   verify                      require the exact migration ledger (read-only)
-  fence                       probe the exclusive writer fence (read-only)
-  drain-writers               terminate sessions holding the shared writer fence
   apply                       apply all pending migrations
   help                        show this help
 
@@ -57,14 +55,6 @@ async fn main() -> anyhow::Result<()> {
             apply_maintenance_migrations(database_url.clone(), migration_limits()?).await?;
             verify_schema(database_url).await?;
             println!(r#"{{"exact":true,"migration":"applied"}}"#);
-        }
-        "fence" => {
-            verify_writer_fence_available(database_url).await?;
-            println!(r#"{{"available":true}}"#);
-        }
-        "drain-writers" => {
-            let terminated = terminate_metadata_writer_sessions(database_url).await?;
-            println!(r#"{{"terminated":{terminated}}}"#);
         }
         "verify" => {
             verify_schema(database_url).await?;

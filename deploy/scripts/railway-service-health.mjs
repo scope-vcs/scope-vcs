@@ -3,11 +3,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { RAILWAY_COMPONENTS, RAILWAY_CONFIG_PATHS } from "./deployment-components.mjs";
-
-export { RAILWAY_COMPONENTS };
-
-const SOURCE_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const REQUIRED_DEPLOY_SETTINGS = [
   "healthcheckPath",
   "healthcheckTimeout",
@@ -114,51 +109,6 @@ export function railwayServiceIsStopped(services, serviceId) {
   return replicas.running === 0 && replicas.crashed === 0;
 }
 
-export function verifyProductionRailwayServices({
-  deployments,
-  manifest,
-  serviceConfigs,
-  services,
-}) {
-  const verified = [];
-  for (const component of RAILWAY_COMPONENTS) {
-    const serviceId = manifest?.services?.[component]?.id;
-    if (typeof serviceId !== "string" || serviceId.length === 0) {
-      throw new Error(`Production manifest is missing Railway service ${component}`);
-    }
-    const evidence = deployments?.[component];
-    if (
-      evidence?.provider !== "railway"
-      || !SOURCE_SHA_PATTERN.test(evidence.sourceSha ?? "")
-      || typeof evidence.evidenceId !== "string"
-      || evidence.evidenceId.length === 0
-    ) {
-      throw new Error(`Production ${component} has no exact Railway deployment evidence`);
-    }
-    if (component === "media-worker" && !/^sha256:[0-9a-f]{64}$/.test(evidence.artifactDigest ?? "")) {
-      throw new Error("Production media-worker has no exact OCI artifact evidence");
-    }
-    const service = assertHealthyRailwayService(services, serviceId, evidence.evidenceId);
-    const configPath = RAILWAY_CONFIG_PATHS[component];
-    if (configPath) {
-      const config = serviceConfigs?.[component];
-      if (!config) {
-        throw new Error(`Production ${component} is missing expected Railway config`);
-      }
-      assertEffectiveRailwayDeployConfig(service, config, configPath);
-    }
-    verified.push({ component, ...evidence });
-  }
-  return verified;
-}
-
-export function loadRailwayServiceConfigs(root = process.cwd()) {
-  return Object.fromEntries(Object.entries(RAILWAY_CONFIG_PATHS).map(([component, path]) => [
-    component,
-    JSON.parse(readFileSync(resolve(root, path), "utf8")),
-  ]));
-}
-
 function environmentJson(name) {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required`);
@@ -169,17 +119,6 @@ function main() {
   const state = environmentJson("SCOPE_RAILWAY_SERVICES_JSON");
   if (process.argv[2] === "stopped") {
     process.stdout.write(`${railwayServiceIsStopped(state, process.env.SCOPE_RAILWAY_SERVICE_ID)}\n`);
-    return;
-  }
-  if (process.env.SCOPE_PRODUCTION_DEPLOYMENTS_JSON) {
-    const manifest = environmentJson("SCOPE_DEPLOYMENT_MANIFEST_JSON");
-    const verified = verifyProductionRailwayServices({
-      deployments: environmentJson("SCOPE_PRODUCTION_DEPLOYMENTS_JSON"),
-      manifest,
-      serviceConfigs: loadRailwayServiceConfigs(),
-      services: servicesFromState(state, manifest.environments?.production?.environmentId),
-    });
-    process.stdout.write(`${JSON.stringify(verified)}\n`);
     return;
   }
 
