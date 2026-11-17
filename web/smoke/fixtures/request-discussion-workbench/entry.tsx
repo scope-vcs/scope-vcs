@@ -35,19 +35,23 @@ const discussion = {
   status: 'Open',
   unread_count: 0,
 } as RequestDiscussionView
-const page: RequestDiscussionPage = { discussions: [discussion], next_cursor: 'older', snapshot_version: 1 }
+const unfocused = { ...discussion, body_markdown: 'Another open question', client_discussion_id: 'unfocused', id: 'unfocused', last_activity_position: 2, opened_position: 2 }
+const page: RequestDiscussionPage = { discussions: [unfocused, discussion], next_cursor: 'older', snapshot_version: 2 }
+const focusedOnly: RequestDiscussionPage = { discussions: [discussion], next_cursor: null, snapshot_version: 2 }
 const olderPage: RequestDiscussionPage = {
   discussions: [{ ...discussion, body_markdown: 'An older question', client_discussion_id: 'older', id: 'older', last_activity_position: 0, opened_position: 0 }],
   next_cursor: null,
-  snapshot_version: 1,
+  snapshot_version: 2,
 }
 const server = { olderLoads: 0, pageLoads: 0 }
 const heldOlderLoads: Array<() => void> = []
-const loadPage = async (input?: { cursor?: string }) => {
-  if (!input?.cursor) {
-    server.pageLoads += 1
-    return page
-  }
+const loadFirstPage = async () => {
+  server.pageLoads += 1
+  return page
+}
+const loadPage = async (input: { cursor?: string; discussion_id?: string }) => {
+  if (input.discussion_id) return focusedOnly
+  if (!input.cursor) return page
   server.olderLoads += 1
   await new Promise<void>((resolve) => heldOlderLoads.push(resolve))
   return olderPage
@@ -56,6 +60,7 @@ const unused = async () => { throw new Error('This fixture does not exercise thi
 const actions = {
   create: unused,
   load: loadPage,
+  loadFirstPage,
   loadChanges: async ({ after }: { after: number }) => ({ discussions: [], through_position: after, has_more: false }),
   markRead: async () => {},
   resolve: unused,
@@ -75,7 +80,7 @@ const key = requestDiscussionCacheKey({ repoId: scope, requestId: params.request
 
 Object.assign(window, { fixture: { server, finishOlderLoad: () => heldOlderLoads.shift()?.() } })
 
-await loadRequestDiscussion({ key, load: () => loadPage() })
+await loadRequestDiscussion({ key, focusedDiscussionId: discussion.id, load: loadFirstPage })
 for (let index = 0; index < RETAINED_TIMELINES; index++) {
   requestDiscussionResource.write(`other-${index}`, requestDiscussionState(page))
 }
@@ -92,6 +97,7 @@ function App() {
             actions={actions}
             actor={viewer}
             canResolve={() => false}
+            focusedDiscussionId={discussion.id}
             params={params}
             pending={<p role="status">Loading request discussion</p>}
             permissions={{ canOpenDiscussion: true, canReply: true, canWaitAfterReply: false }}

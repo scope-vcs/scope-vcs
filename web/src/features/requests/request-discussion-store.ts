@@ -9,8 +9,8 @@ import {
   useRef,
 } from 'react'
 import {
+  loadRequestDiscussionState,
   requestDiscussionResource,
-  requestDiscussionState,
   syncRequestDiscussionProjections,
   updateRequestDiscussion,
   updateRequestDiscussionCollection,
@@ -45,6 +45,7 @@ type RequestDiscussionSync = ReturnType<typeof createRequestDiscussionSync>
 export type RequestDiscussionActions = {
   create: (input: CreateDiscussionInput) => Promise<RequestDiscussionMutation>
   load: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
+  loadFirstPage: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage | null>
   loadChanges: (
     input: RequestParams & { after: number },
   ) => Promise<RequestDiscussionChanges>
@@ -54,8 +55,8 @@ export type RequestDiscussionActions = {
   ) => Promise<RequestDiscussionMutation>
 }
 
-export function useRequestDiscussionState(key: string, loadPage: () => Promise<RequestDiscussionPage>) {
-  const load = useCallback(async () => requestDiscussionState(await loadPage()), [loadPage])
+export function useRequestDiscussionState(key: string, loadFirstPage: () => Promise<RequestDiscussionPage | null>) {
+  const load = useCallback(() => loadRequestDiscussionState(loadFirstPage), [loadFirstPage])
   return useCachedResource({
     fallbackError: 'Discussion is unavailable.',
     identity: key,

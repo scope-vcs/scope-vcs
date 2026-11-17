@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
 
-test('a discussion evicted between its load and the view subscribing is read again and renders', async (t) => {
+test('a focused discussion evicted between its load and the view subscribing is read again whole', async (t) => {
   const { base, errors, page } = await openFixture(t, 'request-discussion-workbench', { aliases: [fixtureClerk], tailwind: true })
   await page.goto(base, { timeout: 30_000 })
 
@@ -10,6 +10,8 @@ test('a discussion evicted between its load and the view subscribing is read aga
   const discussion = page.getByRole('region', { name: 'Request discussion' })
   await discussion.getByText('Which retry cap?').waitFor()
   assert.equal(await page.evaluate(() => window.fixture.server.pageLoads), 2)
+  assert.equal(await discussion.getByText('Another open question').count(), 1, 'recovery must not keep only the focused discussion')
+  assert.equal(await discussion.getByRole('button', { name: 'Load earlier discussions' }).isEnabled(), true)
   assert.deepEqual(errors, [])
 })
 

@@ -34,6 +34,7 @@ type RequestDiscussionViewProps = {
   focusedDiscussionId?: string
   live: RepoLiveState
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
+  loadDiscussionFirstPage: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage | null>
   loadDiscussionChanges: (input: {
     after: number
     owner: string
@@ -58,6 +59,7 @@ export function RequestDiscussionView({
   focusedDiscussionId,
   live,
   loadDiscussions,
+  loadDiscussionFirstPage,
   loadDiscussionChanges,
   loadReplies,
   markDiscussionRead,
@@ -80,6 +82,7 @@ export function RequestDiscussionView({
   const actions: RequestDiscussionActions = useMemo(() => ({
     create: createDiscussion,
     load: loadDiscussions,
+    loadFirstPage: loadDiscussionFirstPage,
     loadChanges: loadDiscussionChanges,
     markRead: markDiscussionRead,
     resolve: resolveDiscussion,
@@ -87,6 +90,7 @@ export function RequestDiscussionView({
     createDiscussion,
     loadDiscussionChanges,
     loadDiscussions,
+    loadDiscussionFirstPage,
     markDiscussionRead,
     resolveDiscussion,
   ])

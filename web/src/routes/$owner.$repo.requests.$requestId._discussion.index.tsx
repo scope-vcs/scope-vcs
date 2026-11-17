@@ -22,7 +22,7 @@ import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { createFileRoute, getRouteApi } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useRequestState } from '@/features/requests/request-state-context'
-import { loadRequestDiscussionChanges } from '@/routes/-request-discussion-actions'
+import { loadRequestDiscussionChanges, loadRequestDiscussionPage } from '@/routes/-request-discussion-actions'
 import { MessageSquare } from 'lucide-react'
 
 const discussionRoute = getRouteApi('/$owner/$repo/requests/$requestId/_discussion')
@@ -90,6 +90,7 @@ function RequestDiscussionRoute() {
       focusedDiscussionId={search.discussion}
       live={live}
       loadDiscussions={(data) => loadDiscussions({ data })}
+      loadDiscussionFirstPage={(data) => loadRequestDiscussionPage({ data })}
       loadDiscussionChanges={(data) => loadRequestDiscussionChanges({ data })}
       loadReplies={(data) => loadReplies({ data })}
       markDiscussionRead={(data) => markDiscussionRead({ data })}

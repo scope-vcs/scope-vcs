@@ -48,6 +48,12 @@ export function requestDiscussionState(page: RequestDiscussionPage): RequestDisc
   }
 }
 
+export async function loadRequestDiscussionState(load: () => Promise<RequestDiscussionPage | null>) {
+  const page = await load()
+  if (!page) throw new Error('Discussion is unavailable.')
+  return requestDiscussionState(page)
+}
+
 export function updateRequestDiscussion(
   key: string,
   epoch: number,
@@ -154,11 +160,7 @@ export function loadRequestDiscussion({
       return stillRetained()
     }, stillRetained)
   }
-  return requestDiscussionResource.load(key, '', async () => {
-    const page = await load()
-    if (!page) throw new Error('Discussion is unavailable.')
-    return requestDiscussionState(page)
-  }).then((state) => retainsDiscussion(state, focusedDiscussionId)
+  return requestDiscussionResource.load(key, '', () => loadRequestDiscussionState(load)).then((state) => retainsDiscussion(state, focusedDiscussionId)
     ? true
     : loadRequestDiscussion({ key, focusedDiscussionId, load }))
 }

@@ -46,11 +46,11 @@ export function RequestDiscussionWorkbench(props: RequestDiscussionWorkbenchProp
     viewerId: props.viewerId,
   })
   const { actions, focusedDiscussionId, params } = props
-  const loadPage = useCallback(
-    () => actions.load({ ...params, discussion_id: focusedDiscussionId }),
+  const loadFirstPage = useCallback(
+    () => actions.loadFirstPage({ ...params, discussion_id: focusedDiscussionId }),
     [actions, focusedDiscussionId, params],
   )
-  const discussion = useRequestDiscussionState(cacheKey, loadPage)
+  const discussion = useRequestDiscussionState(cacheKey, loadFirstPage)
   if (discussion.value) return <RetainedRequestDiscussion {...props} cacheKey={cacheKey} state={discussion.value} />
   return discussion.status === 'failed' ? props.unavailable : props.pending
 }
