@@ -378,7 +378,7 @@ test('constrained menus keep keyboard targets visible and stay open while scroll
   await page.getByRole('button', { name: 'Snooze request request-0' }).focus()
   await page.keyboard.press('Enter')
   const menu = page.getByRole('menu', { name: 'Snooze request request-0' })
-  await menu.waitFor()
+  await page.waitForFunction(() => document.querySelector(':popover-open')?.contains(document.activeElement))
   assert.equal(await menu.evaluate((node) => node.scrollHeight > node.clientHeight), true)
   for (const [key, item] of [['End', menu.getByRole('menuitem').last()], ['Home', menu.getByRole('menuitem').first()]]) {
     await page.keyboard.press(key)
