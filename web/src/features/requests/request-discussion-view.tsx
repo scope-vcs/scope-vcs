@@ -3,7 +3,7 @@ import type {
   RequestActorSummaryResponse,
   RequestDetailResponse,
 } from '@/api/types.generated'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import type {
   CreateDiscussionInput,
@@ -43,8 +43,10 @@ type RequestDiscussionViewProps = {
   loadReplies: (input: LoadRepliesInput) => Promise<RequestDiscussionRepliesPage>
   markDiscussionRead: (input: MarkDiscussionReadInput) => Promise<unknown>
   params: RepoParams
+  pending: ReactNode
   reopenAndReply: (input: CreateReplyInput) => Promise<RequestDiscussionReplyMutation>
   resolveDiscussion: (input: RequestDiscussionActionInput) => Promise<RequestDiscussionMutation>
+  unavailable: ReactNode
 }
 
 export function RequestDiscussionView({
@@ -60,8 +62,10 @@ export function RequestDiscussionView({
   loadReplies,
   markDiscussionRead,
   params,
+  pending,
   reopenAndReply,
   resolveDiscussion,
+  unavailable,
 }: RequestDiscussionViewProps) {
   const { request } = detail
   const actor = useMemo(() => ({
@@ -107,6 +111,7 @@ export function RequestDiscussionView({
       canResolve={canResolve}
       focusedDiscussionId={focusedDiscussionId}
       params={requestParams}
+      pending={pending}
       permissions={{
         canOpenDiscussion: request.permissions.can_open_discussion,
         canReply: request.permissions.can_reply_to_discussion,
@@ -116,6 +121,7 @@ export function RequestDiscussionView({
       viewerId={viewerId ?? 'anonymous'}
       request={request}
       threadActions={threadActions}
+      unavailable={unavailable}
     />
   )
 }

@@ -71,7 +71,7 @@ function RequestDiscussionRoute() {
   const detail = page.state.detail
   const viewer = page.state.viewer
   if (scope !== page.scope) return <RequestDiscussionPending />
-  const renderDiscussion = (available: boolean) => !available ? (
+  const unavailable = (
     <section className="px-(--app-inset) py-14 text-center">
       <MessageSquare className="mx-auto size-5 text-muted-foreground" />
       <h2 className="mt-3 text-sm font-semibold">Discussion is unavailable</h2>
@@ -79,7 +79,8 @@ function RequestDiscussionRoute() {
         The request is still available. Reload the page to try loading its discussion again.
       </p>
     </section>
-  ) : (
+  )
+  const renderDiscussion = (available: boolean) => !available ? unavailable : (
     <RequestDiscussionView
       viewer={viewer}
       viewerId={page.viewerId}
@@ -93,8 +94,10 @@ function RequestDiscussionRoute() {
       loadReplies={(data) => loadReplies({ data })}
       markDiscussionRead={(data) => markDiscussionRead({ data })}
       params={{ owner: params.owner, repo: params.repo }}
+      pending={<RequestDiscussionPending />}
       reopenAndReply={(data) => reopenAndReply({ data })}
       resolveDiscussion={(data) => resolveDiscussion({ data })}
+      unavailable={unavailable}
     />
   )
   return (

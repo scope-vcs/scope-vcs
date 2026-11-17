@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/empty-state'
 import { mainScrollContainer } from '@/components/main-content'
 import { Button } from '@/components/ui/button'
 import { CircleAlert, LoaderCircle, MessageSquare } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
   readRequestDiscussionScroll,
   requestDiscussionCacheKey,
@@ -26,6 +26,7 @@ type RequestDiscussionWorkbenchProps = {
   canResolve: (discussion: RequestDiscussion) => boolean
   focusedDiscussionId?: string
   params: RequestParams
+  pending: ReactNode
   permissions: {
     canOpenDiscussion: boolean
     canReply: boolean
@@ -35,6 +36,7 @@ type RequestDiscussionWorkbenchProps = {
   viewerId: string
   request: RequestSummaryResponse
   threadActions: RequestDiscussionThreadActions
+  unavailable: ReactNode
 }
 
 export function RequestDiscussionWorkbench(props: RequestDiscussionWorkbenchProps) {
@@ -43,8 +45,14 @@ export function RequestDiscussionWorkbench(props: RequestDiscussionWorkbenchProp
     requestId: props.params.request_id,
     viewerId: props.viewerId,
   })
-  const state = useRequestDiscussionState(cacheKey)
-  return state ? <RetainedRequestDiscussion {...props} cacheKey={cacheKey} state={state} /> : null
+  const { actions, focusedDiscussionId, params } = props
+  const loadPage = useCallback(
+    () => actions.load({ ...params, discussion_id: focusedDiscussionId }),
+    [actions, focusedDiscussionId, params],
+  )
+  const discussion = useRequestDiscussionState(cacheKey, loadPage)
+  if (discussion.value) return <RetainedRequestDiscussion {...props} cacheKey={cacheKey} state={discussion.value} />
+  return discussion.status === 'failed' ? props.unavailable : props.pending
 }
 
 function RetainedRequestDiscussion({

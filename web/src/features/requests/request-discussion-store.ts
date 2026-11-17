@@ -2,15 +2,15 @@ import { runRequestContentSubmission } from './request-attachment-drafts'
 import type { RequestParams } from '@/api/types'
 import type { RepoChangeEvent, RequestActorSummaryResponse } from '@/api/types.generated'
 import { useRepoChangeSubscription } from '@/features/repo-detail/repo-layout-context'
-import { resourceErrorMessage } from '../../lib/use-cached-resource'
+import { resourceErrorMessage, useCachedResource } from '../../lib/use-cached-resource'
 import {
   useCallback,
   useEffect,
   useRef,
-  useSyncExternalStore,
 } from 'react'
 import {
   requestDiscussionResource,
+  requestDiscussionState,
   syncRequestDiscussionProjections,
   updateRequestDiscussion,
   updateRequestDiscussionCollection,
@@ -54,10 +54,14 @@ export type RequestDiscussionActions = {
   ) => Promise<RequestDiscussionMutation>
 }
 
-export function useRequestDiscussionState(key: string) {
-  const subscribe = useCallback((listener: () => void) => requestDiscussionResource.subscribe(key, listener), [key])
-  const read = useCallback(() => requestDiscussionResource.peek(key), [key])
-  return useSyncExternalStore(subscribe, read, () => null)
+export function useRequestDiscussionState(key: string, loadPage: () => Promise<RequestDiscussionPage>) {
+  const load = useCallback(async () => requestDiscussionState(await loadPage()), [loadPage])
+  return useCachedResource({
+    fallbackError: 'Discussion is unavailable.',
+    identity: key,
+    load,
+    resource: requestDiscussionResource,
+  })
 }
 
 export function useRequestDiscussionStore({
