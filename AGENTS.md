@@ -20,6 +20,8 @@ Pushes and merges to main do not deploy changes. Releases happen separately.
 
 Do not re-run a failed check to pass it without a repair until the failure is recorded: open a `release-flake` issue, or comment on the open one for that failure, with the test or step name, the run link, and the failure output. An open `release-flake` issue for the same failure means it has recurred; fix its cause before finishing the task and close the issue with that fix.
 
+Two kinds of first failure get one re-run before they are recorded. A local check that failed while another checkout was building or testing on the same machine is re-run once that work has finished. A step that failed reaching an outside service, such as a package mirror, a registry, or Railway's API, is re-run unchanged. Record either one if it fails again.
+
 Set autoreview's timeout to 15 minutes with `--engine-timeout-seconds 900`. Do independent work while it runs.
 
 ## Scope contribution rules
@@ -69,7 +71,7 @@ unrepresentable state.
 | Let a dependency trust exclusion lapse on its expiry date. | `dev/checks/policy` runs `check-trust-exclusions.mjs` and its regression tests: an entry in `trustPolicyExclude` fails from the expiry date recorded for its package. Recording an expiry for a new exclusion still requires review. |
 | Avoid compatibility layers in pre-alpha; maintainer means owner or member. | Domain authorization tests cover access. Compatibility and terminology choices still require review. |
 | Do not edit root README without explicit authorization; involve the operator in new behavior. | Operator context and review; no source-only check can establish authorization. |
-| Record failed checks before retrying without a repair. | Release-flake issue workflow; no local retry interceptor. |
+| Record failed checks before retrying without a repair, after one re-run for a first failure from machine load or an outside service. | Release-flake issue workflow; no local retry interceptor. |
 | Deliver every change as a Scope request merged in Scope; GitHub's main only receives Scope's main. | Scope refuses to publish main once GitHub's main has commits Scope lacks. Opening a GitHub pull request or merging on GitHub is not blocked and still requires review. |
 | Keep releases separate from pushes and merges. | GitHub release workflows. |
 | Review with the configured timeout and verify before committing. | Autoreview and shared `dev/checks` commands; review invocation remains an agent responsibility. |
