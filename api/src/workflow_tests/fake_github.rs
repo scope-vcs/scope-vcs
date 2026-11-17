@@ -694,7 +694,7 @@ pub(super) async fn webhook(
     static DELIVERIES: AtomicUsize = AtomicUsize::new(0);
     let delivery_id = format!("delivery-{}", DELIVERIES.fetch_add(1, Ordering::SeqCst));
     let response = queue_webhook(state, &delivery_id, event, body, secret).await;
-    crate::use_cases::github_webhook_deliveries::process_due_github_deliveries(
+    crate::use_cases::github::webhook_deliveries::process_due_github_deliveries(
         state,
         crate::persistence::unix_now,
     )
@@ -747,7 +747,7 @@ pub(super) async fn connect_test_repository(
         .metadata
         .repositories()
         .connect_github_repository(
-            scope_domain::github_connection::ConnectGitHubRepository {
+            scope_domain::github::connection::ConnectGitHubRepository {
                 repository_id: TEST_REPO_ID.to_string(),
                 installation_id: INSTALLATION_ID,
                 github_repository_id,

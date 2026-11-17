@@ -195,7 +195,7 @@ pub(super) async fn delete_locked_repository(
         ],
     ))
     .await?;
-    super::github_pushes::queue_github_branch_deletions_for_repository(tx, &repo_id, now_unix)
+    super::github::pushes::queue_github_branch_deletions_for_repository(tx, &repo_id, now_unix)
         .await?;
     entities::repository::Entity::delete_by_id(repo_id.clone())
         .exec(tx)

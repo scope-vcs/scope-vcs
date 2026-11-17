@@ -1,5 +1,5 @@
 use super::*;
-use crate::use_cases::github_pull_requests::run_due_github_pull_requests;
+use crate::use_cases::github::pull_requests::run_due_github_pull_requests;
 use scope_domain::requests::{
     GitHubPullRequest, GitHubPullRequestJobState, review_request_comment_body,
 };
@@ -307,7 +307,7 @@ async fn a_private_request_gets_no_pull_request_when_github_turned_public_before
     assert_eq!(withheld["state"], "failed");
     assert_eq!(
         withheld["error"],
-        scope_domain::github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
+        scope_domain::github::connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
     );
     assert_eq!(
         request.checks().await["private_request_on_public_github"],

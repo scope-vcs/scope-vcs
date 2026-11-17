@@ -1,6 +1,6 @@
 use scope_domain::{
     account::SessionIdentity as DomainSessionIdentity,
-    github_account::GitHubAccountType as DomainGitHubAccountType,
+    github::account::GitHubAccountType as DomainGitHubAccountType,
     history::{FileChangeKind as DomainFileChangeKind, HistoryEntryKind as DomainHistoryEntryKind},
     repository::RepoLifecycleState as DomainRepoLifecycleState,
     repository::access::RepositoryActor as DomainRepositoryActor,

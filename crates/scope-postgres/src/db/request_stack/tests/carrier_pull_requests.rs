@@ -1,10 +1,12 @@
 use super::*;
 use crate::db::{
-    github_pull_requests::{github_pull_request, queue_carrier_for_pushed_head},
+    github::pull_requests::{github_pull_request, queue_carrier_for_pushed_head},
     request_lifecycle_effects::persist_lifecycle_mutation,
     test_support::fixtures::blocked_by,
 };
-use scope_domain::{github_connection::ConnectGitHubRepository, requests::GitHubPullRequestIntent};
+use scope_domain::{
+    github::connection::ConnectGitHubRepository, requests::GitHubPullRequestIntent,
+};
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement};
 use std::{future::Future, time::Duration};
 
@@ -276,7 +278,7 @@ async fn an_ending_parent_takes_its_childs_carrier_before_its_own() {
         .into_iter()
         .find(|carrier| carrier.request_id == parent.id)
         .unwrap();
-    let merged = crate::db::github_pull_requests::tests::merge_landing::squash_merged_on_github(
+    let merged = crate::db::github::pull_requests::tests::merge_landing::squash_merged_on_github(
         claimed,
         &parent.head_oid,
     );
@@ -319,7 +321,7 @@ async fn an_ending_parent_takes_its_childs_carrier_before_its_own() {
 
 #[tokio::test]
 async fn a_request_restacked_onto_a_parent_whose_pull_request_is_ending_is_carried_on_main() {
-    use crate::db::github_pull_requests::tests::{claim, push_succeeds};
+    use crate::db::github::pull_requests::tests::{claim, push_succeeds};
     use scope_domain::requests::{GitHubPullRequestObservation, GitHubPullRequestObservedState};
     let store = crate::db::requests::tests::postgres_store();
     let (parent, []) = carried_stack(&store, []).await;

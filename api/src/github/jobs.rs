@@ -5,7 +5,7 @@ use reqwest::{
     Method, StatusCode,
     header::{CONTENT_RANGE, RANGE},
 };
-use scope_domain::github_workflow_jobs::{
+use scope_domain::github::workflow_jobs::{
     GITHUB_JOB_LOG_LIMIT_BYTES, GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob,
     GitHubWorkflowStep,
 };

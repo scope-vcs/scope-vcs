@@ -1,6 +1,6 @@
 use super::{GitHubBranch, GitHubCheckTarget, GitHubPushDestination};
 use crate::{
-    github_connection::{GitHubConnection, GitHubReviewBotSettings},
+    github::connection::{GitHubConnection, GitHubReviewBotSettings},
     requests::{Request, RequestState},
     views::Views,
 };

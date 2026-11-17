@@ -5,7 +5,7 @@ use super::super::fake_github::{
 };
 use super::github_checks::{connect_github, owner_request, push_pass};
 use super::*;
-use crate::use_cases::github_workflow_runs::retry_github_workflow_run_reads_once;
+use crate::use_cases::github::workflow_runs::retry_github_workflow_run_reads_once;
 use std::sync::atomic::Ordering;
 
 const CI_WORKFLOW: &str = "name: CI

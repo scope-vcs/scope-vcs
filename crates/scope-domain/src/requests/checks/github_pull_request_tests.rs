@@ -3,8 +3,8 @@ use super::github_pull_request::{
     BRANCH_PULL_REQUESTS_REFUSED_MESSAGE,
 };
 use super::*;
-use crate::github_connection::GitHubConnection;
-use crate::github_connection::{
+use crate::github::connection::GitHubConnection;
+use crate::github::connection::{
     GitHubConnectionStatus, GitHubDisconnectReason, GitHubRepositoryVisibility,
     GitHubReviewBotSettings,
 };

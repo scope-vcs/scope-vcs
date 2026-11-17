@@ -1,7 +1,7 @@
 use super::{
     RequestStore, acquire_aggregate_lock,
-    github_pull_requests::{queue_carrier_for_pushed_head, requeue_carrier},
-    github_pushes::latest_github_push,
+    github::pull_requests::{queue_carrier_for_pushed_head, requeue_carrier},
+    github::pushes::latest_github_push,
     request_access::{ensure_user_exists, lock_request_repository},
     request_auto_merge::{
         StoredIntent, lock_active_intent_for_request, persist_existing_auto_merge_mutation,

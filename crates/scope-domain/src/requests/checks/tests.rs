@@ -1,5 +1,5 @@
 use super::*;
-use crate::github_connection::GitHubConnection;
+use crate::github::connection::GitHubConnection;
 use crate::requests::fixtures::open_request;
 
 fn context(request_id: impl Into<String>, head_oid: impl Into<String>) -> RequestCheckContext {
@@ -414,7 +414,7 @@ fn approval_names_the_head_the_maintainer_reviewed() {
 
 #[test]
 fn a_push_is_revoked_by_a_disconnect_or_a_reconnect_elsewhere() {
-    use crate::github_connection::{GitHubConnectionStatus, GitHubDisconnectReason};
+    use crate::github::connection::{GitHubConnectionStatus, GitHubDisconnectReason};
     let connection = GitHubConnection {
         repository_id: "owner/repo".into(),
         installation_id: 7,
@@ -423,7 +423,7 @@ fn a_push_is_revoked_by_a_disconnect_or_a_reconnect_elsewhere() {
         connected_by: None,
         connected_at_unix: 1,
         status: GitHubConnectionStatus::Connected,
-        visibility: crate::github_connection::GitHubRepositoryVisibility::Private,
+        visibility: crate::github::connection::GitHubRepositoryVisibility::Private,
         review_bots: Default::default(),
         publishes_main: false,
     };

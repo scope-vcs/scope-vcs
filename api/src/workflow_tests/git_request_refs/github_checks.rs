@@ -4,7 +4,7 @@ use super::super::fake_github::{
     reconnect_test_repository, webhook,
 };
 use super::*;
-use crate::use_cases::{github_check_results, github_pushes};
+use crate::use_cases::github;
 use scope_api_contract::routes::{
     repo_request_auto_merge, repo_request_checks, repo_request_checks_approve, repo_request_merge,
 };
@@ -128,7 +128,7 @@ pub(in crate::workflow_tests) async fn checks(
 }
 
 pub(in crate::workflow_tests) async fn push_pass(state: &AppState, now_unix: u64) -> usize {
-    github_pushes::push_due_github_branches(state, now_unix)
+    github::pushes::push_due_github_branches(state, now_unix)
         .await
         .unwrap()
 }
@@ -466,7 +466,7 @@ async fn the_reconciler_reads_results_a_delivery_never_announced() {
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
     let now = unix_now();
     assert_eq!(
-        github_check_results::reconcile_github_checks_once(state, now)
+        github::check_results::reconcile_github_checks_once(state, now)
             .await
             .unwrap(),
         1
@@ -477,7 +477,7 @@ async fn the_reconciler_reads_results_a_delivery_never_announced() {
         if request_id == request.request_id));
     assert!(events.try_recv().is_err());
     assert_eq!(
-        github_check_results::reconcile_github_checks_once(state, now + 120)
+        github::check_results::reconcile_github_checks_once(state, now + 120)
             .await
             .unwrap(),
         0
@@ -492,7 +492,7 @@ async fn the_reconciler_reads_results_a_delivery_never_announced() {
         ],
     );
     assert_eq!(
-        github_check_results::reconcile_github_checks_once(state, now + 600)
+        github::check_results::reconcile_github_checks_once(state, now + 600)
             .await
             .unwrap(),
         1
@@ -652,7 +652,7 @@ async fn a_push_whose_claim_lapsed_neither_pushes_nor_records() {
         .await
         .unwrap();
 
-    github_pushes::run_claimed_push(state, &push, "first_claim", now).await;
+    github::pushes::run_claimed_push(state, &push, "first_claim", now).await;
     assert_eq!(fake.branch_head(&request.branch()), None);
     let latest = requests
         .request_state_snapshot(
@@ -754,7 +754,7 @@ async fn a_push_gives_up_when_the_connection_changes_and_reconnecting_sends_it_a
         .disconnect_github_repository(TEST_REPO_ID, &test_owner_id())
         .await
         .unwrap();
-    github_pushes::run_claimed_push(state, &push, "claim", now).await;
+    github::pushes::run_claimed_push(state, &push, "claim", now).await;
     assert_eq!(fake.branch_head(&request.branch()), None);
     assert_eq!(request.checks().await["github_push"]["state"], "failed");
 
@@ -855,14 +855,14 @@ async fn a_commit_is_read_every_two_minutes_while_any_request_testing_it_is_pend
 
     let now = unix_now();
     assert_eq!(
-        github_check_results::reconcile_github_checks_once(state, now)
+        github::check_results::reconcile_github_checks_once(state, now)
             .await
             .unwrap(),
         1
     );
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
     assert_eq!(
-        github_check_results::reconcile_github_checks_once(state, now + 120)
+        github::check_results::reconcile_github_checks_once(state, now + 120)
             .await
             .unwrap(),
         1
@@ -915,7 +915,7 @@ async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minute
         .unwrap()
         .remove(0);
     tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
-    github_pushes::run_claimed_push(state, &push, "claim", now).await;
+    github::pushes::run_claimed_push(state, &push, "claim", now).await;
     assert_eq!(fake.branch_head(&request.branch()), Some(head.clone()));
     let sent = requests
         .request_state_snapshot(

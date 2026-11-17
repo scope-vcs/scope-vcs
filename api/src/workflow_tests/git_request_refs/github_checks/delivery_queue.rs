@@ -1,5 +1,5 @@
 use super::*;
-use crate::use_cases::github_webhook_deliveries::{
+use crate::use_cases::github::webhook_deliveries::{
     MAX_DELIVERIES_PER_PASS, process_due_github_deliveries,
 };
 use crate::workflow_tests::fake_github::{github_state, queue_webhook};

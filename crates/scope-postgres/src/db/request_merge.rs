@@ -239,7 +239,7 @@ async fn merge_one_request(
                 checks.evaluation.as_ref(),
                 &checks.results,
             ),
-            super::github_review_bot_statuses::reviews_outcome(tx, &request, &context.views)
+            super::github::review_bot_statuses::reviews_outcome(tx, &request, &context.views)
                 .await?,
         )),
         Err(_) => None,
@@ -433,7 +433,7 @@ async fn record_main_advance(
         [repo_id.into(), advanced_by_user_id.into(), entities::encode_enum(kind)?.into()],
     ))
     .await?;
-    super::github_pull_requests::requeue_merged_carriers_of_open_requests(tx, repo_id, now_unix)
+    super::github::pull_requests::requeue_merged_carriers_of_open_requests(tx, repo_id, now_unix)
         .await
 }
 
@@ -521,7 +521,7 @@ pub(super) async fn complete_landed_requests(
         ordered.push((depth, candidate.request_id.clone(), candidate));
     }
     ordered.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
-    let connection = super::github_connections::repository_github_connection(tx, repo_id).await?;
+    let connection = super::github::connections::repository_github_connection(tx, repo_id).await?;
     let mut completed = 0;
     for (_, _, candidate) in ordered {
         let Some(request) = request_by_id(tx, &candidate.request_id)
@@ -549,7 +549,7 @@ pub(super) async fn complete_landed_requests(
             },
             MainContains::GitHubMergeCommit(commit_in_main) => {
                 pull_request =
-                    super::github_pull_requests::github_pull_request(tx, &request.id).await?;
+                    super::github::pull_requests::github_pull_request(tx, &request.id).await?;
                 let merge = GitHubMergeLanding {
                     connection: connection.as_ref(),
                     pull_request: pull_request.as_ref(),

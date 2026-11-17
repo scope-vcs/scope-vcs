@@ -2,8 +2,8 @@ use super::GitHubApp;
 use crate::error::ApiError;
 use hmac::{Hmac, KeyInit, Mac};
 use scope_domain::{
-    github_connection::GitHubInstallationChange,
-    github_connection_test::GitHubInstallationState,
+    github::connection::GitHubInstallationChange,
+    github::connection_test::GitHubInstallationState,
     requests::{CodexReviewState, GitHubBranch},
 };
 use serde::Deserialize;

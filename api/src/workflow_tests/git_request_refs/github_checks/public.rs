@@ -334,7 +334,7 @@ async fn a_check_commit_is_private_code_and_waits_for_a_public_repository_to_be_
     assert_eq!(held["mergeability"]["status"], "ChecksConfigurationError");
     assert_eq!(
         held["message"],
-        scope_domain::github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
+        scope_domain::github::connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
     );
 
     let confirmed = api_request(

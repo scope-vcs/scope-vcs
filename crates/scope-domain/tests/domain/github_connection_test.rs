@@ -1,9 +1,9 @@
 use scope_domain::{
-    github_connection::{
+    github::connection::{
         GitHubConnection, GitHubConnectionStatus, GitHubDisconnectReason,
         GitHubRepositoryVisibility, GitHubReviewBotSettings,
     },
-    github_connection_test::{
+    github::connection_test::{
         GitHubConnectionTestStep, GitHubInstallationFacts, GitHubInstallationState,
         GitHubPermissionLevel, GitHubRepositoryFacts, require_connected, test_github_connection,
     },

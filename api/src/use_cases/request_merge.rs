@@ -84,7 +84,7 @@ pub(crate) async fn merge_request_inner(
     command: &MergeRequestCommand,
 ) -> Result<MergeRequestResult, RequestMergeFailure> {
     let checked = authorize_merge(state, command).await?;
-    crate::use_cases::github_check_results::confirm_recent_github_checks(state, &checked.request)
+    crate::use_cases::github::check_results::confirm_recent_github_checks(state, &checked.request)
         .await?;
     ensure_checks_cleared(state, command, &checked).await?;
     let CheckedMerge {

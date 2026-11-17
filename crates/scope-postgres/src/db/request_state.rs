@@ -5,7 +5,7 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     account::UserAccount,
-    github_connection::GitHubConnection,
+    github::connection::GitHubConnection,
     repository::{
         RepoLifecycleState,
         access::{RepositoryAccess, RepositoryAccessContext},
@@ -175,11 +175,11 @@ async fn read_request_state(
     let auto_merge_actor_access = row.auto_merge_actor_access(&repository, auto_merge.as_ref())?;
     let users = row.users()?;
     let github_connection =
-        super::github_connections::repository_github_connection(&tx, &request.repo_id).await?;
-    let github_push = super::github_pushes::latest_github_push(&tx, request_id).await?;
+        super::github::connections::repository_github_connection(&tx, &request.repo_id).await?;
+    let github_push = super::github::pushes::latest_github_push(&tx, request_id).await?;
     let github_pull_request =
-        super::github_pull_requests::github_pull_request(&tx, request_id).await?;
-    let bot_reviews = super::github_review_bot_statuses::request_bot_reviews(
+        super::github::pull_requests::github_pull_request(&tx, request_id).await?;
+    let bot_reviews = super::github::review_bot_statuses::request_bot_reviews(
         &tx,
         &request.repo_id,
         std::slice::from_ref(&request.id),
@@ -199,7 +199,7 @@ async fn read_request_state(
         })
         .collect::<Vec<_>>();
     let github_runs = match github_connection.as_ref() {
-        Some(connection) => super::github_workflow_runs::github_workflow_runs_for_check_suites(
+        Some(connection) => super::github::workflow_runs::github_workflow_runs_for_check_suites(
             &tx,
             &request.repo_id,
             connection.github_repository_id,

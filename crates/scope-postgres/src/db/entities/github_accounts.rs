@@ -1,5 +1,5 @@
 use super::*;
-use scope_domain::github_account::{GitHubAccount, GitHubAccountType};
+use scope_domain::github::account::{GitHubAccount, GitHubAccountType};
 use scope_domain::requests::{RequestDiscussionAuthor, RequestDiscussionResolver};
 
 pub(crate) mod github_account {

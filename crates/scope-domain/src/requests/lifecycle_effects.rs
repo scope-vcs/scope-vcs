@@ -1,7 +1,7 @@
 use super::{
     GitHubPullRequest, Request, closes_carrier_pull_request, retains_request_branch_for_carrier,
 };
-use crate::github_connection::GitHubConnection;
+use crate::github::connection::GitHubConnection;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EndedRequestEffect {

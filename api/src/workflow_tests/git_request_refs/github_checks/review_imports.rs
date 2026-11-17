@@ -1,10 +1,10 @@
 use super::super::super::fake_github::{github_api, github_json, webhook};
 use super::*;
-use crate::use_cases::github_review_imports::import_due_github_reviews;
+use crate::use_cases::github::review_imports::import_due_github_reviews;
 use scope_api_contract::routes::repo_request_action;
 use scope_domain::{
-    github_account::{GitHubAccount, GitHubAccountType},
-    github_review_bots::GitHubReviewBotInput,
+    github::account::{GitHubAccount, GitHubAccountType},
+    github::review_bots::GitHubReviewBotInput,
 };
 use scope_postgres::db::{GitHubReviewImportFinish, SkipGitHubReview};
 

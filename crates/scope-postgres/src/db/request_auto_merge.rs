@@ -118,8 +118,12 @@ impl RequestStore {
                 evaluation.as_ref(),
                 &results,
             ),
-            reviews: super::github_review_bot_statuses::reviews_outcome(&tx, &request, &repo.views)
-                .await?,
+            reviews: super::github::review_bot_statuses::reviews_outcome(
+                &tx,
+                &request,
+                &repo.views,
+            )
+            .await?,
         });
         let mutation = authorize_request_auto_merge(
             &request,

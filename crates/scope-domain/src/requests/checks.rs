@@ -1,7 +1,7 @@
 use super::{Request, RequestState, limits::validate_required};
 use crate::requests::validate_git_oid;
 use crate::views::ViewId;
-use crate::{error::DomainError, github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE};
+use crate::{error::DomainError, github::connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 

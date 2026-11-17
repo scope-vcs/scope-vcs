@@ -139,11 +139,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             routes::REPO_GITHUB_CONNECTION_TEST,
-            post(http::github_checks::test_github_connection),
+            post(http::github::checks::test_github_connection),
         )
         .route(
             routes::REPO_GITHUB_CHECKS,
-            get(http::github_checks::get_github_checks),
+            get(http::github::checks::get_github_checks),
         )
         .route(
             routes::REPO_GITHUB_MAIN_PUBLICATION,
@@ -159,11 +159,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             routes::REPO_GITHUB_WORKFLOW_RUN,
-            get(http::github_runs::get_github_workflow_run),
+            get(http::github::runs::get_github_workflow_run),
         )
         .route(
             routes::REPO_GITHUB_WORKFLOW_JOB_LOG,
-            get(http::github_runs::get_github_workflow_job_log),
+            get(http::github::runs::get_github_workflow_job_log),
         )
         .route(
             routes::REPO_GITHUB_RUN_IMPORT,
