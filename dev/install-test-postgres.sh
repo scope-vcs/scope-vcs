@@ -49,8 +49,8 @@ case "$mode" in
       echo "PostgreSQL $postgres_version is not available for $VERSION_CODENAME" >&2
       exit 1
     fi
-    apt-get "${apt_options[@]}" install --yes --no-install-recommends --download-only --reinstall \
-      postgresql-common locales "postgresql-$postgres_major=$package_version" "postgresql-client-$postgres_major=$package_version"
+    apt-get "${apt_options[@]}" install --yes --no-install-recommends --download-only \
+      "postgresql-$postgres_major=$package_version" "postgresql-client-$postgres_major=$package_version"
     cp "$work/archives/"*.deb "$cache/"
     cd "$cache"
     sha256sum ./*.deb > SHA256SUMS
@@ -59,22 +59,26 @@ case "$mode" in
     cd "$cache"
     sha256sum --check --strict SHA256SUMS
     mapfile -t packages < <(awk -v cache="$cache" '{print cache "/" $2}' SHA256SUMS)
-    mkdir "$work/archives"
-    cp "${packages[@]}" "$work/archives/"
-    apt_options+=(-o "Dir::Cache::archives=$work/archives")
-    install -d /etc/postgresql-common
-    if [[ ! -f /etc/postgresql-common/createcluster.conf ]]; then
-      printf 'create_main_cluster = false\n' > /etc/postgresql-common/createcluster.conf
-    else
-      sed -i -E 's/^#?[[:space:]]*create_main_cluster[[:space:]]*=.*/create_main_cluster = false/' \
-        /etc/postgresql-common/createcluster.conf
+    missing=()
+    for package in "${packages[@]}"; do
+      read -r name version < <(dpkg-deb --show --showformat='${Package} ${Version}\n' "$package")
+      if [[ "$name" == "postgresql-$postgres_major" && "$version" != "$postgres_version-"* ]]; then
+        echo "Cached $name $version is not PostgreSQL $postgres_version" >&2
+        exit 1
+      fi
+      installed="$(dpkg-query -W -f='${Version}' "$name" 2>/dev/null || true)"
+      if [[ -z "$installed" ]] || ! dpkg --compare-versions "$installed" ge "$version"; then
+        missing+=("$package")
+      fi
+    done
+    for package in "${missing[@]}"; do
+      dpkg-deb --extract "$package" /
+    done
+    ldconfig
+    if ! locale -a | grep --quiet --line-regexp en_US.utf8; then
+      localedef -i en_US -f UTF-8 en_US.utf8
     fi
-    apt-get "${apt_options[@]}" install --yes --no-install-recommends --no-download "${packages[@]}"
-    localedef -i en_US -f UTF-8 en_US.utf8
-    installed_version="$(dpkg-query -W -f='${Version}' "postgresql-$postgres_major")"
-    [[ "$installed_version" == "$postgres_version-"* ]]
-    [[ "$(dpkg-query -W -f='${Version}' "postgresql-client-$postgres_major")" == "$installed_version" ]]
-    "/usr/lib/postgresql/$postgres_major/bin/initdb" --version
+    "/usr/lib/postgresql/$postgres_major/bin/initdb" --version | grep --fixed-strings "(PostgreSQL) $postgres_version"
     ;;
   *)
     echo "Unknown mode: $mode" >&2

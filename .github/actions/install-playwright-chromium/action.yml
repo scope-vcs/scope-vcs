@@ -21,7 +21,19 @@ runs:
         key: ${{ steps.plan.outputs.key }}
         restore-keys: ${{ steps.plan.outputs.prefix }}
 
-    - shell: bash
+    - if: steps.restore.outputs.cache-hit == 'true'
+      shell: bash
+      working-directory: web
+      run: |
+        for package in "$HOME"/.cache/playwright-debs/*.deb; do
+          [[ -e "$package" ]] || continue
+          sudo dpkg-deb --extract "$package" /
+        done
+        sudo fc-cache --system-only
+        pnpm exec playwright install chromium
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
       working-directory: web
       run: |
         packages="$HOME/.cache/playwright-debs"
