@@ -1,12 +1,15 @@
 use crate::error::ApiError;
 use axum::{
-    extract::{ConnectInfo, Request, State},
+    extract::{ConnectInfo, Path, Request, State},
     http::{HeaderMap, HeaderValue, header::RETRY_AFTER},
-    middleware::Next,
+    middleware::{self, Next},
     response::{IntoResponse, Response},
+    routing::MethodRouter,
 };
+use sha2::{Digest as _, Sha256};
 use std::{
     collections::HashMap,
+    hash::Hash,
     net::{IpAddr, SocketAddr},
     sync::{Arc, Mutex, PoisonError},
     time::Duration,
@@ -17,7 +20,7 @@ pub(crate) const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 pub(crate) const DEFAULT_REQUEST_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 const PROXY_CLIENT_ADDRESS_HEADER: &str = "x-real-ip";
-const FIRST_PRUNE_AT_TRACKED_ADDRESSES: usize = 10_000;
+const FIRST_PRUNE_AT_TRACKED_KEYS: usize = 10_000;
 
 pub(crate) async fn enforce_default_timeout(request: Request, next: Next) -> Response {
     let method = request.method().clone();
@@ -62,35 +65,86 @@ impl From<IpAddr> for ClientAddress {
     }
 }
 
-pub(crate) struct AddressRateLimit {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct LoginCode([u8; 16]);
+
+impl LoginCode {
+    fn of(code: &str) -> Self {
+        let mut digest = [0; 16];
+        digest.copy_from_slice(&Sha256::digest(code.as_bytes())[..16]);
+        Self(digest)
+    }
+}
+
+struct RateLimit<K> {
     burst: u32,
     refill_interval: Duration,
-    spending: Mutex<Spending>,
+    spending: Mutex<Spending<K>>,
 }
 
-struct Spending {
-    replenished_at: HashMap<ClientAddress, Instant>,
-    prune_at_tracked_addresses: usize,
+struct Spending<K> {
+    replenished_at: HashMap<K, Instant>,
+    prune_at_tracked_keys: usize,
 }
 
-impl Default for Spending {
+impl<K> Default for Spending<K> {
     fn default() -> Self {
         Self {
             replenished_at: HashMap::new(),
-            prune_at_tracked_addresses: FIRST_PRUNE_AT_TRACKED_ADDRESSES,
+            prune_at_tracked_keys: FIRST_PRUNE_AT_TRACKED_KEYS,
         }
     }
 }
 
-impl AddressRateLimit {
-    pub(crate) fn login_starts() -> Arc<Self> {
-        Arc::new(Self::new(10, Duration::from_secs(6)))
+pub(crate) fn login_start_limit<S>() -> impl Fn(MethodRouter<S>) -> MethodRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    let per_address = Arc::new(RateLimit::<ClientAddress>::new(10, Duration::from_secs(6)));
+    move |route| {
+        route.route_layer(middleware::from_fn_with_state(
+            per_address.clone(),
+            limit_per_address,
+        ))
     }
+}
 
-    pub(crate) fn login_exchanges() -> Arc<Self> {
-        Arc::new(Self::new(60, Duration::from_secs(1)))
+pub(crate) fn login_exchange_limit<S>() -> impl Fn(MethodRouter<S>) -> MethodRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    let per_address = Arc::new(RateLimit::<ClientAddress>::new(60, Duration::from_secs(1)));
+    move |route| {
+        route.route_layer(middleware::from_fn_with_state(
+            per_address.clone(),
+            limit_per_address,
+        ))
     }
+}
 
+pub(crate) fn login_poll_limit<S>() -> impl Fn(MethodRouter<S>) -> MethodRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    let per_code = Arc::new(RateLimit::<LoginCode>::new(10, Duration::from_secs(1)));
+    let per_address = Arc::new(RateLimit::<ClientAddress>::new(
+        300,
+        Duration::from_millis(100),
+    ));
+    move |route| {
+        route
+            .route_layer(middleware::from_fn_with_state(
+                per_code.clone(),
+                limit_per_login_code,
+            ))
+            .route_layer(middleware::from_fn_with_state(
+                per_address.clone(),
+                limit_per_address,
+            ))
+    }
+}
+
+impl<K: Copy + Eq + Hash> RateLimit<K> {
     fn new(burst: u32, refill_interval: Duration) -> Self {
         Self {
             burst,
@@ -99,19 +153,18 @@ impl AddressRateLimit {
         }
     }
 
-    fn admit(&self, address: ClientAddress, now: Instant) -> Result<(), Duration> {
+    fn admit(&self, key: K, now: Instant) -> Result<(), Duration> {
         let mut spending = self.spending.lock().unwrap_or_else(PoisonError::into_inner);
         let Spending {
             replenished_at,
-            prune_at_tracked_addresses,
+            prune_at_tracked_keys,
         } = &mut *spending;
-        if replenished_at.len() >= *prune_at_tracked_addresses {
+        if replenished_at.len() >= *prune_at_tracked_keys {
             replenished_at.retain(|_, at| *at > now);
-            *prune_at_tracked_addresses =
-                FIRST_PRUNE_AT_TRACKED_ADDRESSES.max(replenished_at.len() * 2);
+            *prune_at_tracked_keys = FIRST_PRUNE_AT_TRACKED_KEYS.max(replenished_at.len() * 2);
         }
         let spent_until = replenished_at
-            .get(&address)
+            .get(&key)
             .copied()
             .filter(|at| *at > now)
             .unwrap_or(now);
@@ -120,13 +173,13 @@ impl AddressRateLimit {
         if !retry_after.is_zero() {
             return Err(retry_after);
         }
-        replenished_at.insert(address, spent_until + self.refill_interval);
+        replenished_at.insert(key, spent_until + self.refill_interval);
         Ok(())
     }
 }
 
-pub(crate) async fn limit_per_address(
-    State(limit): State<Arc<AddressRateLimit>>,
+async fn limit_per_address(
+    State(limit): State<Arc<RateLimit<ClientAddress>>>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -138,27 +191,50 @@ pub(crate) async fn limit_per_address(
         .map_or(Ok(()), |address| limit.admit(address, Instant::now()));
     match admitted {
         Ok(()) => next.run(request).await,
-        Err(retry_after) => {
-            let mut response =
-                ApiError::too_many_requests("Too many requests from this address; retry shortly")
-                    .into_response();
-            let seconds = retry_after.as_secs() + u64::from(retry_after.subsec_nanos() > 0);
-            response
-                .headers_mut()
-                .insert(RETRY_AFTER, HeaderValue::from(seconds));
-            response
-        }
+        Err(retry_after) => throttled(
+            "Too many requests from this address; retry shortly",
+            retry_after,
+        ),
     }
+}
+
+async fn limit_per_login_code(
+    State(limit): State<Arc<RateLimit<LoginCode>>>,
+    Path(code): Path<String>,
+    request: Request,
+    next: Next,
+) -> Response {
+    match limit.admit(LoginCode::of(&code), Instant::now()) {
+        Ok(()) => next.run(request).await,
+        Err(retry_after) => throttled(
+            "This login is polling too often; retry shortly",
+            retry_after,
+        ),
+    }
+}
+
+fn throttled(message: &str, retry_after: Duration) -> Response {
+    let mut response = ApiError::too_many_requests(message).into_response();
+    let seconds = retry_after.as_secs() + u64::from(retry_after.subsec_nanos() > 0);
+    response
+        .headers_mut()
+        .insert(RETRY_AFTER, HeaderValue::from(seconds));
+    response
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{Router, body::Body, http::StatusCode, middleware, routing::get};
+    use axum::{
+        Router,
+        body::Body,
+        http::StatusCode,
+        routing::{get, post},
+    };
     use tower::ServiceExt as _;
 
-    fn limit(burst: u32) -> AddressRateLimit {
-        AddressRateLimit::new(burst, Duration::from_secs(1))
+    fn limit(burst: u32) -> RateLimit<ClientAddress> {
+        RateLimit::new(burst, Duration::from_secs(1))
     }
 
     fn address(text: &str) -> ClientAddress {
@@ -188,7 +264,7 @@ mod tests {
     fn replenished_addresses_are_forgotten_once_many_are_tracked() {
         let limit = limit(1);
         let start = Instant::now();
-        for host in 0..FIRST_PRUNE_AT_TRACKED_ADDRESSES {
+        for host in 0..FIRST_PRUNE_AT_TRACKED_KEYS {
             let octets = u32::try_from(host).unwrap().to_be_bytes();
             limit.admit(ClientAddress::V4(octets), start).unwrap();
         }
@@ -263,5 +339,69 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(started.elapsed(), DEFAULT_REQUEST_TIMEOUT);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn several_logins_behind_one_address_poll_freely_while_a_hammered_code_is_throttled() {
+        let app = Router::new().route(
+            "/poll/{code}",
+            login_poll_limit()(post(|| async { StatusCode::NO_CONTENT })),
+        );
+        let poll = |code: usize| {
+            let request = Request::builder()
+                .method("POST")
+                .uri(format!("/poll/code-{code}"))
+                .header("x-real-ip", "203.0.113.7")
+                .body(Body::empty())
+                .unwrap();
+            app.clone().oneshot(request)
+        };
+        for _round in 0..300 {
+            for login in 0..12 {
+                assert_eq!(poll(login).await.unwrap().status(), StatusCode::NO_CONTENT);
+            }
+            tokio::time::advance(Duration::from_secs(2)).await;
+        }
+
+        let mut hammered = Vec::new();
+        for _ in 0..11 {
+            hammered.push(poll(0).await.unwrap());
+        }
+        let refused = hammered.pop().unwrap();
+        assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(refused.headers()[RETRY_AFTER], "1");
+        assert!(
+            hammered
+                .iter()
+                .all(|admitted| admitted.status() == StatusCode::NO_CONTENT)
+        );
+        assert_eq!(poll(1).await.unwrap().status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn one_address_inventing_login_codes_is_throttled_by_address() {
+        let app = Router::new().route(
+            "/poll/{code}",
+            login_poll_limit()(post(|| async { StatusCode::NO_CONTENT })),
+        );
+        let poll = |address: &'static str, code: usize| {
+            let request = Request::builder()
+                .method("POST")
+                .uri(format!("/poll/invented-{code}"))
+                .header("x-real-ip", address)
+                .body(Body::empty())
+                .unwrap();
+            app.clone().oneshot(request)
+        };
+        let mut admitted = 0;
+        while poll("203.0.113.7", admitted).await.unwrap().status() == StatusCode::NO_CONTENT {
+            admitted += 1;
+            assert!(admitted < 10_000, "invented codes were never throttled");
+        }
+        assert!(admitted >= 300);
+        assert_eq!(
+            poll("203.0.113.8", admitted).await.unwrap().status(),
+            StatusCode::NO_CONTENT
+        );
     }
 }

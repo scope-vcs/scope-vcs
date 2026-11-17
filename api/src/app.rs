@@ -19,37 +19,30 @@ use tower_http::{
 };
 
 fn unauthenticated_cli_login_routes() -> Router<AppState> {
-    let starts = Router::new()
+    let start = request_limits::login_start_limit();
+    let poll = request_limits::login_poll_limit();
+    let exchange = request_limits::login_exchange_limit();
+    Router::new()
         .route(
             routes::CLI_DEVICE_LOGIN,
-            post(http::device_login::start_cli_device_login),
+            start(post(http::device_login::start_cli_device_login)),
         )
         .route(
             routes::CLI_BROWSER_LOGIN,
-            post(http::cli_auth::start_cli_browser_login),
+            start(post(http::cli_auth::start_cli_browser_login)),
         )
-        .route_layer(middleware::from_fn_with_state(
-            request_limits::AddressRateLimit::login_starts(),
-            request_limits::limit_per_address,
-        ));
-    let exchanges = Router::new()
         .route(
             routes::CLI_DEVICE_LOGIN_POLL,
-            post(http::device_login::poll_cli_device_login),
+            poll(post(http::device_login::poll_cli_device_login)),
         )
         .route(
             routes::CLI_BROWSER_LOGIN_EXCHANGE,
-            post(http::cli_auth::exchange_cli_browser_login),
+            exchange(post(http::cli_auth::exchange_cli_browser_login)),
         )
         .route(
             routes::CLI_EXCHANGE_GRANTS_EXCHANGE,
-            post(http::cli_auth::exchange_cli_grant),
+            exchange(post(http::cli_auth::exchange_cli_grant)),
         )
-        .route_layer(middleware::from_fn_with_state(
-            request_limits::AddressRateLimit::login_exchanges(),
-            request_limits::limit_per_address,
-        ));
-    starts.merge(exchanges)
 }
 
 fn self_limited_routes() -> Router<AppState> {

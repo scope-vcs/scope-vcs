@@ -15,7 +15,11 @@ use crate::{
     error::CliError,
 };
 use anyhow::{Context, bail};
-use reqwest::blocking::Client;
+use reqwest::{
+    StatusCode,
+    blocking::{Client, RequestBuilder, Response},
+    header::RETRY_AFTER,
+};
 use std::{
     fs,
     io::{self, Read, Write},
@@ -24,6 +28,43 @@ use std::{
     thread,
     time::Duration,
 };
+
+const UNSTATED_THROTTLE_WAIT_SECS: u64 = 2;
+const EXCHANGE_TOKEN_THROTTLE_PATIENCE_SECS: u64 = 60;
+
+struct Pacing<'a> {
+    now_unix: &'a dyn Fn() -> u64,
+    sleep: &'a dyn Fn(Duration),
+}
+
+const WALL_CLOCK: Pacing<'static> = Pacing {
+    now_unix: &unix_now,
+    sleep: &thread::sleep,
+};
+
+fn send_once_unthrottled(
+    request: impl Fn() -> RequestBuilder,
+    give_up_at_unix: u64,
+    pacing: &Pacing<'_>,
+) -> reqwest::Result<Response> {
+    loop {
+        let response = request().send()?;
+        if response.status() != StatusCode::TOO_MANY_REQUESTS {
+            return Ok(response);
+        }
+        let wait_secs = response
+            .headers()
+            .get(RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .unwrap_or(UNSTATED_THROTTLE_WAIT_SECS)
+            .max(1);
+        if (pacing.now_unix)().saturating_add(wait_secs) >= give_up_at_unix {
+            return Ok(response);
+        }
+        (pacing.sleep)(Duration::from_secs(wait_secs));
+    }
+}
 
 pub fn login(
     headless: bool,
@@ -179,17 +220,23 @@ fn local_browser_login(
 
     let callback_code =
         wait_for_browser_callback(&listener, &start.request_id, start.expires_at_unix)?;
-    let response = client
-        .post(format!(
-            "{api_url}{}",
-            cli_browser_login_exchange_path(&start.request_id)
-        ))
-        .json(&BrowserLoginExchangeRequest {
-            request_secret: start.request_secret,
-            callback_code,
-        })
-        .send()
-        .context("exchange browser login")?;
+    let exchange = BrowserLoginExchangeRequest {
+        request_secret: start.request_secret,
+        callback_code,
+    };
+    let response = send_once_unthrottled(
+        || {
+            client
+                .post(format!(
+                    "{api_url}{}",
+                    cli_browser_login_exchange_path(&start.request_id)
+                ))
+                .json(&exchange)
+        },
+        start.expires_at_unix,
+        &WALL_CLOCK,
+    )
+    .context("exchange browser login")?;
     let exchanged: CliSessionTokenResponse =
         decode_json_response(response, "exchange browser login")?;
     let user = validate_session_token(ApiSession::new(client, api_url, &exchanged.session_token))?
@@ -205,13 +252,19 @@ fn exchange_login(
     api_url: &str,
     exchange_token: &str,
 ) -> anyhow::Result<AuthenticatedSession> {
-    let response = client
-        .post(format!("{api_url}{}", routes::CLI_EXCHANGE_GRANTS_EXCHANGE))
-        .json(&CliExchangeGrantExchangeRequest {
-            exchange_token: exchange_token.to_string(),
-        })
-        .send()
-        .context("exchange Scope login token")?;
+    let exchange = CliExchangeGrantExchangeRequest {
+        exchange_token: exchange_token.to_string(),
+    };
+    let response = send_once_unthrottled(
+        || {
+            client
+                .post(format!("{api_url}{}", routes::CLI_EXCHANGE_GRANTS_EXCHANGE))
+                .json(&exchange)
+        },
+        unix_now().saturating_add(EXCHANGE_TOKEN_THROTTLE_PATIENCE_SECS),
+        &WALL_CLOCK,
+    )
+    .context("exchange Scope login token")?;
     let exchanged: CliSessionTokenResponse =
         decode_json_response(response, "exchange Scope login token")?;
     let user = validate_session_token(ApiSession::new(client, api_url, &exchanged.session_token))?
@@ -238,13 +291,17 @@ fn device_login(client: &Client, api_url: &str) -> anyhow::Result<AuthenticatedS
             bail!("browser login expired");
         }
         thread::sleep(Duration::from_secs(start.poll_interval_secs.max(1)));
-        let response = client
-            .post(format!(
-                "{api_url}{}",
-                cli_device_login_poll_path(&start.device_code)
-            ))
-            .send()
-            .context("poll browser login")?;
+        let response = send_once_unthrottled(
+            || {
+                client.post(format!(
+                    "{api_url}{}",
+                    cli_device_login_poll_path(&start.device_code)
+                ))
+            },
+            start.expires_at_unix,
+            &WALL_CLOCK,
+        )
+        .context("poll browser login")?;
         let poll: DeviceLoginPollResponse = decode_json_response(response, "poll browser login")?;
 
         if matches!(poll.status, DeviceLoginStatus::Complete) {
@@ -401,6 +458,57 @@ fn format_user_code(code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
+
+    fn serve_statuses(
+        answers: Vec<(u16, Option<&'static str>)>,
+    ) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            for (status, retry_after) in answers {
+                let (mut stream, _) = listener.accept().unwrap();
+                crate::test_support::read_http_request(&mut stream).unwrap();
+                let retry_after = retry_after
+                    .map(|seconds| format!("retry-after: {seconds}\r\n"))
+                    .unwrap_or_default();
+                write!(
+                    stream,
+                    "HTTP/1.1 {status} Status\r\n{retry_after}content-length: 0\r\nconnection: close\r\n\r\n"
+                )
+                .unwrap();
+            }
+        });
+        (format!("http://{address}"), server)
+    }
+
+    #[test]
+    fn a_throttled_login_call_waits_as_told_and_retries_until_the_login_would_expire() {
+        let client = http_client().unwrap();
+        let now = Cell::new(1_000);
+        let waits = RefCell::new(Vec::new());
+        let pacing = Pacing {
+            now_unix: &|| now.get(),
+            sleep: &|wait| {
+                waits.borrow_mut().push(wait.as_secs());
+                now.set(now.get() + wait.as_secs());
+            },
+        };
+
+        let (url, server) = serve_statuses(vec![(429, Some("7")), (429, None), (200, None)]);
+        let answered = send_once_unthrottled(|| client.post(&url), 1_100, &pacing).unwrap();
+        server.join().unwrap();
+        assert_eq!(answered.status(), StatusCode::OK);
+        assert_eq!(*waits.borrow(), [7, UNSTATED_THROTTLE_WAIT_SECS]);
+
+        waits.borrow_mut().clear();
+        let (url, server) = serve_statuses(vec![(429, Some("30")), (429, Some("30"))]);
+        let expiring = now.get() + 45;
+        let refused = send_once_unthrottled(|| client.post(&url), expiring, &pacing).unwrap();
+        server.join().unwrap();
+        assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(*waits.borrow(), [30]);
+    }
 
     #[cfg(unix)]
     #[test]
