@@ -7,11 +7,21 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RequestBase {
     Main {
+        #[cfg_attr(
+            feature = "ts",
+            schemars(with = "crate::git_oid::GitOidSchema"),
+            ts(as = "crate::git_oid::GitOidSchema")
+        )]
         review_base_oid: GitOid,
     },
     Request {
         request_id: String,
         revision_id: String,
+        #[cfg_attr(
+            feature = "ts",
+            schemars(with = "crate::git_oid::GitOidSchema"),
+            ts(as = "crate::git_oid::GitOidSchema")
+        )]
         head_oid: GitOid,
     },
 }
@@ -75,6 +85,11 @@ crate::wire::wire_enum!(
 pub struct RequestRevisionContextRequest {
     pub operation_key: String,
     pub base: RequestBase,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub expected_head_oid: GitOid,
     pub expected_revision_id: String,
     pub expected_base_version: u64,
@@ -102,7 +117,17 @@ pub enum RequestComparisonMode {
 pub struct RequestComparisonResponse {
     pub revision_id: String,
     pub mode: RequestComparisonMode,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "Option<crate::git_oid::GitOidSchema>"),
+        ts(as = "Option<crate::git_oid::GitOidSchema>")
+    )]
     pub base_oid: Option<GitOid>,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "Option<crate::git_oid::GitOidSchema>"),
+        ts(as = "Option<crate::git_oid::GitOidSchema>")
+    )]
     pub head_oid: Option<GitOid>,
     pub files: Vec<CommitFileResponse>,
     pub inspection: RequestRevisionInspectionState,
@@ -117,6 +142,11 @@ pub struct RequestStackNodeResponse {
     pub state: crate::RequestState,
     pub stack_status: RequestStackStatus,
     pub stack_depth: u32,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub head_oid: GitOid,
     pub current_revision_id: Option<String>,
 }
