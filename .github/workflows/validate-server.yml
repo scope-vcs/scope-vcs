@@ -43,6 +43,7 @@ jobs:
     uses: ./.github/workflows/scope-media-worker-image.yml
     with:
       publish: ${{ inputs.release }}
+      scan: ${{ inputs.release }}
       source_sha: ${{ inputs.release_sha }}
     secrets: inherit
 

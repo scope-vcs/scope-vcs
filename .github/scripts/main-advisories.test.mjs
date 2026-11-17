@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
-import { advisoryIssueBody, checkMainAdvisories, reportMainAdvisories } from './main-advisories.mjs';
+import { advisoryIssueBody, checkMainAdvisories, imageScanCheck, reportMainAdvisories } from './main-advisories.mjs';
 
 const runUrl = 'https://github.com/scope-vcs/scope-vcs/actions/runs/123';
 const sha = 'a'.repeat(40);
@@ -33,6 +33,20 @@ test('the issue identifies denied advisories and affected crates in both lockfil
   assert.match(setup, /setup failure/);
   const failed = advisoryIssueBody({checks: [{target: 'cli', status: null, output: '', error: 'spawn failed'}], runUrl, sha});
   assert.match(failed, /No advisory IDs.*\n[\s\S]*spawn failed/);
+});
+
+test('the issue lists the image findings that failed the scan, or why the scan has none to list', () => {
+  const finding = { VulnerabilityID: 'CVE-2026-0001', PkgName: 'libssl3', Severity: 'HIGH', InstalledVersion: '1', FixedVersion: '2' };
+  const report = findings => ({
+    SchemaVersion: 2, Metadata: { OS: { Family: 'debian' } },
+    Results: [{ Class: 'os-pkgs', Type: 'debian', Target: 'Debian', Vulnerabilities: findings }],
+  });
+  const body = scan => advisoryIssueBody({checks: [imageScanCheck(scan)], runUrl, sha});
+  const found = body(report([finding, { ...finding, VulnerabilityID: 'CVE-2026-0002', Severity: 'LOW' }]));
+  assert.match(found, /### media worker image: failed\n\n- CVE-2026-0001: `libssl3 1`, fixed in 2\n/);
+  assert.doesNotMatch(found, /CVE-2026-0002|No advisory IDs/);
+  assert.match(body(report([])), /no fixable HIGH or CRITICAL finding/);
+  assert.match(body(null), /Expected a complete Trivy Debian executable-image report/);
 });
 
 test('recurring failures comment on the existing open issue instead of opening duplicates', async () => {

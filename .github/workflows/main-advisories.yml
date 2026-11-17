@@ -54,3 +54,48 @@ jobs:
               runUrl: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               sha: context.sha,
             });
+
+  media-worker-image:
+    name: Media worker image advisories
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/scope-media-worker-image.yml
+    with:
+      scan: true
+      source_sha: ${{ github.sha }}
+
+  media-worker-image-report:
+    name: Report media worker image advisories
+    needs: [advisories, media-worker-image]
+    if: ${{ !cancelled() && needs.media-worker-image.result == 'failure' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Download image scan
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: media-worker-image-scan
+          path: ${{ runner.temp }}/media-worker-image-scan
+
+      - name: Report failure without duplicate issues
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const { existsSync, readFileSync } = await import('node:fs');
+            const { imageScanCheck, reportMainAdvisories } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/main-advisories.mjs`);
+            const path = `${process.env.RUNNER_TEMP}/media-worker-image-scan/media-worker-vulnerabilities.json`;
+            await reportMainAdvisories({
+              github, ...context.repo,
+              checks: [imageScanCheck(existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null)],
+              runUrl: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              sha: context.sha,
+            });

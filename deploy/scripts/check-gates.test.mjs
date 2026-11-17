@@ -57,6 +57,17 @@ test('the daily main advisory job runs both PR advisory commands with only JSON 
   }
 });
 
+test('releases and the daily main run scan the media worker image, and request validation does not', () => {
+  const image = read('.github/workflows/scope-media-worker-image.yml');
+  assert.match(image, /\n      scan:\n        type: boolean\n        default: false\n/);
+  assert.match(image, /- name: Scan image and record codec SBOM\n        if: \$\{\{ inputs\.scan \}\}\n/);
+  const callers = { 'validate-server': '${{ inputs.release }}', 'main-advisories': 'true', 'preview-build': null, 'warm-ci-caches': null };
+  for (const [workflow, scan] of Object.entries(callers)) {
+    const call = read(`.github/workflows/${workflow}.yml`).match(/uses: \.\/\.github\/workflows\/scope-media-worker-image\.yml\n    with:\n((?:      .*\n?)+)/)[1];
+    assert.equal(call.match(/^      scan: (.*)$/m)?.[1] ?? null, scan, workflow);
+  }
+});
+
 test('GitHub builds every prebuilt backend component exactly once across the deployment jobs', () => {
   const workflow = read('.github/workflows/scope-api-ci.yml');
   const built = [...workflow.matchAll(/\n            components: (.+)\n/g)].flatMap(([, components]) => components.split(' '));
