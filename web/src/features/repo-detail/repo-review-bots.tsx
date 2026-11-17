@@ -4,16 +4,20 @@ import type {
   GitHubReviewBotResponse,
 } from '@/api/types.generated'
 import { PageErrorAlert } from '@/components/page-error-alert'
+import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
 import {
+  canListReviewBot,
   reviewBotLogins,
   reviewBotsFromText,
   reviewBotsProblem,
   reviewBotsText,
   sameReviewBots,
+  skippedReviewsText,
+  withListedReviewBot,
   withReviewBotRequired,
 } from './repo-review-bots-model'
 
@@ -134,6 +138,36 @@ export function RepoReviewBots({
                   />
                   <span className="min-w-0 break-words font-mono text-[13px] [overflow-wrap:anywhere]">{bot.login}</span>
                 </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {github.unlisted_review_bots.length ? (
+        <div>
+          <p className="leading-5 text-muted-foreground" id="github-unlisted-review-bots">Not listed</p>
+          <p className="leading-5 text-muted-foreground">
+            These bots reviewed pull requests, and Scope skipped their reviews. Listing a bot imports its reviews on open requests.
+          </p>
+          <ul aria-labelledby="github-unlisted-review-bots" className="divide-y divide-border">
+            {github.unlisted_review_bots.map((bot) => (
+              <li className="flex min-h-9 items-center gap-3 py-1.5" key={bot.login}>
+                <div className="min-w-0 flex-1">
+                  <p className="break-words font-mono text-[13px] leading-5 [overflow-wrap:anywhere]">{bot.login}</p>
+                  <p className="leading-5 text-muted-foreground">
+                    {skippedReviewsText(bot)}, most recently <RelativeTimestamp value={bot.last_skipped_at_unix} />
+                  </p>
+                </div>
+                <Button
+                  aria-label={`List ${bot.login}`}
+                  disabled={pending || !canListReviewBot(bots)}
+                  onClick={() => void update(withListedReviewBot(bots, bot.login), dirty)}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  List
+                </Button>
               </li>
             ))}
           </ul>

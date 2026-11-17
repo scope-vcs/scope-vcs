@@ -246,6 +246,7 @@ pub(crate) async fn set_github_review_bots(
                 .collect(),
         )
         .await?;
+    state.wakeups.github_review_imports.notify_one();
     changed(&state, &context, &incarnation).await
 }
 
@@ -640,6 +641,9 @@ async fn connection_response(
         .github_required_checks(&context.record.id)
         .await?;
     let review_bots = repositories.github_review_bots(&context.record.id).await?;
+    let unlisted_review_bots = repositories
+        .github_unlisted_review_bots(&context.record.id)
+        .await?;
     let run_import_count = repositories
         .github_run_import_count(&context.record.id)
         .await?;
@@ -653,6 +657,7 @@ async fn connection_response(
             read,
             required_checks,
             review_bots,
+            unlisted_review_bots,
             can_confirm_public: can_publish_to_github(context.access.clone()),
             can_publish_main: can_publish_main_to_github(&context.access, &context.views),
             main_push,

@@ -1,6 +1,7 @@
 use super::{
     RequestStore, acquire_aggregate_lock,
     generated_ids::{GeneratedIdKind, generate_id},
+    github_skipped_reviews::delete_skipped_reviews,
     integer_columns::{
         i32_to_u32, i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u64_to_i64,
     },
@@ -555,7 +556,7 @@ pub(super) async fn delete_review_imports<C: ConnectionTrait>(
         [repo_id.into()],
     ))
     .await?;
-    Ok(())
+    delete_skipped_reviews(conn, repo_id).await
 }
 
 async fn lock_importing_request<C: ConnectionTrait>(

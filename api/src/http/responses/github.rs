@@ -12,7 +12,7 @@ use scope_domain::{
     github_workflow_jobs::GitHubWorkflowJob,
     requests::{GitHubPush, GitHubPushState},
 };
-use scope_postgres::db::{GitHubConnectionRead, GitHubWorkflowRunRead};
+use scope_postgres::db::{GitHubConnectionRead, GitHubUnlistedReviewBot, GitHubWorkflowRunRead};
 use serde::{Deserialize, Serialize};
 
 macro_rules! response_enum {
@@ -55,6 +55,7 @@ pub(crate) struct GitHubConnectionResponse {
     pub(crate) connection: Option<GitHubConnectionDetailsResponse>,
     pub(crate) required_checks: Vec<String>,
     pub(crate) review_bots: Vec<GitHubReviewBotResponse>,
+    pub(crate) unlisted_review_bots: Vec<GitHubUnlistedReviewBotResponse>,
     pub(crate) can_confirm_public: bool,
     pub(crate) can_publish_main: bool,
     pub(crate) run_import_count: u32,
@@ -227,6 +228,16 @@ pub(crate) struct SetGitHubRunImportCountRequest {
 pub(crate) struct GitHubReviewBotResponse {
     pub(crate) login: String,
     pub(crate) required: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubUnlistedReviewBotResponse {
+    pub(crate) login: String,
+    pub(crate) avatar_url: Option<String>,
+    pub(crate) review_count: u64,
+    pub(crate) pull_request_count: u64,
+    pub(crate) last_skipped_at_unix: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -453,6 +464,7 @@ pub(crate) struct GitHubConnectionParts {
     pub(crate) read: Option<GitHubConnectionRead>,
     pub(crate) required_checks: Vec<String>,
     pub(crate) review_bots: Vec<scope_domain::github_review_bots::GitHubReviewBot>,
+    pub(crate) unlisted_review_bots: Vec<GitHubUnlistedReviewBot>,
     pub(crate) can_confirm_public: bool,
     pub(crate) can_publish_main: bool,
     pub(crate) main_push: Option<GitHubPush>,
@@ -518,6 +530,17 @@ pub(crate) fn github_connection_response(
             .map(|bot| GitHubReviewBotResponse {
                 login: bot.login.as_str().to_string(),
                 required: bot.required,
+            })
+            .collect(),
+        unlisted_review_bots: parts
+            .unlisted_review_bots
+            .into_iter()
+            .map(|bot| GitHubUnlistedReviewBotResponse {
+                login: bot.login,
+                avatar_url: bot.avatar_url,
+                review_count: bot.review_count,
+                pull_request_count: bot.pull_request_count,
+                last_skipped_at_unix: bot.last_skipped_at_unix,
             })
             .collect(),
         can_confirm_public: parts.can_confirm_public,

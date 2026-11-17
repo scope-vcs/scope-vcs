@@ -3,7 +3,8 @@ use scope_domain::{
     github_account::GitHubAccount,
     github_connection::GitHubConnection,
     github_review_bots::{
-        GitHubAuthorStanding, GitHubReviewBot, github_author_standing, may_import_github_author,
+        GitHubAuthorStanding, GitHubReviewBot, awaits_review_bot_listing, github_author_standing,
+        may_import_github_author, reply_vouches_for_thread_root,
     },
 };
 use std::collections::BTreeMap;
@@ -79,6 +80,14 @@ impl<'a> ImportAuthors<'a> {
 
     pub(super) fn standing(&self, author: &GitHubAccount) -> GitHubAuthorStanding {
         github_author_standing(&self.review_bots, author)
+    }
+
+    pub(super) fn awaits_listing(&self, author: &GitHubAccount) -> bool {
+        awaits_review_bot_listing(&self.standing(author), author)
+    }
+
+    pub(super) fn vouches_for_thread_root(&self, author: &GitHubAccount) -> bool {
+        reply_vouches_for_thread_root(&self.standing(author))
     }
 
     pub(super) fn refusals(self) -> Option<String> {

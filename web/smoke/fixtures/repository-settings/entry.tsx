@@ -52,7 +52,7 @@ const githubConnection = {
 }
 repoSettingsResource.write(settingsScope, {
   collaboration: { members, invites: [] },
-  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null },
+  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null },
 })
 const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
 const longCheckName = 'test / unit and integration on every supported platform'
@@ -93,7 +93,7 @@ function App() {
       <button onClick={() => setGitHub({
         configured: true,
         connection: { ...githubConnection, disconnected: { reason: 'app_uninstalled', at_unix: 1_767_312_000 } },
-        required_checks: ['ci / test'], review_bots: [],
+        required_checks: ['ci / test'], review_bots: [], unlisted_review_bots: [],
         can_confirm_public: true,
         can_publish_main: true,
         run_import_count: 50,
@@ -123,7 +123,7 @@ function App() {
         disconnectGitHub={async (params) => {
           calls.push({ disconnectGitHub: params })
           await hold('disconnect-github')
-          const github = { configured: true, connection: null, required_checks: [], review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null }
+          const github = { configured: true, connection: null, required_checks: [], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null }
           retainGitHubConnection(settingsScope, github)
           return github
         }}
@@ -166,7 +166,12 @@ function App() {
           calls.push({ setGitHubReviewBots: input.bots })
           await hold('review-bots')
           const current = repoSettingsResource.peek(settingsScope)!.github!
-          const github = { ...current, review_bots: input.bots }
+          const listed = new Set(input.bots.map((bot) => bot.login.toLowerCase()))
+          const github = {
+            ...current,
+            review_bots: input.bots,
+            unlisted_review_bots: current.unlisted_review_bots.filter((bot) => !listed.has(bot.login.toLowerCase())),
+          }
           retainGitHubConnection(settingsScope, github)
           return github
         }}

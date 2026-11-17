@@ -23,7 +23,8 @@ use scope_domain::{
 };
 use scope_postgres::db::{
     GitHubImportedComment, GitHubReviewImportFinish, GitHubReviewImportJob, GitHubThreadTransition,
-    ImportGitHubReviewCommand, QueueGitHubReviewImport, TransitionGitHubDiscussionCommand,
+    ImportGitHubReviewCommand, QueueGitHubReviewImport, SkipGitHubReview,
+    TransitionGitHubDiscussionCommand,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -151,6 +152,9 @@ async fn import_subject(
             else {
                 return Ok(());
             };
+            if !authors.admits(&review.author).await? && authors.awaits_listing(&review.author) {
+                return skip_review(state, job, review_id, &review.author).await;
+            }
             let comments = app
                 .pull_request_review_comments(
                     connection.installation_id,
@@ -292,6 +296,11 @@ async fn import_comments(
         .filter_map(|comment| comment.in_reply_to_id)
         .filter(|root_id| !known.contains(root_id))
         .collect::<BTreeSet<_>>();
+    let vouched_roots = comments
+        .iter()
+        .filter(|comment| authors.vouches_for_thread_root(&comment.author))
+        .filter_map(|comment| comment.in_reply_to_id)
+        .collect::<BTreeSet<_>>();
     for root_id in missing_roots {
         if requests
             .request_has_github_discussion(&request.id, &github_review_comment_client_id(root_id))
@@ -307,7 +316,7 @@ async fn import_comments(
                 root_id,
             )
             .await?
-            && authors.admits(&root.author).await?
+            && (vouched_roots.contains(&root_id) || authors.admits(&root.author).await?)
         {
             comments.push(root);
         }
@@ -389,6 +398,30 @@ async fn import_comments(
     };
     publish(state, &import.request, &import.discussions).await;
     Ok(true)
+}
+
+async fn skip_review(
+    state: &AppState,
+    job: &GitHubReviewImportJob,
+    review_id: u64,
+    author: &GitHubAccount,
+) -> Result<(), ApiError> {
+    state
+        .metadata
+        .requests()
+        .skip_github_review(
+            &SkipGitHubReview {
+                request_id: job.request_id.clone(),
+                review_id,
+                repo_id: job.repo_id.clone(),
+                github_repository_id: job.github_repository_id,
+                pull_number: job.pull_number,
+            },
+            author,
+            unix_now()?,
+        )
+        .await?;
+    Ok(())
 }
 
 async fn revisions_for_commits<'a>(

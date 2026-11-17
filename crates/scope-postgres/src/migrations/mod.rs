@@ -59,6 +59,8 @@ mod m0111_remove_native_runs;
 mod m0112_remove_github_setup_checks;
 #[expect(unreachable_pub)]
 mod m0113_pool_pack_lookups;
+#[expect(unreachable_pub)]
+mod m0114_github_skipped_reviews;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -227,6 +229,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0113_pool_pack_lookups::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0114_github_skipped_reviews::Migration),
             metadata_restore_safe: true,
         },
     ]
