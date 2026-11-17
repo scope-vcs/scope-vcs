@@ -103,7 +103,7 @@ pub(crate) async fn stage_git_pack(
     let object_key = reservation.object_key.clone();
     let segment_store = state.git_segment_store.clone();
     let repository_id_for_ingest = repository_id.to_string();
-    let timeout = state.runtime_budgets.git_command_timeout();
+    let timeout = state.runtime_budgets.git_transfer_limits().pack_processing;
     let parent_span = tracing::Span::current();
     let output = tokio::task::spawn_blocking(move || {
         let _entered = parent_span.enter();

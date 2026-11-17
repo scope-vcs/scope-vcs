@@ -4,11 +4,12 @@ use crate::{
         cache::GitRepoHandle,
         http_backend::{CgiResponse, git_receive_pack_streaming},
         request_refs::{DeferredRequestObjects, receive_pack_refs},
+        transfer::GitTransferClock,
     },
     state::AppState,
 };
 use axum::body::{Body, Bytes};
-use futures_util::{StreamExt as _, stream};
+use futures_util::stream;
 use std::{
     path::{Path as FsPath, PathBuf},
     time::Instant,
@@ -26,8 +27,8 @@ pub(super) struct ReceivePackRun<'a> {
 }
 
 impl ReceivePackRun<'_> {
-    async fn run(&self, body: Body) -> Result<CgiResponse, ApiError> {
-        git_receive_pack_streaming(self, body).await
+    async fn run(&self, body: Body, clock: GitTransferClock) -> Result<CgiResponse, ApiError> {
+        git_receive_pack_streaming(self, body, clock).await
     }
 }
 
@@ -43,11 +44,12 @@ pub(super) async fn receive_pack(
     body: Body,
     deferred: Option<DeferredObjects<'_>>,
 ) -> Result<CgiResponse, ApiError> {
+    let clock = state.runtime_budgets.git_transfer_limits().start();
     let Some(deferred) = deferred else {
-        return run.run(body).await;
+        return run.run(body, clock).await;
     };
-    let spooled = spool_body(state, run.staging_repo, body, run.max_bytes).await?;
-    let cgi = run.run(spooled_body(&spooled).await?).await?;
+    let spooled = spool_body(clock, run.staging_repo, body, run.max_bytes).await?;
+    let cgi = run.run(spooled_body(&spooled).await?, clock).await?;
     if !cgi.status.is_success()
         || !receive_pack_may_lack_objects(&cgi.body)
         || !refs_unchanged(run.staging_repo, deferred.refs_before).await?
@@ -63,7 +65,7 @@ pub(super) async fn receive_pack(
         duration_ms = started.elapsed().as_millis(),
         "restored deferred request objects for a push that needed them"
     );
-    run.run(spooled_body(&spooled).await?).await
+    run.run(spooled_body(&spooled).await?, clock).await
 }
 
 fn receive_pack_may_lack_objects(report: &[u8]) -> bool {
@@ -83,7 +85,7 @@ async fn refs_unchanged(
 }
 
 async fn spool_body(
-    state: &AppState,
+    clock: GitTransferClock,
     staging_repo: &FsPath,
     body: Body,
     max_bytes: usize,
@@ -98,18 +100,9 @@ async fn spool_body(
         .map_err(ApiError::internal)?;
     let (file, path) = spooled.into_parts();
     let mut file = tokio::fs::File::from_std(file);
-    let deadline = tokio::time::Instant::now() + state.runtime_budgets.git_command_timeout();
     let mut chunks = body.into_data_stream();
     let mut written = 0_usize;
-    loop {
-        let Ok(chunk) = tokio::time::timeout_at(deadline, chunks.next()).await else {
-            return Err(ApiError::infrastructure_unavailable(
-                "git request upload timed out",
-            ));
-        };
-        let Some(chunk) = chunk else {
-            break;
-        };
+    while let Some(chunk) = clock.next_upload_chunk(&mut chunks).await? {
         let chunk = chunk.map_err(ApiError::bad_request)?;
         written = written.saturating_add(chunk.len());
         if written > max_bytes {

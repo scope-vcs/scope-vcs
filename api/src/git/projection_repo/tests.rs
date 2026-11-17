@@ -328,7 +328,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
             engine.lease_derived(reader.clone()).unwrap(),
             &request(hidden_oid),
             crate::git::upload::GitProtocol::V0,
-            RuntimeBudgets::default_git_command_timeout(),
+            budgets.git_transfer_limits(),
             budgets.admit_upload_pack().await.unwrap(),
         )
         .await
@@ -348,7 +348,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(reader.clone()).unwrap(),
         shallow_request.as_bytes(),
         crate::git::upload::GitProtocol::V0,
-        RuntimeBudgets::default_git_command_timeout(),
+        budgets.git_transfer_limits(),
         budgets.admit_upload_pack().await.unwrap(),
     )
     .await
@@ -370,7 +370,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(reader.clone()).unwrap(),
         &have_request(&private_oid),
         crate::git::upload::GitProtocol::V0,
-        RuntimeBudgets::default_git_command_timeout(),
+        budgets.git_transfer_limits(),
         budgets.admit_upload_pack().await.unwrap(),
     )
     .await
@@ -384,7 +384,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(reader.clone()).unwrap(),
         &unknown_have,
         crate::git::upload::GitProtocol::V0,
-        RuntimeBudgets::default_git_command_timeout(),
+        budgets.git_transfer_limits(),
         budgets.admit_upload_pack().await.unwrap(),
     )
     .await
@@ -399,7 +399,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(reader.clone()).unwrap(),
         &request(&native_oid),
         crate::git::upload::GitProtocol::V0,
-        RuntimeBudgets::default_git_command_timeout(),
+        budgets.git_transfer_limits(),
         budgets.admit_upload_pack().await.unwrap(),
     )
     .await

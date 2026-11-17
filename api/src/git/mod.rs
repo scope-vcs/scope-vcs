@@ -22,6 +22,7 @@ pub(crate) mod staging;
 pub(crate) mod storage;
 #[cfg(test)]
 pub(crate) mod test_repo;
+pub(crate) mod transfer;
 pub(crate) mod upload;
 
 pub(crate) use credentials::*;
@@ -456,7 +457,7 @@ pub(crate) async fn git_upload_pack_rpc(
         folder.repo,
         &body,
         protocol,
-        state.runtime_budgets.git_command_timeout(),
+        state.runtime_budgets.git_transfer_limits(),
         permit,
     )
     .await

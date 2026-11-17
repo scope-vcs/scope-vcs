@@ -47,7 +47,7 @@ async fn fetch_folder_is_removed_after_stream_success_error_and_disconnect() {
             repo,
             request.as_bytes(),
             super::GitProtocol::V0,
-            Duration::from_secs(5),
+            budgets.git_transfer_limits(),
             budgets.admit_upload_pack().await.unwrap(),
         )
         .await;

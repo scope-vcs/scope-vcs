@@ -3,6 +3,7 @@ use crate::{
     git::{
         command::{git_command_output_with_timeout, prepare_git_subprocess, record_git_exit},
         receive_pack::ReceivePackRun,
+        transfer::GitTransferClock,
     },
     runtime_budgets::RuntimeBudgets,
 };
@@ -11,7 +12,6 @@ use axum::{
     http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::Response,
 };
-use futures_util::StreamExt;
 use std::{
     path::Path as FsPath,
     process::{Command, Stdio},
@@ -59,6 +59,7 @@ pub(crate) fn git_receive_pack_advertisement(
 pub(super) async fn git_receive_pack_streaming(
     run: &ReceivePackRun<'_>,
     body: Body,
+    clock: GitTransferClock,
 ) -> Result<CgiResponse, ApiError> {
     let ReceivePackRun {
         staging_repo,
@@ -124,18 +125,11 @@ pub(super) async fn git_receive_pack_streaming(
     };
     let mut stdout_task = tokio::spawn(read_git_pipe(stdout).in_current_span());
     let mut stderr_task = tokio::spawn(read_git_pipe(stderr).in_current_span());
-    let process_timeout = RuntimeBudgets::default_git_command_timeout();
-    let process_deadline = tokio::time::Instant::now() + process_timeout;
+    let process_deadline = clock.deadline();
     let writer = async move {
         let mut stream = body.into_data_stream();
         let mut written = 0usize;
-        loop {
-            let next = tokio::time::timeout_at(process_deadline, stream.next())
-                .await
-                .map_err(|_| ApiError::infrastructure_unavailable("git request upload stalled"))?;
-            let Some(chunk) = next else {
-                break;
-            };
+        while let Some(chunk) = clock.next_upload_chunk(&mut stream).await? {
             let chunk = chunk.map_err(ApiError::bad_request)?;
             written = written
                 .checked_add(chunk.len())
@@ -155,7 +149,7 @@ pub(super) async fn git_receive_pack_streaming(
             .await
             .map_err(|_| ApiError::infrastructure_unavailable("git request upload timed out"))??;
         let output = tokio::time::timeout_at(
-            process_deadline,
+            clock.pack_processing_deadline(),
             collect_git_http_backend_output(&mut child, &mut stdout_task, &mut stderr_task),
         )
         .await

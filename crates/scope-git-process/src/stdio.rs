@@ -1,7 +1,66 @@
 use crate::ProcessError;
-use std::{io::Read, sync::mpsc, thread};
+use std::{
+    io::Read,
+    sync::{Arc, Mutex, PoisonError, mpsc},
+    thread,
+    time::{Duration, Instant},
+};
 
 pub const STDERR_DIAGNOSTIC_BYTES: usize = 8 * 1024;
+
+#[derive(Clone)]
+pub(crate) struct StdoutActivity {
+    started_at: Instant,
+    awaiting_output_since: Arc<Mutex<Option<Instant>>>,
+}
+
+impl StdoutActivity {
+    pub(crate) fn start() -> Self {
+        let started_at = Instant::now();
+        Self {
+            started_at,
+            awaiting_output_since: Arc::new(Mutex::new(Some(started_at))),
+        }
+    }
+
+    pub(crate) fn reader<R: Read>(&self, stdout: R) -> StdoutActivityReader<R> {
+        StdoutActivityReader {
+            stdout,
+            activity: self.clone(),
+        }
+    }
+
+    pub(crate) fn elapsed(&self) -> Duration {
+        self.started_at.elapsed()
+    }
+
+    pub(crate) fn idle(&self) -> Duration {
+        self.awaiting_output_since
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .map_or(Duration::ZERO, |since| since.elapsed())
+    }
+
+    fn record(&self, awaiting_output_since: Option<Instant>) {
+        *self
+            .awaiting_output_since
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = awaiting_output_since;
+    }
+}
+
+pub(crate) struct StdoutActivityReader<R> {
+    stdout: R,
+    activity: StdoutActivity,
+}
+
+impl<R: Read> Read for StdoutActivityReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.stdout.read(buffer)?;
+        self.activity.record((read > 0).then(Instant::now));
+        Ok(read)
+    }
+}
 
 pub(crate) fn read_stdout(
     mut stdout: impl Read,
