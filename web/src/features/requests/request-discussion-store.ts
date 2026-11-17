@@ -86,8 +86,8 @@ export function useRequestDiscussionStore({
     return current?.epoch === epoch ? current : null
   }, [epoch, key])
   const updateCollection = useCallback(
-    (transform: (current: DiscussionCollection) => DiscussionCollection, dataChanged?: boolean) =>
-      updateRequestDiscussionCollection(key, epoch, transform, dataChanged),
+    (transform: (current: DiscussionCollection) => DiscussionCollection) =>
+      updateRequestDiscussionCollection(key, epoch, transform),
     [epoch, key],
   )
   const setError = useCallback((next: string | null) => { updateRequestDiscussion(key, epoch, { error: next }) }, [epoch, key])
@@ -107,7 +107,6 @@ export function useRequestDiscussionStore({
     const empty = { ...retained.collection, byId: new Map(), nextCursor: null, order: [] }
     const sync = createRequestDiscussionSync({
       getCollection: () => read()?.collection ?? empty,
-      getDataGeneration: () => read()?.dataGeneration ?? 0,
       loadChanges: (after) => {
         if (read()) return loadChangesRef.current(after)
         sync.stop()
@@ -285,7 +284,7 @@ export function useRequestDiscussionStore({
         return discussion
           ? mergeDiscussion(current, { ...discussion, expanded })
           : current
-      }, false)
+      })
     },
     [updateCollection],
   )

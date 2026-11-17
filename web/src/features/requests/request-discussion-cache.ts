@@ -5,7 +5,6 @@ import type { RequestDiscussionPage } from './request-discussion-types'
 
 export type RequestDiscussionState = {
   collection: DiscussionCollection
-  dataGeneration: number
   epoch: number
   error: string | null
   loadingMore: boolean
@@ -39,7 +38,6 @@ export function requestDiscussionState(page: RequestDiscussionPage): RequestDisc
   epochs += 1
   return {
     collection: collectionFromPage(page),
-    dataGeneration: 0,
     epoch: epochs,
     error: null,
     loadingMore: false,
@@ -69,13 +67,12 @@ export function updateRequestDiscussionCollection(
   key: string,
   epoch: number,
   transform: (current: DiscussionCollection) => DiscussionCollection,
-  dataChanged = true,
 ) {
   const current = requestDiscussionResource.peek(key)
   if (current?.epoch !== epoch) return
   const collection = transform(current.collection)
   if (collection === current.collection) return
-  updateRequestDiscussion(key, epoch, { collection, dataGeneration: current.dataGeneration + Number(dataChanged) })
+  updateRequestDiscussion(key, epoch, { collection })
 }
 
 export async function syncRequestDiscussionProjections(
@@ -108,7 +105,7 @@ export async function syncRequestDiscussionProjections(
       cursor = page.next_cursor ?? undefined
     } while (cursor && covered < collection.order.length)
     updateRequestDiscussionCollection(key, epoch, (latest) => pages.reduce(
-      (next, page) => mergeRefreshedDiscussionPage(next, page, false),
+      (next, page) => mergeRefreshedDiscussionPage(next, page),
       latest,
     ))
     updateRequestDiscussion(key, epoch, { projectedHead: requestHead })
@@ -155,7 +152,7 @@ export function loadRequestDiscussion({
     return load().then((incoming) => {
       stillRetained()
       if (incoming) {
-        updateRequestDiscussionCollection(key, retained.epoch, (current) => mergeRefreshedDiscussionPage(current, incoming, false))
+        updateRequestDiscussionCollection(key, retained.epoch, (current) => mergeRefreshedDiscussionPage(current, incoming))
       }
       return stillRetained()
     }, stillRetained)

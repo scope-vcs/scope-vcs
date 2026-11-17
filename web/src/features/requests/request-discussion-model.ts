@@ -63,50 +63,10 @@ export function appendDiscussionPage(
 export function mergeRefreshedDiscussionPage(
   collection: DiscussionCollection,
   page: RequestDiscussionPage,
-  authoritative: boolean,
 ): DiscussionCollection {
-  if (!authoritative) {
-    let next = collection
-    for (const discussion of [...page.discussions].reverse()) {
-      next = mergeDiscussion(next, discussion)
-    }
-    return next
-  }
-
-  let next: DiscussionCollection = {
-    ...collectionFromPage(page),
-    snapshotVersion: Math.max(collection.snapshotVersion, page.snapshot_version),
-  }
-  const refreshedIds = new Set(page.discussions.map(({ id }) => id))
-  const acceptedClientIds = new Set(
-    page.discussions.flatMap((discussion) => {
-      const optimistic = collection.byId.get(discussion.client_discussion_id)
-      return optimistic?.pending !== undefined &&
-        isSameDiscussionAuthor(optimistic.author, discussion.author)
-        ? [discussion.client_discussion_id]
-        : []
-    }),
-  )
-  for (const discussion of page.discussions) {
-    const current = collection.byId.get(discussion.id)
-    if (!current) continue
-    next = mergeDiscussion(
-      next,
-      discussion.last_activity_position < current.last_activity_position
-        ? current
-        : preserveDiscussionUi(current, discussion),
-    )
-  }
-  for (const discussionId of collection.order) {
-    const current = collection.byId.get(discussionId)
-    if (
-      current &&
-      !refreshedIds.has(discussionId) &&
-      !acceptedClientIds.has(discussionId) &&
-      current.pending !== undefined
-    ) {
-      next = mergeDiscussion(next, current)
-    }
+  let next = collection
+  for (const discussion of [...page.discussions].reverse()) {
+    next = mergeDiscussion(next, discussion)
   }
   return next
 }

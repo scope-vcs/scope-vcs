@@ -36,7 +36,7 @@ test('reopening finds the subscribed collection, expansion, scroll and pending p
   const { epoch } = retain('request', page)
   let notifications = 0
   const unsubscribe = requestDiscussionResource.subscribe('request', () => notifications++)
-  updateRequestDiscussionCollection('request', epoch, (current) => mergeDiscussion(current, { ...discussion('one', 1), expanded: true }), false)
+  updateRequestDiscussionCollection('request', epoch, (current) => mergeDiscussion(current, { ...discussion('one', 1), expanded: true }))
   updateRequestDiscussion('request', epoch, { loadingMore: true })
   writeRequestDiscussionScroll('request', 240)
   unsubscribe()
@@ -44,7 +44,6 @@ test('reopening finds the subscribed collection, expansion, scroll and pending p
   const reopened = requestDiscussionResource.peek('request')
   assert.ok(reopened)
   assert.equal(reopened.collection.byId.get('one')?.expanded, true)
-  assert.equal(reopened.dataGeneration, 0)
   assert.equal(reopened.loadingMore, true)
   assert.equal(readRequestDiscussionScroll('request'), 240)
   assert.equal(notifications, 3)
