@@ -33,10 +33,6 @@ on:
     - cron: '43 6 * * *'
   workflow_dispatch:
 
-concurrency:
-  group: warm-ci-caches
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
@@ -69,6 +65,9 @@ jobs:
 
   postgres:
     name: PostgreSQL test package cache
+    concurrency:
+      group: warm-ci-caches-postgres
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -80,6 +79,9 @@ jobs:
 
   media-codecs:
     name: Save media codec packages on main
+    concurrency:
+      group: warm-ci-caches-media-codecs
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -91,6 +93,9 @@ jobs:
 
   playwright:
     name: Save Playwright Chromium and packages on main
+    concurrency:
+      group: warm-ci-caches-playwright
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -118,6 +123,9 @@ jobs:
 
   reviewed-git:
     name: Save the reviewed Git build on main
+    concurrency:
+      group: warm-ci-caches-reviewed-git
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -131,6 +139,9 @@ jobs:
     needs: changed
     if: needs.changed.outputs.builds == 'true'
     name: Backend caches
+    concurrency:
+      group: warm-ci-caches-backend-${{ needs.changed.outputs.builds == 'true' && 'selected' || github.run_id }}
+      cancel-in-progress: true
     uses: ./.github/workflows/scope-api-ci.yml
     with:
       warm_cache: true
@@ -139,6 +150,9 @@ jobs:
     needs: changed
     if: needs.changed.outputs.builds == 'true'
     name: CLI caches
+    concurrency:
+      group: warm-ci-caches-cli-${{ needs.changed.outputs.builds == 'true' && 'selected' || github.run_id }}
+      cancel-in-progress: true
     uses: ./.github/workflows/scope-cli-build.yml
     with:
       validate_targets: true
@@ -148,6 +162,9 @@ jobs:
     needs: changed
     if: needs.changed.outputs.builds == 'true'
     name: Media worker image cache
+    concurrency:
+      group: warm-ci-caches-media-worker-image-${{ needs.changed.outputs.builds == 'true' && 'selected' || github.run_id }}
+      cancel-in-progress: true
     permissions:
       contents: read
       packages: write
