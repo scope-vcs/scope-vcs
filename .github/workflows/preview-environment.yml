@@ -4,8 +4,6 @@ on:
   workflow_run:
     workflows: [Preview build]
     types: [completed]
-  pull_request_target:
-    types: [closed, unlabeled]
 
 permissions:
   contents: read
@@ -13,10 +11,6 @@ permissions:
 jobs:
   plan:
     name: Plan preview change
-    if: >-
-      github.event_name == 'workflow_run' ||
-      github.event.action == 'closed' ||
-      github.event.label.name == 'preview'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -24,8 +18,8 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      action: ${{ steps.build.outputs.action || steps.cleanup.outputs.action }}
-      pull_request: ${{ steps.build.outputs.pull_request || steps.cleanup.outputs.pull_request }}
+      action: ${{ steps.build.outputs.action }}
+      pull_request: ${{ steps.build.outputs.pull_request }}
       source_sha: ${{ steps.build.outputs.source_sha }}
     steps:
       - name: Checkout trusted orchestration
@@ -41,7 +35,6 @@ jobs:
 
       - name: Find prepared preview images
         id: artifacts
-        if: github.event_name == 'workflow_run'
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -63,7 +56,6 @@ jobs:
 
       - name: Decide from the finished build
         id: build
-        if: github.event_name == 'workflow_run'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PREPARED: ${{ steps.artifacts.outputs.prepared }}
@@ -73,14 +65,6 @@ jobs:
           else
             node deploy/scripts/preview-pull-request.mjs build
           fi
-
-      - name: Decide from the closed or unlabeled pull request
-        id: cleanup
-        if: github.event_name == 'pull_request_target'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PULL_REQUEST: ${{ github.event.pull_request.number }}
-        run: node deploy/scripts/preview-pull-request.mjs cleanup "$PULL_REQUEST"
 
   deploy:
     name: Deploy preview environment

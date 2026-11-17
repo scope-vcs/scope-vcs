@@ -26,6 +26,7 @@ node --test \
   .github/scripts/ci-duration.test.mjs \
   .github/scripts/scan-report.test.mjs \
   .github/scripts/report-pr-checks.test.mjs \
+  .github/scripts/preview-cleanup-events.test.mjs \
   .github/scripts/main-advisories.test.mjs
 bash -n .github/scripts/scan-image.sh .github/scripts/media-smoke-fixtures.sh dev/install-git.sh
 node --check dev/media-smoke.mjs
