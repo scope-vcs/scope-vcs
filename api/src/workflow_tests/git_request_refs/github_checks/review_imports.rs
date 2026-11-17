@@ -478,6 +478,14 @@ async fn an_unlisted_bot_review_is_imported_once_its_bot_is_listed() {
     assert_eq!(skipped[0]["login"], "greptile-apps[bot]");
     assert_eq!(skipped[0]["review_count"], 1);
     assert_eq!(skipped[0]["pull_request_count"], 1);
+    owner
+        .fake
+        .report_permission("octo-writer", Some(("write", 502)));
+    owner
+        .fake
+        .report_review_thread(601, Some(("octo-writer", 502)));
+    deliver_thread(&owner, "resolved", 601, user(502, "octo-writer", "User")).await;
+    assert_eq!(import_pass(&owner).await, 0);
 
     let listed = expect_json(
         github_api(
@@ -494,13 +502,18 @@ async fn an_unlisted_bot_review_is_imported_once_its_bot_is_listed() {
     )
     .await;
     assert_eq!(listed["unlisted_review_bots"], serde_json::json!([]));
-    assert_eq!(import_pass(&owner).await, 1);
+    import_pass(&owner).await;
+    import_due_github_reviews(&owner.state, unix_now() + 60 * 60)
+        .await
+        .unwrap();
     let threads = threads(&owner).await;
     assert_eq!(threads.len(), 1);
+    let imported = by_client_id(&threads, "github:review-comment:601");
     assert_eq!(
-        by_client_id(&threads, "github:review-comment:601")["anchor"]["lines"],
+        imported["anchor"]["lines"],
         serde_json::json!({ "side": "new", "start_line": 1, "end_line": 1 })
     );
+    assert_eq!(imported["status"], "Resolved");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -515,11 +528,25 @@ async fn a_writer_reply_brings_in_the_unlisted_comment_it_answers() {
         review(REVIEW_ID, bot(), &head),
         vec![line_comment(701, &head, "request.txt", None, 1)],
     );
-    let mut reply = authored(line_comment(702, &head, "request.txt", None, 1), &writer);
-    reply["in_reply_to_id"] = serde_json::json!(701);
+    let reader = user(503, "octo-reader", "User");
     owner
         .fake
-        .report_pull_review(review(REVIEW_ID + 1, writer, &head), vec![reply]);
+        .report_permission("octo-reader", Some(("read", 503)));
+    owner.fake.report_pull_review(
+        review(REVIEW_ID + 2, reader.clone(), &head),
+        vec![authored(
+            line_comment(703, &head, "request.txt", None, 1),
+            &reader,
+        )],
+    );
+    let mut reply = authored(line_comment(702, &head, "request.txt", None, 1), &writer);
+    reply["in_reply_to_id"] = serde_json::json!(701);
+    let mut reader_reply = authored(line_comment(704, &head, "request.txt", None, 1), &writer);
+    reader_reply["in_reply_to_id"] = serde_json::json!(703);
+    owner.fake.report_pull_review(
+        review(REVIEW_ID + 1, writer, &head),
+        vec![reply, reader_reply],
+    );
     deliver_review_id(&owner, REVIEW_ID + 1, GITHUB_REPOSITORY_ID).await;
     assert_eq!(import_pass(&owner).await, 1);
 
@@ -527,11 +554,10 @@ async fn a_writer_reply_brings_in_the_unlisted_comment_it_answers() {
     let root = by_client_id(&threads, "github:review-comment:701");
     assert_eq!(root["author"]["account"]["login"], "greptile-apps[bot]");
     assert_eq!(root["reply_count"], 1);
-    assert!(
-        threads
-            .iter()
-            .all(|thread| thread["client_discussion_id"] != "github:review-comment:702")
-    );
+    assert!(threads.iter().all(|thread| {
+        thread["client_discussion_id"] != "github:review-comment:702"
+            && thread["client_discussion_id"] != "github:review-comment:703"
+    }));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

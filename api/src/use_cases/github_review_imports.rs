@@ -317,7 +317,8 @@ async fn import_comments(
                 root_id,
             )
             .await?
-            && (vouched_roots.contains(&root_id) || authors.admits(&root.author).await?)
+            && ((vouched_roots.contains(&root_id) && authors.awaits_listing(&root.author))
+                || authors.admits(&root.author).await?)
         {
             comments.push(root);
         }

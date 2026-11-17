@@ -49,23 +49,35 @@ impl RequestStore {
         let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, &review.repo_id).await?;
         acquire_aggregate_lock(&tx, "github-connection", &review.repo_id).await?;
+        let live_link = tx
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT 1 AS live FROM scope_github_connections
+                  WHERE repo_id = $1 AND status = 'Connected' AND link_id = $2
+                    AND github_repository_id = $3
+                  FOR SHARE",
+                [
+                    review.repo_id.clone().into(),
+                    review.github_link_id.clone().into(),
+                    u64_to_i64(review.github_repository_id, "GitHub repository id")?.into(),
+                ],
+            ))
+            .await?;
+        if live_link.is_none() {
+            tx.commit().await?;
+            return Ok(false);
+        }
         save_github_accounts(&tx, std::slice::from_ref(author), now_unix).await?;
         let recorded = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_github_skipped_reviews (request_id, review_id, repo_id,
-                github_repository_id, pull_number, github_user_id, skipped_at_unix)
-             SELECT request.id, $2, request.repo_id, $4, $5, $6, $7
-               FROM scope_requests request
-               JOIN scope_github_connections connection
-                 ON connection.repo_id = request.repo_id
-                AND connection.status = 'Connected'
-                AND connection.github_repository_id = $4
-                AND connection.link_id = $8
-              WHERE request.id = $1 AND request.repo_id = $3
-             ON CONFLICT (request_id, review_id) DO UPDATE
-                SET github_user_id = EXCLUDED.github_user_id,
-                    skipped_at_unix = EXCLUDED.skipped_at_unix",
+                    github_repository_id, pull_number, github_user_id, skipped_at_unix)
+                 SELECT id, $2, repo_id, $4, $5, $6, $7 FROM scope_requests
+                  WHERE id = $1 AND repo_id = $3
+                 ON CONFLICT (request_id, review_id) DO UPDATE
+                    SET github_user_id = EXCLUDED.github_user_id,
+                        skipped_at_unix = EXCLUDED.skipped_at_unix",
                 [
                     review.request_id.clone().into(),
                     u64_to_i64(review.review_id, "GitHub review id")?.into(),
@@ -74,7 +86,6 @@ impl RequestStore {
                     u64_to_i64(review.pull_number, "GitHub pull request number")?.into(),
                     u64_to_i64(author.id, "GitHub account id")?.into(),
                     u64_to_i64(now_unix, "GitHub review skip time")?.into(),
-                    review.github_link_id.clone().into(),
                 ],
             ))
             .await?
@@ -159,6 +170,27 @@ pub(super) async fn queue_reviews_of_listed_bots<C: ConnectionTrait>(
                 attempts = 0,
                 next_attempt_at_unix = 0,
                 last_error = NULL",
+        [repo_id.into()],
+    ))
+    .await?;
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_github_review_imports job
+            SET claim_token = NULL,
+                attempts = 0,
+                next_attempt_at_unix = 0,
+                last_error = NULL
+          WHERE job.subject = 'thread'
+            AND job.last_error IS NOT NULL
+            AND job.request_id IN (
+                SELECT skipped.request_id
+                  FROM scope_github_skipped_reviews skipped
+                  JOIN scope_github_accounts account
+                    ON account.github_user_id = skipped.github_user_id
+                  JOIN scope_github_review_bots bot
+                    ON bot.repo_id = skipped.repo_id
+                   AND lower(bot.login) = lower(account.login)
+                 WHERE skipped.repo_id = $1)",
         [repo_id.into()],
     ))
     .await?;
