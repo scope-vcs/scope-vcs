@@ -296,12 +296,20 @@ test('repository components retain drafts, previews and pending actions across r
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 })
+  await reviewBotLogins.fill('chatgpt-codex-connector[bot]')
   await listGreptile.click()
   await page.evaluate(() => window.finishAction('review-bots'))
-  await page.waitForFunction(() => document.getElementById('github-review-bots').value === 'greptile-apps[bot]')
+  await page.waitForFunction(() => window.fixtureGitHub().unlisted_review_bots.length === 0)
   assert.equal(await unlistedBots.count(), 0)
+  assert.equal(await reviewBotLogins.inputValue(), 'chatgpt-codex-connector[bot]\ngreptile-apps[bot]')
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { setGitHubReviewBots: [{ login: 'greptile-apps[bot]', required: false }] },
+  ])
+  await saveReviewBots.click()
+  await page.evaluate(() => window.finishAction('review-bots'))
+  await checks.getByText('Review bots saved.', { exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+    { setGitHubReviewBots: [{ login: 'chatgpt-codex-connector[bot]', required: false }, { login: 'greptile-apps[bot]', required: false }] },
   ])
   await page.evaluate(() => {
     const github = window.fixtureGitHub()

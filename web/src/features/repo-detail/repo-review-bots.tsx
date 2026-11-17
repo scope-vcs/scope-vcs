@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { useState } from 'react'
 import {
   canListReviewBot,
+  draftWithReviewBot,
   reviewBotLogins,
   reviewBotsFromText,
   reviewBotsProblem,
@@ -51,6 +52,11 @@ export function RepoReviewBots({
     const found = reviewBotsProblem(logins)
     setProblem(found)
     if (!found) await update(reviewBotsFromText(draft, bots), false)
+  }
+
+  async function listBot(login: string) {
+    if (dirty) setDraft(draftWithReviewBot(draft, login))
+    await update(withListedReviewBot(bots, login), dirty)
   }
 
   async function update(next: GitHubReviewBotRequest[], keepsDraft: boolean) {
@@ -161,7 +167,7 @@ export function RepoReviewBots({
                 <Button
                   aria-label={`List ${bot.login}`}
                   disabled={pending || !canListReviewBot(bots)}
-                  onClick={() => void update(withListedReviewBot(bots, bot.login), dirty)}
+                  onClick={() => void listBot(bot.login)}
                   size="sm"
                   type="button"
                   variant="secondary"

@@ -63,6 +63,11 @@ export function withListedReviewBot(bots: GitHubReviewBotResponse[], login: stri
   return [...bots, { login, required: false }]
 }
 
+export function draftWithReviewBot(draft: string, login: string) {
+  const kept = draft.trimEnd()
+  return kept ? `${kept}\n${login}` : login
+}
+
 export function skippedReviewsText(bot: GitHubUnlistedReviewBotResponse) {
   const reviews = bot.review_count === 1 ? '1 review' : `${bot.review_count} reviews`
   const pulls = bot.pull_request_count === 1 ? '1 pull request' : `${bot.pull_request_count} pull requests`
