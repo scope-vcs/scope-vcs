@@ -251,7 +251,10 @@ async fn open_request(state: &AppState, request_id: &str, now_unix: u64) {
         .metadata
         .requests()
         .mutate_request_for_tests(request_id, |request| {
-            request.submitted_at_unix = Some(now_unix);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(now_unix),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = now_unix;
         })
         .await

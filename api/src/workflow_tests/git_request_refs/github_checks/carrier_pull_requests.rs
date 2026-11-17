@@ -544,9 +544,9 @@ async fn observe_merge(request: &OwnerRequest, pull_request_head: &str, merge_co
 async fn assert_landed(request: &OwnerRequest, head: &str, main: &str) {
     let landed = stored_request(&request.state, &request.request_id).await;
     assert_eq!(landed.state(), RequestState::Merged);
-    assert_eq!(landed.merged_head_oid.as_deref(), Some(head));
-    assert_eq!(landed.merged_main_oid.as_deref(), Some(main));
-    assert_eq!(landed.merged_by_user_id, Some(test_owner_id()));
+    assert_eq!(landed.merged_head_oid(), Some(head));
+    assert_eq!(landed.merged_main_oid(), Some(main));
+    assert_eq!(landed.merged_by_user_id(), Some(test_owner_id().as_str()));
     assert!(request.fake.branch_head(&request.branch()).is_some());
     push_pass(&request.state, unix_now()).await;
     assert_eq!(request.fake.branch_head(&request.branch()), None);

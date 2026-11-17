@@ -312,7 +312,10 @@ async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surf
         .metadata
         .requests()
         .mutate_request_for_tests("req_ready_public", |request| {
-            request.submitted_at_unix = Some(4);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(4),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 4;
         })
         .await
@@ -583,7 +586,10 @@ async fn invitee_routes_enforce_exact_handles_roles_leave_and_private_exclusion(
         .metadata
         .requests()
         .mutate_request_for_tests("req_invites", |request| {
-            request.submitted_at_unix = Some(5);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(5),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 5;
         })
         .await

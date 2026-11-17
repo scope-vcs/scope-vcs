@@ -495,8 +495,15 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        request.submitted_at_unix = Some(4);
-        request.updated_at_unix = 4;
+        request = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+            lifecycle: scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(4),
+                ..request.lifecycle().clone()
+            },
+            updated_at_unix: 4,
+            ..request.stored()
+        })
+        .unwrap();
         super::super::request_rows::save_request_row(store.db.as_ref(), &request)
             .await
             .unwrap();

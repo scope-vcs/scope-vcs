@@ -9,7 +9,7 @@ fn author_submits_a_pushed_draft_exactly_once() {
     let submitted = submit_request(&request, author_actor(), submit_input()).unwrap();
 
     assert_eq!(submitted.request.state(), RequestState::Open);
-    assert_eq!(submitted.request.submitted_at_unix, Some(20));
+    assert_eq!(submitted.request.submitted_at_unix(), Some(20));
     assert_eq!(submitted.events.len(), 1);
     assert!(matches!(
         submitted.events[0].payload,
@@ -44,10 +44,7 @@ fn merge_is_maintainer_only_and_terminal() {
 
     let merged = merge_request(&open, merge_input()).unwrap();
     assert_eq!(merged.request.state(), RequestState::Merged);
-    assert_eq!(
-        merged.request.merged_by_user_id.as_deref(),
-        Some("maintainer")
-    );
+    assert_eq!(merged.request.merged_by_user_id(), Some("maintainer"));
     assert_eq!(merged.events.len(), 1);
     assert_eq!(merged.events[0].kind, RequestEventKind::Merged);
     assert!(merge_request(&merged.request, merge_input()).is_err());

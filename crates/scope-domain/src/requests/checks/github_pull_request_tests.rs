@@ -55,13 +55,13 @@ fn only_an_open_full_view_request_on_a_connected_opted_in_repository_wants_a_car
     assert_eq!(base(&connection(), &request), Some("main".into()));
 
     let mut draft = request.clone();
-    draft.submitted_at_unix = None;
+    draft.lifecycle.submitted_at_unix = None;
     let partial_view = Request {
         view: ViewId::public(),
         ..request.clone()
     };
     let mut closed = request.clone();
-    closed.closed_at_unix = Some(30);
+    closed.lifecycle.closed_at_unix = Some(30);
     let opted_out = GitHubConnection {
         review_bots: GitHubReviewBotSettings::default(),
         ..connection()
@@ -146,7 +146,7 @@ fn a_stacked_request_targets_its_parent_branch_until_the_parent_or_its_pull_requ
     assert_eq!(base(&parent, Some(&ended_elsewhere)), parent_branch);
 
     let mut merged_parent = parent;
-    merged_parent.merged_at_unix = Some(40);
+    merged_parent.lifecycle.merged_at_unix = Some(40);
     assert_eq!(base(&merged_parent, None), Some("main".into()));
 }
 
@@ -165,9 +165,9 @@ fn closing_always_closes_the_carrier_and_merging_closes_it_unless_main_is_publis
     };
     let open = full_view_request();
     let mut closed = open.clone();
-    closed.closed_at_unix = Some(30);
+    closed.lifecycle.closed_at_unix = Some(30);
     let mut merged = open.clone();
-    merged.merged_at_unix = Some(30);
+    merged.lifecycle.merged_at_unix = Some(30);
 
     for connection in [None, Some(&publishing)] {
         assert!(!closes_carrier_pull_request(&open, connection));
@@ -206,9 +206,9 @@ fn a_merged_requests_branch_waits_only_for_a_carrier_github_still_has_open() {
     };
     let open = full_view_request();
     let mut closed = open.clone();
-    closed.closed_at_unix = Some(30);
+    closed.lifecycle.closed_at_unix = Some(30);
     let mut merged = open.clone();
-    merged.merged_at_unix = Some(30);
+    merged.lifecycle.merged_at_unix = Some(30);
     let open_carrier = opened_carrier(GitHubPullRequestState::Open);
 
     assert!(retains_request_branch_for_carrier(&open, None, None));
@@ -748,6 +748,9 @@ fn a_request_lands_only_when_main_holds_the_merge_commit_of_a_pull_request_merge
     .unwrap()
     .request;
     assert_eq!(landed.state(), RequestState::Merged);
-    assert_eq!(landed.merged_head_oid.as_deref(), Some(HEAD));
-    assert_eq!(landed.merged_main_oid.as_deref(), Some("main-with-squash"));
+    assert_eq!(landed.lifecycle.merged_head_oid.as_deref(), Some(HEAD));
+    assert_eq!(
+        landed.lifecycle.merged_main_oid.as_deref(),
+        Some("main-with-squash")
+    );
 }

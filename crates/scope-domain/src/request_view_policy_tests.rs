@@ -111,9 +111,16 @@ fn merging_needs_the_full_view_unless_the_author_may_push_through_the_request_vi
 #[test]
 fn completed_agent_request_discussions_behave_like_the_anyone_view() {
     let mut request = agent_request();
-    request.closed_at_unix = Some(30);
-    request.closed_by_user_id = Some("author".into());
-    request.updated_at_unix = 30;
+    request = crate::requests::Request::restore(crate::requests::StoredRequest {
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_at_unix: Some(30),
+            closed_by_user_id: Some("author".into()),
+            ..request.lifecycle().clone()
+        },
+        updated_at_unix: 30,
+        ..request.stored()
+    })
+    .unwrap();
     let permissions = policy(
         &request,
         access(RepositoryActor::Member, agent(), false),
@@ -280,11 +287,28 @@ fn branch_mutable_lifecycles_match_requests_any_actor_can_edit() {
         for submitted in [false, true] {
             for closed in [false, true] {
                 for merged in [false, true] {
-                    let mut request = open_request();
-                    request.view = view.clone();
-                    request.submitted_at_unix = submitted.then_some(20);
-                    request.closed_at_unix = closed.then_some(30);
-                    request.merged_at_unix = merged.then_some(30);
+                    let open = open_request();
+                    let Ok(request) =
+                        crate::requests::Request::restore(crate::requests::StoredRequest {
+                            view: view.clone(),
+                            lifecycle: crate::requests::RequestLifecycle {
+                                submitted_at_unix: submitted.then_some(open.created_at_unix),
+                                closed_at_unix: closed.then_some(30),
+                                merged_at_unix: merged.then_some(30),
+                                merged_head_oid: merged.then(|| open.head_oid.clone()),
+                                merged_main_oid: merged.then(|| "main-after".to_string()),
+                                ..open.lifecycle().clone()
+                            },
+                            updated_at_unix: 30,
+                            ..open.stored()
+                        })
+                    else {
+                        assert!(
+                            (closed && merged) || (!submitted && (closed || merged)),
+                            "{view} submitted={submitted} closed={closed} merged={merged}"
+                        );
+                        continue;
+                    };
                     let editable = [
                         RequestViewer::new(RepositoryAccess::public(), Some("author"), false),
                         RequestViewer::new(RepositoryAccess::public(), Some("invitee"), true),

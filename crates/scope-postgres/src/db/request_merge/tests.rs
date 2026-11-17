@@ -165,7 +165,7 @@ async fn a_native_merge_by_a_member_without_push_access_lands_a_waiting_github_m
         .unwrap()
         .unwrap();
     assert_eq!(landed.state(), RequestState::Merged);
-    assert_eq!(landed.merged_by_user_id.as_deref(), Some("user_guest"));
+    assert_eq!(landed.merged_by_user_id(), Some("user_guest"));
 }
 
 #[tokio::test]
@@ -369,7 +369,10 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
                 review_base_oid: public_main.clone(),
             };
             request.main_ancestor_oid = public_main;
-            request.submitted_at_unix = Some(4);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(4),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 4;
         })
         .await

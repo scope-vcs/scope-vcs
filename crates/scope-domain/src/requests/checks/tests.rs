@@ -91,11 +91,17 @@ fn only_a_pushed_head_that_can_still_merge_is_evaluated_on_a_look() {
         ..pushed.clone()
     }));
     assert!(!awaits(&Request {
-        closed_at_unix: Some(20),
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_at_unix: Some(20),
+            ..pushed.lifecycle.clone()
+        },
         ..pushed.clone()
     }));
     assert!(!awaits(&Request {
-        merged_at_unix: Some(20),
+        lifecycle: crate::requests::RequestLifecycle {
+            merged_at_unix: Some(20),
+            ..pushed.lifecycle.clone()
+        },
         ..pushed
     }));
 }
@@ -293,8 +299,8 @@ fn push(target_oid: &str, state: GitHubPushState, last_error: Option<&str>) -> G
 #[test]
 fn a_main_publication_contains_a_merge_only_when_its_commit_contains_the_merged_main() {
     let mut merged = open_request();
-    merged.merged_at_unix = Some(20);
-    merged.merged_main_oid = Some("merged_main".into());
+    merged.lifecycle.merged_at_unix = Some(20);
+    merged.lifecycle.merged_main_oid = Some("merged_main".into());
     let published = |contained: &'static [&str]| {
         move |merged_main: &str| Ok::<bool, &str>(contained.contains(&merged_main))
     };
@@ -312,7 +318,7 @@ fn a_main_publication_contains_a_merge_only_when_its_commit_contains_the_merged_
         Err("history unavailable")
     );
     let mut closed = open_request();
-    closed.closed_at_unix = Some(20);
+    closed.lifecycle.closed_at_unix = Some(20);
     for ended_elsewhere in [closed, open_request()] {
         assert_eq!(
             main_publication_contains_merge(&ended_elsewhere, |_| Err("asked")),

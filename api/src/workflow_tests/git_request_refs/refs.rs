@@ -71,9 +71,12 @@ async fn closed_public_request_is_not_advertised_and_remains_read_only() {
         .metadata
         .requests()
         .mutate_request_for_tests(REQUEST_ID, |request| {
-            request.submitted_at_unix = Some(3);
-            request.closed_at_unix = Some(3);
-            request.closed_by_user_id = Some(test_owner_id());
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(3),
+                closed_at_unix: Some(3),
+                closed_by_user_id: Some(test_owner_id()),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 3;
         })
         .await

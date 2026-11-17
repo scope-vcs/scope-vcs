@@ -183,12 +183,12 @@ async fn independent_authorizations_wait_then_land_three_layers_with_a_parent_ex
     fetch_stack_main(&fixture);
     for (ancestor, descendant) in [
         (
-            parent.merged_main_oid.as_deref().unwrap(),
-            landed_child.merged_main_oid.as_deref().unwrap(),
+            parent.merged_main_oid().unwrap(),
+            landed_child.merged_main_oid().unwrap(),
         ),
         (
-            landed_child.merged_main_oid.as_deref().unwrap(),
-            grandchild.merged_main_oid.as_deref().unwrap(),
+            landed_child.merged_main_oid().unwrap(),
+            grandchild.merged_main_oid().unwrap(),
         ),
     ] {
         assert!(

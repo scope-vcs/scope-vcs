@@ -126,8 +126,15 @@ async fn open_public_request(store: &MetadataStore) -> scope_domain::requests::R
         .await
         .unwrap()
         .unwrap();
-    request.submitted_at_unix = Some(3);
-    request.updated_at_unix = 3;
+    request = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            submitted_at_unix: Some(3),
+            ..request.lifecycle().clone()
+        },
+        updated_at_unix: 3,
+        ..request.stored()
+    })
+    .unwrap();
     save_request_row(store.db.as_ref(), &request).await.unwrap();
     request
 }
@@ -308,8 +315,15 @@ async fn reactivated_and_expired_requests_sort_before_older_active_pages() {
         .await
         .unwrap()
         .unwrap();
-    newer.submitted_at_unix = Some(20);
-    newer.updated_at_unix = 20;
+    newer = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            submitted_at_unix: Some(20),
+            ..newer.lifecycle().clone()
+        },
+        updated_at_unix: 20,
+        ..newer.stored()
+    })
+    .unwrap();
     save_request_row(store.db.as_ref(), &newer).await.unwrap();
     set_attention(&store, &newer, RequestAttentionAction::Claim, 21).await;
     let incoming = crate::db::test_support::request_fixtures::replied(

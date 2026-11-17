@@ -383,7 +383,10 @@ async fn public_repo_stream_drops_private_request_identifiers() {
         .metadata
         .requests()
         .mutate_request_for_tests("req_public_stream", |request| {
-            request.submitted_at_unix = Some(2);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(2),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 2;
         })
         .await

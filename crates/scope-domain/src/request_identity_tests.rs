@@ -87,7 +87,7 @@ fn open_request_identity_edits_preserve_submission() {
     )
     .unwrap();
     assert_eq!(mutation.request.state(), RequestState::Open);
-    assert_eq!(mutation.request.submitted_at_unix, Some(20));
+    assert_eq!(mutation.request.submitted_at_unix(), Some(20));
     assert_eq!(mutation.request.description_markdown, "Changed while open");
 }
 

@@ -13,8 +13,15 @@ async fn rolling_back_terminal_persistence_restores_request_invitees_push_and_ev
         .await
         .unwrap()
         .request;
-    request.submitted_at_unix = Some(3);
-    request.updated_at_unix = 3;
+    request = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            submitted_at_unix: Some(3),
+            ..request.lifecycle().clone()
+        },
+        updated_at_unix: 3,
+        ..request.stored()
+    })
+    .unwrap();
     save_request_row(store.db.as_ref(), &request).await.unwrap();
     seed_terminal_effects(&store).await;
 

@@ -29,7 +29,10 @@ async fn close_reports_request_state_without_granting_close_access() {
             .metadata
             .requests()
             .mutate_request_for_tests(id, |request| {
-                request.submitted_at_unix = Some(4);
+                request.lifecycle = scope_domain::requests::RequestLifecycle {
+                    submitted_at_unix: Some(4),
+                    ..request.lifecycle.clone()
+                };
                 request.updated_at_unix = 4;
             })
             .await
@@ -40,10 +43,13 @@ async fn close_reports_request_state_without_granting_close_access() {
         .metadata
         .requests()
         .mutate_request_for_tests("req_close_merged", |request| {
-            request.merged_at_unix = Some(5);
-            request.merged_by_user_id = Some(test_owner_id());
-            request.merged_head_oid = Some(request.head_oid.clone());
-            request.merged_main_oid = Some(REQUEST_HEAD.to_string());
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                merged_at_unix: Some(5),
+                merged_by_user_id: Some(test_owner_id()),
+                merged_head_oid: Some(request.head_oid.clone()),
+                merged_main_oid: Some(REQUEST_HEAD.to_string()),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 5;
         })
         .await

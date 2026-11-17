@@ -219,7 +219,7 @@ fn extension_keeps_review_pin_but_rewrite_and_close_block() {
         classify_request_stack(&child.base, Some(&parent), facts).unwrap(),
         RequestStackStatus::ParentRewritten
     );
-    parent.closed_at_unix = Some(parent.updated_at_unix);
+    parent.lifecycle.closed_at_unix = Some(parent.updated_at_unix);
     assert_eq!(
         classify_request_stack(&child.base, Some(&parent), facts).unwrap(),
         RequestStackStatus::ParentClosed
@@ -233,9 +233,9 @@ fn containing_landing_preserves_child_evidence_and_separate_main_ancestor() {
     let mut saved = revision(&child);
     saved.id = "child-revision".into();
     let original_context = RequestCheckContext::for_revision(&child, &saved).unwrap();
-    parent.merged_at_unix = Some(parent.updated_at_unix);
-    parent.merged_head_oid = Some("extended-parent".into());
-    parent.merged_main_oid = Some("landed-main".into());
+    parent.lifecycle.merged_at_unix = Some(parent.updated_at_unix);
+    parent.lifecycle.merged_head_oid = Some("extended-parent".into());
+    parent.lifecycle.merged_main_oid = Some("landed-main".into());
     let input = RetargetRequestAfterParentMergeInput {
         parent_head_oid: "extended-parent".into(),
         event_id: "retarget".into(),
@@ -426,7 +426,7 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
         deeper.request.activity_version,
         extension.request.activity_version
     );
-    parent.closed_at_unix = Some(parent.updated_at_unix);
+    parent.lifecycle.closed_at_unix = Some(parent.updated_at_unix);
     let closed = refresh_request_stack(
         child.clone(),
         Some(&parent),
@@ -575,9 +575,9 @@ fn restricted_parent_landing_requires_current_view_main_and_preserves_saved_laye
                     &parent.head_oid
                 }
                 .to_string();
-                parent.merged_at_unix = Some(parent.updated_at_unix);
-                parent.merged_head_oid = Some(landed_head.clone());
-                parent.merged_main_oid = Some("private-landed-main".into());
+                parent.lifecycle.merged_at_unix = Some(parent.updated_at_unix);
+                parent.lifecycle.merged_head_oid = Some(landed_head.clone());
+                parent.lifecycle.merged_main_oid = Some("private-landed-main".into());
                 let input = RetargetRequestAfterParentMergeInput {
                     parent_head_oid: landed_head,
                     event_id: "retarget-restricted".into(),

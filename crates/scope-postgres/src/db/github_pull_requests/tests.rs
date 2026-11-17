@@ -24,8 +24,15 @@ pub(crate) fn oid(digit: char) -> String {
 
 pub(crate) async fn submitted_full_view_request(store: &MetadataStore, id: &str) -> Request {
     let mut request = draft_full_view_request(store, id).await;
-    request.submitted_at_unix = Some(3);
-    request.updated_at_unix = 3;
+    request = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            submitted_at_unix: Some(3),
+            ..request.lifecycle().clone()
+        },
+        updated_at_unix: 3,
+        ..request.stored()
+    })
+    .unwrap();
     crate::db::request_rows::save_request_row(store.db.as_ref(), &request)
         .await
         .unwrap();
@@ -326,8 +333,15 @@ async fn ending_a_request_turns_its_carrier_intent_into_a_close() {
         .await
         .unwrap();
 
-    request.closed_at_unix = Some(20);
-    request.updated_at_unix = 20;
+    request = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            closed_at_unix: Some(20),
+            ..request.lifecycle().clone()
+        },
+        updated_at_unix: 20,
+        ..request.stored()
+    })
+    .unwrap();
     queue_carrier_close(store.db.as_ref(), &request)
         .await
         .unwrap();
@@ -520,11 +534,18 @@ async fn open_carrier_and_merge(store: &MetadataStore, id: &str, number: u64, at
         .await
         .unwrap();
 
-    request.merged_at_unix = Some(at + 10);
-    request.merged_by_user_id = Some(OWNER.into());
-    request.merged_head_oid = Some(request.head_oid.clone());
-    request.merged_main_oid = Some(oid('m'));
-    request.updated_at_unix = at + 10;
+    request = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            merged_at_unix: Some(at + 10),
+            merged_by_user_id: Some(OWNER.into()),
+            merged_head_oid: Some(request.head_oid.clone()),
+            merged_main_oid: Some(oid('m')),
+            ..request.lifecycle().clone()
+        },
+        updated_at_unix: at + 10,
+        ..request.stored()
+    })
+    .unwrap();
     persist_ended(store, &request).await;
 }
 
@@ -616,15 +637,30 @@ async fn ended_requests_whose_branches_github_still_has_are_listed_and_released_
     push_succeeds(&store, "req_open", 'b', 30).await;
     let mut closed = submitted_full_view_request(&store, "req_closed").await;
     push_succeeds(&store, "req_closed", 'c', 31).await;
-    closed.closed_at_unix = Some(32);
-    closed.updated_at_unix = 32;
+    closed = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            closed_at_unix: Some(32),
+            ..closed.lifecycle().clone()
+        },
+        updated_at_unix: 32,
+        ..closed.stored()
+    })
+    .unwrap();
     persist_ended(&store, &closed).await;
     let mut never_pushed = submitted_full_view_request(&store, "req_unpushed").await;
-    never_pushed.merged_at_unix = Some(33);
-    never_pushed.merged_by_user_id = Some(OWNER.into());
-    never_pushed.merged_head_oid = Some(never_pushed.head_oid.clone());
-    never_pushed.merged_main_oid = Some(oid('n'));
-    never_pushed.updated_at_unix = 33;
+    never_pushed =
+        scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+            lifecycle: scope_domain::requests::RequestLifecycle {
+                merged_at_unix: Some(33),
+                merged_by_user_id: Some(OWNER.into()),
+                merged_head_oid: Some(never_pushed.head_oid.clone()),
+                merged_main_oid: Some(oid('n')),
+                ..never_pushed.lifecycle().clone()
+            },
+            updated_at_unix: 33,
+            ..never_pushed.stored()
+        })
+        .unwrap();
     persist_ended(&store, &never_pushed).await;
     assert_eq!(
         branch_push_of(&store, "req_closed")
@@ -648,11 +684,19 @@ async fn ended_requests_whose_branches_github_still_has_are_listed_and_released_
     )
     .await
     .unwrap();
-    pushed_elsewhere.merged_at_unix = Some(35);
-    pushed_elsewhere.merged_by_user_id = Some(OWNER.into());
-    pushed_elsewhere.merged_head_oid = Some(pushed_elsewhere.head_oid.clone());
-    pushed_elsewhere.merged_main_oid = Some(oid('m'));
-    pushed_elsewhere.updated_at_unix = 35;
+    pushed_elsewhere =
+        scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+            lifecycle: scope_domain::requests::RequestLifecycle {
+                merged_at_unix: Some(35),
+                merged_by_user_id: Some(OWNER.into()),
+                merged_head_oid: Some(pushed_elsewhere.head_oid.clone()),
+                merged_main_oid: Some(oid('m')),
+                ..pushed_elsewhere.lifecycle().clone()
+            },
+            updated_at_unix: 35,
+            ..pushed_elsewhere.stored()
+        })
+        .unwrap();
     crate::db::request_rows::save_request_row(store.db.as_ref(), &pushed_elsewhere)
         .await
         .unwrap();
@@ -675,7 +719,10 @@ async fn ended_requests_whose_branches_github_still_has_are_listed_and_released_
     assert_eq!(
         listed
             .iter()
-            .map(|request| (request.id.as_str(), request.merged_main_oid.clone()))
+            .map(|request| (
+                request.id.as_str(),
+                request.merged_main_oid().map(str::to_string)
+            ))
             .collect::<Vec<_>>(),
         [("req_1", Some(oid('m')))]
     );

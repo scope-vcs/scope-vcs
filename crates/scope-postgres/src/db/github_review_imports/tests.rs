@@ -70,7 +70,14 @@ async fn open_full_view_request(store: &MetadataStore) -> Request {
         .await
         .unwrap()
         .unwrap();
-    request.submitted_at_unix = Some(3);
+    request = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            submitted_at_unix: Some(3),
+            ..request.lifecycle().clone()
+        },
+        ..request.stored()
+    })
+    .unwrap();
     save_request_row(store.db.as_ref(), &request).await.unwrap();
     connect_github(store).await;
     request
@@ -322,7 +329,14 @@ async fn draft_requests_import_nothing() {
     let store = postgres_store();
     let mut request = open_full_view_request(&store).await;
     let link = live_link(&store).await;
-    request.submitted_at_unix = None;
+    request = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            submitted_at_unix: None,
+            ..request.lifecycle().clone()
+        },
+        ..request.stored()
+    })
+    .unwrap();
     save_request_row(store.db.as_ref(), &request).await.unwrap();
     assert_eq!(
         store

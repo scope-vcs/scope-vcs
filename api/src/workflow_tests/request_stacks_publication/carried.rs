@@ -125,11 +125,8 @@ async fn main_push_retargets_public_and_custom_children_against_the_accepted_pro
         );
         let parent = stack_request(&state, &parent_id).await;
         assert_eq!(parent.state(), scope_domain::requests::RequestState::Merged);
-        assert_eq!(
-            parent.merged_head_oid.as_deref(),
-            Some(parent_head.as_str())
-        );
-        assert_eq!(parent.merged_main_oid.as_deref(), Some(main_head.as_str()));
+        assert_eq!(parent.merged_head_oid(), Some(parent_head.as_str()));
+        assert_eq!(parent.merged_main_oid(), Some(main_head.as_str()));
         run_git(
             Some(&checkout),
             &["-c", &auth, "fetch", &view_remote, "refs/heads/main"],
@@ -282,10 +279,7 @@ async fn main_carrying_a_child_defers_completion_until_extended_parent_lands() {
     for id in [&fixture.parent_id, &fixture.child_id] {
         let landed = stack_request(&fixture.state, id).await;
         assert_eq!(landed.state(), scope_domain::requests::RequestState::Merged);
-        assert_eq!(
-            landed.merged_main_oid.as_deref(),
-            Some(combined_head.as_str())
-        );
+        assert_eq!(landed.merged_main_oid(), Some(combined_head.as_str()));
     }
     let landed = stack_request(&fixture.state, &fixture.child_id).await;
     assert_eq!(landed.head_oid, fixture.child_head);

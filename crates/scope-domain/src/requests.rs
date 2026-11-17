@@ -152,8 +152,8 @@ pub(super) use limits::{validate_body_size, validate_git_oid, validate_required}
 mod model;
 pub use model::{
     Request, RequestActorRole, RequestEvent, RequestEventKind, RequestEventPayload,
-    RequestIdentityAuditFact, RequestInvitee, RequestState, RequestTimelineMutation,
-    validate_request_facts,
+    RequestIdentityAuditFact, RequestInvitee, RequestLifecycle, RequestState,
+    RequestTimelineMutation, StoredRequest, validate_request_facts,
 };
 mod queue;
 pub use queue::{

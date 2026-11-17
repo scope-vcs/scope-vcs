@@ -273,9 +273,12 @@ async fn a_request_that_can_no_longer_merge_records_no_evaluation() {
     store
         .requests()
         .mutate_request_for_tests("request-a", |request| {
-            request.submitted_at_unix = Some(4);
-            request.closed_at_unix = Some(5);
-            request.closed_by_user_id = Some("user_public".into());
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(4),
+                closed_at_unix: Some(5),
+                closed_by_user_id: Some("user_public".into()),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 5;
         })
         .await

@@ -27,9 +27,12 @@ async fn terminal_participant_ratings_include_reputation_and_follow_request_visi
         .metadata
         .requests()
         .mutate_request_for_tests("req_ratings", |request| {
-            request.submitted_at_unix = Some(4);
-            request.closed_at_unix = Some(5);
-            request.closed_by_user_id = Some(test_owner_id());
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(4),
+                closed_at_unix: Some(5),
+                closed_by_user_id: Some(test_owner_id()),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 5;
         })
         .await

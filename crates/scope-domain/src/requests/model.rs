@@ -16,7 +16,7 @@ pub enum RequestState {
     Merged,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     pub id: String,
     pub repo_id: String,
@@ -34,6 +34,36 @@ pub struct Request {
     pub title: String,
     pub description_markdown: String,
     pub activity_version: u64,
+    pub(in crate::requests) lifecycle: RequestLifecycle,
+    pub created_at_unix: u64,
+    pub updated_at_unix: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredRequest {
+    pub id: String,
+    pub repo_id: String,
+    pub name: String,
+    pub author_user_id: Option<String>,
+    pub author_role: RequestActorRole,
+    pub view: crate::views::ViewId,
+    pub base: super::RequestBase,
+    pub base_version: u64,
+    pub stack_status: super::RequestStackStatus,
+    pub stack_depth: u32,
+    pub main_ancestor_oid: String,
+    pub head_oid: String,
+    pub pushed_at_unix: Option<u64>,
+    pub title: String,
+    pub description_markdown: String,
+    pub activity_version: u64,
+    pub lifecycle: RequestLifecycle,
+    pub created_at_unix: u64,
+    pub updated_at_unix: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RequestLifecycle {
     pub submitted_at_unix: Option<u64>,
     pub closed_at_unix: Option<u64>,
     pub closed_by_user_id: Option<String>,
@@ -41,8 +71,6 @@ pub struct Request {
     pub merged_by_user_id: Option<String>,
     pub merged_head_oid: Option<String>,
     pub merged_main_oid: Option<String>,
-    pub created_at_unix: u64,
-    pub updated_at_unix: u64,
 }
 
 impl RequestState {
@@ -68,6 +96,60 @@ impl RequestState {
 }
 
 impl Request {
+    pub fn restore(stored: StoredRequest) -> Result<Self, DomainError> {
+        let request = Self {
+            id: stored.id,
+            repo_id: stored.repo_id,
+            name: stored.name,
+            author_user_id: stored.author_user_id,
+            author_role: stored.author_role,
+            view: stored.view,
+            base: stored.base,
+            base_version: stored.base_version,
+            stack_status: stored.stack_status,
+            stack_depth: stored.stack_depth,
+            main_ancestor_oid: stored.main_ancestor_oid,
+            head_oid: stored.head_oid,
+            pushed_at_unix: stored.pushed_at_unix,
+            title: stored.title,
+            description_markdown: stored.description_markdown,
+            activity_version: stored.activity_version,
+            lifecycle: stored.lifecycle,
+            created_at_unix: stored.created_at_unix,
+            updated_at_unix: stored.updated_at_unix,
+        };
+        request.validate_facts()?;
+        Ok(request)
+    }
+
+    pub fn stored(&self) -> StoredRequest {
+        StoredRequest {
+            id: self.id.clone(),
+            repo_id: self.repo_id.clone(),
+            name: self.name.clone(),
+            author_user_id: self.author_user_id.clone(),
+            author_role: self.author_role,
+            view: self.view.clone(),
+            base: self.base.clone(),
+            base_version: self.base_version,
+            stack_status: self.stack_status,
+            stack_depth: self.stack_depth,
+            main_ancestor_oid: self.main_ancestor_oid.clone(),
+            head_oid: self.head_oid.clone(),
+            pushed_at_unix: self.pushed_at_unix,
+            title: self.title.clone(),
+            description_markdown: self.description_markdown.clone(),
+            activity_version: self.activity_version,
+            lifecycle: self.lifecycle.clone(),
+            created_at_unix: self.created_at_unix,
+            updated_at_unix: self.updated_at_unix,
+        }
+    }
+
+    pub fn lifecycle(&self) -> &RequestLifecycle {
+        &self.lifecycle
+    }
+
     pub fn object_author_id(&self) -> &str {
         self.author_user_id.as_deref().unwrap_or(&self.id)
     }
@@ -81,10 +163,38 @@ impl Request {
 
     pub fn state(&self) -> RequestState {
         RequestState::from_timestamps(
-            self.merged_at_unix,
-            self.closed_at_unix,
-            self.submitted_at_unix,
+            self.lifecycle.merged_at_unix,
+            self.lifecycle.closed_at_unix,
+            self.lifecycle.submitted_at_unix,
         )
+    }
+
+    pub fn submitted_at_unix(&self) -> Option<u64> {
+        self.lifecycle.submitted_at_unix
+    }
+
+    pub fn closed_at_unix(&self) -> Option<u64> {
+        self.lifecycle.closed_at_unix
+    }
+
+    pub fn closed_by_user_id(&self) -> Option<&str> {
+        self.lifecycle.closed_by_user_id.as_deref()
+    }
+
+    pub fn merged_at_unix(&self) -> Option<u64> {
+        self.lifecycle.merged_at_unix
+    }
+
+    pub fn merged_by_user_id(&self) -> Option<&str> {
+        self.lifecycle.merged_by_user_id.as_deref()
+    }
+
+    pub fn merged_head_oid(&self) -> Option<&str> {
+        self.lifecycle.merged_head_oid.as_deref()
+    }
+
+    pub fn merged_main_oid(&self) -> Option<&str> {
+        self.lifecycle.merged_main_oid.as_deref()
     }
 
     pub fn is_author(&self, user_id: &str) -> bool {
@@ -92,11 +202,11 @@ impl Request {
     }
 
     pub fn is_submitted(&self) -> bool {
-        self.submitted_at_unix.is_some()
+        self.lifecycle.submitted_at_unix.is_some()
     }
 
     pub fn is_terminal(&self) -> bool {
-        self.closed_at_unix.is_some() || self.merged_at_unix.is_some()
+        self.lifecycle.closed_at_unix.is_some() || self.lifecycle.merged_at_unix.is_some()
     }
 
     pub fn validate_facts(&self) -> Result<(), DomainError> {
@@ -255,9 +365,9 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
         ));
     }
     for (label, value) in [
-        ("submission time", request.submitted_at_unix),
-        ("close time", request.closed_at_unix),
-        ("merge time", request.merged_at_unix),
+        ("submission time", request.lifecycle.submitted_at_unix),
+        ("close time", request.lifecycle.closed_at_unix),
+        ("merge time", request.lifecycle.merged_at_unix),
     ] {
         if value
             .is_some_and(|value| value < request.created_at_unix || value > request.updated_at_unix)
@@ -268,20 +378,20 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
         }
     }
 
-    if request.closed_by_user_id.is_some() && request.closed_at_unix.is_none() {
+    if request.lifecycle.closed_by_user_id.is_some() && request.lifecycle.closed_at_unix.is_none() {
         return Err(DomainError::conflict(
             "an open request cannot have a closer",
         ));
     }
-    if request.merged_by_user_id.is_some() && request.merged_at_unix.is_none() {
+    if request.lifecycle.merged_by_user_id.is_some() && request.lifecycle.merged_at_unix.is_none() {
         return Err(DomainError::conflict(
             "an unmerged request cannot have a merger",
         ));
     }
     let merge_count = [
-        request.merged_at_unix.is_some(),
-        request.merged_head_oid.is_some(),
-        request.merged_main_oid.is_some(),
+        request.lifecycle.merged_at_unix.is_some(),
+        request.lifecycle.merged_head_oid.is_some(),
+        request.lifecycle.merged_main_oid.is_some(),
     ]
     .into_iter()
     .filter(|present| *present)
@@ -291,7 +401,7 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
             "merge time, head, and main oid must be set together",
         ));
     }
-    if request.closed_at_unix.is_some() && request.merged_at_unix.is_some() {
+    if request.lifecycle.closed_at_unix.is_some() && request.lifecycle.merged_at_unix.is_some() {
         return Err(DomainError::conflict(
             "request cannot be both closed and merged",
         ));
@@ -301,10 +411,10 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
             "terminal requests must have been submitted",
         ));
     }
-    if let Some(submitted_at) = request.submitted_at_unix {
+    if let Some(submitted_at) = request.lifecycle.submitted_at_unix {
         for (label, terminal_at) in [
-            ("close", request.closed_at_unix),
-            ("merge", request.merged_at_unix),
+            ("close", request.lifecycle.closed_at_unix),
+            ("merge", request.lifecycle.merged_at_unix),
         ] {
             if terminal_at.is_some_and(|terminal_at| terminal_at < submitted_at) {
                 return Err(DomainError::conflict(format!(

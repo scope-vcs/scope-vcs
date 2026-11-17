@@ -147,7 +147,10 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
     );
     assert!(approved.push_to_github);
     let closed = Request {
-        closed_at_unix: Some(35),
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_at_unix: Some(35),
+            ..request.lifecycle.clone()
+        },
         ..request
     };
     let approved_closed =

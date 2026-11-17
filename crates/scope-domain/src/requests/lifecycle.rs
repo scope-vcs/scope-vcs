@@ -162,13 +162,7 @@ pub(super) fn open_request(
         title,
         description_markdown: String::new(),
         activity_version: 1,
-        submitted_at_unix: None,
-        closed_at_unix: None,
-        closed_by_user_id: None,
-        merged_at_unix: None,
-        merged_by_user_id: None,
-        merged_head_oid: None,
-        merged_main_oid: None,
+        lifecycle: super::RequestLifecycle::default(),
         created_at_unix: input.now_unix,
         updated_at_unix: input.now_unix,
     };
@@ -368,8 +362,8 @@ pub fn close_request(
         });
     }
     ensure_event_id_available(events.iter().any(|event| event.id == input.event_id))?;
-    request.closed_at_unix = Some(input.now_unix);
-    request.closed_by_user_id = Some(input.actor_user_id.clone());
+    request.lifecycle.closed_at_unix = Some(input.now_unix);
+    request.lifecycle.closed_by_user_id = Some(input.actor_user_id.clone());
     request.updated_at_unix = input.now_unix;
     let position = advance_request_activity(&mut request)?;
     request.validate_facts()?;

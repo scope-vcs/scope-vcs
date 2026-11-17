@@ -82,7 +82,7 @@ pub fn submit_request(
     }
 
     let mut next = request.clone();
-    next.submitted_at_unix = Some(input.now_unix);
+    next.lifecycle.submitted_at_unix = Some(input.now_unix);
     next.updated_at_unix = input.now_unix;
     let event = append_event(
         &mut next,
@@ -124,10 +124,10 @@ pub fn merge_request(
 
     let mut next = request.clone();
     next.stack_status = super::RequestStackStatus::Main;
-    next.merged_at_unix = Some(input.now_unix);
-    next.merged_by_user_id = Some(input.actor_user_id.clone());
-    next.merged_head_oid = Some(input.merged_head_oid.clone());
-    next.merged_main_oid = Some(input.merged_main_oid.clone());
+    next.lifecycle.merged_at_unix = Some(input.now_unix);
+    next.lifecycle.merged_by_user_id = Some(input.actor_user_id.clone());
+    next.lifecycle.merged_head_oid = Some(input.merged_head_oid.clone());
+    next.lifecycle.merged_main_oid = Some(input.merged_main_oid.clone());
     next.updated_at_unix = input.now_unix;
     let event = append_event(
         &mut next,

@@ -539,27 +539,28 @@ fn seed_owner_request(
             .insert(mutation.revision.id.clone(), mutation.revision);
     }
 
+    let mut stored = request.stored();
     if !matches!(outcome, SeedRequestOutcome::Draft) {
-        request.submitted_at_unix = Some(lifecycle_at_unix);
+        stored.lifecycle.submitted_at_unix = Some(lifecycle_at_unix);
     }
     match outcome {
         SeedRequestOutcome::Draft | SeedRequestOutcome::Open => {}
         SeedRequestOutcome::Merged => {
-            request.merged_at_unix = Some(lifecycle_at_unix + 1);
-            request.merged_by_user_id = Some(owner.id.clone());
-            request.merged_head_oid = Some(current_head_oid.clone());
-            request.merged_main_oid = Some(current_head_oid);
+            stored.lifecycle.merged_at_unix = Some(lifecycle_at_unix + 1);
+            stored.lifecycle.merged_by_user_id = Some(owner.id.clone());
+            stored.lifecycle.merged_head_oid = Some(current_head_oid.clone());
+            stored.lifecycle.merged_main_oid = Some(current_head_oid);
         }
         SeedRequestOutcome::Closed => {
-            request.closed_at_unix = Some(lifecycle_at_unix + 1);
-            request.closed_by_user_id = Some(owner.id.clone());
+            stored.lifecycle.closed_at_unix = Some(lifecycle_at_unix + 1);
+            stored.lifecycle.closed_by_user_id = Some(owner.id.clone());
         }
     }
-    request.updated_at_unix = match outcome {
+    stored.updated_at_unix = match outcome {
         SeedRequestOutcome::Draft | SeedRequestOutcome::Open => lifecycle_at_unix,
         SeedRequestOutcome::Merged | SeedRequestOutcome::Closed => lifecycle_at_unix + 1,
     };
-    request.validate_facts()?;
+    let request = scope_domain::requests::Request::restore(stored)?;
     catalog.requests.insert(request.id.clone(), request);
     Ok(())
 }

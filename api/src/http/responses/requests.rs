@@ -23,6 +23,7 @@ fn request_summary_response(
     reads_full_view: bool,
 ) -> Result<RequestSummaryResponse, crate::error::ApiError> {
     let state = request.state();
+    let lifecycle = request.lifecycle().clone();
     Ok(RequestSummaryResponse {
         id: request.id,
         name: request.name,
@@ -39,17 +40,20 @@ fn request_summary_response(
         head_oid: super::git_oid_response(request.head_oid)?,
         state: state.into(),
         activity_version: request.activity_version,
-        submitted_at_unix: request.submitted_at_unix,
-        closed_at_unix: request.closed_at_unix,
-        closed_by_user_id: request.closed_by_user_id,
-        merged_at_unix: request.merged_at_unix,
-        merged_by_user_id: request.merged_by_user_id,
-        merged_head_oid: request
+        submitted_at_unix: lifecycle.submitted_at_unix,
+        closed_at_unix: lifecycle.closed_at_unix,
+        closed_by_user_id: lifecycle.closed_by_user_id,
+        merged_at_unix: lifecycle.merged_at_unix,
+        merged_by_user_id: lifecycle.merged_by_user_id,
+        merged_head_oid: lifecycle
             .merged_head_oid
             .map(super::git_oid_response)
             .transpose()?,
         merged_main_oid: if reads_full_view {
-            request.merged_main_oid.map(git_oid_response).transpose()?
+            lifecycle
+                .merged_main_oid
+                .map(git_oid_response)
+                .transpose()?
         } else {
             None
         },

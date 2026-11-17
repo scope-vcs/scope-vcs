@@ -34,7 +34,7 @@ fn fixture() -> (crate::git::test_repo::TestRepo, RequestRevision) {
 }
 
 fn request_fixture() -> Request {
-    Request {
+    Request::restore(scope_domain::requests::StoredRequest {
         stack_status: scope_domain::requests::RequestStackStatus::Main,
         stack_depth: 1,
         id: "request".into(),
@@ -53,16 +53,11 @@ fn request_fixture() -> Request {
         title: "request".into(),
         description_markdown: String::new(),
         activity_version: 1,
-        submitted_at_unix: None,
-        closed_at_unix: None,
-        closed_by_user_id: None,
-        merged_at_unix: None,
-        merged_by_user_id: None,
-        merged_head_oid: None,
-        merged_main_oid: None,
+        lifecycle: scope_domain::requests::RequestLifecycle::default(),
         created_at_unix: 1,
         updated_at_unix: 1,
-    }
+    })
+    .unwrap()
 }
 
 fn seed_repository(

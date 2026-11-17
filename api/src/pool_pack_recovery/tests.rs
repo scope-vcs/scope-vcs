@@ -63,7 +63,7 @@ impl Fixture {
         let mut repo =
             Repository::new(&owner, "repo", ViewId::private(), "repoi_recovery").unwrap();
         repo.git_head = Some(GitHead::new(main.clone(), 1, 1));
-        let request = Request {
+        let request = Request::restore(scope_domain::requests::StoredRequest {
             id: "request".into(),
             repo_id: repo.record.id.clone(),
             name: "topic".into(),
@@ -82,16 +82,19 @@ impl Fixture {
             title: "recovery".into(),
             description_markdown: String::new(),
             activity_version: 2,
-            submitted_at_unix: Some(1),
-            closed_at_unix: None,
-            closed_by_user_id: None,
-            merged_at_unix: Some(2),
-            merged_by_user_id: Some(owner.id.clone()),
-            merged_head_oid: Some(head.clone()),
-            merged_main_oid: Some(main.clone()),
+            lifecycle: scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(1),
+                closed_at_unix: None,
+                closed_by_user_id: None,
+                merged_at_unix: Some(2),
+                merged_by_user_id: Some(owner.id.clone()),
+                merged_head_oid: Some(head.clone()),
+                merged_main_oid: Some(main.clone()),
+            },
             created_at_unix: 1,
             updated_at_unix: 2,
-        };
+        })
+        .unwrap();
         let revision = RequestRevision {
             id: "revision".into(),
             request_id: request.id.clone(),
@@ -314,10 +317,13 @@ async fn restore_repairs_missing_prerequisite_from_an_empty_shelf_without_duplic
         .metadata
         .requests()
         .mutate_request_for_tests(&fixture.request.id, |request| {
-            request.merged_at_unix = None;
-            request.merged_by_user_id = None;
-            request.merged_head_oid = None;
-            request.merged_main_oid = None;
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                merged_at_unix: None,
+                merged_by_user_id: None,
+                merged_head_oid: None,
+                merged_main_oid: None,
+                ..request.lifecycle.clone()
+            };
         })
         .await
         .unwrap();

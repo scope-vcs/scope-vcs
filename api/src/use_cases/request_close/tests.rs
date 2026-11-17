@@ -10,7 +10,7 @@ async fn a_maintainer_closing_an_open_request_is_recorded_as_its_closer() {
     store
         .requests()
         .mutate_request_for_tests("req_1", |request| {
-            request.submitted_at_unix = Some(4);
+            request.lifecycle.submitted_at_unix = Some(4);
             request.updated_at_unix = 4;
         })
         .await
@@ -36,8 +36,8 @@ async fn a_maintainer_closing_an_open_request_is_recorded_as_its_closer() {
         .unwrap()
         .unwrap();
     assert_eq!(stored.state(), RequestState::Closed);
-    assert_eq!(stored.closed_at_unix, Some(6));
-    assert_eq!(stored.closed_by_user_id.as_deref(), Some("user_owner"));
+    assert_eq!(stored.closed_at_unix(), Some(6));
+    assert_eq!(stored.closed_by_user_id(), Some("user_owner"));
     assert!(
         store
             .requests()

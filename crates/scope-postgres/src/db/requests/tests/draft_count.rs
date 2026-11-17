@@ -18,20 +18,44 @@ async fn draft_admission_counts_only_public_actor_drafts() {
             request.author_role = RequestActorRole::Member;
         }
         if matches!(state, "open" | "closed" | "merged") {
-            request.submitted_at_unix = Some(3);
-            request.updated_at_unix = 3;
+            request =
+                scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+                    lifecycle: scope_domain::requests::RequestLifecycle {
+                        submitted_at_unix: Some(3),
+                        ..request.lifecycle().clone()
+                    },
+                    updated_at_unix: 3,
+                    ..request.stored()
+                })
+                .unwrap();
         }
         if state == "closed" {
-            request.closed_at_unix = Some(4);
-            request.closed_by_user_id = Some("user_owner".into());
-            request.updated_at_unix = 4;
+            request =
+                scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+                    lifecycle: scope_domain::requests::RequestLifecycle {
+                        closed_at_unix: Some(4),
+                        closed_by_user_id: Some("user_owner".into()),
+                        ..request.lifecycle().clone()
+                    },
+                    updated_at_unix: 4,
+                    ..request.stored()
+                })
+                .unwrap();
         }
         if state == "merged" {
-            request.merged_at_unix = Some(4);
-            request.merged_by_user_id = Some("user_owner".into());
-            request.merged_head_oid = Some("merged-head".into());
-            request.merged_main_oid = Some("merged-main".into());
-            request.updated_at_unix = 4;
+            request =
+                scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+                    lifecycle: scope_domain::requests::RequestLifecycle {
+                        merged_at_unix: Some(4),
+                        merged_by_user_id: Some("user_owner".into()),
+                        merged_head_oid: Some("merged-head".into()),
+                        merged_main_oid: Some("merged-main".into()),
+                        ..request.lifecycle().clone()
+                    },
+                    updated_at_unix: 4,
+                    ..request.stored()
+                })
+                .unwrap();
         }
         crate::db::request_rows::insert_request_row(store.db.as_ref(), &request)
             .await

@@ -176,7 +176,7 @@ mod tests {
                     vec![current]
                 }
                 "closed" => {
-                    current.closed_at_unix = Some(30);
+                    current.lifecycle.closed_at_unix = Some(30);
                     vec![current]
                 }
                 "revoked" => Vec::new(),
