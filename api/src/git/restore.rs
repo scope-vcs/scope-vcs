@@ -1,7 +1,10 @@
 use crate::{
     error::ApiError,
     git::{
-        command::{prepare_git_subprocess, record_git_exit, run_git, truncated_git_stderr},
+        command::{
+            prepare_git_subprocess, record_git_exit, run_git, run_pack_sized_git,
+            truncated_git_stderr,
+        },
         pool_install::install_main_head,
     },
     state::AppState,
@@ -112,17 +115,18 @@ pub(crate) async fn advance_head_and_verify(
         update_ref_context,
     )
     .await?;
-    run_timed_git_restore_phase_async(
-        repository_id,
-        "fsck",
-        Some(repo_root.to_path_buf()),
-        vec![
-            "fsck".to_string(),
-            "--connectivity-only".to_string(),
-            head_oid.to_string(),
-        ],
-        fsck_context,
-    )
+    let repository_id = repository_id.to_string();
+    let repo_root = repo_root.to_path_buf();
+    let head_oid = head_oid.to_string();
+    crate::git::blocking::run(move || {
+        timed_git_restore_phase(&repository_id, "fsck", || {
+            run_pack_sized_git(
+                Some(&repo_root),
+                &["fsck", "--connectivity-only", &head_oid],
+                fsck_context,
+            )
+        })
+    })
     .await
 }
 
@@ -233,8 +237,18 @@ pub(crate) fn run_timed_git_restore_phase(
     args: &[&str],
     context: &'static str,
 ) -> Result<(), ApiError> {
+    timed_git_restore_phase(repository_id, operation, || {
+        run_git(repo_root, args, context)
+    })
+}
+
+fn timed_git_restore_phase(
+    repository_id: &str,
+    operation: &'static str,
+    phase: impl FnOnce() -> Result<(), ApiError>,
+) -> Result<(), ApiError> {
     let started_at = Instant::now();
-    let result = run_git(repo_root, args, context);
+    let result = phase();
     tracing::info!(
         repository_id,
         operation,

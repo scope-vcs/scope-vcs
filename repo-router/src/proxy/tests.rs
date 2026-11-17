@@ -195,25 +195,63 @@ async fn upload_pack_replay_body_is_strictly_bounded() {
     assert_eq!(requests.load(Ordering::SeqCst), 0);
 }
 
-#[tokio::test]
-async fn ends_an_upstream_read_that_stops_making_progress() {
-    let upstream = Router::new().fallback(any(|| async { std::future::pending::<String>().await }));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-    let router = crate::router(RouterConfig {
-        backend_authority: address.to_string(),
-        dns_refresh: std::time::Duration::from_secs(1),
-        dns_max_stale: std::time::Duration::from_secs(30),
-        connect_timeout: std::time::Duration::from_secs(1),
-        read_timeout: std::time::Duration::from_millis(20),
+fn router_with_short_discovery_read_timeout(upstream: std::net::SocketAddr) -> Router {
+    crate::router(RouterConfig {
+        backend_authority: upstream.to_string(),
+        dns_refresh: Duration::from_secs(1),
+        dns_max_stale: Duration::from_secs(30),
+        connect_timeout: Duration::from_secs(1),
+        read_timeout: Duration::from_millis(20),
+        transfer_timeout: Duration::from_secs(30),
         read_replicas: 1,
         write_replicas: 1,
         upload_pack_replay_max_bytes: 1024,
         upload_pack_replay_budget_bytes: 4096,
         incoming_body_timeout: Duration::from_secs(15),
     })
-    .unwrap();
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_transfer_answered_long_after_the_discovery_read_timeout_still_completes() {
+    let upstream = Router::new().fallback(any(|| async {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        "transferred"
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let router = router_with_short_discovery_read_timeout(address);
+
+    for transfer in ["git-receive-pack", "git-upload-pack"] {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/git/private/scope/router/{transfer}"))
+                    .body(Body::from("pack"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{transfer}");
+        assert_eq!(
+            axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap(),
+            "transferred"
+        );
+    }
+}
+
+#[tokio::test]
+async fn ends_an_upstream_read_that_stops_making_progress() {
+    let upstream = Router::new().fallback(any(|| async { std::future::pending::<String>().await }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let router = router_with_short_discovery_read_timeout(address);
 
     let response = router
         .oneshot(

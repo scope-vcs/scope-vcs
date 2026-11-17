@@ -1,7 +1,7 @@
 use crate::{
     error::ApiError,
     git::{
-        command::{git_ref_listing, run_git, run_git_output},
+        command::{git_ref_listing, run_git, run_git_output, run_pack_sized_git},
         import::validate_pushed_commit_range,
         pool_install::present_commits,
         pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
@@ -152,7 +152,7 @@ pub(crate) fn clone_without_shared_objects(
         args.push("--no-local");
     }
     args.extend([seed.as_ref(), target.as_ref()]);
-    run_git(None, &args, context)
+    run_pack_sized_git(None, &args, context)
 }
 
 pub(crate) fn create_request_receive_pack_staging_repo(

@@ -1,7 +1,7 @@
 use crate::{
     error::ApiError,
     git::{
-        command::git_command_output,
+        command::git_command_output_with_timeout,
         import::{StagedGitPack, best_effort_delete_staged_git_segment, stage_git_pack},
     },
     persistence_ids::generate_prefixed_id,
@@ -229,13 +229,14 @@ pub(crate) fn write_pool_pack_files(
         .iter()
         .map(|revision| format!("{revision}\n"))
         .collect::<String>();
-    let output = git_command_output(
+    let output = git_command_output_with_timeout(
         Command::new("git")
             .arg("-C")
             .arg(staging_repo)
             .args(["pack-objects", "--revs", "-q"])
             .arg(directory.path().join("pool")),
-        Some(input.as_bytes()),
+        Some(input.into_bytes()),
+        crate::runtime_budgets::RuntimeBudgets::default_git_pack_processing_timeout(),
     )?;
     let checksum = String::from_utf8(output)
         .map_err(ApiError::internal)?

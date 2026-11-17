@@ -104,7 +104,7 @@ fn objects_reachable_from_refs(
     let walked = run_with_stdout(
         &mut command,
         None,
-        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
+        ProcessLimits::new(RuntimeBudgets::default_git_pack_processing_timeout()),
         "checking Git upload-pack object reachability",
         move |stdout, _cancellation| {
             for line in BufReader::new(stdout).split(b'\n') {

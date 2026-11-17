@@ -1,11 +1,16 @@
-use crate::{RouterConfig, backend_selection::BackendSelector, proxy};
+use crate::{
+    RouterConfig,
+    backend_selection::{BackendSelector, GitRequestPhase},
+    proxy,
+};
 use axum::{Router, routing::get};
 use scope_service_runtime::replicas::{BackendDiscovery, DiscoveryFreshness};
 use std::sync::Arc;
 
 pub(crate) struct RouterState {
     pub(crate) discovery: BackendDiscovery,
-    pub(crate) http: reqwest::Client,
+    discovery_http: reqwest::Client,
+    transfer_http: reqwest::Client,
     pub(crate) selector: BackendSelector,
     pub(crate) replay: crate::replay::ReplayBuffer,
 }
@@ -16,14 +21,19 @@ pub(crate) fn router(config: RouterConfig) -> anyhow::Result<Router> {
         config.dns_refresh,
         config.dns_max_stale,
     );
-    let http = reqwest::Client::builder()
+    let discovery_http = reqwest::Client::builder()
         .connect_timeout(config.connect_timeout)
         .read_timeout(config.read_timeout)
+        .build()?;
+    let transfer_http = reqwest::Client::builder()
+        .connect_timeout(config.connect_timeout)
+        .timeout(config.transfer_timeout)
         .build()?;
     let selector = BackendSelector::new(config.read_replicas, config.write_replicas);
     Ok(router_with_state(RouterState {
         discovery,
-        http,
+        discovery_http,
+        transfer_http,
         selector,
         replay: crate::replay::ReplayBuffer::new(
             config.upload_pack_replay_budget_bytes,
@@ -31,6 +41,15 @@ pub(crate) fn router(config: RouterConfig) -> anyhow::Result<Router> {
             config.incoming_body_timeout,
         )?,
     }))
+}
+
+impl RouterState {
+    pub(crate) fn http(&self, phase: GitRequestPhase) -> &reqwest::Client {
+        match phase {
+            GitRequestPhase::Discovery => &self.discovery_http,
+            GitRequestPhase::Transfer => &self.transfer_http,
+        }
+    }
 }
 
 fn router_with_state(state: RouterState) -> Router {
@@ -75,7 +94,8 @@ pub(crate) fn test_router_with_state(
 ) -> Router {
     router_with_state(RouterState {
         discovery,
-        http,
+        discovery_http: http.clone(),
+        transfer_http: http,
         selector: BackendSelector::new(read_replicas, 1),
         replay: crate::replay::ReplayBuffer::new(
             4 * upload_pack_replay_max_bytes,

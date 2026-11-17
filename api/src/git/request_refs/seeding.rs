@@ -167,7 +167,7 @@ pub(crate) async fn attach_view_request_refs_from_pool(
                 .iter()
                 .filter(|request| present.contains(&request.head_oid))
             {
-                crate::git::command::run_git(
+                crate::git::command::run_pack_sized_git(
                     Some(&staging_repo),
                     &[
                         "fetch",

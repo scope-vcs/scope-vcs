@@ -213,6 +213,16 @@ impl RuntimeBudgets {
         })
     }
 
+    pub(crate) fn default_git_pack_processing_timeout() -> Duration {
+        static DEFAULT_GIT_PACK_PROCESSING_TIMEOUT: OnceLock<Duration> = OnceLock::new();
+        *DEFAULT_GIT_PACK_PROCESSING_TIMEOUT.get_or_init(|| {
+            RuntimeBudgetConfig::from_env()
+                .unwrap_or_default()
+                .git_transfer_limits
+                .pack_processing
+        })
+    }
+
     async fn admit(
         &self,
         semaphore: &Arc<Semaphore>,

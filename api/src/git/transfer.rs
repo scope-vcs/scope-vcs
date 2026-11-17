@@ -109,6 +109,28 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn a_slow_upload_that_keeps_moving_runs_for_minutes_under_the_default_limits() {
+        let clock = crate::runtime_budgets::RuntimeBudgetConfig::default()
+            .git_transfer_limits
+            .start();
+        let mut chunks = Box::pin(stream::unfold((), |()| async {
+            tokio::time::sleep(Duration::from_secs(45)).await;
+            Some(((), ()))
+        }));
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(10 * 60) {
+            assert!(
+                clock
+                    .next_upload_chunk(&mut chunks)
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+        }
+        assert!(Instant::now() < clock.pack_processing_deadline());
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn silent_upload_ends_at_the_idle_limit() {
         let clock = limits(100, 1_000).start();
         let mut chunks = stream::pending::<()>();

@@ -315,7 +315,7 @@ fn copy_and_verify_native_commit(
             "--thin",
         ]),
         Some(revisions.into_bytes()),
-        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
+        ProcessLimits::new(RuntimeBudgets::default_git_pack_processing_timeout()),
     )?;
     if !pack.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
@@ -330,7 +330,7 @@ fn copy_and_verify_native_commit(
             "--fix-thin",
         ]),
         Some(pack.stdout),
-        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
+        ProcessLimits::new(RuntimeBudgets::default_git_pack_processing_timeout()),
     )?;
     if !indexed.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
