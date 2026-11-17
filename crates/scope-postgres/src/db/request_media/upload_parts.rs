@@ -1,3 +1,4 @@
+use super::stored_states::UploadPartState;
 use super::{
     AttachmentUploadSession, MediaStore, ReserveUploadPartResult, StorePartResult,
     persistence::{as_i32, as_i64},
@@ -235,7 +236,7 @@ where
 }
 
 fn part_from_row(row: QueryResult) -> Result<UploadPartRow, PostgresError> {
-    let state = row.try_get::<String>("", "state")?;
+    let state = super::stored_states::stored_state::<UploadPartState>(&row)?;
     Ok(UploadPartRow {
         part: RequestAttachmentStagedPart {
             receipt: RequestAttachmentPartReceipt {
@@ -247,7 +248,7 @@ fn part_from_row(row: QueryResult) -> Result<UploadPartRow, PostgresError> {
             },
             object_key: row.try_get("", "object_key")?,
         },
-        stored: state == "Stored",
+        stored: state == UploadPartState::Stored,
         write_token: row.try_get("", "write_token")?,
         write_expires_at_unix: row
             .try_get::<Option<i64>>("", "write_expires_at_unix")?

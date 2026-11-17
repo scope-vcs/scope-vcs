@@ -6,6 +6,8 @@ pub enum PostgresErrorKind {
     RepositoryMoved,
     PermissionDenied,
     Internal,
+    Deadlock,
+    SerializationFailure,
     NotFound,
     Unavailable,
     ResourceExhausted,
@@ -32,8 +34,15 @@ impl PostgresError {
         Self::new(PostgresErrorKind::InvalidInput, error.to_string())
     }
 
-    pub fn internal(error: impl std::error::Error) -> Self {
-        Self::new(PostgresErrorKind::Internal, error.to_string())
+    pub fn internal(error: impl std::error::Error + 'static) -> Self {
+        Self::new(failure_kind(&error), error.to_string())
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self.kind,
+            PostgresErrorKind::Deadlock | PostgresErrorKind::SerializationFailure
+        )
     }
 
     message_errors! {
@@ -76,5 +85,26 @@ impl From<scope_domain::error::DomainError> for PostgresError {
 impl From<sea_orm::DbErr> for PostgresError {
     fn from(error: sea_orm::DbErr) -> Self {
         Self::internal(error)
+    }
+}
+
+fn failure_kind(error: &(dyn std::error::Error + 'static)) -> PostgresErrorKind {
+    let sqlx_error = match error.downcast_ref::<sea_orm::DbErr>() {
+        Some(
+            sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(error))
+            | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(error))
+            | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(error)),
+        ) => Some(error.as_ref()),
+        Some(_) => None,
+        None => error.downcast_ref::<sqlx::Error>(),
+    };
+    match sqlx_error
+        .and_then(sqlx::Error::as_database_error)
+        .and_then(|error| error.code())
+        .as_deref()
+    {
+        Some("40P01") => PostgresErrorKind::Deadlock,
+        Some("40001") => PostgresErrorKind::SerializationFailure,
+        Some(_) | None => PostgresErrorKind::Internal,
     }
 }

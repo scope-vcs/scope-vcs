@@ -1,5 +1,6 @@
 use crate::error::PostgresError;
 use scope_domain::requests::attachments::REQUEST_MEDIA_LATE_WRITE_GRACE_SECONDS;
+use scope_domain::requests::attachments::RequestAttachmentState;
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement};
 
 use super::TOMBSTONE_RECONCILIATION_SECONDS;
@@ -238,8 +239,9 @@ where
     C: ConnectionTrait,
 {
     let attachment_id = row.try_get::<String>("", "id")?;
-    let state = row.try_get::<String>("", "state")?;
-    if state == "Prepared" {
+    let state =
+        crate::db::request_media::stored_states::stored_state::<RequestAttachmentState>(row)?;
+    if state == RequestAttachmentState::Prepared {
         let expiry = u64::try_from(row.try_get::<i64>("", "upload_expires_at_unix")?)
             .map_err(PostgresError::internal)?;
         return Ok(expiry <= now_unix);

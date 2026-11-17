@@ -1,3 +1,4 @@
+use super::stored_states::{ProcessingJobState, ProcessingObjectState, stored_state};
 use super::{
     CompleteRequestAttachmentProcessingCommand, FailRequestAttachmentProcessingCommand,
     MediaLeaseMutation, MediaStore, ValidateRequestAttachmentSourceCommand,
@@ -117,11 +118,11 @@ impl MediaStore {
         };
         let old_generation = u64::try_from(job.try_get::<i64>("", "lease_generation")?)
             .map_err(PostgresError::internal)?;
-        let old_state = job.try_get::<String>("", "state")?;
+        let old_state = stored_state::<ProcessingJobState>(&job)?;
         let previous_attempt =
             u32::try_from(job.try_get::<i32>("", "attempt")?).map_err(PostgresError::internal)?;
         let mut attachment = lock_attachment(&tx, &attachment_id).await?;
-        if old_state == "Leased" {
+        if old_state == ProcessingJobState::Leased {
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_processing_objects
@@ -308,7 +309,7 @@ impl MediaStore {
                 && u64::try_from(row.try_get::<i64>("", "lease_generation")?)
                     .map_err(PostgresError::internal)?
                     == lease_generation
-                && row.try_get::<String>("", "state")? == "Pending";
+                && stored_state::<ProcessingObjectState>(&row)? == ProcessingObjectState::Pending;
             if !same {
                 return Err(PostgresError::conflict(
                     "media object key is already reserved by another processing lease",

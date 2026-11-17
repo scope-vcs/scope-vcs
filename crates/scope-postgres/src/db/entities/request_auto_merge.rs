@@ -7,6 +7,41 @@ use sea_orm::{IntoActiveModel, Set};
 pub(crate) mod request_auto_merge_intent {
     use super::*;
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+    #[sea_orm(rs_type = "String", db_type = "Text")]
+    pub(crate) enum Status {
+        #[sea_orm(string_value = "Active")]
+        Active,
+        #[sea_orm(string_value = "Cancelled")]
+        Cancelled,
+        #[sea_orm(string_value = "Stopped")]
+        Stopped,
+        #[sea_orm(string_value = "Fulfilled")]
+        Fulfilled,
+    }
+
+    impl From<RequestAutoMergeIntentStatus> for Status {
+        fn from(status: RequestAutoMergeIntentStatus) -> Self {
+            match status {
+                RequestAutoMergeIntentStatus::Active => Self::Active,
+                RequestAutoMergeIntentStatus::Cancelled => Self::Cancelled,
+                RequestAutoMergeIntentStatus::Stopped => Self::Stopped,
+                RequestAutoMergeIntentStatus::Fulfilled => Self::Fulfilled,
+            }
+        }
+    }
+
+    impl From<Status> for RequestAutoMergeIntentStatus {
+        fn from(status: Status) -> Self {
+            match status {
+                Status::Active => Self::Active,
+                Status::Cancelled => Self::Cancelled,
+                Status::Stopped => Self::Stopped,
+                Status::Fulfilled => Self::Fulfilled,
+            }
+        }
+    }
+
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_request_auto_merge_intents")]
     pub(crate) struct Model {
@@ -18,7 +53,7 @@ pub(crate) mod request_auto_merge_intent {
         pub revision_id: String,
         pub head_oid: String,
         pub actor_user_id: String,
-        pub status: String,
+        pub status: Status,
         pub reason: Option<String>,
         pub created_position: i64,
         pub claim_token: Option<String>,
@@ -48,7 +83,7 @@ pub(crate) mod request_auto_merge_intent {
                 revision_id: value.revision_id.clone(),
                 head_oid: value.head_oid.clone(),
                 actor_user_id: value.actor_user_id.clone(),
-                status: encode_enum(value.status)?,
+                status: value.status.into(),
                 reason: value.reason.map(encode_enum).transpose()?,
                 created_position: u64_to_i64(created_position, "auto-merge creation position")?,
                 claim_token: None,
@@ -73,7 +108,7 @@ pub(crate) mod request_auto_merge_intent {
                 revision_id: self.revision_id.clone(),
                 head_oid: self.head_oid.clone(),
                 actor_user_id: self.actor_user_id.clone(),
-                status: decode_enum::<RequestAutoMergeIntentStatus>(self.status.clone())?,
+                status: self.status.into(),
                 reason: self
                     .reason
                     .clone()
@@ -92,7 +127,7 @@ pub(crate) mod request_auto_merge_intent {
         ) -> Result<ActiveModel, PostgresError> {
             value.validate_facts()?;
             let mut update = self.into_active_model();
-            update.status = Set(encode_enum(value.status)?);
+            update.status = Set(value.status.into());
             update.reason = Set(value.reason.map(encode_enum).transpose()?);
             update.claim_token = Set(None);
             update.claim_expires_at_unix = Set(None);
