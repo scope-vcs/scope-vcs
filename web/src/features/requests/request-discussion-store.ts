@@ -121,8 +121,9 @@ export function useRequestDiscussionStore({
     return () => {
       sync.stop()
       syncRef.current = null
+      setLoadingMore(false)
     }
-  }, [epoch, key, read, setError, updateCollection])
+  }, [epoch, key, read, setError, setLoadingMore, updateCollection])
   useEffect(() => {
     void syncRequestDiscussionProjections(key, epoch, requestHead, (page) => actions.load({ ...params, ...page }))
   }, [actions, epoch, key, params, requestHead])
@@ -159,7 +160,7 @@ export function useRequestDiscussionStore({
     } catch (requestError) {
       setError(resourceErrorMessage(requestError, 'Older discussions could not be loaded.'))
     } finally {
-      setLoadingMore(false)
+      if (syncRef.current === sync) setLoadingMore(false)
     }
   }, [
     actions,
