@@ -464,7 +464,14 @@ async fn an_unlisted_bot_review_is_imported_once_its_bot_is_listed() {
         vec![line_comment(601, &head, "request.txt", None, 1)],
     );
     deliver_review(&owner, GITHUB_REPOSITORY_ID).await;
+    let mut events = owner.state.repo_events.subscribe(TEST_REPO_ID);
     assert_eq!(import_pass(&owner).await, 1);
+    assert_eq!(
+        events.try_recv().unwrap().kind,
+        crate::repo_events::RepoChangeKind::RepositoryChanged {
+            reason: "github-connection-changed".into()
+        }
+    );
     assert!(threads(&owner).await.is_empty());
     let skipped = &github_json(&owner.state, "GET", "").await["unlisted_review_bots"];
     assert_eq!(skipped.as_array().unwrap().len(), 1);
@@ -544,21 +551,28 @@ async fn a_review_skipped_after_its_bot_was_listed_still_imports() {
         .pop()
         .unwrap();
     list_review_bots(&owner, &["greptile-apps[bot]"]).await;
-    requests
-        .skip_github_review(
-            &SkipGitHubReview {
-                request_id: job.request_id.clone(),
-                review_id: REVIEW_ID,
-                repo_id: job.repo_id.clone(),
-                github_repository_id: job.github_repository_id,
-                pull_number: job.pull_number,
-            },
-            &GitHubAccount::new(BOT_ID, "greptile-apps[bot]", GitHubAccountType::Bot, None)
-                .unwrap(),
-            unix_now(),
-        )
-        .await
-        .unwrap();
+    let author =
+        GitHubAccount::new(BOT_ID, "greptile-apps[bot]", GitHubAccountType::Bot, None).unwrap();
+    let skip = |github_link_id: String| SkipGitHubReview {
+        request_id: job.request_id.clone(),
+        review_id: REVIEW_ID,
+        repo_id: job.repo_id.clone(),
+        github_repository_id: job.github_repository_id,
+        pull_number: job.pull_number,
+        github_link_id,
+    };
+    assert!(
+        !requests
+            .skip_github_review(&skip("replaced-link".into()), &author, unix_now())
+            .await
+            .unwrap()
+    );
+    assert!(
+        requests
+            .skip_github_review(&skip(job.github_link_id.clone()), &author, unix_now())
+            .await
+            .unwrap()
+    );
     requests
         .finish_github_review_import(&job, GitHubReviewImportFinish::Done)
         .await

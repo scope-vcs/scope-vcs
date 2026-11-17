@@ -17,6 +17,7 @@ pub struct SkipGitHubReview {
     pub repo_id: String,
     pub github_repository_id: u64,
     pub pull_number: u64,
+    pub github_link_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,34 +45,44 @@ impl RequestStore {
         review: &SkipGitHubReview,
         author: &GitHubAccount,
         now_unix: u64,
-    ) -> Result<(), PostgresError> {
+    ) -> Result<bool, PostgresError> {
         let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, &review.repo_id).await?;
         acquire_aggregate_lock(&tx, "github-connection", &review.repo_id).await?;
         save_github_accounts(&tx, std::slice::from_ref(author), now_unix).await?;
-        tx.execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "INSERT INTO scope_github_skipped_reviews (request_id, review_id, repo_id,
+        let recorded = tx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "INSERT INTO scope_github_skipped_reviews (request_id, review_id, repo_id,
                 github_repository_id, pull_number, github_user_id, skipped_at_unix)
-             SELECT id, $2, repo_id, $4, $5, $6, $7 FROM scope_requests
-              WHERE id = $1 AND repo_id = $3
+             SELECT request.id, $2, request.repo_id, $4, $5, $6, $7
+               FROM scope_requests request
+               JOIN scope_github_connections connection
+                 ON connection.repo_id = request.repo_id
+                AND connection.status = 'Connected'
+                AND connection.github_repository_id = $4
+                AND connection.link_id = $8
+              WHERE request.id = $1 AND request.repo_id = $3
              ON CONFLICT (request_id, review_id) DO UPDATE
                 SET github_user_id = EXCLUDED.github_user_id,
                     skipped_at_unix = EXCLUDED.skipped_at_unix",
-            [
-                review.request_id.clone().into(),
-                u64_to_i64(review.review_id, "GitHub review id")?.into(),
-                review.repo_id.clone().into(),
-                u64_to_i64(review.github_repository_id, "GitHub repository id")?.into(),
-                u64_to_i64(review.pull_number, "GitHub pull request number")?.into(),
-                u64_to_i64(author.id, "GitHub account id")?.into(),
-                u64_to_i64(now_unix, "GitHub review skip time")?.into(),
-            ],
-        ))
-        .await?;
+                [
+                    review.request_id.clone().into(),
+                    u64_to_i64(review.review_id, "GitHub review id")?.into(),
+                    review.repo_id.clone().into(),
+                    u64_to_i64(review.github_repository_id, "GitHub repository id")?.into(),
+                    u64_to_i64(review.pull_number, "GitHub pull request number")?.into(),
+                    u64_to_i64(author.id, "GitHub account id")?.into(),
+                    u64_to_i64(now_unix, "GitHub review skip time")?.into(),
+                    review.github_link_id.clone().into(),
+                ],
+            ))
+            .await?
+            .rows_affected()
+            > 0;
         queue_reviews_of_listed_bots(&tx, &review.repo_id).await?;
         tx.commit().await?;
-        Ok(())
+        Ok(recorded)
     }
 }
 

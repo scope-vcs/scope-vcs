@@ -3,6 +3,7 @@ use crate::{
     error::ApiError,
     github::{GitHubPullReview, GitHubPullReviewComment, webhook::GitHubReviewDelivery},
     persistence::unix_now,
+    repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
         github_review_bot_statuses::note_review_bot_activity,
@@ -406,7 +407,7 @@ async fn skip_review(
     review_id: u64,
     author: &GitHubAccount,
 ) -> Result<(), ApiError> {
-    state
+    let recorded = state
         .metadata
         .requests()
         .skip_github_review(
@@ -416,11 +417,18 @@ async fn skip_review(
                 repo_id: job.repo_id.clone(),
                 github_repository_id: job.github_repository_id,
                 pull_number: job.pull_number,
+                github_link_id: job.github_link_id.clone(),
             },
             author,
             unix_now()?,
         )
         .await?;
+    if recorded && let Some(incarnation) = state.repository_incarnation(&job.repo_id).await? {
+        state.publish_request_summary_refresh(
+            &incarnation,
+            RepoChangeReason::GitHubConnectionChanged,
+        );
+    }
     Ok(())
 }
 
