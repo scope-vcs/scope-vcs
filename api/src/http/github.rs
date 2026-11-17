@@ -12,20 +12,14 @@ use crate::{
     error::ApiError,
     github::{
         setup_tokens::GrantedRepository,
-        webhook::{
-            GITHUB_EVENT_HEADER, GITHUB_SIGNATURE_HEADER, GitHubWebhookEvent,
-            confirmed_installation_change,
-        },
+        webhook::{GITHUB_DELIVERY_HEADER, GITHUB_EVENT_HEADER, GITHUB_SIGNATURE_HEADER},
     },
     http::origins::public_app_origin,
     persistence::unix_now,
     repo_access::{find_read_access, require_full_view_member},
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::{
-        github_check_results, github_pull_requests, github_pushes, github_review_bot_statuses,
-        github_review_imports, github_workflow_jobs, github_workflow_runs,
-    },
+    use_cases::github_webhook_deliveries,
 };
 use axum::{
     Json,
@@ -451,124 +445,19 @@ pub(crate) async fn receive_github_webhook(
         .get(GITHUB_EVENT_HEADER)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
-    match GitHubWebhookEvent::parse(event, &body)? {
-        GitHubWebhookEvent::InstallationChanged {
-            installation_id,
-            change,
-        } => {
-            let changed = state
-                .metadata
-                .repositories()
-                .apply_github_installation_change(installation_id, unix_now()?, async || {
-                    confirmed_installation_change(app, installation_id, &change).await
-                })
-                .await?;
-            for incarnation in changed {
-                publish_connection_change(&state, &incarnation);
-            }
-        }
-        GitHubWebhookEvent::ChecksChanged {
-            github_repository_id,
-            commit_oid,
-            workflow_run_id,
-        } => {
-            if let Some(run_id) = workflow_run_id {
-                github_workflow_runs::refresh_workflow_run_for_delivery(
-                    &state,
-                    github_repository_id,
-                    run_id,
-                    unix_now()?,
-                )
-                .await?;
-            }
-            if let Err(error) = github_check_results::refresh_checks_for_delivery(
-                &state,
-                github_repository_id,
-                &commit_oid,
-            )
-            .await
-            {
-                tracing::warn!(
-                    github_repository_id,
-                    commit_oid,
-                    error = %error.operator_diagnostic(),
-                    "reading GitHub checks for a delivery failed"
-                );
-            }
-        }
-        GitHubWebhookEvent::WorkflowJobChanged {
-            github_repository_id,
-            job_id,
-        } => {
-            if let Err(error) =
-                github_workflow_jobs::refresh_job_for_delivery(&state, github_repository_id, job_id)
-                    .await
-            {
-                tracing::warn!(
-                    github_repository_id,
-                    job_id,
-                    error = %error.operator_diagnostic(),
-                    "reading a GitHub job for a delivery failed"
-                );
-            }
-        }
-        GitHubWebhookEvent::RepositoryVisibilityChanged {
-            github_repository_id,
-        } => {
-            if let Some(connection) = state
-                .metadata
-                .repositories()
-                .github_connection_for_github_repository(github_repository_id)
-                .await?
-            {
-                match github_pushes::refresh_github_visibility(&state, &connection).await {
-                    Ok(Some(_)) => {}
-                    Ok(None) => tracing::warn!(
-                        github_repository_id,
-                        "the Scope GitHub App no longer lists a connected repository"
-                    ),
-                    Err(error) => tracing::warn!(
-                        github_repository_id,
-                        error = %error.operator_diagnostic(),
-                        "reading a GitHub repository's visibility failed"
-                    ),
-                }
-            }
-        }
-        GitHubWebhookEvent::ReviewActivity(delivery) => {
-            github_review_bot_statuses::note_review_bot_activity(
-                &state,
-                delivery.github_repository_id,
-                delivery.pull_number,
-            )
-            .await?;
-            github_review_imports::queue_github_review_delivery(&state, delivery, unix_now()?)
-                .await?;
-        }
-        GitHubWebhookEvent::ReviewStateCommented {
-            github_repository_id,
-            number,
-        } => {
-            github_review_bot_statuses::note_review_bot_activity(
-                &state,
-                github_repository_id,
-                number,
-            )
-            .await?;
-        }
-        GitHubWebhookEvent::PullRequestChanged {
-            github_repository_id,
-            request_id,
-        } => {
-            github_pull_requests::note_github_pull_request_delivery(
-                &state,
-                github_repository_id,
-                &request_id,
-            )
-            .await?;
-        }
-        GitHubWebhookEvent::Ignored => {}
-    }
+    let delivery_id = headers
+        .get(GITHUB_DELIVERY_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .filter(|delivery_id| !delivery_id.is_empty())
+        .ok_or_else(|| ApiError::bad_request("missing GitHub delivery id"))?;
+    github_webhook_deliveries::accept_github_delivery(
+        &state,
+        delivery_id,
+        event,
+        &body,
+        unix_now()?,
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
