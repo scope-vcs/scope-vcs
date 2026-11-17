@@ -10,8 +10,6 @@ bash -n deploy/scripts/publish-maintenance-runtime.sh deploy/scripts/verify-main
 
 node deploy/scripts/check-rust-toolchain-sync.mjs
 node deploy/scripts/check-runtime-image-sync.mjs
-python3 deploy/scripts/test-check-ci-critical-path.py
-python3 deploy/scripts/check-ci-critical-path.py
 node deploy/scripts/check-production-origins.mjs
 
 node --test \
@@ -19,7 +17,6 @@ node --test \
   deploy/scripts/check-production-origins.test.mjs \
   deploy/scripts/check-gates.test.mjs \
   deploy/scripts/check-apt-bootstrap.test.mjs \
-  deploy/scripts/run-log-budget.test.mjs \
   .github/scripts/install-test-postgres.test.mjs \
   dev/analytics/*.test.mjs \
   deploy/scripts/push-image-tags.test.mjs \

@@ -201,7 +201,7 @@
         "deploy/scripts/run-bounded-image-builds.sh",
         "deploy/scripts/merge-prepared-release.mjs",
         ".github/actions/install-reviewed-git/action.yml",
-        ".github/workflows/reviewed-git-cache.yml"
+        ".github/workflows/warm-ci-caches.yml"
       ],
       "prefixes": []
     },
@@ -357,9 +357,7 @@
         "deploy/railway/web.Dockerfile",
         ".github/workflows/scope-web-ci.yml",
         ".github/workflows/scope-integration-ci.yml",
-        ".github/workflows/media-codec-cache.yml",
         ".github/actions/install-media-codecs/action.yml",
-        ".github/workflows/playwright-cache.yml",
         ".github/actions/install-playwright-chromium/action.yml",
         "dev/checks/web",
         "dev/checks/web-components",
@@ -376,7 +374,7 @@
         "dev/dotenv.sh",
         "deploy/scripts/deployment-components.mjs",
         ".github/actions/install-reviewed-git/action.yml",
-        ".github/workflows/reviewed-git-cache.yml"
+        ".github/workflows/warm-ci-caches.yml"
       ],
       "prefixes": [
         "api/",
@@ -403,9 +401,7 @@
         ".github/workflows/scope-cli-build.yml",
         ".github/workflows/publish-cli.yml",
         ".github/workflows/scope-integration-ci.yml",
-        ".github/workflows/media-codec-cache.yml",
         ".github/actions/install-media-codecs/action.yml",
-        ".github/workflows/playwright-cache.yml",
         ".github/actions/install-playwright-chromium/action.yml",
         "dev/checks/cli",
         "dev/checks/advisories",
@@ -421,7 +417,7 @@
         "dev/local-identity.py",
         "dev/dotenv.sh",
         ".github/actions/install-reviewed-git/action.yml",
-        ".github/workflows/reviewed-git-cache.yml"
+        ".github/workflows/warm-ci-caches.yml"
       ],
       "prefixes": [
         "api/",
@@ -450,7 +446,7 @@
         "dev/cargo-target-dir",
         ".github/scripts/select-cli-distribution-targets.mjs",
         ".github/actions/install-reviewed-git/action.yml",
-        ".github/workflows/reviewed-git-cache.yml"
+        ".github/workflows/warm-ci-caches.yml"
       ],
       "prefixes": [
         "cli/distribution/",

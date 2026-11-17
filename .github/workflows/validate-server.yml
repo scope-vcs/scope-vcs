@@ -15,9 +15,6 @@ on:
       release:
         type: boolean
         default: false
-      reuse_artifacts:
-        type: boolean
-        default: false
     outputs:
       media_worker_image:
         value: ${{ jobs.media-worker-image.outputs.image_ref }}
@@ -28,7 +25,7 @@ permissions:
 jobs:
   backend-validation:
     name: Backend validation
-    if: ${{ !inputs.reuse_artifacts && inputs.backend == 'true' }}
+    if: ${{ inputs.backend == 'true' }}
     uses: ./.github/workflows/scope-api-ci.yml
     with:
       build_release_artifact: ${{ inputs.release }}
@@ -36,7 +33,7 @@ jobs:
 
   media-worker-image:
     name: Media worker image
-    if: ${{ !inputs.reuse_artifacts && inputs.backend == 'true' }}
+    if: ${{ inputs.backend == 'true' }}
     permissions:
       contents: read
       packages: write
@@ -49,7 +46,7 @@ jobs:
 
   web-validation:
     name: Web validation
-    if: ${{ !inputs.reuse_artifacts && inputs.web == 'true' }}
+    if: ${{ inputs.web == 'true' }}
     uses: ./.github/workflows/scope-web-ci.yml
     with:
       build_release_artifact: ${{ inputs.release }}
@@ -68,7 +65,6 @@ jobs:
       - name: Require server validations
         env:
           VALIDATIONS_PASSED: >-
-            ${{ inputs.reuse_artifacts || (
-            (inputs.backend != 'true' || (needs.backend-validation.result == 'success' && needs.media-worker-image.result == 'success')) &&
-            (inputs.web != 'true' || needs.web-validation.result == 'success')) }}
+            ${{ (inputs.backend != 'true' || (needs.backend-validation.result == 'success' && needs.media-worker-image.result == 'success')) &&
+            (inputs.web != 'true' || needs.web-validation.result == 'success') }}
         run: test "$VALIDATIONS_PASSED" = true

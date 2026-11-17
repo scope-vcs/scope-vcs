@@ -41,7 +41,7 @@ test('releases and the daily main run check every lockfile for advisories, and r
   assert.match(daily, /schedule:\n    - cron: '[^']+ \* \* \*'/);
   assert.match(daily, /if: github.ref == 'refs\/heads\/main'/);
   const release = read('.github/workflows/validate.yml').split('\n  dependency-advisories:\n')[1].split('\n  production-validation-gate:\n')[0];
-  assert.match(release, /if: \$\{\{ inputs\.release && !inputs\.reuse_artifacts \}\}\n/);
+  assert.match(release, /if: \$\{\{ inputs\.release \}\}\n/);
   for (const workflow of [daily, release]) {
     assert.match(workflow, /run: \.\/dev\/install-cargo-tools\.sh/);
     assert.match(workflow, /uses: pnpm\/action-setup@/);
@@ -199,7 +199,7 @@ const alwaysOnGateInputs = [
   /^bench\//, /^deploy\/postgres\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.(sh|asc))$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
-  /^\.github\/workflows\/(audit-railway-experiments|ci-duration|run-log-budget|main-advisories|backup-monitor|maintenance-runtime|preview-build|preview-environment(?:-cleanup|-signal)?)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|daily-monitors|main-advisories|maintenance-runtime|preview-build|preview-environment(?:-cleanup|-signal)?)\.yml$/,
   /\.test\.mjs$/, /\.md$/,
 ];
 
@@ -526,7 +526,7 @@ test('a Scope request revision reuses an open pull request run, waiting briefly 
   assert.deepEqual(find({ runs: ['error', '123'] }), { output: 'number=7\nrun_id=123\n', slept: 1 }, 'a failed run lookup moves on to the next attempt');
 });
 
-test('validation gate allows unselected jobs and reused artifacts but fails selected jobs and cancellation', () => {
+test('validation gate allows unselected jobs but fails selected jobs and cancellation', () => {
   const workflow = read('.github/workflows/validate.yml');
   const job = workflow.slice(workflow.indexOf('\n  production-validation-gate:\n'));
   assert.match(job, /if: \$\{\{ always\(\) \}\}\n/);
@@ -542,7 +542,6 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
   };
   for (const mask of Array.from({ length: 32 }, (_, i) => i)) {
     const inputs = Object.fromEntries(['backend', 'web', 'cli', 'media_smoke'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
-    inputs.reuse_artifacts = false;
     inputs.validate_server = true;
     inputs.release = Boolean(mask & 16);
     const needs = Object.fromEntries(Object.entries(selectedBy).map(([name, keys]) => [name, {
@@ -556,9 +555,6 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
         assert.equal(evaluate(inputs, { ...needs, [name]: { result } }), false, `${mask}: ${name}/${result}`);
       }
     }
-    inputs.reuse_artifacts = true;
-    const skipped = Object.fromEntries(Object.keys(needs).map((name) => [name, { result: 'skipped' }]));
-    assert.equal(evaluate(inputs, skipped), true, `reused selection ${mask}`);
   }
   for (const value of ['true', 'false', '']) {
     const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', validationGateScript(job)], {
@@ -584,7 +580,7 @@ test('server readiness rejects each failed selected build before packaging', () 
   const expression = workflow.match(/VALIDATIONS_PASSED: >-\n\s*\$\{\{ ([\s\S]*?) \}\}/)[1];
   const evaluate = Function('inputs', 'needs', `return (${expression.replace(/needs\.([\w-]+)/g, 'needs["$1"]')});`);
   for (const backend of ['true', 'false']) for (const web of ['true', 'false']) {
-    const inputs = { backend, web, reuse_artifacts: false };
+    const inputs = { backend, web };
     const needs = Object.fromEntries(['backend-validation', 'media-worker-image', 'web-validation'].map(key => [key, {
       result: (key === 'web-validation' ? web : backend) === 'true' ? 'success' : 'skipped',
     }]));
