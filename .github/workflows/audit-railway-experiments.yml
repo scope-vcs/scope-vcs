@@ -1,6 +1,9 @@
 name: Audit Railway experiments
 
 on:
+  workflow_run:
+    workflows: [Preview cleanup signal]
+    types: [completed]
   schedule:
     - cron: "23 * * * *"
   workflow_dispatch:

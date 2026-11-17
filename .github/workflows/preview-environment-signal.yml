@@ -1,0 +1,15 @@
+name: Preview cleanup signal
+
+on:
+  pull_request:
+    types: [closed, unlabeled]
+
+permissions: {}
+
+jobs:
+  signal:
+    if: github.event.action == 'closed' || github.event.label.name == 'preview'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - run: 'true'
