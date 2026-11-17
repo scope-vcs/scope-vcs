@@ -486,6 +486,14 @@ async fn an_unlisted_bot_review_is_imported_once_its_bot_is_listed() {
         .report_review_thread(601, Some(("octo-writer", 502)));
     deliver_thread(&owner, "resolved", 601, user(502, "octo-writer", "User")).await;
     assert_eq!(import_pass(&owner).await, 0);
+    for hours in 1..=4 {
+        assert_eq!(
+            import_due_github_reviews(&owner.state, unix_now() + hours * 60 * 60)
+                .await
+                .unwrap(),
+            0
+        );
+    }
 
     let listed = expect_json(
         github_api(
