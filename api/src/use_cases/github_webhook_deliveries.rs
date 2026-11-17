@@ -18,6 +18,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 const BATCH_SIZE: u64 = 10;
+pub(crate) const MAX_DELIVERIES_PER_PASS: usize = 100;
 const LEASE_SECS: u64 = 5 * 60;
 const LEASE_RESERVE_SECS: u64 = 2 * 60;
 
@@ -46,11 +47,15 @@ pub(crate) async fn process_due_github_deliveries(
 ) -> Result<usize, ApiError> {
     let repositories = state.metadata.repositories();
     let mut processed = 0;
-    loop {
+    while processed < MAX_DELIVERIES_PER_PASS {
         let claimed_at_unix = clock()?;
         let lease_until_unix = claimed_at_unix.saturating_add(LEASE_SECS);
         let batch = repositories
-            .claim_due_github_webhook_deliveries(claimed_at_unix, lease_until_unix, BATCH_SIZE)
+            .claim_due_github_webhook_deliveries(
+                claimed_at_unix,
+                lease_until_unix,
+                BATCH_SIZE.min((MAX_DELIVERIES_PER_PASS - processed) as u64),
+            )
             .await?;
         if batch.is_empty() {
             return Ok(processed);
@@ -71,6 +76,8 @@ pub(crate) async fn process_due_github_deliveries(
                 .await?;
         }
     }
+    state.wakeups.github_webhook_deliveries.notify_one();
+    Ok(processed)
 }
 
 fn finish_for(

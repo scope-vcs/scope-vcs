@@ -526,7 +526,8 @@ impl GitHubApp {
         route: &'static str,
     ) -> Result<Option<T>, ApiError> {
         self.rate_limit_pauses.check(installation_id)?;
-        let Some(token) = self.installation_token(installation_id).await? else {
+        let minted = self.installation_token(installation_id).await;
+        let Some(token) = self.rate_limit_pauses.note(installation_id, minted)? else {
             return Ok(None);
         };
         let answer = send(self.request(Method::GET, path).bearer_auth(token), route).await;
@@ -541,7 +542,8 @@ impl GitHubApp {
         items: impl Fn(P) -> Vec<T>,
     ) -> Result<Option<Vec<T>>, ApiError> {
         self.rate_limit_pauses.check(installation_id)?;
-        let Some(token) = self.installation_token(installation_id).await? else {
+        let minted = self.installation_token(installation_id).await;
+        let Some(token) = self.rate_limit_pauses.note(installation_id, minted)? else {
             return Ok(None);
         };
         let listed = self.pages(&token, path, route, items).await;

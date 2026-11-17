@@ -1,6 +1,8 @@
 use super::*;
-use crate::use_cases::github_webhook_deliveries::process_due_github_deliveries;
-use crate::workflow_tests::fake_github::queue_webhook;
+use crate::use_cases::github_webhook_deliveries::{
+    MAX_DELIVERIES_PER_PASS, process_due_github_deliveries,
+};
+use crate::workflow_tests::fake_github::{github_state, queue_webhook};
 use std::sync::atomic::AtomicU64;
 
 fn check_run_delivery(head_sha: &str) -> serde_json::Value {
@@ -160,4 +162,31 @@ async fn work_slower_than_the_lease_gives_unstarted_deliveries_back_without_spen
         ("last", 2)
     );
     assert_eq!(retried[0].payload, last.as_bytes());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pass_over_a_backlog_stops_at_its_bound_and_asks_to_run_again() {
+    let (state, _fake) = github_state().await;
+    let repositories = state.metadata.repositories();
+    let payload = check_run_delivery(&"1".repeat(40)).to_string();
+    for delivery in 0..=MAX_DELIVERIES_PER_PASS {
+        repositories
+            .queue_github_webhook_delivery(
+                &format!("backlog-{delivery}"),
+                "check_run",
+                payload.as_bytes(),
+                1,
+            )
+            .await
+            .unwrap();
+    }
+
+    assert_eq!(process_at(&state, 2).await, MAX_DELIVERIES_PER_PASS);
+    tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        state.wakeups.github_webhook_deliveries.notified(),
+    )
+    .await
+    .expect("a bounded pass must wake the loop for the rest of the backlog");
+    assert_eq!(process_at(&state, 2).await, 1);
 }
