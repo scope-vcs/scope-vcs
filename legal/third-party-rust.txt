@@ -2268,6 +2268,66 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
+jiff 1.0.0
+Declared license: Unlicense OR MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/jiff/jiff-1.0.0.crate
+
+Published author metadata: ["Andrew Gallant <jamslam@gmail.com>"]
+Repository: "https://github.com/BurntSushi/jiff"
+COPYING: text 65314a6c96683f76f7495709bb0ddecb4eaa6fa244b28f23c4812ef8e5524066
+LICENSE-MIT: text 154c1af2b38e25e5c18613dfe352eed29b0863cb39e494007822cdeb39150ac5
+UNLICENSE: text ca2abdf695884c77ea4b4a5b64ca7b732d9d9dbade4eebc1c2e76c53e9e3bc83
+
+==============================================================================
+jiff-core 1.0.0
+Declared license: Unlicense OR MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/jiff-core/jiff-core-1.0.0.crate
+
+Published author metadata: ["Andrew Gallant <jamslam@gmail.com>"]
+Repository: "https://github.com/BurntSushi/jiff"
+COPYING: text 65314a6c96683f76f7495709bb0ddecb4eaa6fa244b28f23c4812ef8e5524066
+LICENSE-MIT: text 154c1af2b38e25e5c18613dfe352eed29b0863cb39e494007822cdeb39150ac5
+UNLICENSE: text ca2abdf695884c77ea4b4a5b64ca7b732d9d9dbade4eebc1c2e76c53e9e3bc83
+
+==============================================================================
+jiff-static 1.0.0
+Declared license: Unlicense OR MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/jiff-static/jiff-static-1.0.0.crate
+
+Published author metadata: ["Andrew Gallant <jamslam@gmail.com>"]
+Repository: "https://github.com/BurntSushi/jiff"
+COPYING: text 65314a6c96683f76f7495709bb0ddecb4eaa6fa244b28f23c4812ef8e5524066
+LICENSE-MIT: text 154c1af2b38e25e5c18613dfe352eed29b0863cb39e494007822cdeb39150ac5
+UNLICENSE: text ca2abdf695884c77ea4b4a5b64ca7b732d9d9dbade4eebc1c2e76c53e9e3bc83
+
+==============================================================================
+jiff-tzdb 1.0.0
+Declared license: Unlicense OR MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/jiff-tzdb/jiff-tzdb-1.0.0.crate
+
+Published author metadata: ["Andrew Gallant <jamslam@gmail.com>"]
+Repository: "https://github.com/BurntSushi/jiff"
+COPYING: text 65314a6c96683f76f7495709bb0ddecb4eaa6fa244b28f23c4812ef8e5524066
+LICENSE-MIT: text 154c1af2b38e25e5c18613dfe352eed29b0863cb39e494007822cdeb39150ac5
+UNLICENSE: text ca2abdf695884c77ea4b4a5b64ca7b732d9d9dbade4eebc1c2e76c53e9e3bc83
+
+==============================================================================
+jiff-tzdb-platform 1.0.0
+Declared license: Unlicense OR MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/jiff-tzdb-platform/jiff-tzdb-platform-1.0.0.crate
+
+Published author metadata: ["Andrew Gallant <jamslam@gmail.com>"]
+Repository: "https://github.com/BurntSushi/jiff"
+COPYING: text 65314a6c96683f76f7495709bb0ddecb4eaa6fa244b28f23c4812ef8e5524066
+LICENSE-MIT: text 154c1af2b38e25e5c18613dfe352eed29b0863cb39e494007822cdeb39150ac5
+UNLICENSE: text ca2abdf695884c77ea4b4a5b64ca7b732d9d9dbade4eebc1c2e76c53e9e3bc83
+
+==============================================================================
 jni 0.22.4
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -3438,6 +3498,16 @@ Selected license: MIT
 Source: https://static.crates.io/crates/portable-atomic/portable-atomic-1.15.0.crate
 
 Repository: "https://github.com/taiki-e/portable-atomic"
+LICENSE-APACHE: text 4bf96504d6e83ce5c6fc7167f1795d9ceaa68e70ab86bc5d08ab93184262bbbe
+LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
+
+==============================================================================
+portable-atomic-util 0.2.8
+Declared license: Apache-2.0 OR MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/portable-atomic-util/portable-atomic-util-0.2.8.crate
+
+Repository: "https://github.com/taiki-e/portable-atomic-util"
 LICENSE-APACHE: text 4bf96504d6e83ce5c6fc7167f1795d9ceaa68e70ab86bc5d08ab93184262bbbe
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
