@@ -12,7 +12,7 @@ import { repoGitHubChecksResource } from '@/features/repo-detail/repo-github-che
 import type { GitHubChecksResponse, GitHubConnectionResponse } from '@/api/types.generated'
 import type { RepoSummary, RepoLiveState, RepoMember, CliSession } from '@/api/types'
 import { WorkspaceFixture } from './workspace'
-import { CoalescedResourceFixture } from './changes-resource'
+import { ChangesResourceFixture, CoalescedResourceFixture } from './changes-resource'
 import '../shared/styles.css'
 
 const initial = {
@@ -247,6 +247,7 @@ function App() {
     <CliSessionList sessions={sessions} pending={pending} formatTime={String}
       revokeSession={(id) => void run(id, () => hold(id))} />
     <WorkspaceFixture />
+    <ChangesResourceFixture />
     <CoalescedResourceFixture />
   </main>
 }
