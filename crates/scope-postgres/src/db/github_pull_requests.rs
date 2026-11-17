@@ -11,14 +11,10 @@ use super::{
     request_stack::RequestStackChildFacts,
 };
 use crate::error::PostgresError;
-use scope_domain::{
-    github_connection::GitHubConnection,
-    requests::{
-        GitHubMergeLandingStep, GitHubMergeMainCheck, GitHubPullRequest, GitHubPullRequestIntent,
-        GitHubPullRequestMerge, GitHubPullRequestState, GitHubPushDestination, GitHubReviewRequest,
-        OpenedGitHubPullRequest, Request, closes_carrier_pull_request,
-        retains_request_branch_for_carrier,
-    },
+use scope_domain::requests::{
+    GitHubMergeLandingStep, GitHubMergeMainCheck, GitHubPullRequest, GitHubPullRequestIntent,
+    GitHubPullRequestMerge, GitHubPullRequestState, GitHubPushDestination, GitHubReviewRequest,
+    OpenedGitHubPullRequest, Request, retains_request_branch_for_carrier,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
 
@@ -474,11 +470,7 @@ async fn release_request_branch_after_carrier_change<C: ConnectionTrait>(
 pub(super) async fn queue_carrier_close<C: ConnectionTrait>(
     conn: &C,
     request: &Request,
-    connection: Option<&GitHubConnection>,
 ) -> Result<(), PostgresError> {
-    if !closes_carrier_pull_request(request, connection) {
-        return Ok(());
-    }
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!(

@@ -7,14 +7,13 @@ use super::{
     request_auto_merge::{
         automatic_event_id, lock_active_intent_for_request, persist_existing_auto_merge_mutation,
     },
-    request_lifecycle_effects::persist_lifecycle_mutation,
-    request_media::{replace_bindings_for_markdown, tombstone_request_attachments},
+    request_lifecycle_effects::{persist_deleted_draft, persist_lifecycle_mutation},
+    request_media::replace_bindings_for_markdown,
     request_revision_rows::{insert_revision, revisions_for_request_ids},
     request_rows::{
-        delete_request_rows, insert_request_event_row, insert_request_row, latest_request_events,
-        public_draft_count, request_by_id, request_by_name, request_event_by_id,
-        request_events_after_position, request_events_by_request_id, request_list_page,
-        requests_by_repo_id, save_request_row,
+        insert_request_event_row, insert_request_row, latest_request_events, public_draft_count,
+        request_by_id, request_by_name, request_event_by_id, request_events_after_position,
+        request_events_by_request_id, request_list_page, requests_by_repo_id, save_request_row,
     },
 };
 use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
@@ -512,18 +511,6 @@ pub(super) async fn ensure_object_generation<C: sea_orm::ConnectionTrait>(
             "repository visibility changed during the push; retry",
         ))
     }
-}
-
-pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
-    tx: &C,
-    request: &Request,
-    now_unix: u64,
-) -> Result<(), PostgresError> {
-    super::git_segments::retire_request_pool_packs(tx, &request.id, now_unix).await?;
-    super::github_pushes::queue_github_branch_deletion(tx, &request.repo_id, &request.id, now_unix)
-        .await?;
-    tombstone_request_attachments(tx, &request.id, now_unix).await?;
-    delete_request_rows(tx, &request.id).await
 }
 
 struct ObservedRevisionBase<'a> {

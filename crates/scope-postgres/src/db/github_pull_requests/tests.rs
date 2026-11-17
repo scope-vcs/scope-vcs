@@ -328,7 +328,7 @@ async fn ending_a_request_turns_its_carrier_intent_into_a_close() {
 
     request.closed_at_unix = Some(20);
     request.updated_at_unix = 20;
-    queue_carrier_close(store.db.as_ref(), &request, None)
+    queue_carrier_close(store.db.as_ref(), &request)
         .await
         .unwrap();
     let closing = claim(&store, "claim_2", 20).await.remove(0);
