@@ -7,7 +7,7 @@ use crate::api::{
 use crate::display::terminal_text;
 use crate::error::CliError;
 use args::SnoozeFor;
-use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeDelta, TimeZone};
+use jiff::{Timestamp, ToSpan, ZonedDateTime, tz::TimeZone};
 use serde::Serialize;
 
 pub(super) const QUEUE_SECTION_LIMIT: u32 = 30;
@@ -69,29 +69,33 @@ fn reason_label(item: &RequestQueueItemResponse) -> String {
 fn local_time_label(unix: u64) -> String {
     i64::try_from(unix)
         .ok()
-        .and_then(|unix| Local.timestamp_opt(unix, 0).single())
-        .map(|time| time.format("%a %b %-d %H:%M").to_string())
+        .and_then(|unix| Timestamp::from_second(unix).ok())
+        .map(|time| {
+            time.to_zoned_datetime(TimeZone::system())
+                .strftime("%a %b %-d %H:%M")
+                .to_string()
+        })
         .unwrap_or_else(|| unix.to_string())
 }
 
-fn snooze_until<Tz: TimeZone>(preset: SnoozeFor, now: DateTime<Tz>) -> anyhow::Result<u64> {
-    let zone = now.timezone();
-    let local = |time: NaiveDateTime| zone.from_local_datetime(&time).earliest();
-    let at_nine = |days: u64| {
-        let date = now.date_naive().checked_add_days(Days::new(days))?;
-        local(date.and_time(NaiveTime::from_hms_opt(9, 0, 0)?))
+fn snooze_until(preset: SnoozeFor, now: &ZonedDateTime) -> anyhow::Result<u64> {
+    let nine_in = |days: i8| {
+        now.date()
+            .checked_add(days.days())
+            .map(|date| date.at(9, 0, 0, 0))
     };
-    let until = match preset {
-        SnoozeFor::Hour => local(now.naive_local() + TimeDelta::hours(1))
-            .or_else(|| Some(now.clone() + TimeDelta::hours(1))),
-        SnoozeFor::Tomorrow => at_nine(1),
-        SnoozeFor::NextWeek => match (8 - now.weekday().num_days_from_sunday()) % 7 {
-            0 => at_nine(7),
-            days => at_nine(days.into()),
+    let wall_clock = match preset {
+        SnoozeFor::Hour => now.datetime().checked_add(1.hour()),
+        SnoozeFor::Tomorrow => nine_in(1),
+        SnoozeFor::NextWeek => match (8 - now.weekday().to_sunday_zero_offset()) % 7 {
+            0 => nine_in(7),
+            days => nine_in(days),
         },
-    }
-    .context("compute the snooze time in the local time zone")?;
-    u64::try_from(until.timestamp()).context("snooze time is before the Unix epoch")
+    };
+    let until = wall_clock
+        .and_then(|time| time.to_zoned_datetime(now.time_zone().clone()))
+        .context("compute the snooze time in the local time zone")?;
+    u64::try_from(until.timestamp().as_second()).context("snooze time is before the Unix epoch")
 }
 
 fn load_queue(
@@ -290,7 +294,7 @@ pub(super) fn change_attention(
         },
         AttentionCommand::Snooze(preset) => RequestAttentionActionRequest::Snooze {
             expected_activity_version,
-            until_unix: snooze_until(preset, Local::now())?,
+            until_unix: snooze_until(preset, &ZonedDateTime::now())?,
         },
         AttentionCommand::Restore => RequestAttentionActionRequest::Restore {
             expected_activity_version,
@@ -364,29 +368,31 @@ fn explain_stale_attention(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{FixedOffset, LocalResult, NaiveDate};
-
-    fn at(rfc3339: &str) -> DateTime<FixedOffset> {
-        DateTime::parse_from_rfc3339(rfc3339).unwrap()
-    }
+    use jiff::{civil::date, tz};
 
     fn unix(rfc3339: &str) -> u64 {
-        at(rfc3339).timestamp() as u64
+        rfc3339.parse::<Timestamp>().unwrap().as_second() as u64
     }
 
     #[test]
     fn snooze_presets_land_like_the_web_menu() {
-        let monday = at("2026-10-05T14:30:00-07:00");
+        let monday = date(2026, 10, 5)
+            .at(14, 30, 0, 0)
+            .to_zoned_datetime(TimeZone::fixed(tz::offset(-7)))
+            .unwrap();
         for (preset, expected) in [
             (SnoozeFor::Hour, "2026-10-05T15:30:00-07:00"),
             (SnoozeFor::Tomorrow, "2026-10-06T09:00:00-07:00"),
             (SnoozeFor::NextWeek, "2026-10-12T09:00:00-07:00"),
         ] {
-            assert_eq!(snooze_until(preset, monday).unwrap(), unix(expected));
+            assert_eq!(snooze_until(preset, &monday).unwrap(), unix(expected));
         }
-        let sunday = at("2026-10-11T22:00:00+02:00");
+        let sunday = date(2026, 10, 11)
+            .at(22, 0, 0, 0)
+            .to_zoned_datetime(TimeZone::fixed(tz::offset(2)))
+            .unwrap();
         assert_eq!(
-            snooze_until(SnoozeFor::NextWeek, sunday).unwrap(),
+            snooze_until(SnoozeFor::NextWeek, &sunday).unwrap(),
             unix("2026-10-12T09:00:00+02:00")
         );
     }
@@ -454,65 +460,15 @@ mod tests {
         );
     }
 
-    #[derive(Clone, Copy)]
-    struct ChicagoFallBackDay;
-
-    impl ChicagoFallBackDay {
-        fn offsets() -> (FixedOffset, FixedOffset) {
-            (
-                FixedOffset::west_opt(5 * 3600).unwrap(),
-                FixedOffset::west_opt(6 * 3600).unwrap(),
-            )
-        }
-
-        fn local(hour: u32) -> NaiveDateTime {
-            NaiveDate::from_ymd_opt(2026, 11, 1)
-                .unwrap()
-                .and_hms_opt(hour, 0, 0)
-                .unwrap()
-        }
-    }
-
-    impl TimeZone for ChicagoFallBackDay {
-        type Offset = FixedOffset;
-
-        fn from_offset(_: &FixedOffset) -> Self {
-            ChicagoFallBackDay
-        }
-
-        fn offset_from_local_date(&self, _: &NaiveDate) -> LocalResult<FixedOffset> {
-            unreachable!("snooze math uses local datetimes")
-        }
-
-        fn offset_from_local_datetime(&self, local: &NaiveDateTime) -> LocalResult<FixedOffset> {
-            let (cdt, cst) = Self::offsets();
-            if *local < Self::local(1) {
-                LocalResult::Single(cdt)
-            } else if *local < Self::local(2) {
-                LocalResult::Ambiguous(cdt, cst)
-            } else {
-                LocalResult::Single(cst)
-            }
-        }
-
-        fn offset_from_utc_date(&self, _: &NaiveDate) -> FixedOffset {
-            unreachable!("snooze math uses UTC datetimes")
-        }
-
-        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> FixedOffset {
-            let (cdt, cst) = Self::offsets();
-            if *utc < Self::local(7) { cdt } else { cst }
-        }
-    }
-
     #[test]
     fn hour_snooze_follows_the_wall_clock_across_a_repeated_hour() {
-        let first_one_thirty = ChicagoFallBackDay
-            .from_local_datetime(&(ChicagoFallBackDay::local(1) + TimeDelta::minutes(30)))
-            .earliest()
-            .unwrap();
+        let chicago = TimeZone::posix("CST6CDT,M3.2.0,M11.1.0").unwrap();
+        let first_one_thirty = "2026-11-01T01:30:00-05:00"
+            .parse::<Timestamp>()
+            .unwrap()
+            .to_zoned_datetime(chicago);
         assert_eq!(
-            snooze_until(SnoozeFor::Hour, first_one_thirty).unwrap(),
+            snooze_until(SnoozeFor::Hour, &first_one_thirty).unwrap(),
             unix("2026-11-01T02:30:00-06:00")
         );
     }

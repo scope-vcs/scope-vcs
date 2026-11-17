@@ -12,13 +12,13 @@ path = "src/bin/scope.rs"
 
 [dependencies]
 anyhow = "1.0.104"
-chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 clap = { version = "4.6.0", features = ["derive"] }
 clap_complete = "4.6.0"
 crossterm = "0.29.0"
 ctrlc = "3.4"
 getrandom = "0.3.4"
 hex = "0.4.3"
+jiff = "1.0.0"
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm_0_29"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "query", "rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
