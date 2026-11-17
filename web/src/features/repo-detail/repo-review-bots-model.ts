@@ -64,6 +64,8 @@ export function withListedReviewBot(bots: GitHubReviewBotResponse[], login: stri
 }
 
 export function draftWithReviewBot(draft: string, login: string) {
+  const key = login.toLowerCase()
+  if (reviewBotLogins(draft).some((drafted) => drafted.toLowerCase() === key)) return draft
   const kept = draft.trimEnd()
   return kept ? `${kept}\n${login}` : login
 }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  draftWithReviewBot,
   reviewBotLogins,
   reviewBotsFromText,
   reviewBotsProblem,
@@ -75,4 +76,10 @@ test('requiring a bot changes only that bot and keeps the listed order', () => {
     { ...greptile, required: false },
     codex,
   ])
+})
+
+test('listing a bot adds it to an unsaved draft once', () => {
+  assert.equal(draftWithReviewBot('', 'greptile-apps[bot]'), 'greptile-apps[bot]')
+  assert.equal(draftWithReviewBot('octo[bot]  \n', 'greptile-apps[bot]'), 'octo[bot]\ngreptile-apps[bot]')
+  assert.equal(draftWithReviewBot('Greptile-Apps[bot], octo[bot]', 'greptile-apps[bot]'), 'Greptile-Apps[bot], octo[bot]')
 })
