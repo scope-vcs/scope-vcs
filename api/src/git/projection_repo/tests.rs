@@ -227,29 +227,12 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     );
     let canonical_merge_tree =
         write_projection_tree(&source, &source_index, &canonical_merge_files).unwrap();
-    let canonical_merge_oid = git_command_output(
-        Command::new("git")
-            .arg("--git-dir")
-            .arg(&source)
-            .arg("commit-tree")
-            .arg(&canonical_merge_tree)
-            .arg("-p")
-            .arg(&private_oid)
-            .arg("-p")
-            .arg(&native_oid)
-            .env("GIT_AUTHOR_NAME", "Scope")
-            .env("GIT_AUTHOR_EMAIL", "scope@scope.local")
-            .env("GIT_COMMITTER_NAME", "Scope")
-            .env("GIT_COMMITTER_EMAIL", "scope@scope.local")
-            .env("GIT_AUTHOR_DATE", "2000-01-01T00:00:00Z")
-            .env("GIT_COMMITTER_DATE", "2000-01-01T00:00:00Z"),
-        Some(b"merge\n"),
-    )
-    .unwrap();
-    let canonical_merge_oid = String::from_utf8(canonical_merge_oid)
-        .unwrap()
-        .trim()
-        .to_string();
+    let canonical_merge_oid = merge_commit(
+        &source,
+        &canonical_merge_tree,
+        [&private_oid, &native_oid],
+    );
+    let side_parent_oid = merge_commit(&source, &native_tree, [&base_oid, &private_oid]);
     git_command_output(
         Command::new("git")
             .arg("--git-dir")
@@ -281,8 +264,8 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         changes: vec![projected_change("/request.txt", "contributor\n")],
         materialization: ProjectionMaterialization::PreserveGitCommit {
             oid: native_oid.clone(),
-            parent_oids: vec![base_oid],
-            tree_oid: native_tree,
+            parent_oids: vec![base_oid.clone()],
+            tree_oid: native_tree.clone(),
         },
     };
     let projection = Projection {
@@ -311,13 +294,31 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         git_object_field(&repo, "refs/heads/main", "%H").unwrap(),
         native_oid
     );
-    assert!(git_object_exists(&repo, &private_oid));
-    assert!(git_object_exists(&repo, &secret_blob_oid));
-    assert!(git_object_exists(&repo, &canonical_merge_oid));
-    assert_eq!(
-        fs::read_to_string(repo.join("objects/info/alternates")).unwrap(),
-        format!("{}\n", source.join("objects").display())
-    );
+    for hidden_oid in [&private_oid, &secret_blob_oid, &canonical_merge_oid] {
+        assert!(!git_object_exists(&repo, hidden_oid));
+    }
+    assert!(!repo.join("objects/info/alternates").exists());
+
+    let reader = cache.join("reader.git");
+    git_command_output(
+        Command::new("git").args(["init", "--bare"]).arg(&reader),
+        None,
+    )
+    .unwrap();
+    fs::write(
+        reader.join("objects/info/alternates"),
+        format!("{}\n", source.join("objects").display()),
+    )
+    .unwrap();
+    git_command_output(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(&reader)
+            .args(["update-ref", "refs/heads/main", &native_oid]),
+        None,
+    )
+    .unwrap();
+    assert!(git_object_exists(&reader, &secret_blob_oid));
 
     let budgets = crate::runtime_budgets::RuntimeBudgets::from_config(Default::default());
     let request = |oid: &str| {
@@ -326,7 +327,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     };
     for hidden_oid in [&secret_blob_oid, &canonical_merge_oid] {
         let error = crate::git::upload::git_upload_pack_response(
-            engine.lease_derived(repo.clone()).unwrap(),
+            engine.lease_derived(reader.clone()).unwrap(),
             &request(hidden_oid),
             crate::git::upload::GitProtocol::V0,
             RuntimeBudgets::default_git_command_timeout(),
@@ -346,7 +347,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         deepen.len() + 4,
     );
     let error = crate::git::upload::git_upload_pack_response(
-        engine.lease_derived(repo.clone()).unwrap(),
+        engine.lease_derived(reader.clone()).unwrap(),
         shallow_request.as_bytes(),
         crate::git::upload::GitProtocol::V0,
         RuntimeBudgets::default_git_command_timeout(),
@@ -368,7 +369,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         .into_bytes()
     };
     let hidden_have_response = crate::git::upload::git_upload_pack_response(
-        engine.lease_derived(repo.clone()).unwrap(),
+        engine.lease_derived(reader.clone()).unwrap(),
         &have_request(&private_oid),
         crate::git::upload::GitProtocol::V0,
         RuntimeBudgets::default_git_command_timeout(),
@@ -382,7 +383,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         .unwrap();
     let unknown_have = have_request("0000000000000000000000000000000000000000");
     let response = crate::git::upload::git_upload_pack_response(
-        engine.lease_derived(repo.clone()).unwrap(),
+        engine.lease_derived(reader.clone()).unwrap(),
         &unknown_have,
         crate::git::upload::GitProtocol::V0,
         RuntimeBudgets::default_git_command_timeout(),
@@ -397,7 +398,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     assert!(body.windows(4).any(|bytes| bytes == b"PACK"));
     assert_eq!(hidden_have_body, body);
     let response = crate::git::upload::git_upload_pack_response(
-        engine.lease_derived(repo.clone()).unwrap(),
+        engine.lease_derived(reader.clone()).unwrap(),
         &request(&native_oid),
         crate::git::upload::GitProtocol::V0,
         RuntimeBudgets::default_git_command_timeout(),
@@ -441,7 +442,42 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         git_object_field(&extended_repo, "HEAD", "%H").unwrap(),
         scope_git::projection_head_oid(&extended).unwrap().unwrap()
     );
-    assert!(git_object_exists(&extended_repo, &private_oid));
+    assert!(!git_object_exists(&extended_repo, &private_oid));
+
+    for (claimed_parent_oids, rejection) in [
+        (
+            vec![base_oid.clone(), private_oid.clone()],
+            "reaches a parent outside public history",
+        ),
+        (vec![base_oid.clone()], "parents do not match"),
+    ] {
+        let mut side_parent = projection.clone();
+        side_parent.commits[1].projected_id.clone_from(&side_parent_oid);
+        side_parent.commits[1].materialization = ProjectionMaterialization::PreserveGitCommit {
+            oid: side_parent_oid.clone(),
+            parent_oids: claimed_parent_oids,
+            tree_oid: native_tree.clone(),
+        };
+        let error = projection_bare_repo_with_loader(
+            &cache,
+            &RepositoryIncarnation::new("repo", "repoi_side_parent").unwrap(),
+            &labels(&side_parent),
+            &side_parent,
+            Some(&source),
+            None,
+            |blob| Ok(blob.sha256.as_bytes().to_vec()),
+        )
+        .unwrap_err();
+        assert!(error.operator_diagnostic().contains(rejection));
+    }
+    for entry in fs::read_dir(&cache).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() && path != reader {
+            for hidden_oid in [&private_oid, &secret_blob_oid] {
+                assert!(!git_object_exists(&path, hidden_oid));
+            }
+        }
+    }
 
     let mut corrupted = projection;
     let ProjectionMaterialization::PreserveGitCommit { tree_oid, .. } =
@@ -464,6 +500,25 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     assert_eq!(error.public_message(), "Scope hit an internal error.");
 
     crate::git::storage::remove_dir_if_exists(&root).unwrap();
+}
+
+fn merge_commit(repo: &FsPath, tree: &str, parents: [&String; 2]) -> String {
+    let [first, second] = parents;
+    let oid = git_command_output(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(repo)
+            .args(["commit-tree", tree, "-p", first, "-p", second])
+            .env("GIT_AUTHOR_NAME", "Scope")
+            .env("GIT_AUTHOR_EMAIL", "scope@scope.local")
+            .env("GIT_COMMITTER_NAME", "Scope")
+            .env("GIT_COMMITTER_EMAIL", "scope@scope.local")
+            .env("GIT_AUTHOR_DATE", "2000-01-01T00:00:00Z")
+            .env("GIT_COMMITTER_DATE", "2000-01-01T00:00:00Z"),
+        Some(b"merge\n"),
+    )
+    .unwrap();
+    String::from_utf8(oid).unwrap().trim().to_string()
 }
 
 fn projected_change(path: &str, content: &str) -> ProjectedChange {
@@ -515,7 +570,7 @@ fn projection_cache_key_uses_labels_and_logical_history() {
 }
 
 #[test]
-fn git_backed_projection_borrows_blob_without_loading_it() {
+fn git_backed_projection_copies_only_its_own_blob_without_loading_it() {
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("source.git");
     let cache = root.path().join("cache");
@@ -537,6 +592,15 @@ fn git_backed_projection_borrows_blob_without_loading_it() {
     )
     .unwrap();
     assert_eq!(String::from_utf8(bytes).unwrap().trim(), blob.git_oid);
+    let hidden = git_command_output(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(&source)
+            .args(["hash-object", "-w", "--stdin"]),
+        Some(b"hidden"),
+    )
+    .unwrap();
+    let hidden = String::from_utf8(hidden).unwrap().trim().to_string();
     let projection = Projection {
         repo_id: "repo".into(),
         view_key: ViewId::public(),
@@ -558,7 +622,7 @@ fn git_backed_projection_borrows_blob_without_loading_it() {
         &projection,
         Some(&source),
         None,
-        |_| panic!("Git-backed blob must come from the alternate"),
+        |_| panic!("Git-backed blob must be copied from the source repository"),
     )
     .unwrap();
     let oid = &projection.commits[0].changes[0]
@@ -567,13 +631,7 @@ fn git_backed_projection_borrows_blob_without_loading_it() {
         .unwrap()
         .git_oid;
     assert!(git_object_exists(&repo, oid));
-    assert!(
-        !repo
-            .join("objects")
-            .join(&oid[..2])
-            .join(&oid[2..])
-            .exists()
-    );
+    assert!(!repo.join("objects/info/alternates").exists());
     assert_eq!(
         git_object_field(&repo, "HEAD", "%H").unwrap(),
         scope_git::projection_head_oid(&projection)
@@ -581,22 +639,7 @@ fn git_backed_projection_borrows_blob_without_loading_it() {
             .unwrap()
     );
 
-    let hidden = git_command_output(
-        Command::new("git")
-            .arg("--git-dir")
-            .arg(&source)
-            .args(["hash-object", "-w", "--stdin"]),
-        Some(b"hidden"),
-    )
-    .unwrap();
-    let hidden = String::from_utf8(hidden).unwrap().trim().to_string();
-    assert!(git_object_exists(&repo, &hidden));
-    let staging = root.path().join("staging.git");
-    crate::git::request_refs::clone_without_shared_objects(&repo, &staging, "cloning staging")
-        .unwrap();
-    assert!(!staging.join("objects/info/alternates").exists());
-    assert!(git_object_exists(&staging, oid));
-    assert!(!git_object_exists(&staging, &hidden));
+    assert!(!git_object_exists(&repo, &hidden));
 }
 
 fn projection_tree_path(path: &str) -> GitTreePath {
