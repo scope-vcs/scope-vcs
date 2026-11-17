@@ -3613,6 +3613,7 @@ name = "scope-domain"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "icu_normalizer",
  "pulldown-cmark",
  "serde",
  "serde_json",

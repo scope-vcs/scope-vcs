@@ -8,6 +8,7 @@ repository = "https://github.com/adamblumoff/scope-vcs"
 
 [dependencies]
 hex = "0.4.3"
+icu_normalizer = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
 pulldown-cmark = { version = "0.13.0", default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.147"

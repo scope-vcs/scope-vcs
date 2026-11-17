@@ -3,8 +3,10 @@ use super::{
     repo_control::{is_private_control_path, is_repo_control_pattern, is_repo_rules_path},
     views::{ViewId, Views},
 };
+use icu_normalizer::DecomposingNormalizerBorrowed;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::borrow::Cow;
 use thiserror::Error;
 
 pub const REPO_CONFIG_KIND: &str = "scope.repo-config";
@@ -120,19 +122,36 @@ impl RepoConfig {
             return self.views.full().clone();
         }
 
-        let mut selected = (0usize, self.files.default_view());
+        let mut strongest = None;
+        let mut view_by_spelling = Vec::<(&str, &ViewId)>::new();
         for (index, rule) in self.files.rules.iter().enumerate() {
             if skipped_rule == Some(index) {
                 continue;
             }
-            if pattern_matches_path(&rule.path, path.as_str()) {
-                let weight = pattern_weight(&rule.path);
-                if weight >= selected.0 {
-                    selected = (weight, rule.view.clone());
-                }
+            let precedence = pattern_precedence(&rule.path, path.as_str());
+            if precedence.is_none() || precedence < strongest {
+                continue;
+            }
+            if precedence > strongest {
+                strongest = precedence;
+                view_by_spelling.clear();
+            }
+            let spelling = pattern_base_path(&rule.path);
+            match view_by_spelling
+                .iter_mut()
+                .find(|(seen, _)| *seen == spelling)
+            {
+                Some((_, view)) => *view = &rule.view,
+                None => view_by_spelling.push((spelling, &rule.view)),
             }
         }
-        selected.1
+        match view_by_spelling.as_slice() {
+            [] => self.files.default_view(),
+            [(_, view), others @ ..] if others.iter().all(|(_, other)| other == view) => {
+                (*view).clone()
+            }
+            _ => self.views.full().clone(),
+        }
     }
 
     pub fn history_rewrites_added_since(
@@ -224,17 +243,59 @@ fn validate_config_pattern(pattern: &str) -> Result<(), RepoConfigError> {
 }
 
 pub(crate) fn pattern_matches_path(pattern: &str, path: &str) -> bool {
-    if let Some(base) = pattern.strip_suffix("/**") {
-        return path == base
-            || path
-                .strip_prefix(base)
-                .is_some_and(|tail| tail.starts_with('/'));
-    }
-    path == pattern
+    pattern_precedence(pattern, path).is_some()
 }
 
-pub(crate) fn pattern_weight(pattern: &str) -> usize {
-    pattern_base_path(pattern).len()
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct PatternPrecedence {
+    base_length: usize,
+    written_as_the_path: bool,
+}
+
+pub(crate) fn pattern_precedence(pattern: &str, path: &str) -> Option<PatternPrecedence> {
+    let covers = |base: &str, path: &str| {
+        if pattern.ends_with("/**") {
+            is_at_or_below(path, base)
+        } else {
+            path == base
+        }
+    };
+    let base = pattern_base_path(pattern);
+    let caseless_base = caseless_normalized(base);
+    covers(&caseless_base, &caseless_normalized(path)).then(|| PatternPrecedence {
+        base_length: caseless_base.len(),
+        written_as_the_path: covers(base, path),
+    })
+}
+
+pub(crate) fn is_differently_spelled_ancestor(ancestor: &str, pattern: &str) -> bool {
+    let (ancestor, base) = (pattern_base_path(ancestor), pattern_base_path(pattern));
+    is_at_or_below(&caseless_normalized(base), &caseless_normalized(ancestor))
+        && !is_at_or_below(base, ancestor)
+}
+
+fn is_at_or_below(path: &str, base: &str) -> bool {
+    path == base
+        || path
+            .strip_prefix(base)
+            .is_some_and(|tail| tail.starts_with('/'))
+}
+
+fn caseless_normalized(value: &str) -> Cow<'_, str> {
+    if value.is_ascii() {
+        return if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
+            Cow::Owned(value.to_ascii_lowercase())
+        } else {
+            Cow::Borrowed(value)
+        };
+    }
+    let decomposing = DecomposingNormalizerBorrowed::new_nfd();
+    let folded = decomposing
+        .normalize_iter(value.chars())
+        .flat_map(char::to_lowercase)
+        .flat_map(char::to_uppercase)
+        .flat_map(char::to_lowercase);
+    Cow::Owned(decomposing.normalize_iter(folded).collect())
 }
 
 pub(crate) fn pattern_base_path(pattern: &str) -> &str {
@@ -290,6 +351,66 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn rules_match_paths_regardless_of_case_and_normalization_form() {
+        let mut config = RepoConfig::with_default_view(ViewId::public());
+        config.files.rules = ["/secrets/**", "/Docs/Caf\u{e9}.md", "/STRASSE"]
+            .into_iter()
+            .map(|path| RepoConfigFileRule {
+                path: path.to_string(),
+                view: ViewId::private(),
+            })
+            .collect();
+        config.history.rewrites = vec![HistoryRewriteRequest {
+            path: "/Secrets/**".to_string(),
+            action: HistoryRewriteAction::RedactPublicHistory,
+        }];
+        config.validate().unwrap();
+
+        for (path, expected) in [
+            ("/Secrets/key.txt", ViewId::private()),
+            ("/SECRETS", ViewId::private()),
+            ("/secrets/Nested/KEY", ViewId::private()),
+            ("/docs/cafe\u{301}.md", ViewId::private()),
+            ("/DOCS/CAF\u{c9}.MD", ViewId::private()),
+            ("/stra\u{df}e", ViewId::private()),
+            ("/STRA\u{1e9e}E", ViewId::private()),
+            ("/secrets2/key.txt", ViewId::public()),
+            ("/docs/cafe.md", ViewId::public()),
+        ] {
+            assert_eq!(
+                config.label_for_path(&ScopePath::parse(path).unwrap()),
+                expected,
+                "{path}"
+            );
+        }
+        config.files.rules.insert(
+            0,
+            RepoConfigFileRule {
+                path: "/SECRETS/shared.txt".to_string(),
+                view: ViewId::public(),
+            },
+        );
+        config.files.rules.push(RepoConfigFileRule {
+            path: "/secrets/shared.txt".to_string(),
+            view: ViewId::private(),
+        });
+        for (path, expected) in [
+            ("/SECRETS/shared.txt", ViewId::public()),
+            ("/secrets/shared.txt", ViewId::private()),
+            ("/Secrets/Shared.txt", ViewId::private()),
+        ] {
+            assert_eq!(
+                config.label_for_path(&ScopePath::parse(path).unwrap()),
+                expected,
+                "{path}"
+            );
+        }
+        let rewrite = &config.history.rewrites[0];
+        assert!(rewrite.matches_path(&ScopePath::parse("/secrets/key.txt").unwrap()));
+        assert!(!rewrite.matches_path(&ScopePath::parse("/secrets2/key.txt").unwrap()));
     }
 
     #[test]

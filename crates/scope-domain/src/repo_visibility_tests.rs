@@ -234,3 +234,90 @@ fn skipped_rule_preserves_ties_duplicates_and_managed_paths() {
         }
     }
 }
+
+#[test]
+fn toggling_a_file_leaves_a_rule_written_in_another_case_in_force() {
+    let mut edited = config(
+        ViewId::public(),
+        vec![("/secrets/key.txt", ViewId::private())],
+    );
+    let label =
+        |config: &RepoConfig, path: &str| config.label_for_path(&ScopePath::parse(path).unwrap());
+    assert_eq!(label(&edited, "/Secrets/Key.txt"), ViewId::private());
+
+    assert!(toggle_visibility_target(&mut edited, file("/Secrets/Key.txt")).changed);
+
+    assert_eq!(label(&edited, "/Secrets/Key.txt"), ViewId::public());
+    assert_eq!(label(&edited, "/secrets/key.txt"), ViewId::private());
+}
+
+#[test]
+fn an_unrelated_edit_or_rule_order_never_changes_another_paths_label() {
+    let (public, private) = (ViewId::public(), ViewId::private());
+    let cases = [
+        (
+            private.clone(),
+            vec![
+                ("/secrets/**", public.clone()),
+                ("/SECRETS/**", private.clone()),
+            ],
+        ),
+        (
+            public.clone(),
+            vec![
+                ("/a/**", private.clone()),
+                ("/A/**", public.clone()),
+                ("/A/b/**", public.clone()),
+            ],
+        ),
+        (
+            public.clone(),
+            vec![
+                ("/docs/**", public),
+                ("/DOCS/**", private.clone()),
+                ("/docs/guide.md", private),
+            ],
+        ),
+    ];
+    let probes = [
+        "/secrets/key.txt",
+        "/SECRETS/key.txt",
+        "/Secrets/key.txt",
+        "/a/b/x",
+        "/A/b/x",
+        "/a/B/x",
+        "/A/B/x",
+        "/docs",
+        "/Docs",
+        "/docs/guide.md",
+        "/Docs/guide.md",
+    ];
+    let labels = |config: &RepoConfig| {
+        probes
+            .iter()
+            .map(|path| {
+                (
+                    *path,
+                    config.label_for_path(&ScopePath::parse(path).unwrap()),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    for (default, rules) in cases {
+        let original = config(default.clone(), rules.clone());
+        let reversed = config(default, rules.into_iter().rev().collect());
+        let expected = labels(&original);
+        assert_eq!(labels(&reversed), expected, "{:?}", original.files.rules);
+
+        for mut edited in [original, reversed] {
+            let unrelated = "/unrelated.txt";
+            let before = edited.label_for_path(&ScopePath::parse(unrelated).unwrap());
+            assert!(toggle_visibility_target(&mut edited, file(unrelated)).changed);
+            assert_ne!(
+                edited.label_for_path(&ScopePath::parse(unrelated).unwrap()),
+                before
+            );
+            assert_eq!(labels(&edited), expected, "{:?}", edited.files.rules);
+        }
+    }
+}
