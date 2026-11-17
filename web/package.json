@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && node scripts/build-review-diff-worker.mjs && node scripts/build-instrumentation.mjs && pnpm check:diff-worker-bundle && pnpm check:client-bundle && SCOPE_REQUIRE_BUILT_MANIFEST=1 node --test smoke/server-functions.spec.mjs",
-    "check": "pnpm typecheck && pnpm check:resource-boundary && pnpm check:lint && pnpm check:conventions && pnpm check:advisories",
+    "check": "pnpm typecheck && pnpm check:resource-boundary && pnpm check:lint && pnpm check:conventions",
     "check:api-contract": "node scripts/check-api-contract.mjs",
     "check:client-bundle": "node scripts/check-client-bundle.mjs",
     "check:diff-worker-bundle": "node scripts/check-review-diff-worker-bundle.mjs",
@@ -22,7 +22,6 @@
     "test:journey": "node --test \"journeys/**/*.spec.mjs\"",
     "typecheck": "tsc --noEmit",
     "check:lint": "node --test scripts/check-hooks.test.mjs && oxlint --type-aware -c .oxlintrc.json src",
-    "check:advisories": "pnpm audit --audit-level high",
     "check:conventions": "node --test scripts/conventions.test.mjs && node scripts/check-conventions.mjs",
     "generate:brand": "node scripts/generate-brand-assets.mjs",
     "check:brand": "node scripts/generate-brand-assets.mjs --check"

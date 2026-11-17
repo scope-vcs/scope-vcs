@@ -14,11 +14,12 @@ const checks = [{target: 'workspace', status: 1, output: [
   diagnostic('note', 'RUSTSEC-2026-0003', 'ignored'),
 ].join('\n')}, {target: 'cli', status: 1, output: diagnostic('error', 'RUSTSEC-2026-0004', 'cli-dependency')}];
 
-test('both checks run after an advisory failure or a process launch failure', () => {
+test('every lockfile is checked after an advisory failure or a process launch failure', () => {
   for (const failure of [{status: 1, stderr: 'advisory failure'}, {status: null, error: new Error('spawn failed')}]) {
     const run = mock.fn(() => failure);
-    assert.deepEqual(checkMainAdvisories(run).map(check => check.status), [failure.status, failure.status]);
-    assert.equal(run.mock.callCount(), 2);
+    assert.deepEqual(checkMainAdvisories(run).map(check => [check.target, check.status]),
+      ['workspace', 'cli', 'web'].map(target => [target, failure.status]));
+    assert.equal(run.mock.callCount(), 3);
   }
 });
 
@@ -33,6 +34,8 @@ test('the issue identifies denied advisories and affected crates in both lockfil
   assert.match(setup, /setup failure/);
   const failed = advisoryIssueBody({checks: [{target: 'cli', status: null, output: '', error: 'spawn failed'}], runUrl, sha});
   assert.match(failed, /No advisory IDs.*\n[\s\S]*spawn failed/);
+  const web = advisoryIssueBody({checks: [{target: 'web', status: 1, output: '1 vulnerabilities found\nSeverity: 1 high'}], runUrl, sha});
+  assert.match(web, /### web: failed\n[\s\S]*No advisory IDs[\s\S]*Severity: 1 high/);
 });
 
 test('the issue lists the image findings that failed the scan, or why the scan has none to list', () => {

@@ -2,10 +2,11 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-workspace="${1:?usage: dev/checks/advisories workspace|cli [cargo-deny options]}"
+lockfile="${1:?usage: dev/checks/advisories workspace|cli|web [options]}"
 shift
-case "$workspace" in
+case "$lockfile" in
   workspace) cargo deny --locked "$@" check advisories ;;
   cli) cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml "$@" check advisories ;;
+  web) cd web; pnpm audit --audit-level high "$@" ;;
   *) exit 2 ;;
 esac
