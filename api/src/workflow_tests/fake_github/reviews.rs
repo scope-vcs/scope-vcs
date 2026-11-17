@@ -43,13 +43,14 @@ impl FakeGitHub {
         comments: Vec<serde_json::Value>,
     ) {
         let mut reported = self.review_comments.lock().unwrap();
-        for comment in &comments {
-            reported.insert(comment["id"].as_u64().unwrap(), comment.clone());
+        for mut comment in comments {
+            comment["pull_request_review_id"] = review["id"].clone();
+            reported.insert(comment["id"].as_u64().unwrap(), comment);
         }
         self.pull_reviews
             .lock()
             .unwrap()
-            .insert(review["id"].as_u64().unwrap(), (review, comments));
+            .insert(review["id"].as_u64().unwrap(), review);
     }
 }
 
@@ -81,30 +82,23 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             get(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  AxumPath((_, _, _, id)): AxumPath<(String, String, u64, u64)>| async move {
-                    found(
-                        fake.pull_reviews
-                            .lock()
-                            .unwrap()
-                            .get(&id)
-                            .map(|(review, _)| review.clone()),
-                    )
+                    found(fake.pull_reviews.lock().unwrap().get(&id).cloned())
                 },
             ),
         )
         .route(
-            "/repos/{owner}/{repo}/pulls/{number}/reviews/{id}/comments",
-            get(
-                |AxumState(fake): AxumState<Arc<FakeGitHub>>,
-                 AxumPath((_, _, _, id)): AxumPath<(String, String, u64, u64)>| async move {
-                    found(
-                        fake.pull_reviews
-                            .lock()
-                            .unwrap()
-                            .get(&id)
-                            .map(|(_, comments)| serde_json::Value::from(comments.clone())),
-                    )
-                },
-            ),
+            "/repos/{owner}/{repo}/pulls/{number}/comments",
+            get(|AxumState(fake): AxumState<Arc<FakeGitHub>>| async move {
+                let mut comments = fake
+                    .review_comments
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                comments.sort_by_key(|comment| comment["id"].as_u64());
+                Json(comments)
+            }),
         )
         .route(
             "/repos/{owner}/{repo}/collaborators/{username}/permission",

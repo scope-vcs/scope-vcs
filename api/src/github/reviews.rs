@@ -50,6 +50,7 @@ struct Review {
 #[derive(Deserialize)]
 struct ReviewComment {
     id: u64,
+    pull_request_review_id: Option<u64>,
     in_reply_to_id: Option<u64>,
     user: Option<GitHubUser>,
     body: String,
@@ -233,14 +234,15 @@ impl GitHubApp {
         Ok(self
             .installation_pages::<Vec<ReviewComment>, _>(
                 installation_id,
-                &format!("/repos/{full_name}/pulls/{pull_number}/reviews/{review_id}/comments"),
-                "/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments",
+                &format!("/repos/{full_name}/pulls/{pull_number}/comments"),
+                "/repos/{owner}/{repo}/pulls/{pull_number}/comments",
                 |page| page,
             )
             .await?
             .map(|comments| {
                 comments
                     .into_iter()
+                    .filter(|comment| comment.pull_request_review_id == Some(review_id))
                     .map(GitHubPullReviewComment::from)
                     .collect()
             }))
