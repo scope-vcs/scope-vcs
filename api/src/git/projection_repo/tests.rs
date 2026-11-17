@@ -227,11 +227,8 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     );
     let canonical_merge_tree =
         write_projection_tree(&source, &source_index, &canonical_merge_files).unwrap();
-    let canonical_merge_oid = merge_commit(
-        &source,
-        &canonical_merge_tree,
-        [&private_oid, &native_oid],
-    );
+    let canonical_merge_oid =
+        merge_commit(&source, &canonical_merge_tree, [&private_oid, &native_oid]);
     let side_parent_oid = merge_commit(&source, &native_tree, [&base_oid, &private_oid]);
     git_command_output(
         Command::new("git")
@@ -311,10 +308,11 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     )
     .unwrap();
     git_command_output(
-        Command::new("git")
-            .arg("--git-dir")
-            .arg(&reader)
-            .args(["update-ref", "refs/heads/main", &native_oid]),
+        Command::new("git").arg("--git-dir").arg(&reader).args([
+            "update-ref",
+            "refs/heads/main",
+            &native_oid,
+        ]),
         None,
     )
     .unwrap();
@@ -452,7 +450,9 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         (vec![base_oid.clone()], "parents do not match"),
     ] {
         let mut side_parent = projection.clone();
-        side_parent.commits[1].projected_id.clone_from(&side_parent_oid);
+        side_parent.commits[1]
+            .projected_id
+            .clone_from(&side_parent_oid);
         side_parent.commits[1].materialization = ProjectionMaterialization::PreserveGitCommit {
             oid: side_parent_oid.clone(),
             parent_oids: claimed_parent_oids,
