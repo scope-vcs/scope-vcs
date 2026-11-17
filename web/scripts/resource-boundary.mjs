@@ -3,6 +3,8 @@ import { parse } from '@babel/parser'
 const isApiModule = (module) => /(?:^|\/)api\//.test(module)
 const isRouteModule = (module) => /(?:^|\/)routes\//.test(module)
 const isResourceModule = (module) => /(?:^|\/)[^/]*(?:resource|cache)$/.test(module)
+const isCacheFactoryModule = (module) => /(?:^|\/)cached-resource$/.test(module)
+const CACHE_FACTORY = 'createCachedResource'
 const LOADER = /^load[A-Z]/
 const RESOURCE_WRITE = /^(write|seed|writeIfUnchanged)$/
 const REPO_FEATURE = /^src\/features\/(history|repo-detail|repo-search|requests|runs)\//
@@ -37,8 +39,38 @@ function memberName(node) {
   return !node.computed && node.property.type === 'Identifier' ? node.property.name : null
 }
 
-export function resourceBoundaryViolations(filename, source) {
+function exportedName(specifier) {
+  return specifier.exported.name ?? specifier.exported.value
+}
+
+function reachesCacheFactory(node) {
+  if (node.type === 'ImportDeclaration' && node.importKind !== 'type') {
+    const fromFactory = isCacheFactoryModule(node.source.value)
+    return node.specifiers.some((binding) => binding.importKind !== 'type' && (
+      binding.type === 'ImportSpecifier'
+        ? (binding.imported.name ?? binding.imported.value) === CACHE_FACTORY
+        : fromFactory
+    ))
+  }
+  if (!node.source || node.exportKind === 'type' || !isCacheFactoryModule(node.source.value)) return false
+  if (node.type === 'ExportAllDeclaration') return true
+  return node.type === 'ExportNamedDeclaration' && node.specifiers.some((specifier) =>
+    specifier.exportKind !== 'type' && (specifier.type !== 'ExportSpecifier' || specifier.local.name === CACHE_FACTORY || exportedName(specifier) === CACHE_FACTORY))
+}
+
+function loadsCacheFactory(node) {
+  if (node.type !== 'CallExpression' && node.type !== 'ImportExpression') return false
+  const dynamic = node.type === 'ImportExpression' || node.callee.type === 'Import'
+    || (node.callee.type === 'Identifier' && node.callee.name === 'require')
+  const module = node.type === 'ImportExpression' ? node.source : node.arguments[0]
+  return dynamic && module?.type === 'StringLiteral' && isCacheFactoryModule(module.value)
+}
+
+export function resourceBoundaryViolations(path, source) {
+  const filename = path.replaceAll('\\', '/')
   const file = parse(source, { sourceType: 'unambiguous', plugins: ['typescript', 'jsx'] })
+  const declaresRepoResources = REPO_FEATURE.test(filename) && filename !== REPO_RESOURCE_OWNER
+  const bypass = (node) => `${filename}:${node.loc.start.line}: repository resource bypasses createRepoResource; declare what invalidates it`
   const effectNames = new Set()
   const readNames = new Set(['fetch'])
   const readNamespaces = new Map()
@@ -47,6 +79,7 @@ export function resourceBoundaryViolations(filename, source) {
   const violations = []
 
   for (const node of file.program.body) {
+    if (declaresRepoResources && reachesCacheFactory(node)) violations.push(bypass(node))
     if (node.type !== 'ImportDeclaration' || node.importKind === 'type') continue
     const module = node.source.value
     const api = isApiModule(module)
@@ -63,9 +96,6 @@ export function resourceBoundaryViolations(filename, source) {
       }
       if (binding.type === 'ImportSpecifier') {
         const imported = binding.imported.name ?? binding.imported.value
-        if (imported === 'createCachedResource' && REPO_FEATURE.test(filename) && filename !== REPO_RESOURCE_OWNER) {
-          violations.push(`${filename}:${node.loc.start.line}: repository resource bypasses createRepoResource; declare what invalidates it`)
-        }
         if (resourceOwner) routeResourceOwners.set(binding.local.name, { module, namespace: false })
         if (module === 'react' && /^(useEffect|useLayoutEffect)$/.test(imported)) effectNames.add(binding.local.name)
         if (api || (route && LOADER.test(imported))) readNames.add(binding.local.name)
@@ -107,6 +137,7 @@ export function resourceBoundaryViolations(filename, source) {
   }
 
   walk(file.program, (node) => {
+    if (declaresRepoResources && loadsCacheFactory(node)) violations.push(bypass(node))
     if (node.type !== 'CallExpression') return
     const member = memberName(node.callee)
     if (filename.startsWith('src/routes/') && RESOURCE_WRITE.test(member ?? '')) {
