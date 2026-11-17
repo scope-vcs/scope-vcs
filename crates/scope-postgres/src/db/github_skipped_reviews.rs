@@ -142,7 +142,12 @@ pub(super) async fn queue_reviews_of_listed_bots<C: ConnectionTrait>(
             AND request.closed_at_unix IS NULL
             AND request.merged_at_unix IS NULL
           WHERE skipped.repo_id = $1
-         ON CONFLICT (request_id, subject, github_subject_id) DO NOTHING",
+         ON CONFLICT (request_id, subject, github_subject_id) DO UPDATE
+            SET github_link_id = EXCLUDED.github_link_id,
+                claim_token = NULL,
+                attempts = 0,
+                next_attempt_at_unix = 0,
+                last_error = NULL",
         [repo_id.into()],
     ))
     .await?;

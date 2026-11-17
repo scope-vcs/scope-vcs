@@ -6,7 +6,7 @@ use scope_domain::{
     github_account::{GitHubAccount, GitHubAccountType},
     github_review_bots::GitHubReviewBotInput,
 };
-use scope_postgres::db::SkipGitHubReview;
+use scope_postgres::db::{GitHubReviewImportFinish, SkipGitHubReview};
 
 const BOT_ID: u64 = 136622811;
 const REVIEW_ID: u64 = 101;
@@ -530,28 +530,37 @@ async fn a_writer_reply_brings_in_the_unlisted_comment_it_answers() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_review_skipped_after_its_bot_was_listed_still_imports() {
     let owner = owner_request("review-import-late-skip", &[]).await;
-    list_review_bots(&owner, &["greptile-apps[bot]"]).await;
     let head = owner.head();
     owner.fake.report_pull_review(
         review(REVIEW_ID, bot(), &head),
         vec![line_comment(801, &head, "request.txt", None, 1)],
     );
-    owner
-        .state
-        .metadata
-        .requests()
+    deliver_review(&owner, GITHUB_REPOSITORY_ID).await;
+    let requests = owner.state.metadata.requests();
+    let job = requests
+        .claim_due_github_review_imports(unix_now(), unix_now() + 300, 10)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    list_review_bots(&owner, &["greptile-apps[bot]"]).await;
+    requests
         .skip_github_review(
             &SkipGitHubReview {
-                request_id: owner.request_id.clone(),
+                request_id: job.request_id.clone(),
                 review_id: REVIEW_ID,
-                repo_id: TEST_REPO_ID.to_string(),
-                github_repository_id: GITHUB_REPOSITORY_ID,
-                pull_number: 1,
+                repo_id: job.repo_id.clone(),
+                github_repository_id: job.github_repository_id,
+                pull_number: job.pull_number,
             },
             &GitHubAccount::new(BOT_ID, "greptile-apps[bot]", GitHubAccountType::Bot, None)
                 .unwrap(),
             unix_now(),
         )
+        .await
+        .unwrap();
+    requests
+        .finish_github_review_import(&job, GitHubReviewImportFinish::Done)
         .await
         .unwrap();
 
