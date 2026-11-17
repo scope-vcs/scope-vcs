@@ -42,3 +42,28 @@ test('accepted summaries and reconnects reconcile the retained request queue wit
   assert.deepEqual(await page.evaluate(() => ({ reads: window.fixture.server.summaryReads, connections: window.fixture.server.connections })), settled)
   assert.deepEqual(errors, [])
 })
+
+test('a failed summary refresh retries after two seconds until the layout unmounts', async t => {
+  const { base, errors, page } = await openFixture(t, 'repo-refresh', { aliases: [fixtureClerk], timeout: 5_000 })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  await page.goto(base, { timeout: 30_000 })
+  await page.locator('[data-count]').filter({ hasText: '0' }).waitFor()
+  await page.clock.pauseAt(new Date('2026-11-17T12:00:05Z'))
+  const summaryReads = () => page.evaluate(() => window.fixture.server.summaryReads)
+
+  const beforeFailure = await summaryReads()
+  await page.evaluate(() => { window.fixture.server.summaryFailures = 1; window.fixture.submit(['recovered']); window.fixture.refresh() })
+  await page.waitForFunction((reads) => window.fixture.server.summaryReads === reads + 1, beforeFailure)
+  await page.clock.runFor(1_999)
+  assert.equal(await summaryReads(), beforeFailure + 1)
+  await page.clock.runFor(1)
+  await page.locator('[data-count]').filter({ hasText: '1' }).waitFor()
+  assert.equal(await summaryReads(), beforeFailure + 2)
+
+  await page.evaluate(() => { window.fixture.server.summaryFailures = 1; window.fixture.refresh() })
+  await page.waitForFunction((reads) => window.fixture.server.summaryReads === reads + 3, beforeFailure)
+  await page.evaluate(() => window.fixture.unmount())
+  await page.clock.runFor(10_000)
+  assert.equal(await summaryReads(), beforeFailure + 3)
+  assert.deepEqual(errors, [])
+})

@@ -16,10 +16,17 @@ const repo = {
   access: { actor: 'Owner', view: 'private', can_push: true,
     can_change_file_visibility: true, can_manage_members: true, can_delete_repo: true },
 } satisfies RepoLiveState['repo']
-const server = { ids: [] as string[], summaryReads: 0, queueReads: 0, connections: 0, streams: new Set<ReadableStreamDefaultController<Uint8Array>>() }
+const server = { ids: [] as string[], summaryFailures: 0, summaryReads: 0, queueReads: 0, connections: 0, streams: new Set<ReadableStreamDefaultController<Uint8Array>>() }
 const live = (): RepoLiveState => ({ repo: { ...repo, open_request_count: server.ids.length }, api_url: '', event_stream_url: '/events', clerk_token_template: 'scope' })
 const summaryIdentity = 'owner/repo'
-const summary = async () => { server.summaryReads++; return live() }
+const summary = async () => {
+  server.summaryReads++
+  if (server.summaryFailures > 0) {
+    server.summaryFailures--
+    throw new TypeError('fetch failed')
+  }
+  return live()
+}
 const refresh = () => repoSummaryResource.invalidate(summaryIdentity)
 const ignoreRejection = () => {}
 const originalFetch = window.fetch
@@ -47,6 +54,7 @@ function App({ initial }: { initial: RepoLiveState }) {
   Object.assign(window, { fixture: {
     server, refresh,
     navigate: () => setVisible(value => !value),
+    unmount: () => root.unmount(),
     submit: (ids: string[]) => { server.ids = ids },
     advanceVersion: () => { repo.change_version++ },
     interrupt: () => { for (const stream of server.streams) stream.close(); server.streams.clear() },
@@ -54,4 +62,5 @@ function App({ initial }: { initial: RepoLiveState }) {
   } })
   return <main><h1>Requests <span data-count>{current.repo.open_request_count}</span></h1><button onClick={() => setVisible(value => !value)}>Navigate</button>{visible && <Queue current={current} />}</main>
 }
-summary().then(initial => createRoot(document.getElementById('root')!).render(<App initial={initial} />))
+const root = createRoot(document.getElementById('root')!)
+void summary().then(initial => root.render(<App initial={initial} />))

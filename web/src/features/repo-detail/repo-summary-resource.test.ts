@@ -106,6 +106,20 @@ test('a summary refresh owns request-list reconciliation, and events that leave 
   }
 })
 
+test('a resync during a read that has no retained summary yet reads the summary again', async () => {
+  const scope = repoResourceScope(summary(5).repo, 'viewer')
+  let resolve: (value: RepoLiveState) => void = () => {}
+  const read = repoSummaryResource.ensure('owner/repo', '', () => new Promise((settle) => { resolve = settle }))
+  await Promise.resolve()
+  invalidateRepoResources(scope, topicsOf(event(6, 'Connected'), { versioned: true }))
+  resolve(summary(5))
+  await read
+  const followUp = mock.fn(async () => summary(6))
+  await repoSummaryResource.ensure('owner/repo', '', followUp)
+  assert.equal(followUp.mock.callCount(), 1)
+  assert.equal(repoSummaryResource.peek('owner/repo')?.repo.change_version, 6)
+})
+
 test('another repository or a resync that skips the summary leaves it retained and fresh', () => {
   const retained = retain(summary(5))
   const elsewhere = repoResourceScope({ ...summary(5).repo, id: 'owner/other' }, 'viewer')

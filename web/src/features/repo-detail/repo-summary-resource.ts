@@ -11,7 +11,10 @@ class RepoSummaryUnavailable extends Error {}
 export const repoSummaryResource = createRepoResource<RepoLiveState>({
   invalidatedBy: ['summary'],
   supersedes: ['requestList'],
-  keyIn: (scope, { snapshot }) => snapshot.value?.repo.id === repoResourceScopeRepoId(scope) ? [] : null,
+  keyIn: (scope, { snapshot }) => {
+    if (snapshot.value === null) return snapshot.pending ? [] : null
+    return snapshot.value.repo.id === repoResourceScopeRepoId(scope) ? [] : null
+  },
   affectedBy: ({ version }, _key, { snapshot }) => version === undefined
     || snapshot.value === null
     || snapshot.value.repo.access.actor === 'Public'
