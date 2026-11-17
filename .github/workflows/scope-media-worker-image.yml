@@ -6,6 +6,9 @@ on:
       publish:
         type: boolean
         default: false
+      scan:
+        type: boolean
+        default: false
       source_sha:
         type: string
         required: true
@@ -68,7 +71,16 @@ jobs:
           load: ${{ !inputs.publish }}
           tags: ghcr.io/scope-vcs/scope-media-worker:${{ inputs.source_sha }}
 
+      - name: Check vendored codec pin
+        shell: bash
+        run: |
+          vendor_version="$(jq -er '.components[0].version' media-worker/codec-vendor.cdx.json)"
+          vendor_sha256="$(jq -er '.components[0].hashes[0].content' media-worker/codec-vendor.cdx.json)"
+          grep --fixed-strings --line-regexp --quiet "ARG LIBHEIF_VERSION=${vendor_version}" media-worker/Dockerfile
+          grep --fixed-strings --line-regexp --quiet "ARG LIBHEIF_SHA256=${vendor_sha256}" media-worker/Dockerfile
+
       - name: Scan image and record codec SBOM
+        if: ${{ inputs.scan }}
         shell: bash
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -76,9 +88,6 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           vendor_version="$(jq -er '.components[0].version' media-worker/codec-vendor.cdx.json)"
-          vendor_sha256="$(jq -er '.components[0].hashes[0].content' media-worker/codec-vendor.cdx.json)"
-          grep --fixed-strings --line-regexp --quiet "ARG LIBHEIF_VERSION=${vendor_version}" media-worker/Dockerfile
-          grep --fixed-strings --line-regexp --quiet "ARG LIBHEIF_SHA256=${vendor_sha256}" media-worker/Dockerfile
           source=docker
           image="ghcr.io/scope-vcs/scope-media-worker:${SOURCE_SHA}"
           if [[ "$PUBLISH" == 1 ]]; then
@@ -104,7 +113,7 @@ jobs:
             media-worker-sbom-complete.cdx.json media-worker-vendor-advisories.json
 
       - name: Retain media scan and SBOM
-        if: always()
+        if: ${{ always() && inputs.scan }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: media-worker-image-scan

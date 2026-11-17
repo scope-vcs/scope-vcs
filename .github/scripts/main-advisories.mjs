@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { actionableFindings } from './scan-report.mjs';
 
 export function checkMainAdvisories(run = spawnSync) {
   return ['workspace', 'cli'].map(target => {
@@ -12,11 +13,23 @@ export function checkMainAdvisories(run = spawnSync) {
   });
 }
 
+export function imageScanCheck(report) {
+  const check = { target: 'media worker image', status: 1, output: '', findings: [],
+    error: 'The scan listed no fixable HIGH or CRITICAL finding. See the run for the step that failed.' };
+  try {
+    check.findings = actionableFindings(report).map(finding =>
+      `- ${finding.VulnerabilityID}: \`${finding.PkgName} ${finding.InstalledVersion}\`, fixed in ${finding.FixedVersion}`);
+  } catch (error) {
+    check.error = error.message;
+  }
+  return check;
+}
+
 export function advisoryIssueBody({ checks, runUrl, sha }) {
   const lines = [`The daily dependency advisory check failed on main at \`${sha}\`.`, '', `[Workflow run](${runUrl})`, ''];
   for (const check of checks) {
     lines.push(`### ${check.target}: ${check.status === 0 ? 'passed' : 'failed'}`, '');
-    const findings = new Set();
+    const findings = new Set(check.findings);
     for (const line of check.output.split('\n')) {
       let diagnostic;
       try { diagnostic = JSON.parse(line); } catch { continue; }
