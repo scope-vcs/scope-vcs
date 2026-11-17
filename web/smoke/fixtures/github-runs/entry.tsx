@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider, useParams } from '@tanstack/react-router'
 import { RepoShell } from '@/components/repo-shell'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
-import { invalidateRepoResources } from '@/features/repo-detail/repo-resource-invalidation'
+import { invalidateRepoResources, topicsOf } from '@/features/repo-detail/repo-resource'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { GitHubWorkflowRunsPage } from '@/features/runs/github-workflow-runs'
 import { GitHubWorkflowRunDetailPage } from '@/features/runs/github-workflow-run-detail'
@@ -61,9 +61,9 @@ Object.assign(window, {
   setNextRuns: (runs: GitHubWorkflowRunListResponse) => { nextRuns = runs },
   clearLoads: () => { loads.length = 0 },
   finishLoad: () => resolvers.shift()?.(),
-  emitRunsChanged: () => invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), {
+  emitRunsChanged: () => invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), topicsOf({
     repo_id: 'octo/demo', incarnation_id: 'incarnation', version: 0, kind: 'GitHubWorkflowRunsChanged',
-  }),
+  })),
 })
 const subscribe = () => () => {}
 
@@ -171,9 +171,9 @@ Object.assign(window, {
         : listed),
     }
   },
-  emitRunChanged: (githubRunId: number) => invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), {
+  emitRunChanged: (githubRunId: number) => invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), topicsOf({
     repo_id: 'octo/demo', incarnation_id: 'incarnation', version: 0, kind: { GitHubWorkflowRunChanged: { github_run_id: githubRunId } },
-  }),
+  })),
 })
 
 async function loadRunDetail(runId: string) {

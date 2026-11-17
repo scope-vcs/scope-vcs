@@ -1,4 +1,4 @@
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource } from '../repo-detail/repo-resource'
 import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import type { LoadRepliesInput, RequestDiscussionRepliesPage } from './request-discussion-api'
 import {
@@ -18,7 +18,8 @@ type RepliesSession = DiscussionRepliesState & {
   update: (transform: (current: RepliesSession) => DiscussionRepliesState & Partial<Pick<RepliesSession, 'target'>>) => void
 }
 
-export const requestDiscussionRepliesResource = createCachedResource<RepliesSession>({
+export const requestDiscussionRepliesResource = createRepoResource<RepliesSession>({
+  invalidatedBy: [],
   maxEntries: 500,
   maxWeight: 4 * 1024 * 1024,
   weightOf: ({ replies }) => JSON.stringify(replies).length * 2,

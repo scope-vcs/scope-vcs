@@ -18,6 +18,13 @@ test('handles local recursive helpers without hanging', () => {
   assert.deepEqual(check(`import {useEffect} from 'react'; function View(){ const tick=()=>tick(); useEffect(tick, []) }`), [])
 })
 
+test('repository features create resources only through the owner that requires invalidation topics', () => {
+  const source = `import { createCachedResource } from '../../lib/cached-resource'`
+  assert.equal(resourceBoundaryViolations('src/features/runs/example-resource.ts', source).length, 1)
+  assert.deepEqual(resourceBoundaryViolations('src/features/repo-detail/repo-resource.ts', source), [])
+  assert.deepEqual(resourceBoundaryViolations('src/features/account/example-resource.ts', source), [])
+})
+
 const checkRoute = (source) => resourceBoundaryViolations('src/routes/example.tsx', source)
 test('blocks any api import called inside a route effect, whatever it is named', () => {
   for (const source of [

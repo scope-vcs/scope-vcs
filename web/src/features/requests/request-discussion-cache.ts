@@ -1,4 +1,4 @@
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource } from '../repo-detail/repo-resource'
 import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import { collectionFromPage, mergeRefreshedDiscussionPage, orderedDiscussions, type DiscussionCollection } from './request-discussion-model'
 import { createRequestDiscussionSync } from './request-discussion-sync'
@@ -22,7 +22,8 @@ const DISCUSSION_PAGE_MAX = 100
 
 type LoadProjectionPage = (input: { cursor?: string; limit: number }) => Promise<RequestDiscussionPage>
 
-export const requestDiscussionResource = createCachedResource<DiscussionSession>({
+export const requestDiscussionResource = createRepoResource<DiscussionSession>({
+  invalidatedBy: [],
   maxEntries: 8,
   maxWeight: 8 * 500,
   weightOf: ({ collection }) => collection.order.length,

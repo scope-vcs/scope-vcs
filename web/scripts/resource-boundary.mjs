@@ -5,6 +5,8 @@ const isRouteModule = (module) => /(?:^|\/)routes\//.test(module)
 const isResourceModule = (module) => /(?:^|\/)[^/]*(?:resource|cache)$/.test(module)
 const LOADER = /^load[A-Z]/
 const RESOURCE_WRITE = /^(write|seed|writeIfUnchanged)$/
+const REPO_FEATURE = /^src\/features\/(history|repo-detail|repo-search|requests|runs)\//
+const REPO_RESOURCE_OWNER = 'src/features/repo-detail/repo-resource.ts'
 
 export function walk(node, visit) {
   if (!node || typeof node !== 'object') return
@@ -42,6 +44,7 @@ export function resourceBoundaryViolations(filename, source) {
   const readNamespaces = new Map()
   const routeResourceOwners = new Map()
   const functions = new Map()
+  const violations = []
 
   for (const node of file.program.body) {
     if (node.type !== 'ImportDeclaration' || node.importKind === 'type') continue
@@ -60,6 +63,9 @@ export function resourceBoundaryViolations(filename, source) {
       }
       if (binding.type === 'ImportSpecifier') {
         const imported = binding.imported.name ?? binding.imported.value
+        if (imported === 'createCachedResource' && REPO_FEATURE.test(filename) && filename !== REPO_RESOURCE_OWNER) {
+          violations.push(`${filename}:${node.loc.start.line}: repository resource bypasses createRepoResource; declare what invalidates it`)
+        }
         if (resourceOwner) routeResourceOwners.set(binding.local.name, { module, namespace: false })
         if (module === 'react' && /^(useEffect|useLayoutEffect)$/.test(imported)) effectNames.add(binding.local.name)
         if (api || (route && LOADER.test(imported))) readNames.add(binding.local.name)
@@ -100,7 +106,6 @@ export function resourceBoundaryViolations(filename, source) {
     return found
   }
 
-  const violations = []
   walk(file.program, (node) => {
     if (node.type !== 'CallExpression') return
     const member = memberName(node.callee)

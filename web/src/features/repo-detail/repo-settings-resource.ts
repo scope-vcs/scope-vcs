@@ -1,5 +1,5 @@
 import type { GitHubConnectionResponse, RepositoryCollaborationResponse } from '../../api/types.generated'
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource } from './repo-resource'
 import { onViewerChange } from '../../lib/viewer-state'
 import { applyCollaborationResult, type CollaborationResult } from './repo-collaboration-results'
 
@@ -8,7 +8,8 @@ export type RepoSettingsData = {
   github: GitHubConnectionResponse | null
 }
 
-export const repoSettingsResource = createCachedResource<RepoSettingsData>({
+export const repoSettingsResource = createRepoResource<RepoSettingsData>({
+  invalidatedBy: ['repository'],
   maxEntries: 24,
   maxWeight: 4 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,

@@ -6,6 +6,7 @@ import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
 import { useCallback, useMemo } from 'react'
 import { appendHistoryPage } from '../history/history-pagination'
 import { historyFeedResource } from '../history/history-resource-cache'
+import { repoResourceKey } from '../repo-detail/repo-resource'
 import { REQUEST_QUEUE_SECTION_ORDER } from '../requests/request-list-model'
 import {
   loadMoreRequestQueue,
@@ -38,7 +39,7 @@ export function useRepositorySearchResults({
     [search],
   )
   const queueIdentity = scope
-    ? search ? JSON.stringify([scope, view, search]) : requestQueueIdentity(scope, view)
+    ? requestQueueIdentity(scope, view, search)
     : null
   const loadQueuePage = useCallback<LoadRequestQueuePage>(
     (section, cursor, signal) => loadRequestQueuePage({
@@ -49,7 +50,7 @@ export function useRepositorySearchResults({
   )
   const queue = useRequestQueue(queueIdentity, String(repo.change_version), loadQueuePage, enabled)
 
-  const historyIdentity = scope ? [scope, view, feed, ...search ? [search] : []].join('\0') : null
+  const historyIdentity = scope ? repoResourceKey(scope, view, feed, ...search ? [search] : []) : null
   const loadHistory = useCallback(
     (before: string | null, signal?: AbortSignal) => loadHistoryPage({
       data: { before, feed, owner, repo: repoName, search, view },

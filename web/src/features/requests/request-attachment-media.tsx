@@ -8,6 +8,7 @@ import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resour
 import * as Dialog from '@radix-ui/react-dialog'
 import { CircleAlert, Download, Expand, LoaderCircle, RotateCcw, X } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { repoResourceKey } from '../repo-detail/repo-resource'
 import { useRequestAttachments } from './request-attachment-context'
 import {
   initialMediaRecovery,
@@ -44,7 +45,7 @@ export function RequestAttachmentMedia({
   if (attachment.state !== 'Ready') {
     return <AttachmentNotReady attachment={attachment} />
   }
-  const mediaKey = `${environment.accessScope}\0${attachment.id}`
+  const mediaKey = repoResourceKey(environment.accessScope, attachment.id)
   return attachment.kind === 'Photo'
     ? <PhotoAttachment attachment={attachment} key={mediaKey} label={label} />
     : <VideoAttachment attachment={attachment} key={mediaKey} label={label} />
@@ -307,7 +308,7 @@ function useAttachmentMediaGrant(
   const environment = useRequestAttachments()
   const targetKey = JSON.stringify({ kind: 'derivative', derivative_id: derivativeId })
   const identity = derivativeId
-    ? `${environment.accessScope}\0${attachmentId}\0${targetKey}`
+    ? repoResourceKey(environment.accessScope, attachmentId, targetKey)
     : null
   const load = useCallback(
     () => {

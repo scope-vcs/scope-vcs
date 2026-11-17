@@ -10,6 +10,7 @@ import { ErrorResponseValidator, RepoChangeEventValidator } from '../../api/vali
 
 const INITIAL_RECONNECT_DELAY_MS = 2_000
 const MAX_RECONNECT_DELAY_MS = 30_000
+const SILENT_STREAM_LIMIT_MS = 45_000
 
 type RepoStreamParseOutcome =
   | { type: 'event'; event: RepoChangeEvent }
@@ -170,8 +171,8 @@ async function readRepoStream(
   const decoder = new TextDecoder()
   let buffer = ''
   while (!signal.aborted) {
-    const chunk = await reader.read()
-    if (chunk.done) return { type: 'transport' }
+    const chunk = await readBeforeSilenceLimit(reader)
+    if (!chunk || chunk.done) return { type: 'transport' }
     buffer += decoder.decode(chunk.value, { stream: true })
     buffer = normalizeSseLineEndings(buffer)
     const taken = takeSseMessages(buffer)
@@ -183,6 +184,14 @@ async function readRepoStream(
     }
   }
   return { type: 'transport' }
+}
+
+function readBeforeSilenceLimit(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const silent = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => resolve(null), SILENT_STREAM_LIMIT_MS)
+  })
+  return Promise.race([reader.read(), silent]).finally(() => clearTimeout(timeout))
 }
 
 export function parseRepoStreamMessage(message: string): RepoStreamParseOutcome {

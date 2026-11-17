@@ -1,6 +1,7 @@
 import type { RepoParams } from '@/api/types'
 import type { HistoryFeed, ViewId } from '@/api/types.generated'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
+import { repoResourceKey } from '../repo-detail/repo-resource'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { loadHistoryPage } from '@/routes/-repo-history-actions'
@@ -22,7 +23,7 @@ export function useHistoryFeed({
   const { isLoaded, userId } = useAuth()
   const { repo } = useRepoLayout()
   const identity = isLoaded
-    ? [repoResourceScope(repo, userId ?? null), view, feed].join('\0')
+    ? repoResourceKey(repoResourceScope(repo, userId ?? null), view, feed)
     : null
   const version = String(repo.content_version)
   const { owner, repo: repoName } = params

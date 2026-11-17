@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
 import type { RepoChangeEvent, RequestStateResponse } from '@/api/types.generated'
-import { invalidateRepoResources } from '../repo-detail/repo-resource-invalidation'
+import { invalidateRepoResources, topicsOf } from '../repo-detail/repo-resource'
 import { resetViewerState } from '../../lib/viewer-state'
 import { deferred } from './request-discussion-test-fixtures'
 import { loadMoreRequestChildren, loadRequestStateValue, reconcileRequestState, requestStateIdentity, requestStateResource } from './request-state-resource'
@@ -31,7 +31,7 @@ for (const kind of [
     const other = requestStateIdentity('viewer-access', 'other')
     requestStateResource.write(identity, { state: state() })
     requestStateResource.write(other, { state: state() })
-    invalidateRepoResources('viewer-access', event(kind))
+    invalidateRepoResources('viewer-access', topicsOf(event(kind)))
     assert.equal(requestStateResource.getSnapshot(identity).stale, true)
     assert.equal(requestStateResource.peek(identity)?.state?.auto_merge.can_cancel, true)
     assert.equal(requestStateResource.getSnapshot(other).stale, false)
@@ -40,7 +40,7 @@ for (const kind of [
 
 test('a workflow run association arriving after check results refreshes embedded check links', () => {
   requestStateResource.write(identity, { state: state() })
-  invalidateRepoResources('viewer-access', event('GitHubWorkflowRunsChanged'))
+  invalidateRepoResources('viewer-access', topicsOf(event('GitHubWorkflowRunsChanged')))
   assert.equal(requestStateResource.getSnapshot(identity).stale, true)
   assert.equal(requestStateResource.peek(identity)?.state?.checks.checks[0]?.name, 'checks')
 })
@@ -50,7 +50,7 @@ test('a mutation receipt cannot mix requests or heads or replace an event-trigge
   const receipt = requestStateResource.getSnapshot(identity)
   assert.equal(reconcileRequestState(identity, receipt, (current) => ({ ...current, auto_merge: { ...current.auto_merge, head_oid: 'other' } })), false)
   assert.equal(reconcileRequestState(identity, receipt, (current) => ({ ...current, auto_merge: { ...current.auto_merge, request_id: 'other' } })), false)
-  invalidateRepoResources('viewer-access', event({ RequestStateChanged: { request_id: 'request', view: 'public' } }))
+  invalidateRepoResources('viewer-access', topicsOf(event({ RequestStateChanged: { request_id: 'request', view: 'public' } })))
   await loadRequestStateValue(identity, async () => ({ state: state('new-head') }))
   assert.equal(reconcileRequestState(identity, receipt, (current) => ({ ...current, auto_merge: { ...current.auto_merge, can_cancel: false } })), false)
   assert.equal(requestStateResource.peek(identity)?.state?.detail.request.head_oid, 'new-head')
@@ -90,7 +90,7 @@ test('related stack events refresh retained navigation without crossing viewer a
   requestStateResource.write(otherAccess, { state: related })
   for (const requestId of ['parent', 'child']) {
     requestStateResource.write(identity, { state: related })
-    invalidateRepoResources('viewer-access', event({ RequestStateChanged: { request_id: requestId, view: 'public' } }))
+    invalidateRepoResources('viewer-access', topicsOf(event({ RequestStateChanged: { request_id: requestId, view: 'public' } })))
     assert.equal(requestStateResource.getSnapshot(identity).stale, true)
     assert.equal(requestStateResource.peek(identity)?.state?.detail.stack_navigation.ancestors[0]?.title, 'parent')
     assert.equal(requestStateResource.getSnapshot(unrelated).stale, false)

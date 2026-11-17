@@ -9,7 +9,7 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useCallback, useEffect, useRef } from 'react'
 import { runRepoEventStream, streamRepoEvents } from './repo-event-stream'
 import { repoResourceScope } from './repo-resource-scope'
-import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-resource-invalidation'
+import { invalidateRepoResources, resyncTopics, topicsOf } from './repo-resource'
 
 type RepoRefreshRequest = { force: boolean; version: number | null }
 type RepoChangeListener = (event: RepoChangeEvent) => void
@@ -44,7 +44,7 @@ export function useRepoLiveRefresh(
   }, [])
 
   useEffect(() => () => {
-    if (scope) invalidateRepoResources(scope)
+    if (scope) invalidateRepoResources(scope, resyncTopics())
   }, [scope])
 
   useEffect(() => {
@@ -59,25 +59,27 @@ export function useRepoLiveRefresh(
       repoId,
       schedule: browserScheduler,
       versioned,
-      onSummaryRefresh: () => invalidateRepoSummaryResources(scope),
+      onSummaryRefresh: () => invalidateRepoResources(scope, [{ topic: 'requestList' }]),
     })
     coordinatorRef.current = coordinator
     const notifyListeners = (event: RepoChangeEvent) => {
       for (const listener of listenersRef.current) {
         try {
           listener(event)
-        } catch {}
+        } catch (error) {
+          console.warn('[scope] repository change listener failed', error)
+        }
       }
     }
     const onEvent = (event: RepoChangeEvent) => {
       const summaryPending = coordinator.onEvent(event)
       if (event.repo_id === repoId) {
-        invalidateRepoResources(scope, event, { summaryPending, versioned })
+        invalidateRepoResources(scope, topicsOf(event, { summaryPending, versioned }))
       }
       notifyListeners(event)
     }
     const onStreamInterrupted = () => {
-      invalidateRepoResources(scope, undefined, { summaryPending: true, versioned })
+      invalidateRepoResources(scope, resyncTopics({ summaryPending: true, versioned }))
       coordinator.onStreamInterrupted()
       const event: RepoChangeEvent = {
         incarnation_id: 'local-stream-interruption',

@@ -1,9 +1,13 @@
 import type { ViewId } from '@/api/types.generated'
 import type { RepoContent } from '@/api/types'
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource, repoResourceKey } from './repo-resource'
 import { repositoryVersionKey, type RepositoryVersion } from './repository-version'
 
-export const repoContentResource = createCachedResource<RepoContent>({
+export const repoContentResource = createRepoResource<RepoContent>({
+  invalidatedBy: ['content', 'requestHead'],
+  affectedBy: (change, key) => change.topic !== 'requestHead'
+    || change.requestId === undefined
+    || key[3] === repositoryVersionKey({ kind: 'request', id: change.requestId }),
   maxEntries: 8,
   maxWeight: 8 * 1024 * 1024,
   weightOf: approximateContentBytes,
@@ -19,7 +23,7 @@ type RepoContentIdentity = {
 
 export function repoContentCacheKey(identity: RepoContentIdentity) {
   const { scope, repoId, contentVersion, view, version } = identity
-  return [scope, repoId, contentVersion, view, repositoryVersionKey(version)].join('\0')
+  return repoResourceKey(scope, repoId, contentVersion, view, repositoryVersionKey(version))
 }
 
 function approximateContentBytes(content: RepoContent) {
