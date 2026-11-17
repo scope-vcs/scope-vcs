@@ -1,4 +1,7 @@
-use super::{GitHubApp, client::unavailable};
+use super::{
+    GitHubApp,
+    client::{rate_limit_retry_at, unavailable},
+};
 use crate::{error::ApiError, persistence::unix_now};
 use reqwest::{Method, StatusCode, header::HeaderMap};
 use scope_domain::requests::{
@@ -8,7 +11,6 @@ use serde::{Deserialize, de::DeserializeOwned};
 
 const PAGE_SIZE: usize = 100;
 const MAX_PAGES: usize = 10;
-const SECONDARY_RATE_LIMIT_WAIT_SECS: u64 = 60;
 const PERMISSION_MISSING_MESSAGE: &str = "Resource not accessible by integration";
 
 pub(crate) const PULL_REQUEST_PERMISSION_MESSAGE: &str = "The Scope GitHub App may not open \
@@ -412,24 +414,9 @@ fn refusal(
     route: &str,
     now_unix: u64,
 ) -> PullRequestCallError {
-    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
-    let seconds = |name: &str| header(name).and_then(|value| value.trim().parse::<u64>().ok());
-    let exhausted = header("x-ratelimit-remaining") == Some("0");
-    let limit_message = detail
-        .as_ref()
-        .is_some_and(|detail| detail.message.to_ascii_lowercase().contains("rate limit"));
-    let rate_limited = matches!(
-        status,
-        StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
-    ) && (exhausted || header("retry-after").is_some() || limit_message);
-    if rate_limited {
-        let retry_at_unix = seconds("retry-after")
-            .map(|wait| now_unix.saturating_add(wait))
-            .or_else(|| seconds("x-ratelimit-reset").filter(|_| exhausted))
-            .unwrap_or_else(|| now_unix.saturating_add(SECONDARY_RATE_LIMIT_WAIT_SECS));
-        return PullRequestCallError::RateLimited {
-            retry_at_unix: retry_at_unix.max(now_unix.saturating_add(1)),
-        };
+    let message = detail.as_ref().map(|detail| detail.message.as_str());
+    if let Some(retry_at_unix) = rate_limit_retry_at(status, headers, message, now_unix) {
+        return PullRequestCallError::RateLimited { retry_at_unix };
     }
     match status {
         StatusCode::NOT_FOUND => PullRequestCallError::Unreachable,
@@ -531,7 +518,7 @@ mod tests {
         );
         assert_eq!(
             retry_at(secondary),
-            Some(NOW + SECONDARY_RATE_LIMIT_WAIT_SECS)
+            Some(NOW + crate::github::client::SECONDARY_RATE_LIMIT_WAIT_SECS)
         );
         let stale_reset = classify(
             403,

@@ -2,7 +2,7 @@ use super::GitHubApp;
 use super::webhook::is_commit_oid;
 use crate::{error::ApiError, persistence::unix_now};
 use jsonwebtoken::{Algorithm, Header};
-use reqwest::{Method, RequestBuilder, StatusCode};
+use reqwest::{Method, RequestBuilder, StatusCode, header::HeaderMap};
 use scope_domain::{
     github_connection_test::{
         GitHubInstallationFacts, GitHubInstallationState, GitHubPermissionLevel,
@@ -20,6 +20,10 @@ const MAX_LIST_PAGES: usize = 10;
 const APP_JWT_BACKDATE_SECS: u64 = 60;
 const APP_JWT_LIFETIME_SECS: u64 = 9 * 60;
 const INSTALLATION_TOKEN_MARGIN_SECS: u64 = 5 * 60;
+pub(super) const SECONDARY_RATE_LIMIT_WAIT_SECS: u64 = 60;
+
+pub(crate) const RATE_LIMIT_MESSAGE: &str = "GitHub's rate limit for the Scope GitHub App was \
+    reached; Scope tries again when it resets.";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub(crate) struct GitHubRepository {
@@ -590,10 +594,20 @@ pub(super) async fn send<T: DeserializeOwned>(
     }
     if !status.is_success() {
         let url = response.url().path().to_string();
+        let headers = response.headers().clone();
         let body = response.text().await.unwrap_or_default();
         let detail = serde_json::from_str::<ErrorBody>(&body)
             .map(|body| body.message)
             .unwrap_or(body);
+        if let Some(retry_at_unix) =
+            rate_limit_retry_at(status, &headers, Some(&detail), unix_now()?)
+        {
+            tracing::warn!(route, retry_at_unix, "GitHub's rate limit was reached");
+            return Err(ApiError::upstream_rate_limited(
+                RATE_LIMIT_MESSAGE,
+                retry_at_unix,
+            ));
+        }
         return Err(unavailable(format!(
             "GitHub answered {status} for {url}: {}",
             detail.chars().take(500).collect::<String>()
@@ -604,6 +618,30 @@ pub(super) async fn send<T: DeserializeOwned>(
         .await
         .map(Some)
         .map_err(|error| unavailable(format!("GitHub answered unreadably: {error}")))
+}
+
+pub(super) fn rate_limit_retry_at(
+    status: StatusCode,
+    headers: &HeaderMap,
+    message: Option<&str>,
+    now_unix: u64,
+) -> Option<u64> {
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    let seconds = |name: &str| header(name).and_then(|value| value.trim().parse::<u64>().ok());
+    let exhausted = header("x-ratelimit-remaining") == Some("0");
+    let limit_message =
+        message.is_some_and(|message| message.to_ascii_lowercase().contains("rate limit"));
+    let rate_limited = matches!(
+        status,
+        StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+    ) && (exhausted || header("retry-after").is_some() || limit_message);
+    rate_limited.then(|| {
+        seconds("retry-after")
+            .map(|wait| now_unix.saturating_add(wait))
+            .or_else(|| seconds("x-ratelimit-reset").filter(|_| exhausted))
+            .unwrap_or_else(|| now_unix.saturating_add(SECONDARY_RATE_LIMIT_WAIT_SECS))
+            .max(now_unix.saturating_add(1))
+    })
 }
 
 pub(super) fn unavailable(diagnostic: String) -> ApiError {
