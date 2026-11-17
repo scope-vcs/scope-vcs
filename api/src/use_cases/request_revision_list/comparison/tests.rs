@@ -1,6 +1,6 @@
 use super::*;
 use crate::git::test_repo::pinned_identity_git as git;
-use crate::http::request_review::tests::read_policy;
+use crate::use_cases::request_revision_list::tests::read_policy;
 use scope_domain::{
     account::UserAccount, policy::ScopePath, repository::Repository, requests::RequestBase,
     views::ViewId,

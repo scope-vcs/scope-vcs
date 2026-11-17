@@ -1,0 +1,417 @@
+use crate::{
+    error::ApiError,
+    git::{command::run_git_output_bounded, request_refs::with_request_revision_store_repo},
+    state::AppState,
+    use_cases::request_revision_inspection::{
+        ChangePairing, InspectedRequestChange, RawRequestChange, ReadableRequestChange,
+        change_paths, commit_belongs_to_revision,
+        diff_stream::{
+            BoundedNulField, read_nul_field_bounded, read_numstat_record, stream_request_diff,
+            whole_file_line_counts,
+        },
+        inspect_counted_request_changes, inspect_raw_request_change, raw_change_has_source,
+        request_counted_commit_changes, request_revision_commit_oids,
+    },
+};
+use scope_api_contract::{
+    CommitFileResponse, FileLineChangesResponse, GitOid, RequestComparisonMode,
+    RequestComparisonResponse, RequestRevisionCommitResponse, RequestRevisionInspectionState,
+};
+use scope_domain::{
+    policy::ScopePath,
+    repository::access::RepositoryAccess,
+    requests::{
+        FileLineChanges, Request, RequestComparison, RequestRevision,
+        select_request_review_revision,
+    },
+};
+use scope_postgres::db::RepositoryReadPolicy;
+use std::{path::Path as FsPath, sync::Arc};
+
+mod comparison;
+mod inspection;
+
+pub(crate) use comparison::selected_mode;
+use inspection::{inspect_request_commit, inspect_request_commits_identity_only};
+
+const MAX_LISTED_REQUEST_REVISIONS: usize = 50;
+const MAX_LISTED_COMMITS_PER_REVISION: usize = 100;
+const MAX_LISTED_REQUEST_COMMITS: usize = 100;
+const MAX_IMPORTED_REQUEST_REVISIONS: usize = 5;
+
+pub(crate) struct RequestRevisionSelection {
+    pub(crate) comparison: Option<RequestComparisonMode>,
+    pub(crate) revision: Option<String>,
+    pub(crate) commit: Option<String>,
+}
+
+pub(crate) struct RequestRevisionList {
+    pub(crate) comparison: Option<RequestComparisonResponse>,
+    pub(crate) review_revision_id: Option<String>,
+    pub(crate) revisions: Vec<ListedRequestRevision>,
+    pub(crate) has_earlier_revisions: bool,
+}
+
+pub(crate) struct ListedRequestRevision {
+    pub(crate) revision: RequestRevision,
+    pub(crate) old_head_oid: Option<String>,
+    pub(crate) new_head_oid: Option<String>,
+    pub(crate) commits: Vec<RequestRevisionCommitResponse>,
+    pub(crate) inspection: RequestRevisionInspectionState,
+}
+
+pub(crate) async fn list_request_revisions(
+    state: &AppState,
+    repo: Arc<RepositoryReadPolicy>,
+    request: &Request,
+    selection: RequestRevisionSelection,
+) -> Result<RequestRevisionList, ApiError> {
+    let access = repo.context.access.clone();
+    if selection.commit.is_some() && selection.revision.is_none() {
+        return Err(ApiError::bad_request(
+            "selecting a request commit requires a revision",
+        ));
+    }
+    let mode = comparison::selected_mode(selection.comparison, selection.commit.is_some())?;
+    let revision_window = state
+        .metadata
+        .requests()
+        .request_revision_window(
+            &request.id,
+            selection.revision.as_deref(),
+            MAX_LISTED_REQUEST_REVISIONS as u64,
+        )
+        .await?;
+    let selected_commit = selection.commit.map(canonical_commit_oid).transpose()?;
+    let revisions = revision_window.revisions;
+    let review_revision_id =
+        select_request_review_revision(&revisions, selection.revision.as_deref())?
+            .map(|revision| revision.id.clone());
+    let mut responses = Vec::with_capacity(revisions.len());
+    let selected_revision_index = review_revision_id.as_deref().and_then(|revision_id| {
+        revisions
+            .iter()
+            .position(|revision| revision.id == revision_id)
+    });
+    let mut processing_order = selected_revision_index.into_iter().collect::<Vec<_>>();
+    processing_order.extend(
+        (0..revisions.len())
+            .rev()
+            .filter(|index| Some(*index) != selected_revision_index),
+    );
+    let mut work_budget = RequestRevisionListWorkBudget::new();
+    let mut comparison_response = None;
+    for index in processing_order {
+        let revision = &revisions[index];
+        let commit_limit = work_budget.claim_revision();
+        let (commits, inspection) = if let Some(commit_limit) = commit_limit {
+            let repo_for_inspection = repo.clone();
+            let inspection_state = state.clone();
+            let selected_commit = (selection.revision.as_deref() == Some(revision.id.as_str()))
+                .then(|| selected_commit.clone())
+                .flatten();
+            let file_limit = work_budget.remaining_files;
+            let inspection_access = access.clone();
+            let selected_comparison = Some(index) == selected_revision_index;
+            let inspected = with_request_revision_store_repo(
+                state,
+                &repo.context.incarnation(),
+                request,
+                revision,
+                move |raw_repo, revision| {
+                    let comparison = if selected_comparison {
+                        let selected = comparison::resolve_comparison(
+                            raw_repo,
+                            revision,
+                            &inspection_access,
+                            mode,
+                            selected_commit.as_deref(),
+                        )?;
+                        match crate::use_cases::request_inspection_policy::resolve_comparison(
+                            &inspection_state,
+                            &repo_for_inspection,
+                            &inspection_access.view,
+                            raw_repo,
+                            &selected,
+                        )? {
+                            Some(policy) => {
+                                let mut comparison_repo = (*repo_for_inspection).clone();
+                                comparison_repo.policy = policy;
+                                Some(comparison::inspect_comparison(
+                                    raw_repo,
+                                    &comparison_repo,
+                                    &inspection_access,
+                                    revision,
+                                    mode,
+                                    selected_commit.as_deref(),
+                                    file_limit,
+                                )?)
+                            }
+                            None => Some(comparison::unavailable_comparison(revision, mode)),
+                        }
+                    } else {
+                        None
+                    };
+                    let Some(policy) =
+                        crate::use_cases::request_inspection_policy::resolve_revision(
+                            &inspection_state,
+                            &repo_for_inspection,
+                            &inspection_access.view,
+                            raw_repo,
+                            revision,
+                            selected_commit.as_deref(),
+                            commit_limit,
+                        )?
+                    else {
+                        return Ok((
+                            InspectedRequestCommits {
+                                visible: Vec::new(),
+                                inspected: 0,
+                                files_listed: 0,
+                                inspection: RequestRevisionInspectionState::Unavailable,
+                            },
+                            comparison,
+                        ));
+                    };
+                    let mut revision_repo = (*repo_for_inspection).clone();
+                    revision_repo.policy = policy;
+                    let remaining_files = file_limit
+                        .saturating_sub(comparison.as_ref().map_or(0, |value| value.files.len()));
+                    let commits = request_revision_commits(
+                        raw_repo,
+                        &revision_repo,
+                        inspection_access,
+                        revision,
+                        selected_commit.as_deref(),
+                        commit_limit,
+                        remaining_files,
+                    )?;
+                    Ok((commits, comparison))
+                },
+            )
+            .await?;
+            let (inspected, selected_comparison) = inspected;
+            let comparison_files = selected_comparison
+                .as_ref()
+                .map_or(0, |value| value.files.len());
+            if selected_comparison.is_some() {
+                comparison_response = selected_comparison;
+            }
+            work_budget.record_inspected(
+                inspected.inspected,
+                inspected.files_listed + comparison_files,
+            );
+            (inspected.visible, inspected.inspection)
+        } else {
+            if Some(index) == selected_revision_index {
+                comparison_response = Some(comparison::unavailable_comparison(revision, mode));
+            }
+            (Vec::new(), RequestRevisionInspectionState::Unavailable)
+        };
+        let (old_head_oid, new_head_oid) = if access.view.is_private() {
+            (
+                Some(revision.old_head_oid.clone()),
+                Some(revision.new_head_oid.clone()),
+            )
+        } else {
+            (
+                None,
+                commits
+                    .iter()
+                    .any(|commit| commit.oid == revision.new_head_oid)
+                    .then(|| revision.new_head_oid.clone()),
+            )
+        };
+        responses.push((
+            index,
+            ListedRequestRevision {
+                revision: revision.clone(),
+                old_head_oid,
+                new_head_oid,
+                commits,
+                inspection,
+            },
+        ));
+    }
+    responses.sort_unstable_by_key(|(index, _)| *index);
+    Ok(RequestRevisionList {
+        comparison: comparison_response,
+        review_revision_id,
+        revisions: responses
+            .into_iter()
+            .map(|(_, revision)| revision)
+            .collect(),
+        has_earlier_revisions: revision_window.has_earlier_revisions,
+    })
+}
+
+struct RequestRevisionListWorkBudget {
+    remaining_commits: usize,
+    remaining_files: usize,
+    remaining_revisions: usize,
+}
+
+impl RequestRevisionListWorkBudget {
+    fn new() -> Self {
+        Self {
+            remaining_commits: MAX_LISTED_REQUEST_COMMITS,
+            remaining_files:
+                crate::use_cases::request_inspection_policy::MAX_REQUEST_INSPECTION_PATHS,
+            remaining_revisions: MAX_IMPORTED_REQUEST_REVISIONS,
+        }
+    }
+
+    fn claim_revision(&mut self) -> Option<usize> {
+        let commit_limit = self.remaining_commits.min(MAX_LISTED_COMMITS_PER_REVISION);
+        if commit_limit == 0 || self.remaining_revisions == 0 {
+            return None;
+        }
+        self.remaining_revisions -= 1;
+        Some(commit_limit)
+    }
+
+    fn record_inspected(&mut self, commits: usize, files: usize) {
+        self.remaining_commits = self.remaining_commits.saturating_sub(commits);
+        self.remaining_files = self.remaining_files.saturating_sub(files);
+    }
+}
+
+fn request_revision_commits(
+    raw_repo: &FsPath,
+    repo: &RepositoryReadPolicy,
+    access: RepositoryAccess,
+    revision: &RequestRevision,
+    selected_commit: Option<&str>,
+    limit: usize,
+    file_limit: usize,
+) -> Result<InspectedRequestCommits, ApiError> {
+    let comparison = RequestComparison::push(revision, access.view.clone());
+    let mut commit_oids = request_revision_commit_oids(raw_repo, &comparison, limit)?;
+    let mut inspection_incomplete = commit_oids.len() > limit;
+    if inspection_incomplete {
+        commit_oids.drain(..commit_oids.len() - limit);
+    }
+    if let Some(selected_commit) = selected_commit
+        && !commit_oids.iter().any(|commit| commit == selected_commit)
+        && commit_belongs_to_revision(raw_repo, revision, selected_commit)?
+    {
+        if commit_oids.len() == limit {
+            commit_oids.remove(0);
+            inspection_incomplete = true;
+        }
+        commit_oids.insert(0, selected_commit.to_string());
+    }
+    let inspected = commit_oids.len();
+    let mut inspection_order = (0..commit_oids.len()).rev().collect::<Vec<_>>();
+    if let Some(selected_commit) = selected_commit
+        && let Some(selected_index) = commit_oids.iter().position(|oid| oid == selected_commit)
+    {
+        inspection_order.retain(|index| *index != selected_index);
+        inspection_order.insert(0, selected_index);
+    }
+    let mut remaining_files = file_limit;
+    let mut visible = Vec::new();
+    let mut file_budget_incomplete = false;
+    let mut metadata_incomplete = false;
+    let mut identity_only_indexes = Vec::new();
+    for index in inspection_order {
+        if remaining_files == 0 {
+            identity_only_indexes.push(index);
+            continue;
+        }
+        let commit = inspect_request_commit(
+            raw_repo,
+            &repo.policy,
+            &repo.context.views,
+            access.clone(),
+            &commit_oids[index],
+        )?;
+        metadata_incomplete |= commit.inspection == RequestRevisionInspectionState::Incomplete;
+        if let Some(mut summary) = commit.commit {
+            file_budget_incomplete |= truncate_commit_files(&mut summary, &mut remaining_files);
+            visible.push((index, summary));
+        }
+    }
+    if !identity_only_indexes.is_empty() {
+        let identity_only_oids = identity_only_indexes
+            .iter()
+            .map(|index| commit_oids[*index].clone())
+            .collect::<Vec<_>>();
+        let identity_only = inspect_request_commits_identity_only(
+            raw_repo,
+            &repo.policy,
+            &repo.context.views,
+            access,
+            &identity_only_oids,
+        )?;
+        for (index, commit) in identity_only_indexes.into_iter().zip(identity_only) {
+            metadata_incomplete |= commit.inspection == RequestRevisionInspectionState::Incomplete;
+            if let Some(summary) = commit.commit {
+                file_budget_incomplete |= summary.files_truncated;
+                visible.push((index, summary));
+            }
+        }
+    }
+    visible.sort_by_key(|(index, _)| *index);
+    Ok(InspectedRequestCommits {
+        visible: visible.into_iter().map(|(_, commit)| commit).collect(),
+        inspected,
+        files_listed: file_limit - remaining_files,
+        inspection: if inspection_incomplete || file_budget_incomplete || metadata_incomplete {
+            RequestRevisionInspectionState::Incomplete
+        } else {
+            RequestRevisionInspectionState::Complete
+        },
+    })
+}
+
+fn truncate_commit_files(
+    commit: &mut RequestRevisionCommitResponse,
+    remaining_files: &mut usize,
+) -> bool {
+    let listed = commit.files.len().min(*remaining_files);
+    commit.files.truncate(listed);
+    commit.files_truncated = listed < commit.change_count;
+    *remaining_files = remaining_files.saturating_sub(listed);
+    commit.files_truncated
+}
+
+struct InspectedRequestCommits {
+    visible: Vec<RequestRevisionCommitResponse>,
+    inspected: usize,
+    files_listed: usize,
+    inspection: RequestRevisionInspectionState,
+}
+
+fn request_file_response(change: InspectedRequestChange) -> CommitFileResponse {
+    let InspectedRequestChange { file, lines } = change;
+    CommitFileResponse {
+        path: file.path,
+        old_path: file.old_path,
+        kind: file.kind.into(),
+        old_mode: file.old_mode,
+        new_mode: file.new_mode,
+        old_oid: file.old_oid,
+        new_oid: file.new_oid,
+        label: file.label.into(),
+        lines: match lines {
+            FileLineChanges::Text {
+                additions,
+                deletions,
+            } => FileLineChangesResponse::Text {
+                additions,
+                deletions,
+            },
+            FileLineChanges::Binary => FileLineChangesResponse::Binary,
+        },
+    }
+}
+
+pub(crate) fn canonical_commit_oid(oid: String) -> Result<String, ApiError> {
+    GitOid::try_from(oid)
+        .map(String::from)
+        .map_err(ApiError::bad_request)
+}
+
+#[cfg(test)]
+mod tests;
