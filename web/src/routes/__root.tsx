@@ -9,6 +9,7 @@ import {
   Outlet,
   Scripts,
   createRootRoute,
+  useRouter,
 } from '@tanstack/react-router'
 import { lazy, Suspense, type ReactNode } from 'react'
 import { Toaster } from 'sonner'
@@ -123,6 +124,7 @@ function RootComponent() {
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
+  const nonce = useRouter().options.ssr?.nonce
   return (
     <html
       className="dark"
@@ -133,6 +135,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: themeBootScript,
           }}
@@ -141,6 +144,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       <body>
         <ClerkProvider
           appearance={scopeClerkAppearance}
+          nonce={nonce}
           {...(forceSignedOut
             ? {
                 Clerk: signedOutClerk,

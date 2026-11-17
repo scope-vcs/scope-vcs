@@ -1,7 +1,14 @@
 import { createRouter } from '@tanstack/react-router'
+import { createIsomorphicFn } from '@tanstack/react-start'
+import { getRequestHeader } from '@tanstack/react-start/server'
 import { MAIN_CONTENT_ID } from './components/main-content'
 import { PendingSurface } from './components/pending-surface'
 import { routeTree } from './routeTree.gen'
+import { CSP_NONCE_HEADER } from './server/security-headers'
+
+const responseScriptNonce = createIsomorphicFn()
+  .server(() => getRequestHeader(CSP_NONCE_HEADER))
+  .client(() => undefined)
 
 export function getRouter() {
   let renderedEntry: string | undefined
@@ -18,6 +25,7 @@ export function getRouter() {
       return entering
     },
     scrollToTopSelectors: [`#${MAIN_CONTENT_ID}`],
+    ssr: { nonce: responseScriptNonce() },
   })
 }
 
