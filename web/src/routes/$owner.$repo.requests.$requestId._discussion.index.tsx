@@ -15,7 +15,6 @@ import {
   reopenAndReplyToRequestDiscussionForRequest,
   resolveRequestDiscussionForRequest,
 } from '@/features/requests/request-discussion-api'
-import type { RequestDiscussionPage } from '@/features/requests/request-discussion-types'
 import { RequestDiscussionPageBoundary } from '@/features/requests/request-discussion-page-boundary'
 import { RequestDiscussionView } from '@/features/requests/request-discussion-view'
 import { RequestDiscussionPending } from '@/features/requests/request-page-pending'
@@ -63,7 +62,7 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discuss
 
 function RequestDiscussionRoute() {
   const page = useRequestState()
-  const { discussionPage, scope } = discussionRoute.useLoaderData()
+  const { discussionAvailable, scope } = discussionRoute.useLoaderData()
   const params = Route.useParams()
   const search = Route.useSearch()
   const live = useRepoLayout()
@@ -72,7 +71,7 @@ function RequestDiscussionRoute() {
   const detail = page.state.detail
   const viewer = page.state.viewer
   if (scope !== page.scope) return <RequestDiscussionPending />
-  const renderDiscussion = (initialPage: RequestDiscussionPage | null) => !initialPage ? (
+  const renderDiscussion = (available: boolean) => !available ? (
     <section className="px-(--app-inset) py-14 text-center">
       <MessageSquare className="mx-auto size-5 text-muted-foreground" />
       <h2 className="mt-3 text-sm font-semibold">Discussion is unavailable</h2>
@@ -88,7 +87,6 @@ function RequestDiscussionRoute() {
       createReply={(data) => createReply({ data })}
       detail={detail}
       focusedDiscussionId={search.discussion}
-      initialPage={initialPage}
       live={live}
       loadDiscussions={(data) => loadDiscussions({ data })}
       loadDiscussionChanges={(data) => loadRequestDiscussionChanges({ data })}
@@ -100,7 +98,7 @@ function RequestDiscussionRoute() {
     />
   )
   return (
-    <RequestDiscussionPageBoundary fallback={<RequestDiscussionPending />} page={discussionPage}>
+    <RequestDiscussionPageBoundary available={discussionAvailable} fallback={<RequestDiscussionPending />}>
       {renderDiscussion}
     </RequestDiscussionPageBoundary>
   )

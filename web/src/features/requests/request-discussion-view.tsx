@@ -32,7 +32,6 @@ type RequestDiscussionViewProps = {
   createReply: (input: CreateReplyInput) => Promise<RequestDiscussionReplyMutation>
   detail: RequestDetailResponse
   focusedDiscussionId?: string
-  initialPage: RequestDiscussionPage
   live: RepoLiveState
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
   loadDiscussionChanges: (input: {
@@ -55,7 +54,6 @@ export function RequestDiscussionView({
   createReply,
   detail,
   focusedDiscussionId,
-  initialPage,
   live,
   loadDiscussions,
   loadDiscussionChanges,
@@ -108,7 +106,6 @@ export function RequestDiscussionView({
       actor={actor}
       canResolve={canResolve}
       focusedDiscussionId={focusedDiscussionId}
-      initialPage={initialPage}
       params={requestParams}
       permissions={{
         canOpenDiscussion: request.permissions.can_open_discussion,

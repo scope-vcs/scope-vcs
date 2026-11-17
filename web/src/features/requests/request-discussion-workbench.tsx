@@ -7,38 +7,24 @@ import { CircleAlert, LoaderCircle, MessageSquare } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   readRequestDiscussionScroll,
+  requestDiscussionCacheKey,
   writeRequestDiscussionScroll,
+  type RequestDiscussionState,
 } from './request-discussion-cache'
 import { RequestDiscussionComposer } from './request-discussion-composer'
 import type { RequestDiscussionActions } from './request-discussion-store'
-import { useRequestDiscussionStore } from './request-discussion-store'
+import { useRequestDiscussionState, useRequestDiscussionStore } from './request-discussion-store'
 import { RequestDiscussionThread } from './request-discussion-thread'
-import type {
-  RequestDiscussion,
-  RequestDiscussionPage,
-} from './request-discussion-types'
+import type { RequestDiscussion } from './request-discussion-types'
 import type {
   RequestDiscussionThreadActions,
 } from './use-request-discussion-replies'
 
-export function RequestDiscussionWorkbench({
-  actions,
-  actor,
-  canResolve,
-  focusedDiscussionId,
-  initialPage,
-  params,
-  permissions,
-  repoId,
-  viewerId,
-  request,
-  threadActions,
-}: {
+type RequestDiscussionWorkbenchProps = {
   actions: RequestDiscussionActions
   actor: RequestActorSummaryResponse
   canResolve: (discussion: RequestDiscussion) => boolean
   focusedDiscussionId?: string
-  initialPage: RequestDiscussionPage
   params: RequestParams
   permissions: {
     canOpenDiscussion: boolean
@@ -49,15 +35,37 @@ export function RequestDiscussionWorkbench({
   viewerId: string
   request: RequestSummaryResponse
   threadActions: RequestDiscussionThreadActions
-}) {
+}
+
+export function RequestDiscussionWorkbench(props: RequestDiscussionWorkbenchProps) {
+  const cacheKey = requestDiscussionCacheKey({
+    repoId: props.repoId,
+    requestId: props.params.request_id,
+    viewerId: props.viewerId,
+  })
+  const state = useRequestDiscussionState(cacheKey)
+  return state ? <RetainedRequestDiscussion {...props} cacheKey={cacheKey} state={state} /> : null
+}
+
+function RetainedRequestDiscussion({
+  actions,
+  actor,
+  cacheKey,
+  canResolve,
+  focusedDiscussionId,
+  params,
+  permissions,
+  request,
+  state,
+  threadActions,
+}: RequestDiscussionWorkbenchProps & { cacheKey: string; state: RequestDiscussionState }) {
   const store = useRequestDiscussionStore({
     actions,
     actor,
-    initialPage,
+    cacheKey,
     params,
-    repoId,
     requestHead: request.head_oid,
-    viewerId,
+    state,
   })
   const [activeComposer, setActiveComposer] = useState<string | null>(null)
   const closeComposer = useCallback(() => setActiveComposer(null), [])

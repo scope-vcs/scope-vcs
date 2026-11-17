@@ -1,25 +1,24 @@
 import { Suspense, use, type ReactNode } from 'react'
-import type { RequestDiscussionPage } from './request-discussion-types'
 
-export type RequestDiscussionInitialPage = RequestDiscussionPage | null | Promise<RequestDiscussionPage | null>
+export type RequestDiscussionAvailability = boolean | Promise<boolean>
 
-type RenderDiscussionPage = (page: RequestDiscussionPage | null) => ReactNode
+type RenderDiscussion = (available: boolean) => ReactNode
 
-export function RequestDiscussionPageBoundary({ children, fallback, page }: {
-  children: RenderDiscussionPage
+export function RequestDiscussionPageBoundary({ available, children, fallback }: {
+  available: RequestDiscussionAvailability
+  children: RenderDiscussion
   fallback: ReactNode
-  page: RequestDiscussionInitialPage
 }) {
   return (
     <Suspense fallback={fallback}>
-      <ResolvedDiscussionPage page={page}>{children}</ResolvedDiscussionPage>
+      <ResolvedDiscussion available={available}>{children}</ResolvedDiscussion>
     </Suspense>
   )
 }
 
-function ResolvedDiscussionPage({ children, page }: {
-  children: RenderDiscussionPage
-  page: RequestDiscussionInitialPage
+function ResolvedDiscussion({ available, children }: {
+  available: RequestDiscussionAvailability
+  children: RenderDiscussion
 }) {
-  return children(page instanceof Promise ? use(page) : page)
+  return children(available instanceof Promise ? use(available) : available)
 }
