@@ -523,17 +523,17 @@ async fn prepared_merge(
     actor_user_id: &str,
 ) -> PreparedRequestMerge {
     let (_source, _remote, _server, _) = request_checkout(state, label).await;
-    state
-        .metadata
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    crate::use_cases::request_submit::persist_submission(
+        &state.metadata.requests(),
+        SubmitRequestInput {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
             event_id: format!("event_submit_{label}"),
             now_unix: 5,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     let repo = find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();

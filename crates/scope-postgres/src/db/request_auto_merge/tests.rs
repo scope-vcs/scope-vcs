@@ -1,6 +1,6 @@
 use super::*;
 use crate::db::{
-    RecordRequestChecksCommand, SubmitRequestCommand,
+    RecordRequestChecksCommand,
     requests::tests::{postgres_store, start_public_request},
 };
 use scope_domain::requests::{

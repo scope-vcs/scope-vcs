@@ -404,16 +404,17 @@ async fn parent_extensions_preserve_child_intents_and_hard_dependencies_stop_wit
                 RequestAutoMergeStopReason::ParentRewritten
             }
             "close" => {
-                store
-                    .requests()
-                    .close_request(CloseRequestCommand {
+                crate::db::test_support::request_fixtures::closed(
+                    &store.requests(),
+                    scope_domain::requests::CloseRequestInput {
+                        actor_is_maintainer: true,
                         request_id: parent.id.clone(),
                         actor_user_id: "user_owner".into(),
                         event_id: "close_parent".into(),
                         now_unix: 21,
-                    })
-                    .await
-                    .unwrap();
+                    },
+                )
+                .await;
                 RequestAutoMergeStopReason::ParentClosed
             }
             _ => {

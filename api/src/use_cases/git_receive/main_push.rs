@@ -160,74 +160,81 @@ pub(crate) async fn persist_main_push(
 
     let transaction_started = Instant::now();
     let expected_incarnation = incarnation.clone();
-    let git_head = state
-        .metadata
-        .repositories()
-        .mutate_repository_with_open_requests(
-            owner,
-            repo_name,
-            now_unix,
-            move |repo, open_requests_by_view| {
-                if repo.incarnation() != expected_incarnation {
-                    return Err(DomainError::conflict(
-                        "repository was recreated since push preparation",
-                    ));
-                }
-                let domain_started = Instant::now();
-                let mut update = update;
-                let push_policy = repo.push_policy_for_user_id(&author_id);
-                let main_gate = scope_domain::requests::evaluate_merge_gate(
-                    scope_domain::requests::MergeGateInput::AuthorizedMainPush {
-                        repository_lifecycle: repo.record.lifecycle_state,
-                        access: &push_policy.access,
-                        views: repo.repo_config.views(),
-                    },
-                );
-                if main_gate.authority()
-                    != Some(scope_domain::requests::MergeGateAuthority::AuthorizedMainPush)
-                {
-                    return Err(DomainError::forbidden(
-                        main_gate.refusal().unwrap_or("main push access required"),
-                    ));
-                }
-
-                authorize_reviewed_update(ReviewedUpdateAuthorization {
-                    access: push_policy.access.clone(),
-                    push_mode: push_policy.mode.clone(),
-                    current_config: &repo.repo_config,
-                    proposed_config: &repo.repo_config,
-                })?;
-                update.git_head.change_version = repo.record.change_version.saturating_add(1);
-                let committed_git_head = update.git_head.clone();
-                ensure_receive_pack_config_base_matches(repo, &update)?;
-                authorize_reviewed_update(ReviewedUpdateAuthorization {
-                    access: push_policy.access.clone(),
-                    push_mode: push_policy.mode,
-                    current_config: &repo.repo_config,
-                    proposed_config: &update.config,
-                })?;
-                update.previous_config = Some(repo.repo_config.clone());
-                update.open_requests_by_view = open_requests_by_view;
-                ensure_receive_pack_base_matches(repo, &update)?;
-                let landing_file_mutation = update.landing_file_mutation.clone();
-                let main_pack = apply_receive_pack_update(repo, update)?;
-                tracing::info!(
-                    domain_apply_ms = domain_started.elapsed().as_millis(),
-                    "applied reviewed push domain transition"
-                );
-                let mut mutation = RepositoryMutation::with_landing_file_mutation(
-                    committed_git_head,
-                    landing_file_mutation,
-                );
-                mutation.landed_requests = Some(LandedRequestCompletion {
-                    actor_user_id: author_id,
-                    candidates: landed_request_candidates,
-                });
-                mutation.main_pack = Some(main_pack);
-                Ok(mutation)
+    let decide = move |repo: &mut scope_domain::repository::Repository,
+                       open_requests_by_view: std::collections::BTreeMap<
+        scope_domain::views::ViewId,
+        usize,
+    >| {
+        if repo.incarnation() != expected_incarnation {
+            return Err(DomainError::conflict(
+                "repository was recreated since push preparation",
+            ));
+        }
+        let domain_started = Instant::now();
+        let mut update = update;
+        let push_policy = repo.push_policy_for_user_id(&author_id);
+        let main_gate = scope_domain::requests::evaluate_merge_gate(
+            scope_domain::requests::MergeGateInput::AuthorizedMainPush {
+                repository_lifecycle: repo.record.lifecycle_state,
+                access: &push_policy.access,
+                views: repo.repo_config.views(),
             },
-        )
-        .await;
+        );
+        if main_gate.authority()
+            != Some(scope_domain::requests::MergeGateAuthority::AuthorizedMainPush)
+        {
+            return Err(DomainError::forbidden(
+                main_gate.refusal().unwrap_or("main push access required"),
+            ));
+        }
+
+        authorize_reviewed_update(ReviewedUpdateAuthorization {
+            access: push_policy.access.clone(),
+            push_mode: push_policy.mode.clone(),
+            current_config: &repo.repo_config,
+            proposed_config: &repo.repo_config,
+        })?;
+        update.git_head.change_version = repo.record.change_version.saturating_add(1);
+        let committed_git_head = update.git_head.clone();
+        ensure_receive_pack_config_base_matches(repo, &update)?;
+        authorize_reviewed_update(ReviewedUpdateAuthorization {
+            access: push_policy.access.clone(),
+            push_mode: push_policy.mode,
+            current_config: &repo.repo_config,
+            proposed_config: &update.config,
+        })?;
+        update.previous_config = Some(repo.repo_config.clone());
+        update.open_requests_by_view = open_requests_by_view;
+        ensure_receive_pack_base_matches(repo, &update)?;
+        let landing_file_mutation = update.landing_file_mutation.clone();
+        let main_pack = apply_receive_pack_update(repo, update)?;
+        tracing::info!(
+            domain_apply_ms = domain_started.elapsed().as_millis(),
+            "applied reviewed push domain transition"
+        );
+        let mut mutation = RepositoryMutation::with_landing_file_mutation(
+            committed_git_head,
+            landing_file_mutation,
+        );
+        mutation.landed_requests = Some(LandedRequestCompletion {
+            actor_user_id: author_id,
+            candidates: landed_request_candidates,
+        });
+        mutation.main_pack = Some(main_pack);
+        Ok::<_, DomainError>(mutation)
+    };
+    let git_head = async {
+        let tx = state
+            .metadata
+            .repositories()
+            .begin_repository(owner, repo_name)
+            .await?;
+        let open_requests_by_view = tx.open_request_counts_by_view().await?;
+        let mut repo = tx.repository().clone();
+        let mutation = decide(&mut repo, open_requests_by_view)?;
+        Ok::<_, RepositoryMutationError>(tx.save(repo, mutation, now_unix).await?)
+    }
+    .await;
     let git_head = match git_head {
         Ok(git_head) => git_head,
         Err(error) => {

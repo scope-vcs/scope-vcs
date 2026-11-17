@@ -1,31 +1,4 @@
 #[derive(Clone, Debug)]
-pub struct SubmitRequestCommand {
-    pub request_id: String,
-    pub actor_user_id: String,
-    pub event_id: String,
-    pub now_unix: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct CloseRequestCommand {
-    pub request_id: String,
-    pub actor_user_id: String,
-    pub event_id: String,
-    pub now_unix: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct EditRequestIdentityCommand {
-    pub request_id: String,
-    pub actor_user_id: String,
-    pub event_id: String,
-    pub title: Option<String>,
-    pub description_markdown: Option<String>,
-    pub expected_description_markdown: Option<String>,
-    pub now_unix: u64,
-}
-
-#[derive(Clone, Debug)]
 pub struct ExpectedRequestAutoMerge {
     pub intent_id: String,
     pub revision_id: String,

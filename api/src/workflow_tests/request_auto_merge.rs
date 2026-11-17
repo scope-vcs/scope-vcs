@@ -1,9 +1,9 @@
 use super::*;
+use scope_domain::requests::SubmitRequestInput;
 use scope_domain::requests::{
     RecordRequestRevisionInput, RequestActorRole, RequestRevisionGitFacts, StartRequestInput,
 };
 use scope_domain::views::ViewId;
-use scope_postgres::db::SubmitRequestCommand;
 
 const AUTO_REQUEST_ID: &str = "req_auto_merge";
 const AUTO_REQUEST_NAME: &str = "auto-merge";
@@ -69,17 +69,17 @@ async fn open_request_with_revision(
         .unwrap();
     let revision_id =
         record_revision(&state, request_id, &author_user_id, None, SECOND_HEAD, 1, 3).await;
-    state
-        .metadata
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    crate::use_cases::request_submit::persist_submission(
+        &state.metadata.requests(),
+        SubmitRequestInput {
             request_id: request_id.to_string(),
             actor_user_id: author_user_id,
             event_id: format!("event_{request_id}_submitted"),
             now_unix: 4,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     (state, revision_id)
 }
 

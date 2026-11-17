@@ -1,6 +1,6 @@
 use super::push_paths::{PUSH_PATHS, PushPath, push};
 use super::*;
-use crate::db::{CloseRequestCommand, LandedRequestCandidate, LandedRequestCompletion};
+use crate::db::{LandedRequestCandidate, LandedRequestCompletion};
 use scope_domain::requests::{RequestAutoMergeIntentStatus, RequestEventKind};
 use sea_orm::ConnectionTrait;
 
@@ -235,16 +235,17 @@ async fn main_push_skips_candidates_that_moved_closed_or_disappeared() {
                 .await
                 .unwrap(),
             "closed" => {
-                store
-                    .requests()
-                    .close_request(CloseRequestCommand {
+                crate::db::test_support::request_fixtures::closed(
+                    &store.requests(),
+                    scope_domain::requests::CloseRequestInput {
+                        actor_is_maintainer: true,
                         request_id: "req_1".into(),
                         actor_user_id: "user_owner".into(),
                         event_id: "event_closed_before_push".into(),
                         now_unix: 6,
-                    })
-                    .await
-                    .unwrap();
+                    },
+                )
+                .await;
             }
             _ => {}
         }

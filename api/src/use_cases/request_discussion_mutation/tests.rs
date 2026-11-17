@@ -1,12 +1,13 @@
 use super::*;
 use crate::repo_events::RepoChangeKind;
+use crate::use_cases::request_close::CloseRequestCommand;
 use scope_domain::{
     account::UserAccount,
     repository::RepoLifecycleState,
     requests::{RequestActorRole, StartRequestInput},
     views::ViewId,
 };
-use scope_postgres::db::{CatalogFixture, CloseRequestCommand};
+use scope_postgres::db::CatalogFixture;
 
 #[tokio::test]
 async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
@@ -53,8 +54,9 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
         })
         .await
         .unwrap();
-    requests
-        .create_request_discussion(CreateRequestDiscussionCommand {
+    crate::use_cases::request_discussion_mutation::persist_discussion(
+        &requests,
+        CreateRequestDiscussionInput {
             request_id: "request_reply".to_string(),
             id: "discussion_reply".to_string(),
             actor_user_id: "owner".to_string(),
@@ -62,11 +64,13 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
             body_markdown: "Review this change".to_string(),
             anchor: None,
             now_unix: 2,
-        })
-        .await
-        .unwrap();
-    let mutation = requests
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+        },
+    )
+    .await
+    .unwrap();
+    let mutation = crate::use_cases::request_discussion_mutation::persist_reply(
+        &requests,
+        CreateRequestDiscussionReplyCommand {
             request_id: "request_reply".to_string(),
             discussion_id: "discussion_reply".to_string(),
             id: "reply_committed".to_string(),
@@ -76,23 +80,26 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
             reply_to_reply_id: None,
             wait_after_reply: false,
             now_unix: 3,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     let context = mutation_context(&state, "owner", "repo", "request_reply", "owner")
         .await
         .unwrap();
     let position = mutation.reply.position;
 
-    requests
-        .close_request(CloseRequestCommand {
+    crate::use_cases::request_close::persist_close(
+        &requests,
+        CloseRequestCommand {
             request_id: "request_reply".to_string(),
             actor_user_id: "owner".to_string(),
             event_id: "event_request_deleted".to_string(),
             now_unix: 4,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     let mut receiver = state.repo_events.subscribe("owner/repo");
     let result = reply_mutation_result(&state, &context, "owner", mutation).await;
     assert!(matches!(result, Err(error) if error.kind == crate::error::ErrorKind::NotFound));

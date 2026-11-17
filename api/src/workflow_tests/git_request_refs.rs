@@ -1,9 +1,10 @@
 use super::*;
+use scope_domain::requests::SubmitRequestInput;
 use scope_domain::requests::{
     GitFetchAsk, Request, RequestActorRole, RequestEventKind, RequestState, StartRequestInput,
 };
 use scope_domain::views::ViewId;
-use scope_postgres::db::{AddRequestInviteeCommand, SubmitRequestCommand};
+use scope_postgres::db::AddRequestInviteeCommand;
 
 const PUBLIC_SUBJECT: &str = "user_public";
 const PUBLIC_EMAIL: &str = "public@example.com";

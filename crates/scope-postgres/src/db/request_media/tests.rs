@@ -1,9 +1,6 @@
 use super::*;
 use crate::{
-    db::{
-        CatalogFixture, CloseRequestCommand, EditRequestIdentityCommand, MetadataStore,
-        TestDatabaseTarget,
-    },
+    db::{CatalogFixture, MetadataStore, TestDatabaseTarget},
     error::PostgresErrorKind,
 };
 use scope_domain::{
@@ -399,10 +396,9 @@ async fn cross_request_binding_rejection_rolls_back_identity_event_and_prior_bin
     upload_attachment(&fixture, "other_request", "other_attachment", 20).await;
 
     let original_markdown = attachment_markdown("binding_attachment");
-    fixture
-        .store
-        .requests()
-        .edit_request_identity(EditRequestIdentityCommand {
+    crate::db::test_support::request_fixtures::identity_edited(
+        &fixture.store.requests(),
+        scope_domain::requests::EditRequestIdentityInput {
             request_id: "binding_request".to_string(),
             actor_user_id: OWNER_ID.to_string(),
             event_id: "event_bind_original".to_string(),
@@ -410,14 +406,21 @@ async fn cross_request_binding_rejection_rolls_back_identity_event_and_prior_bin
             description_markdown: Some(original_markdown.clone()),
             expected_description_markdown: Some(String::new()),
             now_unix: 30,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
 
-    let error = fixture
+    let tx = fixture
         .store
         .requests()
-        .edit_request_identity(EditRequestIdentityCommand {
+        .begin_request("binding_request", OWNER_ID)
+        .await
+        .unwrap();
+    let mutation = scope_domain::requests::edit_request_identity(
+        tx.request().clone(),
+        tx.actor(),
+        false,
+        scope_domain::requests::EditRequestIdentityInput {
             request_id: "binding_request".to_string(),
             actor_user_id: OWNER_ID.to_string(),
             event_id: "event_invalid_cross_request".to_string(),
@@ -425,9 +428,18 @@ async fn cross_request_binding_rejection_rolls_back_identity_event_and_prior_bin
             description_markdown: Some(attachment_markdown("other_attachment")),
             expected_description_markdown: Some(original_markdown.clone()),
             now_unix: 31,
-        })
+        },
+    )
+    .unwrap();
+    let error = tx
+        .save_identity_edit(
+            &mutation,
+            Some(&attachment_markdown("other_attachment")),
+            31,
+        )
         .await
         .unwrap_err();
+    drop(tx);
     assert_eq!(error.kind, PostgresErrorKind::PermissionDenied);
     assert!(error.message.contains("belongs to another request"));
 
@@ -612,17 +624,17 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
         MediaLeaseMutation::Applied(())
     );
 
-    fixture
-        .store
-        .requests()
-        .close_request(CloseRequestCommand {
+    crate::db::test_support::request_fixtures::closed(
+        &fixture.store.requests(),
+        scope_domain::requests::CloseRequestInput {
+            actor_is_maintainer: true,
             request_id: "deleted_request".to_string(),
             actor_user_id: OWNER_ID.to_string(),
             event_id: "event_delete_request".to_string(),
             now_unix: 22,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     assert!(
         fixture
             .store

@@ -56,17 +56,17 @@ async fn advertisement_and_exact_fetch_follow_viewer_and_publication_policy() {
         "public-draft-exact-fetch",
     ));
 
-    state
-        .metadata
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    crate::use_cases::request_submit::persist_submission(
+        &state.metadata.requests(),
+        SubmitRequestInput {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
             event_id: "event_advertisement_submitted".to_string(),
             now_unix: 4,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     for (remote, bearer, listed) in [
         (public_remote.as_str(), None, false),
         (public_remote.as_str(), Some(author.as_str()), true),

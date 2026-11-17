@@ -4,9 +4,12 @@ use crate::{
 };
 use scope_domain::{
     repository::access::RepositoryAccessContext,
-    requests::{Request, RequestLifecycleMutation, request_actor_role},
+    requests::{
+        Request, RequestLifecycleMutation, SubmitRequestInput, request_actor_role,
+        submit_request as submit,
+    },
 };
-use scope_postgres::db::SubmitRequestCommand;
+use scope_postgres::{db::RequestStore, error::PostgresError};
 use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
 
 #[tracing::instrument(skip_all, name = "use_case.request.submit")]
@@ -43,14 +46,31 @@ async fn persist(
     request: &Request,
     actor_user_id: &str,
 ) -> Result<RequestLifecycleMutation, ApiError> {
-    Ok(state
-        .metadata
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    Ok(crate::use_cases::request_submit::persist_submission(
+        &state.metadata.requests(),
+        SubmitRequestInput {
             request_id: request.id.clone(),
             actor_user_id: actor_user_id.to_string(),
             event_id: crate::persistence_ids::generate_prefixed_id("event_request_submitted")?,
             now_unix: unix_now()?,
-        })
-        .await?)
+        },
+    )
+    .await?)
 }
+
+pub(crate) async fn persist_submission(
+    store: &RequestStore,
+    input: SubmitRequestInput,
+) -> Result<RequestLifecycleMutation, PostgresError> {
+    let tx = store
+        .begin_request(&input.request_id, &input.actor_user_id)
+        .await?;
+    let now_unix = input.now_unix;
+    let mutation = submit(tx.request(), tx.actor(), input)?;
+    tx.save_submission(&mutation, now_unix).await?;
+    tx.commit().await?;
+    Ok(mutation)
+}
+
+#[cfg(test)]
+mod tests;

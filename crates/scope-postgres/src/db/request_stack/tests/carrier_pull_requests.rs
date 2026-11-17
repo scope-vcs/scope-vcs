@@ -137,16 +137,17 @@ async fn closing_a_parent_moves_its_open_childrens_carriers_onto_main_in_the_sam
     );
     let before = github_pull_request(db, &child.id).await.unwrap().unwrap();
 
-    store
-        .requests()
-        .close_request(CloseRequestCommand {
+    crate::db::test_support::request_fixtures::closed(
+        &store.requests(),
+        scope_domain::requests::CloseRequestInput {
+            actor_is_maintainer: true,
             request_id: parent.id.clone(),
             actor_user_id: "user_owner".into(),
             event_id: "close".into(),
             now_unix: 15,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
 
     let moved = github_pull_request(db, &child.id).await.unwrap().unwrap();
     assert_eq!(moved.intent, open_onto("main", &child.head_oid));

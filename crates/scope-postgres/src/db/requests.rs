@@ -1,5 +1,5 @@
 use super::{
-    CloseRequestCommand, EditRequestIdentityCommand, RequestStore, acquire_aggregate_lock,
+    RequestStore, acquire_aggregate_lock,
     request_access::{
         authorize_start_request, ensure_user_exists, lock_request_repository, repo_by_id,
         request_actor,
@@ -7,9 +7,7 @@ use super::{
     request_auto_merge::{
         automatic_event_id, lock_active_intent_for_request, persist_existing_auto_merge_mutation,
     },
-    request_lifecycle_effects::{persist_deleted_draft, persist_lifecycle_mutation},
-    request_media::replace_bindings_for_markdown,
-    request_revision_rows::{insert_revision, revisions_for_request_ids},
+    request_revision_rows::insert_revision,
     request_rows::{
         insert_request_event_row, insert_request_row, latest_request_events, public_draft_count,
         request_by_id, request_by_name, request_event_by_id, request_events_after_position,
@@ -20,12 +18,11 @@ use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
 use {
     crate::error::PostgresError,
     scope_domain::requests::{
-        CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
         RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request,
-        RequestAutoMergeStopReason, RequestEvent, RequestRevisionMutation, RequestTimelineMutation,
-        StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
-        close_request, edit_request_identity, record_request_revision,
-        record_working_request_upload, start_request, stop_request_auto_merge,
+        RequestAutoMergeStopReason, RequestEvent, RequestRevisionMutation, StartRequestFacts,
+        StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
+        record_request_revision, record_working_request_upload, start_request,
+        stop_request_auto_merge,
     },
 };
 
@@ -374,112 +371,6 @@ impl RequestStore {
             super::request_revision_context::save_receipt(&tx, context, &mutation).await?;
         }
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(mutation)
-    }
-
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "edit_request_identity"))]
-    pub async fn edit_request_identity(
-        &self,
-        command: EditRequestIdentityCommand,
-    ) -> Result<RequestTimelineMutation, PostgresError> {
-        let attachment_binding = command.description_markdown.as_ref().map(|markdown| {
-            (
-                command.request_id.clone(),
-                command.actor_user_id.clone(),
-                markdown.clone(),
-                command.now_unix,
-            )
-        });
-        let tx = self.db.begin().await?;
-        let (repo, request) =
-            lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
-        ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let actor = request_actor(&tx, &repo, &request, &command.actor_user_id).await?;
-        let event_id_exists = request_event_by_id(&tx, &command.event_id).await?.is_some();
-        let mutation = edit_request_identity(
-            request,
-            actor,
-            event_id_exists,
-            EditRequestIdentityInput {
-                request_id: command.request_id,
-                actor_user_id: command.actor_user_id,
-                event_id: command.event_id,
-                title: command.title,
-                description_markdown: command.description_markdown,
-                expected_description_markdown: command.expected_description_markdown,
-                now_unix: command.now_unix,
-            },
-        )?;
-        save_request_row(&tx, &mutation.request).await?;
-        insert_request_event_row(&tx, &mutation.event).await?;
-        super::github_pull_requests::requeue_carrier(
-            &tx,
-            &mutation.request.id,
-            mutation.request.updated_at_unix,
-        )
-        .await?;
-        if let Some((request_id, actor_user_id, markdown, now_unix)) = attachment_binding {
-            replace_bindings_for_markdown(
-                &tx,
-                &request_id,
-                &actor_user_id,
-                &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Description,
-                &markdown,
-                now_unix,
-            )
-            .await?;
-        }
-        tx.commit().await?;
-        Ok(mutation)
-    }
-
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "close_request"))]
-    pub async fn close_request(
-        &self,
-        command: CloseRequestCommand,
-    ) -> Result<CloseRequestMutation, PostgresError> {
-        let now_unix = command.now_unix;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let observed = request_by_id(&tx, &command.request_id)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("request not found"))?;
-        acquire_aggregate_lock(&tx, "repository", &observed.repo_id).await?;
-        super::request_stack::lock_graph(&tx, &observed, None).await?;
-        let (repo, request) =
-            lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
-        ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let events = request_events_by_request_id(&tx, &request.id).await?;
-        let revisions = revisions_for_request_ids(&tx, std::slice::from_ref(&request.id)).await?;
-        let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
-        let input = CloseRequestInput {
-            request_id: command.request_id,
-            actor_user_id: command.actor_user_id,
-            actor_is_maintainer: repo.access.is_maintainer(),
-            event_id: command.event_id,
-            now_unix,
-        };
-        let mut mutation = close_request(request, events, revisions, input)?;
-        match &mut mutation {
-            CloseRequestMutation::DeletedDraft { request, .. } => {
-                persist_deleted_draft(&tx, request, now_unix).await?;
-            }
-            CloseRequestMutation::Closed { request, event } => {
-                persist_lifecycle_mutation(&tx, request, std::slice::from_ref(event)).await?;
-                super::request_stack::close_children(&tx, request, now_unix).await?;
-                if let Some(stored) = active_auto_merge {
-                    let stopped = stop_request_auto_merge(
-                        request,
-                        &stored.intent,
-                        RequestAutoMergeStopReason::RequestClosed,
-                        automatic_event_id("stopped", &stored.intent.id),
-                        now_unix,
-                    )?;
-                    persist_existing_auto_merge_mutation(&tx, stored.model, &stopped).await?;
-                    *request = stopped.request;
-                }
-            }
-        }
-        tx.commit().await?;
         Ok(mutation)
     }
 }

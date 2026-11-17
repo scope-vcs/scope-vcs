@@ -54,17 +54,17 @@ async fn pushed_line_counts_reach_every_request_read_and_exclude_unreadable_file
         "add notes and logo",
     )
     .unwrap();
-    state
-        .metadata
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    crate::use_cases::request_submit::persist_submission(
+        &state.metadata.requests(),
+        SubmitRequestInput {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
             event_id: "event_submit_for_diff_stats".to_string(),
             now_unix: 4,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     let app = router(state.clone());
     let owner = bearer_header();
     let public = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);

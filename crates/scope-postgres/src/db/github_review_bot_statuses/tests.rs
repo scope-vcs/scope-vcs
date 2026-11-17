@@ -1,7 +1,6 @@
 use super::*;
 use crate::db::{
-    DiscussionTransition, GitHubImportedComment, GitHubJobOutcome, ImportGitHubReviewCommand,
-    MetadataStore, TransitionRequestDiscussionCommand,
+    GitHubImportedComment, GitHubJobOutcome, ImportGitHubReviewCommand, MetadataStore,
     github_pull_requests::tests::{
         OWNER, REPO, claim, connect, connect_to, oid, push_succeeds, submitted_full_view_request,
     },
@@ -256,17 +255,17 @@ async fn bot_reviews_carry_the_required_flag_and_the_bot_discussions_left_open()
         ["greptile-apps[bot]"]
     );
 
-    requests
-        .transition_request_discussion(TransitionRequestDiscussionCommand {
+    crate::db::test_support::request_fixtures::discussion_resolved(
+        &requests,
+        scope_domain::requests::RequestDiscussionTransitionInput {
             request_id: "req_1".into(),
             discussion_id: imported.discussions[0].id.clone(),
             actor_user_id: OWNER.into(),
             event_id: "event_resolve_bot_finding".into(),
             now_unix: 13,
-            transition: DiscussionTransition::Resolve,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     assert!(bot_reviews(&store).await.open_finding_authors.is_empty());
 
     list_bots(&store, &[]).await;

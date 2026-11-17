@@ -181,51 +181,52 @@ async fn apply_reviewed_config_before_push(
     let now = unix_now()?;
     let occurred_at_unix = i64::try_from(now).map_err(ApiError::internal)?;
     let author_id = user_id.to_string();
-    let changed = state
+    let decide =
+        move |repo: &mut scope_domain::repository::Repository,
+              open_requests_by_view: std::collections::BTreeMap<ViewId, usize>| {
+            if repo.push_policy_for_user_id(&author_id).mode != MainPushMode::Ready {
+                return Err(DomainError::forbidden("push permission required"));
+            }
+            let access = repo.access_for_user_id(&author_id);
+            if !access.can_change_file_visibility && repo.repo_config != config {
+                return Err(DomainError::forbidden(
+                    "file visibility permission required",
+                ));
+            }
+            if repo.git_head.as_ref().map(|head| head.frontier()) != expected_git_frontier {
+                return Err(DomainError::conflict(
+                    "repo content changed since review; rerun scope push --main",
+                ));
+            }
+            if domain_repo_config_fingerprint(&repo.repo_config)
+                .map_err(DomainError::invariant_violation)?
+                != expected_config_hash
+            {
+                return Err(DomainError::conflict(
+                    "repo config changed since review; rerun scope push --main",
+                ));
+            }
+            let changed = apply_reviewed_config_to_repo(
+                repo,
+                ReviewedConfigUpdateInput {
+                    author_id,
+                    config,
+                    occurred_at_unix,
+                    open_requests_by_view,
+                },
+            )
+            .map_err(reviewed_update_domain_error)?;
+            Ok::<_, DomainError>(RepositoryMutation::new(changed))
+        };
+    let tx = state
         .metadata
         .repositories()
-        .mutate_repository_with_open_requests(
-            owner,
-            repo_name,
-            now,
-            move |repo, open_requests_by_view| {
-                if repo.push_policy_for_user_id(&author_id).mode != MainPushMode::Ready {
-                    return Err(DomainError::forbidden("push permission required"));
-                }
-                let access = repo.access_for_user_id(&author_id);
-                if !access.can_change_file_visibility && repo.repo_config != config {
-                    return Err(DomainError::forbidden(
-                        "file visibility permission required",
-                    ));
-                }
-                if repo.git_head.as_ref().map(|head| head.frontier()) != expected_git_frontier {
-                    return Err(DomainError::conflict(
-                        "repo content changed since review; rerun scope push --main",
-                    ));
-                }
-                if domain_repo_config_fingerprint(&repo.repo_config)
-                    .map_err(DomainError::invariant_violation)?
-                    != expected_config_hash
-                {
-                    return Err(DomainError::conflict(
-                        "repo config changed since review; rerun scope push --main",
-                    ));
-                }
-                let changed = apply_reviewed_config_to_repo(
-                    repo,
-                    ReviewedConfigUpdateInput {
-                        author_id,
-                        config,
-                        occurred_at_unix,
-                        open_requests_by_view,
-                    },
-                )
-                .map_err(reviewed_update_domain_error)?;
-                Ok(RepositoryMutation::new(changed))
-            },
-        )
-        .await?
-        .result;
+        .begin_repository(owner, repo_name)
+        .await?;
+    let open_requests_by_view = tx.open_request_counts_by_view().await?;
+    let mut repo = tx.repository().clone();
+    let mutation = decide(&mut repo, open_requests_by_view)?;
+    let changed = tx.save(repo, mutation, now).await?.result;
     if changed {
         let repo = state
             .metadata

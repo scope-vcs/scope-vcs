@@ -367,10 +367,9 @@ async fn request_activity_clamps_latest_and_after_pages_to_fifty_events() {
     )
     .await;
     for index in 0..52 {
-        state
-            .metadata
-            .requests()
-            .edit_request_identity(scope_postgres::db::EditRequestIdentityCommand {
+        crate::use_cases::request_identity::persist_identity_edit(
+            &state.metadata.requests(),
+            scope_domain::requests::EditRequestIdentityInput {
                 request_id: request_id.to_string(),
                 actor_user_id: test_owner_id(),
                 event_id: format!("event_description_{index}"),
@@ -378,9 +377,10 @@ async fn request_activity_clamps_latest_and_after_pages_to_fifty_events() {
                 description_markdown: Some(format!("description {index}")),
                 expected_description_markdown: None,
                 now_unix: 10 + index,
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
     }
     let app = router(state);
     let base = format!("/v1/repos/owner/repo/requests/{request_id}");

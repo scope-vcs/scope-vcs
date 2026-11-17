@@ -1,6 +1,6 @@
 use super::*;
 use crate::db::{
-    MetadataStore, SubmitRequestCommand,
+    MetadataStore,
     requests::tests::{postgres_store, public_upload_input},
 };
 use scope_domain::{
@@ -69,16 +69,16 @@ async fn uploaded_draft(store: &MetadataStore, id: &str) {
 }
 
 async fn submit(store: &MetadataStore, id: &str, at: u64) {
-    store
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    crate::db::test_support::request_fixtures::submitted(
+        &store.requests(),
+        scope_domain::requests::SubmitRequestInput {
             request_id: id.to_string(),
             actor_user_id: OWNER.to_string(),
             event_id: format!("event_submitted_{id}"),
             now_unix: at,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
 }
 
 pub(crate) async fn connect(store: &MetadataStore, open_pull_requests: bool) {

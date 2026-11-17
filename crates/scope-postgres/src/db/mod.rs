@@ -80,7 +80,6 @@ mod request_check_recovery;
 mod request_checks;
 mod request_diff_stats;
 mod request_discussion_actors;
-mod request_discussion_commands;
 mod request_discussion_rows;
 mod request_discussions;
 mod request_invitees;
@@ -98,7 +97,8 @@ mod request_rows;
 mod request_stack;
 pub use request_navigation::RequestChildrenPage;
 mod request_state;
-mod request_submission_transactions;
+mod request_transaction;
+pub use request_transaction::{LockedAutoMerge, RequestCloseFacts, RequestTransaction};
 mod requests;
 pub use requests::PushedRevisionObjects;
 mod stores;
@@ -164,7 +164,9 @@ pub use repo_collaboration::{
 };
 pub use repo_invite_emails::{RepositoryInviteEmailDelivery, RequestRepositoryInviteEmailCommand};
 pub use repo_lifecycle::{CreateRepositoryCommand, RepositoryCreationError};
-pub use repo_mutation::{RepositoryMutation, RepositoryMutationError, RepositoryMutationResult};
+pub use repo_mutation::{
+    RepositoryMutation, RepositoryMutationError, RepositoryMutationResult, RepositoryTransaction,
+};
 pub use repo_reads::{RepoLiveFileWithLandingContent, RepoSummaryRead};
 pub use repository_access::RepositoryReadPolicy;
 use repository_rows::repository_from_model;
@@ -179,10 +181,6 @@ pub use request_checks::{
     ApproveRequestChecksCommand, RecordRequestChecksCommand, RequestChecksMutation,
 };
 pub use request_discussion_actors::RequestDiscussionActors;
-pub use request_discussion_commands::{
-    CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
-    ReopenAndReplyToRequestDiscussionCommand, TransitionRequestDiscussionCommand,
-};
 pub use request_discussion_rows::RequestDiscussionReplyReadModel;
 pub use request_discussions::{
     RequestDiscussionReadBatch, RequestDiscussionReadModel, RequestDiscussionsPageQuery,
@@ -191,9 +189,8 @@ pub use request_invitees::{
     AddRequestInviteeCommand, LeaveRequestCommand, RemoveRequestInviteeCommand, RequestInviteeRead,
 };
 pub use request_lifecycle_commands::{
-    CloseRequestCommand, EditRequestIdentityCommand, ExpectedGitHubCheckRead,
-    ExpectedRequestAutoMerge, ExpectedRequestCheckEvaluation, ExpectedRequestMergeEvidence,
-    MergeRequestContentCommand, SubmitRequestCommand,
+    ExpectedGitHubCheckRead, ExpectedRequestAutoMerge, ExpectedRequestCheckEvaluation,
+    ExpectedRequestMergeEvidence, MergeRequestContentCommand,
 };
 pub use request_media::{
     AttachmentUploadSession, CompleteRequestAttachmentProcessingCommand,
@@ -220,4 +217,4 @@ pub use stores::{
     RequestStore,
 };
 #[cfg(any(test, feature = "test-support"))]
-pub use test_support::TestDatabaseTarget;
+pub use test_support::{HeldRemoval, TestDatabaseTarget};
