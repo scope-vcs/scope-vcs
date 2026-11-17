@@ -293,7 +293,11 @@ mod tests {
             } else {
                 snapshot.remote_fetch_url(remote)
             };
-            assert_eq!(actual.unwrap(), expected, "{args:?}");
+            if expected.is_empty() {
+                assert!(actual.is_err(), "{args:?}");
+            } else {
+                assert_eq!(actual.unwrap(), expected, "{args:?}");
+            }
         }
         assert!(snapshot.remote_fetch_url("missing").is_err());
     }
