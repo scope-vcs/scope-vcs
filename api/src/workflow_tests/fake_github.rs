@@ -687,7 +687,7 @@ pub(super) async fn webhook(
     let response = queue_webhook(state, &delivery_id, event, body, secret).await;
     crate::use_cases::github_webhook_deliveries::process_due_github_deliveries(
         state,
-        crate::persistence::unix_now().unwrap(),
+        crate::persistence::unix_now,
     )
     .await
     .unwrap();

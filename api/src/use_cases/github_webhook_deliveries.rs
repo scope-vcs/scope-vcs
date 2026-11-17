@@ -17,8 +17,9 @@ use scope_postgres::db::GitHubWebhookDelivery;
 use std::{collections::BTreeMap, time::Duration};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
-const BATCH_SIZE: u64 = 50;
+const BATCH_SIZE: u64 = 10;
 const LEASE_SECS: u64 = 5 * 60;
+const LEASE_RESERVE_SECS: u64 = 2 * 60;
 
 pub(crate) async fn accept_github_delivery(
     state: &AppState,
@@ -41,30 +42,33 @@ pub(crate) async fn accept_github_delivery(
 
 pub(crate) async fn process_due_github_deliveries(
     state: &AppState,
-    now_unix: u64,
+    clock: impl Fn() -> Result<u64, ApiError>,
 ) -> Result<usize, ApiError> {
     let repositories = state.metadata.repositories();
     let mut processed = 0;
     loop {
+        let claimed_at_unix = clock()?;
+        let lease_until_unix = claimed_at_unix.saturating_add(LEASE_SECS);
         let batch = repositories
-            .claim_due_github_webhook_deliveries(
-                now_unix,
-                now_unix.saturating_add(LEASE_SECS),
-                BATCH_SIZE,
-            )
+            .claim_due_github_webhook_deliveries(claimed_at_unix, lease_until_unix, BATCH_SIZE)
             .await?;
-        let claimed = batch.len();
-        let mut reads = BTreeMap::new();
-        for delivery in batch {
-            let result = process(state, &delivery, &mut reads, now_unix).await;
-            let finish = finish_for(&delivery, result, now_unix);
-            repositories
-                .finish_github_webhook_delivery(&delivery, finish)
-                .await?;
-        }
-        processed += claimed;
-        if claimed < BATCH_SIZE as usize {
+        if batch.is_empty() {
             return Ok(processed);
+        }
+        let mut reads = BTreeMap::new();
+        for (position, delivery) in batch.iter().enumerate() {
+            let now_unix = clock()?;
+            let lease_nearly_spent = now_unix.saturating_add(LEASE_RESERVE_SECS) > lease_until_unix;
+            let finish = if position > 0 && lease_nearly_spent {
+                GitHubWebhookDeliveryFinish::RetryUncountedAt(now_unix)
+            } else {
+                processed += 1;
+                let result = process(state, delivery, &mut reads, now_unix).await;
+                finish_for(delivery, result, clock()?)
+            };
+            repositories
+                .finish_github_webhook_delivery(delivery, finish)
+                .await?;
         }
     }
 }
@@ -285,7 +289,7 @@ impl BackgroundWork {
                 },
                 readiness: Readiness::SchemaRequired,
             },
-            |state| async move { process_due_github_deliveries(&state, unix_now()?).await },
+            |state| async move { process_due_github_deliveries(&state, unix_now).await },
         );
     }
 }
