@@ -57,7 +57,7 @@ function Stack() {
     revisions: [{ ...revision, base: requestBase, commits: revision.commits.map((commit) => ({ ...commit, files: isPrivate && mode === 'commit' ? [] : [parentFile, ...visibleFiles], files_truncated: isPrivate && mode === 'commit' })) }], review_revision_id: revision.id, has_earlier_revisions: false,
     comparison: { revision_id: revision.id, mode, base_oid: base, head_oid: head, inspection: 'Complete', files: mode === 'commit' && !isPrivate ? [parentFile, ...visibleFiles] : visibleFiles },
   } as RequestRevisionListResponse
-  return <RepoLayoutProvider live={{ repo: { views: [{ id: view, name: view, readers: view === 'public' ? 'anyone' : 'assigned', includes: isPrivate ? 'all' : [] }] } } as RepoLiveState} subscribe={() => () => {}}>
+  return <RepoLayoutProvider live={{ repo: { views: [{ id: view, name: view, readers: view === 'public' ? 'anyone' : 'assigned', includes: isPrivate ? 'all' : [] }] } } as RepoLiveState} subscribe={() => () => {}} summaryIdentity="fixture">
   <>
     <RequestStackContext childrenError={childrenError} detail={detail} onLoadChildren={() => { calls.push({ kind: 'children' }) }} params={{ owner: 'adam', repo: 'demo' }} />
     <div className="p-3">

@@ -100,7 +100,7 @@ function App() {
         run_import: null,
       })}>GitHub uninstalled elsewhere</button>
     </div>
-    <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe}>
+    <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe} summaryIdentity="fixture">
       <RepoSettingsPage
         params={{ owner: repo.owner_handle, repo: repo.name }} collaboration={settings.value?.collaboration ?? null}
         collaborationLoading={!settings.value}

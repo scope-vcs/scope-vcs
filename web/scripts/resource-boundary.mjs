@@ -8,7 +8,7 @@ const CACHE_FACTORY = 'createCachedResource'
 const LOADER = /^load[A-Z]/
 const RESOURCE_WRITE = /^(write|seed|writeIfUnchanged)$/
 const REPO_FEATURE = /^src\/features\/(history|repo-detail|repo-search|requests|runs)\//
-const REPO_RESOURCE_OWNER = 'src/features/repo-detail/repo-resource.ts'
+const REPO_RESOURCE_OWNERS = new Set(['src/features/repo-detail/repo-resource.ts', 'src/features/repo-detail/repo-summary-resource.ts'])
 
 export function walk(node, visit) {
   if (!node || typeof node !== 'object') return
@@ -69,7 +69,7 @@ function loadsCacheFactory(node) {
 export function resourceBoundaryViolations(path, source) {
   const filename = path.replaceAll('\\', '/')
   const file = parse(source, { sourceType: 'unambiguous', plugins: ['typescript', 'jsx'] })
-  const declaresRepoResources = REPO_FEATURE.test(filename) && filename !== REPO_RESOURCE_OWNER
+  const declaresRepoResources = REPO_FEATURE.test(filename) && !REPO_RESOURCE_OWNERS.has(filename)
   const bypass = (node) => `${filename}:${node.loc.start.line}: repository resource bypasses createRepoResource; declare what invalidates it`
   const effectNames = new Set()
   const readNames = new Set(['fetch'])
