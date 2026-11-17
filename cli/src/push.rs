@@ -35,6 +35,8 @@ use serde_json::json;
 mod through_view;
 
 pub const DEFAULT_SCOPE_BRANCH: &str = "main";
+const PUBLIC_COMMIT_METADATA_NOTICE: &str =
+    "Commits that touch only public files keep their messages and authors in the public view.";
 
 pub fn run(explicit_remote: Option<&str>, no_review: bool) -> anyhow::Result<()> {
     let progress = PreparationProgress::start("Checking repository…")?;
@@ -202,6 +204,7 @@ fn push_to_main(
         "Publish {}/{} refs/heads/{} at commit {}",
         target.owner, target.repo, DEFAULT_SCOPE_BRANCH, reviewed_head_oid
     );
+    announce_public_commit_metadata(config.views());
 
     push_head_with_intent(&session.token, target, reviewed_head_oid, &intent)?;
     let mut receipt = json!({"repository": format!("{}/{}", target.owner, target.repo), "remote": remote, "ref": format!("refs/heads/{DEFAULT_SCOPE_BRANCH}"), "commit": reviewed_head_oid, "applied": true, "tracking_updated": false, "config_synced": false});
@@ -219,6 +222,12 @@ fn push_to_main(
             target.owner, target.repo
         )],
     )
+}
+
+fn announce_public_commit_metadata(views: &Views) {
+    if views.anyone().is_some() {
+        eprintln!("{PUBLIC_COMMIT_METADATA_NOTICE}");
+    }
 }
 
 fn applied_push_error(receipt: &serde_json::Value, message: String, recovery: &str) -> CliError {

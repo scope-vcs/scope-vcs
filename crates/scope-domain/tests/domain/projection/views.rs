@@ -488,3 +488,47 @@ fn a_views_transition_survives_a_public_history_redaction() {
         .len()
     );
 }
+
+#[test]
+fn a_file_hidden_from_a_custom_view_stays_hidden_after_a_history_redaction() {
+    let mut repo = repo_with_files();
+    let views = views_with(&[("ops", "Ops", &[]), ("agent", "Agent", &["public", "ops"])]);
+    update(
+        &mut repo,
+        config_with(
+            views.clone(),
+            &[("/README.md", "public"), ("/notes.md", "ops")],
+        ),
+    )
+    .unwrap();
+    repo.graph.commits.push(commit(
+        "rv2",
+        "ops notes",
+        added("/notes.md", view_id("ops"), "ops notes"),
+    ));
+    repo.live_files.insert(path("/notes.md"), blob("ops notes"));
+    update(
+        &mut repo,
+        config_with(views.clone(), &[("/README.md", "public")]),
+    )
+    .unwrap();
+    let agent_paths = |repo: &Repository| {
+        project_graph(
+            &repo.graph,
+            &repo.visibility_change_sets,
+            &Views::builtin(),
+            &view_id("agent"),
+        )
+        .visible_paths()
+    };
+    assert_eq!(agent_paths(&repo), ["/README.md"]);
+
+    let mut redacting = config_with(views, &[("/README.md", "public")]);
+    redacting.history.rewrites = vec![scope_domain::repo_config::HistoryRewriteRequest {
+        path: "/notes.md".to_string(),
+        action: scope_domain::repo_config::HistoryRewriteAction::RedactPublicHistory,
+    }];
+    update(&mut repo, redacting).unwrap();
+
+    assert_eq!(agent_paths(&repo), ["/README.md"]);
+}

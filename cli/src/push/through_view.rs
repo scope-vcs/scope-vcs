@@ -1,6 +1,7 @@
 use super::{
-    DEFAULT_SCOPE_BRANCH, ensure_intent_destination, ensure_push_intent_not_expired,
-    main_push_denied, main_push_mode, push_head_with_intent, remote_view_mismatch,
+    DEFAULT_SCOPE_BRANCH, announce_public_commit_metadata, ensure_intent_destination,
+    ensure_push_intent_not_expired, main_push_denied, main_push_mode, push_head_with_intent,
+    remote_view_mismatch,
 };
 use crate::{
     api::{
@@ -85,6 +86,7 @@ pub(super) fn push(
         "Publish {}/{} refs/heads/{DEFAULT_SCOPE_BRANCH} at commit {head_oid} through the {view_name} view",
         target.owner, target.repo
     );
+    announce_public_commit_metadata(&views);
     push_head_with_intent(&session.token, target, head_oid, &intent)?;
     let request = landed_request(api, target, &session.user.id, head_oid)
         .map_err(|error| landed_without_receipt(target, head_oid, error))?;
