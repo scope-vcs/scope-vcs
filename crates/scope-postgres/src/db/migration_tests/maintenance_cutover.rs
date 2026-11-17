@@ -54,7 +54,46 @@ async fn writer_sessions_run_queries_without_jit_compilation() {
 }
 
 #[tokio::test]
-async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
+async fn maintenance_migrations_apply_while_a_writer_stays_connected() {
+    let (target, db, _lease) = isolated_database().await;
+    let database_url = target.schema_database_url();
+    let writer = connect_writer_database(
+        &database_url,
+        database_url.parse().unwrap(),
+        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
+    )
+    .await
+    .unwrap();
+
+    apply_maintenance_migrations(database_url, Default::default())
+        .await
+        .unwrap();
+    migrations::assert_exact_state(db.as_ref()).await.unwrap();
+    assert!(migrations::plan(db.as_ref()).await.unwrap().exact);
+    writer.ping().await.unwrap();
+    writer.close().await.unwrap();
+
+    let worker_store = connect_postgres_store(
+        target.schema_database_url(),
+        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
+    )
+    .await
+    .unwrap();
+    worker_store.admin().readiness_check().await.unwrap();
+
+    db.execute_unprepared(
+        "
+            INSERT INTO seaql_migrations (version, applied_at)
+            VALUES ('m9999_unknown', 0)
+        ",
+    )
+    .await
+    .unwrap();
+    assert!(worker_store.admin().readiness_check().await.is_err());
+}
+
+#[tokio::test]
+async fn a_reconnected_writer_holds_the_fence_until_it_is_drained() {
     let (target, db, _lease) = isolated_database().await;
     let database_url = target.schema_database_url();
     let writer = connect_writer_database(
@@ -88,11 +127,6 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
         .await
         .unwrap_err();
     assert!(fence_error.to_string().contains("writer still holds"));
-    let migration_error = apply_maintenance_migrations(database_url.clone(), Default::default())
-        .await
-        .unwrap_err();
-    assert!(migration_error.to_string().contains("writer still holds"));
-    assert!(!migrations::plan(db.as_ref()).await.unwrap().exact);
 
     assert!(
         terminate_metadata_writer_sessions(database_url.clone())
@@ -101,32 +135,7 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
             >= 1
     );
     writer.close().await.unwrap();
-    verify_writer_fence_available(database_url.clone())
-        .await
-        .unwrap();
-    apply_maintenance_migrations(database_url, Default::default())
-        .await
-        .unwrap();
-    migrations::assert_exact_state(db.as_ref()).await.unwrap();
-    assert!(migrations::plan(db.as_ref()).await.unwrap().exact);
-
-    let worker_store = connect_postgres_store(
-        target.schema_database_url(),
-        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
-    )
-    .await
-    .unwrap();
-    worker_store.admin().readiness_check().await.unwrap();
-
-    db.execute_unprepared(
-        "
-            INSERT INTO seaql_migrations (version, applied_at)
-            VALUES ('m9999_unknown', 0)
-        ",
-    )
-    .await
-    .unwrap();
-    assert!(worker_store.admin().readiness_check().await.is_err());
+    verify_writer_fence_available(database_url).await.unwrap();
 }
 
 #[tokio::test]
