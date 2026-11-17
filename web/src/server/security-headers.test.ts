@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { REPOSITORY_HTML_CONTENT_SECURITY_POLICY } from '../components/repository-html'
 import { clerkFrontendOrigin, contentSecurityPolicy, secureResponse } from './security-headers'
 
 const clerkOrigin = 'https://scope-e2e.clerk.accounts.dev'
@@ -55,8 +56,10 @@ test('scripts run only from this origin, this response, and the Clerk instance i
   const policy = directives(contentSecurityPolicy(security))
   assert.deepEqual(policy.get('default-src'), ["'self'"])
   assert.deepEqual(policy.get('script-src'), [
-    "'self'", "'nonce-bm9uY2U='", "'wasm-unsafe-eval'", clerkOrigin, 'https://challenges.cloudflare.com',
+    "'self'", "'nonce-bm9uY2U='", "'wasm-unsafe-eval'", clerkOrigin, 'https://challenges.cloudflare.com', 'https://*.protect.clerk.com',
   ])
+  assert.deepEqual(policy.get('frame-src'), ["'self'", 'https://challenges.cloudflare.com', 'https://*.protect.clerk.com'])
+  assert.equal(policy.get('connect-src')?.includes('https://*.protect.clerk.com:*'), true)
   assert.deepEqual(policy.get('frame-ancestors'), ["'none'"])
   assert.deepEqual(policy.get('object-src'), ["'none'"])
   assert.deepEqual(policy.get('base-uri'), ["'self'"])
@@ -69,6 +72,17 @@ test('scripts run only from this origin, this response, and the Clerk instance i
   const signedOut = directives(contentSecurityPolicy({ ...security, clerkOrigin: null }))
   assert.deepEqual(signedOut.get('script-src'), ["'self'", "'nonce-bm9uY2U='", "'wasm-unsafe-eval'"])
   assert.deepEqual(signedOut.get('frame-src'), ["'self'"])
+  assert.deepEqual(signedOut.get('connect-src'), ["'self'", 'https:'])
+})
+
+test('a sandboxed repository preview may load everything its own policy allows', () => {
+  const policy = directives(contentSecurityPolicy(security))
+  for (const directive of REPOSITORY_HTML_CONTENT_SECURITY_POLICY.split('; ')) {
+    const [name, ...sources] = directive.split(' ')
+    for (const source of sources.filter((value) => value !== "'none'")) {
+      assert.equal(policy.get(name ?? '')?.includes(source), true, `${name} ${source}`)
+    }
+  }
 })
 
 test('local development may reach local services without loosening scripts', () => {

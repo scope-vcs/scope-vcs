@@ -2,6 +2,7 @@ export const CSP_NONCE_HEADER = 'x-scope-csp-nonce'
 
 const HSTS_MAX_AGE_SECONDS = 365 * 24 * 60 * 60
 const CLERK_CHALLENGE_ORIGIN = 'https://challenges.cloudflare.com'
+const CLERK_PROTECTION_HOSTS = 'https://*.protect.clerk.com'
 const LOCAL_DEVELOPMENT_SOURCES = 'http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*'
 
 type ResponseSecurity = {
@@ -23,18 +24,20 @@ export function contentSecurityPolicy({ clerkOrigin, nonce, production }: Respon
     "'self'",
     `'nonce-${nonce}'`,
     "'wasm-unsafe-eval'",
-    ...clerkOrigin ? [clerkOrigin, CLERK_CHALLENGE_ORIGIN] : [],
+    ...clerkOrigin ? [clerkOrigin, CLERK_CHALLENGE_ORIGIN, CLERK_PROTECTION_HOSTS] : [],
   ]
+  const clerkFrames = clerkOrigin ? [CLERK_CHALLENGE_ORIGIN, CLERK_PROTECTION_HOSTS] : []
+  const clerkConnections = clerkOrigin ? [`${CLERK_PROTECTION_HOSTS}:*`] : []
   const directives = [
     ["default-src", "'self'"],
     ["script-src", ...scripts],
     ["style-src", "'self'", "'unsafe-inline'"],
     ["img-src", "'self'", 'data:', 'blob:', 'https:', ...local],
-    ["media-src", "'self'", 'blob:', 'https:', ...local],
+    ["media-src", "'self'", 'data:', 'blob:', 'https:', ...local],
     ["font-src", "'self'", 'data:'],
-    ["connect-src", "'self'", 'https:', ...local],
+    ["connect-src", "'self'", 'https:', ...clerkConnections, ...local],
     ["worker-src", "'self'", 'blob:'],
-    ["frame-src", "'self'", ...clerkOrigin ? [CLERK_CHALLENGE_ORIGIN] : []],
+    ["frame-src", "'self'", ...clerkFrames],
     ["form-action", "'self'"],
     ["frame-ancestors", "'none'"],
     ["object-src", "'none'"],
