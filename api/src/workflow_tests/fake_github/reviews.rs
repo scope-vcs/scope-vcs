@@ -54,6 +54,21 @@ impl FakeGitHub {
     }
 }
 
+fn review_listing(comment: &serde_json::Value) -> serde_json::Value {
+    let mut listed = comment.clone();
+    for field in [
+        "subject_type",
+        "side",
+        "line",
+        "start_line",
+        "original_line",
+        "original_start_line",
+    ] {
+        listed[field] = serde_json::Value::Null;
+    }
+    listed
+}
+
 fn found(value: Option<serde_json::Value>) -> Response {
     match value {
         Some(value) => Json(value).into_response(),
@@ -87,18 +102,22 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             ),
         )
         .route(
-            "/repos/{owner}/{repo}/pulls/{number}/comments",
-            get(|AxumState(fake): AxumState<Arc<FakeGitHub>>| async move {
-                let mut comments = fake
-                    .review_comments
-                    .lock()
-                    .unwrap()
-                    .values()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                comments.sort_by_key(|comment| comment["id"].as_u64());
-                Json(comments)
-            }),
+            "/repos/{owner}/{repo}/pulls/{number}/reviews/{id}/comments",
+            get(
+                |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                 AxumPath((_, _, _, id)): AxumPath<(String, String, u64, u64)>| async move {
+                    let mut comments = fake
+                        .review_comments
+                        .lock()
+                        .unwrap()
+                        .values()
+                        .filter(|comment| comment["pull_request_review_id"] == id)
+                        .map(review_listing)
+                        .collect::<Vec<_>>();
+                    comments.sort_by_key(|comment| comment["id"].as_u64());
+                    Json(comments)
+                },
+            ),
         )
         .route(
             "/repos/{owner}/{repo}/collaborators/{username}/permission",

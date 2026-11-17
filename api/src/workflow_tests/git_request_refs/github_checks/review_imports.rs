@@ -71,6 +71,7 @@ fn line_comment(
 ) -> serde_json::Value {
     serde_json::json!({
         "id": id,
+        "pull_request_review_id": REVIEW_ID,
         "in_reply_to_id": null,
         "user": bot(),
         "body": format!("Comment {id}"),
@@ -187,10 +188,6 @@ async fn a_bot_review_on_the_carrier_pull_request_becomes_anchored_discussions()
             line_comment(202, &head, "request.txt", Some(1), 40),
             line_comment(203, &head, "missing.txt", None, 1),
         ],
-    );
-    owner.fake.report_pull_review(
-        review(REVIEW_ID + 1, bot(), &head),
-        vec![line_comment(204, &head, "request.txt", None, 1)],
     );
 
     deliver_review(&owner, GITHUB_REPOSITORY_ID + 1).await;
