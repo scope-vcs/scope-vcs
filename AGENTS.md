@@ -24,22 +24,24 @@ Set autoreview's timeout to 15 minutes with `--engine-timeout-seconds 900`. Do i
 
 ## Scope contribution rules
 
-This repository dogfoods Scope. GitHub remains the source of truth for merges,
-CI gating, deploys, and releases.
+This repository dogfoods Scope. Scope is the source of truth for review, merge
+gating, and main. GitHub runs Actions and receives main from Scope, and releases
+build from that main.
 
-Maintainers deliver each change as one PR, opened from its Scope request's
-`scope/requests/<id>` branch so that Scope adopts it instead of opening a second
-PR for the same commit, and mirror every merge to main to their `scope` remote.
-Both follow the dogfood-scope skill from their personal agent skills. The skill
-is not part of this repository, and contributors without it or without a `scope`
-remote open ordinary PRs and have nothing to mirror. A Scope failure never blocks
-GitHub delivery: the change goes out as an ordinary PR, and the failure is noted
-in the PR description.
+Deliver each change as one Scope request: `scope request start`, then
+`scope request push` for each revision, then `scope request submit`. Merge it in
+Scope with native merge, the merge queue, or auto-merge once its required checks
+and reviews pass. Do not open GitHub pull requests, merge on GitHub, or push to
+GitHub's main; Scope opens a pull request itself only when a review bot needs one.
 
 Checks on this repository's Scope requests come from its GitHub Actions
-workflows on `scope/requests/<id>`.
+workflows, which run when Scope pushes the request to `scope/requests/<id>`.
+Re-run failed checks on GitHub.
 
-Main on Scope only ever receives commits already on GitHub's main.
+GitHub's main only ever receives Scope's main. A change delivered through GitHub
+instead makes Scope stop publishing main until the two are reconciled, so a Scope
+failure blocks delivery: open an issue for it and wait for the fix rather than
+working around Scope.
 
 ## Rule enforcement
 
@@ -68,7 +70,7 @@ unrepresentable state.
 | Avoid compatibility layers in pre-alpha; maintainer means owner or member. | Domain authorization tests cover access. Compatibility and terminology choices still require review. |
 | Do not edit root README without explicit authorization; involve the operator in new behavior. | Operator context and review; no source-only check can establish authorization. |
 | Record failed checks before retrying without a repair. | Release-flake issue workflow; no local retry interceptor. |
-| Open one PR per change from its request's branch and keep Scope main downstream. | `dogfood-scope` skill and contribution workflow; not enforced by compilation. |
+| Deliver every change as a Scope request merged in Scope; GitHub's main only receives Scope's main. | Scope refuses to publish main once GitHub's main has commits Scope lacks. Opening a GitHub pull request or merging on GitHub is not blocked and still requires review. |
 | Keep releases separate from pushes and merges. | GitHub release workflows. |
 | Review with the configured timeout and verify before committing. | Autoreview and shared `dev/checks` commands; review invocation remains an agent responsibility. |
 
