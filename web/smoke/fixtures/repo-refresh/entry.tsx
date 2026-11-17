@@ -47,8 +47,8 @@ function Queue({ current }: { current: RepoLiveState }) {
   const queue = useRequestQueue(requestQueueIdentity(repoResourceScope(current.repo, 'viewer'), current.repo.access.view), String(current.repo.change_version), load)
   return <ul aria-label="Request queue">{queue.value?.pages.active.requests.map(item => <li key={item.request.id}>{item.request.id}</li>)}</ul>
 }
-function App({ initial }: { initial: RepoLiveState }) {
-  const current = useRepoSummary({ identity: summaryIdentity, initial, load: summary, onRejected: ignoreRejection })
+function App() {
+  const current = useRepoSummary({ identity: summaryIdentity, load: summary, onRejected: ignoreRejection })
   const [visible, setVisible] = useState(true)
   useRepoLiveRefresh(current)
   Object.assign(window, { fixture: {
@@ -60,7 +60,8 @@ function App({ initial }: { initial: RepoLiveState }) {
     interrupt: () => { for (const stream of server.streams) stream.close(); server.streams.clear() },
     lag: () => { for (const stream of server.streams) stream.enqueue(new TextEncoder().encode(`event: repo-change\ndata: ${JSON.stringify({ repo_id: repo.id, incarnation_id: 'repo-i', kind: 'Lagged', version: 0 })}\n\n`)) },
   } })
+  if (!current) return null
   return <main><h1>Requests <span data-count>{current.repo.open_request_count}</span></h1><button onClick={() => setVisible(value => !value)}>Navigate</button>{visible && <Queue current={current} />}</main>
 }
 const root = createRoot(document.getElementById('root')!)
-void summary().then(initial => root.render(<App initial={initial} />))
+root.render(<App />)

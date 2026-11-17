@@ -88,7 +88,6 @@ function Changes() {
             discussions.unshift(created)
             return { discussion: created }
           }}
-          initialDiscussionReferences={{ referenceKey: null, page: null }}
           loadDiff={async (input) => ({
             kind: 'Renamed', new_mode: '100644', old_mode: '100644', old_path: oldPath, path: input.path,
             presentation: { kind: 'html', html: window.diffHtml },

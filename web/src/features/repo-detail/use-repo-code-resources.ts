@@ -8,14 +8,9 @@ import { displayRouteFilePath } from '@/lib/route-file'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { loadRepoContent, loadRepoFile } from '@/routes/-repo-code-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { repoContentCacheKey, repoContentResource } from './repo-content-cache'
-import {
-  loadRepoFileWhenReady,
-  repoCodeResourceLoader,
-  repositoryLandingPath,
-  settleRepoCodeResource,
-} from './repo-code-route-data'
+import { loadRepoFileWhenReady, repositoryLandingPath } from './repo-code-route-data'
 import { repoFileCacheKey, repoFileResource } from './repo-file-cache'
 import { repoResourceScope } from './repo-resource-scope'
 import {
@@ -25,20 +20,6 @@ import {
 import { useViewingAs } from './use-viewing-as'
 
 type RepoCodeParams = { owner: string; repo: string }
-
-export type RepoCodeLoaderData = {
-  content: ReturnType<typeof settleRepoCodeResource<RepoContent>> | null
-  contentIdentity: string | null
-  file: ReturnType<typeof settleRepoCodeResource<RepoFileContentResponse>> | null
-  fileIdentity: string | null
-}
-
-export const EMPTY_REPO_CODE_LOADER_DATA: RepoCodeLoaderData = {
-  content: null,
-  contentIdentity: null,
-  file: null,
-  fileIdentity: null,
-}
 
 export function repoCodeCacheKeys(
   repo: RepoSummaryResponse,
@@ -65,44 +46,13 @@ export function repoCodeRefreshVersion(repo: RepoSummaryResponse, version: Repos
   return version.kind === 'request' ? String(repo.change_version) : ''
 }
 
-export function prepareRepoCodeLoaderData({
-  file,
-  keys,
-  params,
-  signal,
-  version,
-  view,
-}: {
-  file: string | null
-  keys: ReturnType<typeof repoCodeCacheKeys>
-  params: RepoCodeParams
-  signal: AbortSignal
-  version: RepositoryVersion
-  view: ViewId
-}): RepoCodeLoaderData {
-  const content = loadRepoContent({
-    data: { ...params, ...repositoryVersionSearch(version), view },
-    signal,
-  })
-  return {
-    content: settleRepoCodeResource(content),
-    contentIdentity: keys.contentIdentity,
-    file: file && keys.fileIdentity
-      ? settleRepoCodeResource(loadAddressedFile(params, file, version, view, signal))
-      : null,
-    fileIdentity: keys.fileIdentity,
-  }
-}
-
 export function useRepoCodeResources({
   file,
-  page,
   params,
   repo,
   version,
 }: {
   file: string | null
-  page: RepoCodeLoaderData
   params: RepoCodeParams
   repo: RepoSummaryResponse
   version: RepositoryVersion
@@ -113,12 +63,9 @@ export function useRepoCodeResources({
   const { owner, repo: repoName } = params
   const refreshVersion = repoCodeRefreshVersion(repo, version)
   const { contentIdentity } = repoCodeCacheKeys(repo, scope, view, null, version)
-  const loadContent = useMemo(() => repoCodeResourceLoader(
-    page.contentIdentity === contentIdentity ? page.content : null,
-    (signal: AbortSignal): Promise<RepoContent> => loadRepoContent({
-      data: { owner, repo: repoName, view, ...repositoryVersionSearch(version) }, signal,
-    }),
-  ), [contentIdentity, owner, page.content, page.contentIdentity, repoName, version, view])
+  const loadContent = useCallback((signal: AbortSignal): Promise<RepoContent> => loadRepoContent({
+    data: { owner, repo: repoName, view, ...repositoryVersionSearch(version) }, signal,
+  }), [owner, repoName, version, view])
   const content = useCachedResource({
     fallbackError: 'Repository files are unavailable.',
     identity: contentIdentity,
@@ -133,13 +80,10 @@ export function useRepoCodeResources({
     return repositoryLandingPath(files)
   }, [file, files])
   const { fileIdentity } = repoCodeCacheKeys(repo, scope, view, selectedPath, version)
-  const loadSelectedFile = useMemo(() => repoCodeResourceLoader(
-    page.fileIdentity === fileIdentity ? page.file : null,
-    (signal: AbortSignal) => {
-      if (!selectedPath) throw new Error('No file selected.')
-      return loadAddressedFile({ owner, repo: repoName }, selectedPath, version, view, signal)
-    },
-  ), [fileIdentity, owner, page.file, page.fileIdentity, repoName, selectedPath, version, view])
+  const loadSelectedFile = useCallback((signal: AbortSignal) => {
+    if (!selectedPath) throw new Error('No file selected.')
+    return loadAddressedFile({ owner, repo: repoName }, selectedPath, version, view, signal)
+  }, [owner, repoName, selectedPath, version, view])
   const selectedFile = useCachedResource({
     fallbackError: 'File content is unavailable.',
     identity: fileIdentity,

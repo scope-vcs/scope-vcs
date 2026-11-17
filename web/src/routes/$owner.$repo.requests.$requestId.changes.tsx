@@ -19,12 +19,11 @@ import {
 } from '@/features/requests/request-discussion-api'
 import { RequestAttachmentProvider } from '@/features/requests/request-attachment-context'
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
-import { loadDiscussionReferencePage, selectedDiscussionReferenceQuery } from '@/features/requests/request-changes-discussion-references'
-import { requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges } from '@/features/requests/request-changes-resource'
-import { useRequestChangesResource } from '@/features/requests/use-request-changes-resource'
+import { loadDiscussionReferencePage } from '@/features/requests/request-changes-discussion-references'
+import { requestChangesResource, requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges } from '@/features/requests/request-changes-resource'
+import { useCachedResource } from '@/lib/use-cached-resource'
 import {
   RequestChangesWorkbench,
-  type RequestChangesDiscussionReferences,
   type RequestChangesSearch,
 } from '@/features/requests/request-changes-workbench'
 import { RequestChangesBodyPending, RequestChangesPending } from '@/features/requests/request-page-pending'
@@ -43,41 +42,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
 import { GitCommit } from 'lucide-react'
 import { useAuth } from '@clerk/tanstack-react-start'
-import { auth } from '@clerk/tanstack-react-start/server'
 import { useCallback, useEffect, useMemo } from 'react'
-import { serverLog } from '@/server/log'
-
-function failureAttributes(error: unknown) {
-  if (error instanceof Error) {
-    return { 'exception.type': error.name, 'exception.message': error.message, 'exception.stacktrace': error.stack ?? '' }
-  }
-  return { 'exception.message': String(error) }
-}
-
-const loadChangesPage = createServerFn({ method: 'GET' })
-  .validator(parseLoadRequestRevisionsInput)
-  .handler(async ({ data }) => {
-    const [{ userId }, revisions] = await Promise.all([
-      auth(),
-      loadRequestRevisionsForRequest(data).catch((error: unknown) => {
-        serverLog('error', 'Loading request revisions failed', failureAttributes(error))
-        return null
-      }),
-    ])
-    const query = revisions ? selectedDiscussionReferenceQuery(data, revisions) : null
-    const page = query
-      ? await loadDiscussionReferencePage(query.input, loadRequestDiscussionsForRequest)
-        .catch((error: unknown) => {
-          serverLog('error', 'Loading request discussion references failed', failureAttributes(error))
-          return null
-        })
-      : null
-    const discussionReferences: RequestChangesDiscussionReferences = {
-      referenceKey: query?.key ?? null,
-      page,
-    }
-    return { discussionReferences, revisions, viewerId: userId }
-  })
 
 const loadRevisionDiff = createServerFn({ method: 'GET' })
   .validator(parseLoadRequestRevisionDiffInput)
@@ -114,22 +79,12 @@ export const Route = createFileRoute(
     path: parseRouteFilePathSearch(search.path),
     revision: searchText(search.revision),
   }),
-  loaderDeps: ({ search }) => requestChangesQuery(search),
-  loader: async ({ deps: selectionSearch, params }) => {
-    const input = {
-      ...requestParamsForRoute(params),
-      ...selectionSearch,
-    }
-    if (typeof window !== 'undefined') return null
-    return loadChangesPage({ data: input })
-  },
   pendingComponent: RequestChangesPending,
   component: RequestChangesRoute,
 })
 
 function RequestChangesRoute() {
   const page = useRequestState()
-  const changes = Route.useLoaderData()
   const params = Route.useParams()
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -158,14 +113,13 @@ function RequestChangesRoute() {
     }),
     [requestParams, query],
   )
-  const { initial, resource } = useRequestChangesResource({
-    access: JSON.stringify(live.repo.access),
+  const resource = useCachedResource({
+    fallbackError: 'Request changes are unavailable.',
     identity,
-    initial: changes,
     load,
-    viewerId: userId ?? null,
+    resource: requestChangesResource,
   })
-  const revisions = resource.value ?? initial?.revisions ?? null
+  const revisions = resource.value
   const selection = revisions
     ? requestChangeSelection(revisions.revisions, revisions.review_revision_id, search)
     : null
@@ -207,7 +161,6 @@ function RequestChangesRoute() {
                 canOpenDiscussion={page.state.detail.request.permissions.can_open_discussion}
                 createDiscussion={createDiscussionForView}
                 view={live.repo.access.view}
-                initialDiscussionReferences={initial?.discussionReferences ?? { referenceKey: null, page: null }}
                 loadDiff={loadDiffForView}
                 loadDiscussions={loadDiscussionsForView}
                 onSearchChange={(nextSearch) => {

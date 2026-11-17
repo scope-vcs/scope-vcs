@@ -259,11 +259,3 @@ test('Details opens a drawer that reuses request data and preserves discussion s
     }
   })
 })
-
-test('the changes screen renders on mobile before hydration', async () => {
-  await withPage(`${requestPath}/changes`, async (page) => {
-    await page.getByRole('heading', { level: 1, name: /^Revision \d+$/ }).waitFor()
-    await changesBackLink(page).waitFor()
-    assert.equal(await page.locator('.request-discussion-thread').count(), 0)
-  }, { javaScriptEnabled: false, viewport: { width: 390, height: 844 } })
-})

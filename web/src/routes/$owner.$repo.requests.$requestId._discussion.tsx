@@ -80,12 +80,12 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discuss
       discussionPage: page.discussionPage === undefined
         ? loadRequestDiscussionRoutePage(
             requestParamsForRoute(params),
-            typeof window === 'undefined' ? null : page.initial.scope,
-            page.initial.viewerId,
+            page.scope,
+            page.viewerId,
             deps.discussion,
           )
         : page.discussionPage,
-      scope: page.initial.scope,
+      scope: page.scope,
     }
   },
   pendingComponent: RequestDetailPagePending,

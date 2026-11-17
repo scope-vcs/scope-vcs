@@ -5,14 +5,11 @@ import {
   appendDiscussionReferencePage,
   loadDiscussionReferencePage,
   loadMoreRequestDiscussionReferences,
-  openRequestDiscussionReferences,
   requestDiscussionReferenceIdentity,
   requestDiscussionReferenceResource,
-  selectedDiscussionReferenceQuery,
 } from './request-changes-discussion-references'
 import { discussion } from './request-discussion-test-fixtures'
 import type { RequestDiscussionPage } from './request-discussion-types'
-import type { RequestRevisionListResponse } from '@/api/types.generated'
 
 test('endless unique cursors return just the first page and preserve its cursor', async () => {
   let calls = 0
@@ -52,41 +49,6 @@ test('continuation preserves snapshot consistency and rejects a repeated cursor'
   assert.deepEqual(appendDiscussionReferencePage(previous, discussionPage(['last'], null, 1)).discussions.map(d => d.id), ['first', 'last'])
 })
 
-test('many revisions and commits produce only the selected reference query', () => {
-  const revisions = {
-    comparison: null,
-    has_earlier_revisions: false,
-    review_revision_id: 'revision-19',
-    revisions: Array.from({ length: 20 }, (_, i) => ({
-      base: { kind: 'main', review_base_oid: 'base' }, base_version: 1,
-      id: `revision-${i}`, position: i, inspection: 'Complete',
-      commits: Array.from({ length: 100 }, (_, j) => ({ oid: `commit-${i}-${j}` })),
-    })),
-  } as RequestRevisionListResponse
-  const selected = selectedDiscussionReferenceQuery({ ...requestInput(), revision_id: 'revision-3', commit_oid: 'commit-3-7' }, revisions)
-  assert.equal(selected?.input.revision_id, 'revision-3')
-  assert.equal(selected.input.commit_oid, 'commit-3-7')
-  assert.equal(selected.input.include_revision_anchor, false)
-  for (const comparison of ['request', 'push'] as const) {
-    const aggregate = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request', revision_id: 'revision-3', comparison }, revisions)
-    assert.equal(aggregate?.input.revision_id, 'revision-3')
-    assert.equal(aggregate.input.commit_oid, undefined)
-    assert.equal(aggregate.input.include_revision_anchor, false)
-  }
-  const defaultLayer = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request' }, revisions)
-  assert.equal(defaultLayer?.input.revision_id, 'revision-19')
-  assert.equal(defaultLayer.input.commit_oid, undefined)
-  assert.equal(defaultLayer.input.include_carried_line_anchors, true)
-  const latestPush = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request', comparison: 'push' }, revisions)
-  assert.equal(latestPush?.key, defaultLayer.key)
-  const earlier = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request', revision_id: 'revision-3', comparison: 'request' }, revisions)
-  assert.equal(earlier?.input.include_carried_line_anchors, undefined)
-  const latest = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request', comparison: 'commit', commit_oid: 'commit-19-99' }, revisions)
-  assert.equal(latest?.input.commit_oid, 'commit-19-99')
-  assert.equal(latest.input.include_revision_anchor, true)
-  assert.equal(latest.input.include_carried_line_anchors, undefined)
-})
-
 function requestInput(): LoadDiscussionsInput {
   return {
     commit_oid: 'a'.repeat(40),
@@ -110,25 +72,9 @@ function discussionPage(
   }
 }
 
-test('a loader page seeds the resource and only a newer snapshot replaces loaded pages', () => {
-  const identity = requestDiscussionReferenceIdentity('scope', 'request-1', 'revision-1:commit-a')
-  const first = discussionPage(['first'], 'cursor-1', 7)
-  assert.equal(openRequestDiscussionReferences(identity, first), first)
-  assert.equal(requestDiscussionReferenceResource.peek(identity), first)
-
-  const accumulated = discussionPage(['first', 'second'], null, 7)
-  requestDiscussionReferenceResource.write(identity, accumulated)
-  assert.equal(openRequestDiscussionReferences(identity, first), accumulated)
-  assert.equal(requestDiscussionReferenceResource.peek(identity), accumulated)
-
-  const newer = discussionPage(['fresh'], null, 8)
-  assert.equal(openRequestDiscussionReferences(identity, newer), newer)
-  assert.equal(requestDiscussionReferenceResource.peek(identity), newer)
-})
-
 test('loading more appends the next page under the loaded snapshot', async () => {
   const identity = requestDiscussionReferenceIdentity('scope', 'request-1', 'revision-1:commit-b')
-  openRequestDiscussionReferences(identity, discussionPage(['first'], 'cursor-1', 3))
+  requestDiscussionReferenceResource.write(identity, discussionPage(['first'], 'cursor-1', 3))
   const cursors: string[] = []
   await loadMoreRequestDiscussionReferences(identity, async (cursor) => {
     cursors.push(cursor)
@@ -149,7 +95,7 @@ test('loading more appends the next page under the loaded snapshot', async () =>
 test('a failed load-more keeps the loaded page and surfaces the error', async () => {
   const identity = requestDiscussionReferenceIdentity('scope', 'request-1', 'revision-1:commit-c')
   const first = discussionPage(['first'], 'cursor-1', 3)
-  openRequestDiscussionReferences(identity, first)
+  requestDiscussionReferenceResource.write(identity, first)
   await loadMoreRequestDiscussionReferences(identity, async () => {
     throw new Error('offline')
   })

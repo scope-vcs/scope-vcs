@@ -25,12 +25,11 @@ import { AbsoluteTimestamp } from '@/components/timestamp'
 import { commitCount } from './request-revision-stepper'
 import { Link } from '@tanstack/react-router'
 import { MessageSquare } from 'lucide-react'
-import { useCallback, useLayoutEffect, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
 import {
   comparisonDiscussionReferenceQuery,
   loadMoreRequestDiscussionReferences,
-  openRequestDiscussionReferences,
   refreshRequestDiscussionReferences,
   requestDiscussionReferenceIdentity,
   requestDiscussionReferenceResource,
@@ -56,11 +55,6 @@ export type RequestChangesSearch = {
   revision?: string
 }
 
-export type RequestChangesDiscussionReferences = {
-  referenceKey: string | null
-  page: RequestDiscussionPage | null
-}
-
 type DiscussionReferenceState = {
   discussions: RequestDiscussion[]
   error: string | null
@@ -75,7 +69,6 @@ export function RequestChangesWorkbench({
   canOpenDiscussion,
   createDiscussion,
   view,
-  initialDiscussionReferences,
   loadDiff,
   loadDiscussions,
   onSearchChange,
@@ -88,7 +81,6 @@ export function RequestChangesWorkbench({
   canOpenDiscussion: boolean
   createDiscussion: CreateLineDiscussion
   view: ViewId
-  initialDiscussionReferences: RequestChangesDiscussionReferences
   loadDiff: (
     input: LoadRequestRevisionDiffInput,
     signal?: AbortSignal,
@@ -114,7 +106,6 @@ export function RequestChangesWorkbench({
     accessScope,
     commitOid: model.selectedCommitOid,
     comparison: model.mode,
-    initialReferences: initialDiscussionReferences,
     loadDiscussions,
     params,
     revision: model.selectedRevision,
@@ -224,7 +215,6 @@ function useRequestDiscussionReferences({
   accessScope,
   commitOid,
   comparison,
-  initialReferences,
   loadDiscussions,
   params,
   revision,
@@ -233,7 +223,6 @@ function useRequestDiscussionReferences({
   accessScope: string | null
   commitOid: string | null
   comparison: 'request' | 'push' | 'commit'
-  initialReferences: RequestChangesDiscussionReferences
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
   params: { owner: string; repo: string; request_id: string }
   revision: RequestRevisionListResponse['revisions'][number] | null
@@ -245,10 +234,6 @@ function useRequestDiscussionReferences({
   const identity = query && accessScope
     ? requestDiscussionReferenceIdentity(accessScope, params.request_id, query.key)
     : null
-  const seed = query && query.key === initialReferences.referenceKey ? initialReferences.page : null
-  useLayoutEffect(() => {
-    if (identity && seed) openRequestDiscussionReferences(identity, seed)
-  }, [identity, seed])
   const input = query?.input
   const loadFirstPage = useCallback(() => {
     if (!input) throw new Error('Select a request revision.')

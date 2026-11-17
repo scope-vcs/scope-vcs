@@ -8,19 +8,16 @@ const FAILED_REFRESH_RETRY_MS = 2_000
 
 export function useRepoSummary({
   identity,
-  initial,
   load,
   onRejected,
 }: {
   identity: string
-  initial: RepoLiveState
   load: (signal: AbortSignal) => Promise<RepoLiveState>
   onRejected: () => void
 }) {
   const summary = useCachedResource({
     fallbackError: 'Repository refresh is temporarily unavailable.',
     identity,
-    initialValue: initial,
     load,
     resource: repoSummaryResource,
   })
@@ -35,5 +32,5 @@ export function useRepoSummary({
     const timer = setTimeout(retry, FAILED_REFRESH_RETRY_MS)
     return () => clearTimeout(timer)
   }, [failure, onRejected, retry])
-  return summary.value ?? initial
+  return summary.value
 }

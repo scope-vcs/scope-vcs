@@ -178,6 +178,9 @@ Object.assign(window, {
 
 async function loadRunDetail(runId: string) {
   runLoads.push(runId)
+  if (runId === '2') {
+    return { run: initialRuns.workflow_runs[1]!, jobs: [], jobs_not_read_yet: true, opening_job_id: null, opening_job_log: null }
+  }
   await new Promise<void>((resolve) => detailResolvers.push(resolve))
   return structuredClone(runId === '3' ? longLogDetail : runDetail)
 }
@@ -256,16 +259,7 @@ function Runs() {
 
 function Run() {
   const { owner, repo, runId } = useParams({ strict: false })
-  const initialDetail = runId === '1' ? runDetail : runId === '3' ? null : {
-    run: initialRuns.workflow_runs[1]!,
-    jobs: [],
-    jobs_not_read_yet: true,
-    opening_job_id: null,
-    opening_job_log: null,
-  }
   return <GitHubWorkflowRunDetailPage
-    initialDetail={initialDetail}
-    initialScope={repoResourceScope(live.repo, 'viewer')}
     key={runId}
     loadDetail={() => loadRunDetail(runId!)}
     loadLog={loadJobLog}

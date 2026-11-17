@@ -68,8 +68,7 @@ function Stack() {
       />
     </div>
     <RequestChangesWorkbench
-      accessScope={`fixture:${view}:adam`} view={view} repoId="repo" params={{ owner: 'adam', repo: 'demo', request_id: 'child' }}
-      initialDiscussionReferences={{ referenceKey: null, page: null }} revisions={revisions} search={search}
+      accessScope={`fixture:${view}:adam`} view={view} repoId="repo" params={{ owner: 'adam', repo: 'demo', request_id: 'child' }} revisions={revisions} search={search}
       onSearchChange={setSearch}
       loadDiscussions={async (input) => {
         referenceCalls.push(input)

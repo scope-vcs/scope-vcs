@@ -6,8 +6,6 @@ export type RunsPage =
   | { kind: 'not-connected'; configured: boolean }
   | { kind: 'denied' }
 
-export type RunsPageHandoff = { scope: string; page: RunsPage }
-
 export const runsPageResource = createRepoResource<RunsPage>({
   invalidatedBy: ['repository'],
   maxEntries: 12,

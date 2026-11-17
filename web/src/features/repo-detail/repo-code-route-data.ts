@@ -1,4 +1,3 @@
-import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import { displayRouteFilePath } from '../../lib/route-file'
 import type { RepoFileContentResponse } from '@/api/types.generated'
 
@@ -15,33 +14,6 @@ const REBUILD_RETRY_DELAYS = [0, 250, 500, 1_000, 2_000] as const
 export type RepoFileLoadResult =
   | { file: RepoFileContentResponse; status: 'ready' }
   | { status: 'missing' | 'rebuilding' }
-
-type RepoCodeResource<T> = { value: T; error: null } | { value: null; error: string }
-
-export async function settleRepoCodeResource<T>(load: Promise<T>): Promise<RepoCodeResource<T>> {
-  try {
-    return { value: await load, error: null }
-  } catch (error) {
-    return { value: null, error: resourceErrorMessage(error, 'Repository content is unavailable.') }
-  }
-}
-
-export function repoCodeResourceLoader<T>(
-  initial: Promise<RepoCodeResource<T>> | null,
-  reload: (signal: AbortSignal) => Promise<T>,
-) {
-  let pending: Promise<RepoCodeResource<T>> | null = initial
-  return async (signal: AbortSignal): Promise<T> => {
-    signal.throwIfAborted()
-    const first = pending
-    pending = null
-    if (!first) return reload(signal)
-    const result = await first
-    signal.throwIfAborted()
-    if (result.error !== null) throw new Error(result.error)
-    return result.value
-  }
-}
 
 export async function loadRepoFileWhenReady({
   load,

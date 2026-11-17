@@ -17,9 +17,9 @@ import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { RunsCiEmptyState } from './runs-ci-empty-state'
 import { RunsPageError } from './runs-page-error'
 import { RunsPagePending } from './runs-page-pending'
-import { type RunsPageHandoff, runsPageResource } from './runs-page-resource'
+import { runsPageResource } from './runs-page-resource'
 
-export function RepositoryRunsRoute({ initialPage, params }: { initialPage: RunsPageHandoff | null; params: RepoParams }) {
+export function RepositoryRunsRoute({ params }: { params: RepoParams }) {
   const { userId, isLoaded } = useAuth()
   const { repo } = useRepoLayout()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
@@ -27,7 +27,6 @@ export function RepositoryRunsRoute({ initialPage, params }: { initialPage: Runs
   const page = useCachedResource({
     fallbackError: 'Runs are unavailable.',
     identity: scope,
-    initialValue: scope && initialPage?.scope === scope ? initialPage.page : null,
     load: useCallback(
       (signal: AbortSignal) => loadRepoRunPage({ data: { owner, repo: repoName }, signal }),
       [owner, repoName],
