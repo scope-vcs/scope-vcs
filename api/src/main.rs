@@ -55,14 +55,17 @@ async fn serve(addr: SocketAddr, state: AppState) -> anyhow::Result<()> {
     let stop_background_work = background_work.stop_signal();
     let app = router(state);
     tracing::info!(%addr, "starting api");
-    let result = axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            stop_background_work.send_replace(true);
-            event_streams.end_event_streams();
-        })
-        .await
-        .context("serving api");
+    let result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        stop_background_work.send_replace(true);
+        event_streams.end_event_streams();
+    })
+    .await
+    .context("serving api");
     background_work.shutdown().await;
     shutdown_state.shutdown().await;
 

@@ -133,14 +133,51 @@ async fn cli_login_starts_are_rate_limited() {
         ),
     ] {
         let app = router(test_state_with_jwks());
-        for _ in 0..max_starts {
-            let response = api_request(app.clone(), "POST", route, None, body).await;
+        let start_from = |host: u64| {
+            let request = Request::builder()
+                .method("POST")
+                .uri(route)
+                .header("x-real-ip", format!("203.0.113.{host}"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(body.map_or_else(Body::empty, |body| Body::from(body.to_string())))
+                .unwrap();
+            app.clone().oneshot(request)
+        };
+        for host in 0..max_starts {
+            let response = start_from(host).await.unwrap();
             assert_eq!(response.status(), StatusCode::OK, "{route}");
         }
 
-        let response = api_request(app, "POST", route, None, body).await;
+        let response = start_from(max_starts).await.unwrap();
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{route}");
+        assert!(!response.headers().contains_key("retry-after"), "{route}");
     }
+}
+
+#[tokio::test]
+async fn one_address_cannot_use_up_the_login_starts_shared_by_everyone() {
+    let app = router(test_state_with_jwks());
+    let start_from = |address: &'static str| {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v1/cli/device-login")
+            .header("x-real-ip", address)
+            .body(Body::empty())
+            .unwrap();
+        app.clone().oneshot(request)
+    };
+    let mut started = 0;
+    while start_from("203.0.113.7").await.unwrap().status() == StatusCode::OK {
+        started += 1;
+        assert!(
+            started < scope_domain::account::cli_auth::MAX_DEVICE_LOGIN_STARTS_PER_WINDOW,
+            "one address used every shared login start"
+        );
+    }
+    assert_eq!(
+        start_from("203.0.113.8").await.unwrap().status(),
+        StatusCode::OK
+    );
 }
 
 #[tokio::test]

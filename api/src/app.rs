@@ -1,4 +1,8 @@
-use crate::{git, http, state::AppState};
+use crate::{
+    git,
+    http::{self, request_limits},
+    state::AppState,
+};
 use axum::{
     Router,
     http::{
@@ -9,7 +13,52 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use scope_api_contract::routes;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    limit::RequestBodyLimitLayer,
+};
+
+fn unauthenticated_cli_login_routes() -> Router<AppState> {
+    let starts = Router::new()
+        .route(
+            routes::CLI_DEVICE_LOGIN,
+            post(http::device_login::start_cli_device_login),
+        )
+        .route(
+            routes::CLI_BROWSER_LOGIN,
+            post(http::cli_auth::start_cli_browser_login),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            request_limits::AddressRateLimit::login_starts(),
+            request_limits::limit_per_address,
+        ));
+    let exchanges = Router::new()
+        .route(
+            routes::CLI_DEVICE_LOGIN_POLL,
+            post(http::device_login::poll_cli_device_login),
+        )
+        .route(
+            routes::CLI_BROWSER_LOGIN_EXCHANGE,
+            post(http::cli_auth::exchange_cli_browser_login),
+        )
+        .route(
+            routes::CLI_EXCHANGE_GRANTS_EXCHANGE,
+            post(http::cli_auth::exchange_cli_grant),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            request_limits::AddressRateLimit::login_exchanges(),
+            request_limits::limit_per_address,
+        ));
+    starts.merge(exchanges)
+}
+
+fn self_limited_routes() -> Router<AppState> {
+    Router::new()
+        .route(routes::REPO_EVENTS, get(http::repo_events::repo_events))
+        .route(routes::GIT_INFO_REFS, get(git::git_info_refs))
+        .route(routes::GIT_RECEIVE_PACK, post(git::git_receive_pack))
+        .route(routes::GIT_UPLOAD_PACK, post(git::git_upload_pack_rpc))
+}
 
 pub fn router(state: AppState) -> Router {
     let router = Router::new()
@@ -21,36 +70,16 @@ pub fn router(state: AppState) -> Router {
             get(http::mcp::protected_resource_metadata),
         )
         .route(
-            routes::CLI_DEVICE_LOGIN,
-            post(http::device_login::start_cli_device_login),
-        )
-        .route(
             routes::CLI_DEVICE_LOGIN_COMPLETE,
             post(http::device_login::complete_cli_device_login),
-        )
-        .route(
-            routes::CLI_DEVICE_LOGIN_POLL,
-            post(http::device_login::poll_cli_device_login),
-        )
-        .route(
-            routes::CLI_BROWSER_LOGIN,
-            post(http::cli_auth::start_cli_browser_login),
         )
         .route(
             routes::CLI_BROWSER_LOGIN_COMPLETE,
             post(http::cli_auth::complete_cli_browser_login),
         )
         .route(
-            routes::CLI_BROWSER_LOGIN_EXCHANGE,
-            post(http::cli_auth::exchange_cli_browser_login),
-        )
-        .route(
             routes::CLI_EXCHANGE_GRANTS,
             post(http::cli_auth::create_cli_exchange_grant),
-        )
-        .route(
-            routes::CLI_EXCHANGE_GRANTS_EXCHANGE,
-            post(http::cli_auth::exchange_cli_grant),
         )
         .route(routes::CLI_SESSIONS, get(http::cli_auth::list_cli_sessions))
         .route(
@@ -304,7 +333,6 @@ pub fn router(state: AppState) -> Router {
             routes::REPO_REQUEST_ACTIVITY,
             get(http::request_discussions::activity),
         )
-        .route(routes::REPO_EVENTS, get(http::repo_events::repo_events))
         .route(routes::REPO_HISTORY, get(http::history::get_history_page))
         .route(
             routes::REPO_HISTORY_ENTRY,
@@ -350,10 +378,7 @@ pub fn router(state: AppState) -> Router {
         .route(
             routes::REPO_PROJECTION_PREVIEW,
             get(http::repos::get_projection_preview),
-        )
-        .route(routes::GIT_INFO_REFS, get(git::git_info_refs))
-        .route(routes::GIT_RECEIVE_PACK, post(git::git_receive_pack))
-        .route(routes::GIT_UPLOAD_PACK, post(git::git_upload_pack_rpc));
+        );
 
     #[cfg(feature = "local-dev")]
     let router = router
@@ -367,6 +392,12 @@ pub fn router(state: AppState) -> Router {
         );
 
     router
+        .merge(unauthenticated_cli_login_routes())
+        .layer(middleware::from_fn(request_limits::enforce_default_timeout))
+        .layer(RequestBodyLimitLayer::new(
+            request_limits::DEFAULT_REQUEST_BODY_BYTES,
+        ))
+        .merge(self_limited_routes())
         .with_state(state)
         .layer(middleware::from_fn(http::cli_compatibility::enforce))
         .layer(
