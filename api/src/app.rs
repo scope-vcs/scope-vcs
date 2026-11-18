@@ -215,10 +215,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             routes::REPO_REQUEST_MERGE,
-            post(http::requests::merge_request).route_layer(middleware::from_fn_with_state(
-                state.clone(),
-                http::merge_routing::route_to_owner,
-            )),
+            post(http::requests::merge_request),
         )
         .route(
             routes::REPO_REQUEST_CHECKS,

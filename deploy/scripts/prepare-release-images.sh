@@ -11,7 +11,6 @@ if [[ "${PREPARE_BACKEND:-0}" == 1 ]]; then
   component_names="$(node deploy/scripts/deployment-components.mjs backend-prebuilt)"
   mapfile -t backend_components <<< "$component_names"
   for component in "${backend_components[@]}"; do
-    [[ "$component" != git-router || "${PREPARE_ROUTER:-0}" == 1 ]] || continue
     root=".railway-prepared/$component"
     mkdir -p "$root/bin"
     cp artifacts/backend/bin/LICENSE artifacts/backend/bin/NOTICE artifacts/backend/bin/third-party-rust.txt "$root/bin/"

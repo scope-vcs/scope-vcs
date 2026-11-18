@@ -96,7 +96,6 @@ jobs:
     with:
       source_sha: ${{ github.sha }}
       prepare_backend: true
-      prepare_router: true
       prepare_web: true
       media_worker_image: ${{ needs.media-worker.outputs.image_ref }}
     secrets: inherit

@@ -7,7 +7,7 @@ const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const ROLE_PASSWORD = /^[a-f0-9]{64}$/;
 const POSTGRES = 'scope-postgres';
 const ADMIN_DATABASE_URL = `\${{${POSTGRES}.DATABASE_URL}}`;
-const PUBLIC_COMPONENTS = ['api', 'web', 'git-router', 'media-api'];
+const PUBLIC_COMPONENTS = ['api', 'web', 'media-api'];
 export const RUNTIME_ROLES = Object.freeze({
   api: 'scope_api',
   'run-worker': 'scope_run_worker',
@@ -113,7 +113,6 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
     CLERK_AUTHORIZED_PARTIES: url('web'),
     SCOPE_API_PUBLIC_URL: url('api'),
     SCOPE_APP_ORIGIN: url('web'),
-    SCOPE_GIT_PUBLIC_URL: url('git-router'),
     SCOPE_BUCKET_SECRET_ACCESS_KEY: blobs('SECRET_ACCESS_KEY'),
   });
   set('web', {
@@ -184,7 +183,6 @@ export const KEPT_STAGING_SETTINGS = Object.freeze({
     ...GIT_SEGMENT_SETTINGS, ...BLOB_REFERENCES],
   'media-api': MEDIA_BUCKET,
   'media-worker': MEDIA_BUCKET,
-  'git-router': ['SCOPE_REPO_ROUTER_BACKEND', 'SCOPE_REPO_ROUTER_READ_REPLICAS', 'SCOPE_REPO_ROUTER_WRITE_REPLICAS'],
   'cli-downloads': ['SCOPE_API_PUBLIC_URL', 'SCOPE_CLI_PUBLIC_URL'],
   maintenance: ['SCOPE_BUCKET_REGION'],
   postgres: ['PGDATA', 'PGDATABASE', 'PGHOST', 'PGPORT', 'PGUSER', 'POSTGRES_DB', 'POSTGRES_USER', 'SSL_CERT_DAYS',

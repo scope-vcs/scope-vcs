@@ -5,7 +5,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const execFileAsync = promisify(execFile)
-const applicationPackages = new Set(['api', 'scope-cli-downloads', 'scope-repo-router', 'worker'])
+const applicationPackages = new Set(['api', 'scope-cli-downloads', 'worker'])
 const leafPackages = new Set(['scope-domain', 'scope-git-process'])
 const contractDependencies = new Map([
   ['scope-api-contract', new Set(['scope-domain'])],

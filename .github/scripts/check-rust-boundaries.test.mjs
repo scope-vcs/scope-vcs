@@ -33,7 +33,6 @@ function validMainMetadata() {
     packageFixture('scope-dependency-analyzer', [dependency('scope-domain')]),
     packageFixture('api', [dependency('scope-content-lifecycle')]),
     packageFixture('worker', [dependency('scope-content-lifecycle'), dependency('scope-dependency-analyzer')]),
-    packageFixture('scope-repo-router'),
   ])
 }
 
@@ -57,11 +56,9 @@ test('rejects outward domain dependencies and reusable-to-application edges', ()
   const main = validMainMetadata()
   main.packages.find(({ name }) => name === 'scope-domain').dependencies.push(dependency('scope-api-contract'))
   main.packages.find(({ name }) => name === 'scope-content-lifecycle').dependencies.push(dependency('api'))
-  main.packages.find(({ name }) => name === 'scope-content-lifecycle').dependencies.push(dependency('scope-repo-router'))
   const result = validateRustBoundaries(main, validCliMetadata(), cliRoot)
   assert.ok(result.errors.some((error) => error.includes('scope-domain: domain leaf')))
   assert.ok(result.errors.some((error) => error.includes('reusable package depends on application api')))
-  assert.ok(result.errors.some((error) => error.includes('scope-repo-router')))
 })
 
 test('rejects broad contracts and orchestration without two real consumers', () => {

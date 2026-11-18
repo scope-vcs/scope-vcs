@@ -9,7 +9,6 @@ pub(crate) mod github_checks;
 pub(crate) mod github_runs;
 pub(crate) mod history;
 pub(crate) mod mcp;
-pub(crate) mod merge_routing;
 pub(crate) mod origins;
 pub(crate) mod repo_collaboration;
 pub(crate) mod repo_events;

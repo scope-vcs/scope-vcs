@@ -2,9 +2,7 @@ mod bootstrap;
 pub mod grants;
 pub mod http;
 pub mod outbound_http;
-pub mod proxy;
 pub mod readiness;
-pub mod replicas;
 mod telemetry;
 
 pub use bootstrap::{port_from_env, serve, shutdown_signal, wait_or_shutdown};

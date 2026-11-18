@@ -24,7 +24,7 @@ if [[ ! "$preview_environment_id" =~ ^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$
 fi
 
 node deploy/scripts/railway-artifact.mjs validate "$prepared_release" "$source_sha" \
-  media-api run-worker media-worker api git-router web >/dev/null
+  media-api run-worker media-worker api web >/dev/null
 node deploy/scripts/railway-artifact.mjs verify-maintenance "$prepared_release" "$maintenance_binary" >/dev/null
 
 run_maintenance() {
@@ -39,7 +39,7 @@ trap 'rm -rf "$evidence_dir"' EXIT
 export RAILWAY_PROJECT_ID="$project_id"
 export SCOPE_RAILWAY_ENVIRONMENT_ID="$preview_environment_id"
 
-for component in media-api run-worker media-worker api git-router web; do
+for component in media-api run-worker media-worker api web; do
   service="$(jq -er --arg component "$component" '.services[$component].id' "$manifest_path")"
   export SCOPE_DEPLOYMENT_COMPONENT="$component"
   export SCOPE_DEPLOYMENT_EVIDENCE_PATH="$evidence_dir/$component.jsonl"

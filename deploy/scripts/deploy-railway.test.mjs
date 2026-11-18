@@ -15,8 +15,8 @@ function providerStatus(activeDeployments) {
       id: "staging-id",
       name: "staging",
       serviceInstances: { edges: [{ node: {
-        serviceId: "router-id",
-        serviceName: "scope-git-router",
+        serviceId: "media-id",
+        serviceName: "scope-media-api",
         latestDeployment: { id: "stale-failed", status: "FAILED" },
         activeDeployments,
       } }] },
@@ -24,7 +24,7 @@ function providerStatus(activeDeployments) {
   };
 }
 
-function deploy(t, status, predecessors = [], failedPolls = [], component = "git-router", { crashesAfterFirstHealthCheck = false, teardownTimeoutSeconds = "600" } = {}) {
+function deploy(t, status, predecessors = [], failedPolls = [], component = "media-api", { crashesAfterFirstHealthCheck = false, teardownTimeoutSeconds = "600" } = {}) {
   const root = mkdtempSync(join(tmpdir(), "scope-railway-teardown-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const scripts = join(root, "deploy/scripts");
@@ -42,7 +42,7 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "git
   mkdirSync(join(root, dirname(runtimeConfig)), { recursive: true });
   writeFileSync(join(root, runtimeConfig), readFileSync(new URL(`../../${runtimeConfig}`, import.meta.url)));
   const serving = providerStatus([{
-    id: "new-router", status: "SUCCESS", instances: [{ status: "RUNNING" }],
+    id: "new-media", status: "SUCCESS", instances: [{ status: "RUNNING" }],
     meta: { serviceManifest: { deploy: { ...JSON.parse(readFileSync(join(root, runtimeConfig), "utf8")).deploy, numReplicas: 1 } } },
   }]);
   writeFileSync(join(root, "serving.json"), JSON.stringify(serving));
@@ -50,20 +50,20 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "git
   Object.assign(crashed.environments.edges[0].node.serviceInstances.edges[0].node.activeDeployments[0], { status: "CRASHED", instances: [{ status: "CRASHED" }] });
   writeFileSync(join(root, "crashed.json"), JSON.stringify(crashed));
   writeFileSync(join(root, "prepared.json"), JSON.stringify({
-    components: { [component]: { serviceId: "router-id" } },
+    components: { [component]: { serviceId: "media-id" } },
   }));
   writeFileSync(join(scripts, "railway-artifact.mjs"), `
     import { appendFileSync } from "node:fs";
     const command = process.argv[2];
     appendFileSync("events", command + "\\n");
-    if (command === "activate") console.log(JSON.stringify({ deploymentId: "new-router" }));
+    if (command === "activate") console.log(JSON.stringify({ deploymentId: "new-media" }));
   `);
   writeFileSync(join(bin, "railway"), `#!/usr/bin/env node
     const { appendFileSync, existsSync, readFileSync, writeFileSync } = require("node:fs");
     const command = process.argv.slice(2, 4).join(" ");
     appendFileSync("events", command + "\\n");
     if (command === "service list") {
-      console.log(JSON.stringify([{ id: "router-id", deploymentId: "stale-failed", status: "FAILED" }]));
+      console.log(JSON.stringify([{ id: "media-id", deploymentId: "stale-failed", status: "FAILED" }]));
     } else if (process.argv[2] === "status") {
       const activated = readFileSync("events", "utf8").split("\\n").includes("activate");
       const healthReads = activated ? (existsSync("health-reads") ? Number(readFileSync("health-reads", "utf8")) : 0) + 1 : 0;
@@ -80,7 +80,7 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "git
       }
       if (count > 10) process.exit(1);
       console.log(JSON.stringify([
-        { id: "new-router", status: "SUCCESS" },
+        { id: "new-media", status: "SUCCESS" },
         { id: "stale-failed", status: "FAILED" },
         ...${JSON.stringify(predecessors)}.map((id, index) => ({
           id, status: count >= 4 + index * 2 ? "REMOVED" : "SUCCESS",
@@ -89,7 +89,7 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "git
     } else { process.exit(1); }
   `, { mode: 0o755 });
   writeFileSync(join(bin, "sleep"), "#!/bin/sh\nprintf 'sleep\\n' >> events\n", { mode: 0o755 });
-  const result = spawnSync("bash", [deployScript, "router-id"], {
+  const result = spawnSync("bash", [deployScript, "media-id"], {
     cwd: root,
     encoding: "utf8",
     timeout: 60_000,
@@ -124,14 +124,14 @@ test("stale FAILED latest deployment without active predecessors needs no teardo
 });
 
 test("waits for the actual active predecessor even when latest deployment is FAILED", (t) => {
-  const result = deploy(t, providerStatus([{ id: "old-router", status: "SUCCESS" }]), ["old-router"]);
+  const result = deploy(t, providerStatus([{ id: "old-media", status: "SUCCESS" }]), ["old-media"]);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.events.filter((event) => event === "deployment list").length, 4);
-  assert.match(result.stdout, /Previous deployment old-router completed teardown/);
+  assert.match(result.stdout, /Previous deployment old-media completed teardown/);
 });
 
 test("waits for every active predecessor to finish teardown", (t) => {
-  const predecessors = ["old-router-1", "old-router-2"];
+  const predecessors = ["old-media-1", "old-media-2"];
   const result = deploy(t, providerStatus(predecessors.map((id) => ({ id, status: "SUCCESS" }))), predecessors);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.events.filter((event) => event === "deployment list").length, 6);
@@ -139,18 +139,18 @@ test("waits for every active predecessor to finish teardown", (t) => {
 });
 
 test("a deployment is recorded only after its predecessor is gone and it is still healthy", (t) => {
-  const old = providerStatus([{ id: "old-router", status: "SUCCESS" }]);
-  const finished = deploy(t, old, ["old-router"]);
+  const old = providerStatus([{ id: "old-media", status: "SUCCESS" }]);
+  const finished = deploy(t, old, ["old-media"]);
   assert.equal(finished.status, 0, finished.stderr);
-  assert.deepEqual(finished.recorded, ["new-router"]);
+  assert.deepEqual(finished.recorded, ["new-media"]);
 
-  const stuckPredecessor = deploy(t, old, [], [], "git-router", { teardownTimeoutSeconds: "0" });
+  const stuckPredecessor = deploy(t, old, [], [], "media-api", { teardownTimeoutSeconds: "0" });
   assert.notEqual(stuckPredecessor.status, 0);
   assert.deepEqual(stuckPredecessor.recorded, []);
 
-  const crashedDuringTeardown = deploy(t, old, ["old-router"], [], "git-router", { crashesAfterFirstHealthCheck: true });
+  const crashedDuringTeardown = deploy(t, old, ["old-media"], [], "media-api", { crashesAfterFirstHealthCheck: true });
   assert.notEqual(crashedDuringTeardown.status, 0);
-  assert.match(crashedDuringTeardown.stdout, /Previous deployment old-router completed teardown/);
+  assert.match(crashedDuringTeardown.stdout, /Previous deployment old-media completed teardown/);
   assert.deepEqual(crashedDuringTeardown.recorded, []);
 });
 
@@ -165,11 +165,11 @@ test("missing or malformed provider state fails before activation", (t) => {
 });
 
 test("retries metadata and teardown reads without repeating activation", (t) => {
-  const result = deploy(t, providerStatus([{ id: "old-router", status: "SUCCESS" }]), ["old-router"], [2, 4]);
+  const result = deploy(t, providerStatus([{ id: "old-media", status: "SUCCESS" }]), ["old-media"], [2, 4]);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.events.filter((event) => event === "activate").length, 1);
   assert.equal(result.events.filter((event) => event === "verify").length, 1);
-  assert.match(result.stdout, /Previous deployment old-router completed teardown/);
+  assert.match(result.stdout, /Previous deployment old-media completed teardown/);
   assert.ok(!result.stdout.includes("incomplete provider response"));
 });
 
