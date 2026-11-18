@@ -148,7 +148,6 @@ jobs:
     with:
       source_sha: ${{ github.sha }}
       prepare_backend: ${{ needs.plan.outputs.backend_selected == 'true' }}
-      prepare_router: ${{ needs.plan.outputs.backend_selected == 'true' }}
       prepare_web: ${{ needs.plan.outputs.web == 'true' }}
       media_worker_image: ${{ needs.server-validation.outputs.media_worker_image || '' }}
     secrets: inherit

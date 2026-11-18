@@ -8,7 +8,7 @@ import { activePredecessors, excludeActivated, recordPredecessors, waitForPredec
 const environment = 'staging-id';
 function status(activeDeployments) {
   return { environments: { edges: [{ node: { id: environment, serviceInstances: { edges: [{ node: {
-    serviceId: 'router-id', activeDeployments,
+    serviceId: 'api-id', activeDeployments,
   } }] } } }] } };
 }
 
@@ -31,33 +31,33 @@ function withScope(fn) {
 
 test('captures exact active predecessors before mutation, ignoring stale latest deployment', (t) => {
   const directory = fixture(t);
-  const ids = activePredecessors(status([{ id: 'old-1' }, { id: 'old-2' }]), environment, 'router-id');
-  recordPredecessors(directory, 'git-router', 'router-id', ids);
-  assert.deepEqual(JSON.parse(readFileSync(join(directory, 'git-router.json'))),
-    { component: 'git-router', service: 'router-id', ids: ['old-1', 'old-2'] });
-  assert.throws(() => recordPredecessors(directory, 'git-router', 'router-id', ids), /EEXIST/);
+  const ids = activePredecessors(status([{ id: 'old-1' }, { id: 'old-2' }]), environment, 'api-id');
+  recordPredecessors(directory, 'api', 'api-id', ids);
+  assert.deepEqual(JSON.parse(readFileSync(join(directory, 'api.json'))),
+    { component: 'api', service: 'api-id', ids: ['old-1', 'old-2'] });
+  assert.throws(() => recordPredecessors(directory, 'api', 'api-id', ids), /EEXIST/);
   for (const malformed of [null, {}, status(undefined), status([{}])]) {
-    assert.throws(() => activePredecessors(malformed, environment, 'router-id'));
+    assert.throws(() => activePredecessors(malformed, environment, 'api-id'));
   }
 });
 
 test('resume excludes the exact activated ID without losing other predecessors', (t) => {
   const directory = fixture(t);
-  recordPredecessors(directory, 'git-router', 'router-id', ['reused-router', 'old-router']);
-  excludeActivated(directory, 'git-router', 'reused-router');
-  assert.deepEqual(JSON.parse(readFileSync(join(directory, 'git-router.json'))).ids, ['old-router']);
+  recordPredecessors(directory, 'api', 'api-id', ['reused-api', 'old-api']);
+  excludeActivated(directory, 'api', 'reused-api');
+  assert.deepEqual(JSON.parse(readFileSync(join(directory, 'api.json'))).ids, ['old-api']);
 });
 
 test('an idempotent resumed activation does not wait for its own serving ID', async (t) => withScope(async () => {
   const directory = fixture(t);
-  recordPredecessors(directory, 'git-router', 'router-id', ['reused-router']);
-  excludeActivated(directory, 'git-router', 'reused-router');
+  recordPredecessors(directory, 'api', 'api-id', ['reused-api']);
+  excludeActivated(directory, 'api', 'reused-api');
   await waitForPredecessors(directory, { read: () => { throw new Error('Unexpected provider poll'); } });
 }));
 
 test('one deadline covers slow teardown across all services', async (t) => withScope(async () => {
   const directory = fixture(t);
-  recordPredecessors(directory, 'git-router', 'router-id', ['old-router']);
+  recordPredecessors(directory, 'api', 'api-id', ['old-api']);
   recordPredecessors(directory, 'media-api', 'media-id', ['old-media']);
   let time = 0;
   const calls = [];
@@ -68,23 +68,23 @@ test('one deadline covers slow teardown across all services', async (t) => withS
     read: (args) => {
       const service = args[args.indexOf('--service') + 1];
       calls.push([service, time]);
-      return [{ id: service === 'router-id' ? 'old-router' : 'old-media',
-        status: time >= (service === 'router-id' ? 50 : 100) ? 'REMOVED' : 'SUCCESS' }];
+      return [{ id: service === 'api-id' ? 'old-api' : 'old-media',
+        status: time >= (service === 'api-id' ? 50 : 100) ? 'REMOVED' : 'SUCCESS' }];
     },
   });
   assert.deepEqual(calls, [
-    ['router-id', 0], ['media-id', 0], ['router-id', 50], ['media-id', 50], ['media-id', 100],
+    ['api-id', 0], ['media-id', 0], ['api-id', 50], ['media-id', 50], ['media-id', 100],
   ]);
 }));
 
 test('an unremoved predecessor fails the shared barrier without accepting missing inventory', async (t) => withScope(async () => {
   const directory = fixture(t);
-  recordPredecessors(directory, 'git-router', 'router-id', ['old-router']);
+  recordPredecessors(directory, 'api', 'api-id', ['old-api']);
   let time = 0;
   await assert.rejects(waitForPredecessors(directory, {
     timeoutMs: 50, intervalMs: 50,
     now: () => time,
     pause: async (delay) => { time += delay; },
     read: () => [],
-  }), /old-router/);
+  }), /old-api/);
 }));

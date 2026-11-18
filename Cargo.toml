@@ -5,7 +5,6 @@ members = [
     "media-worker",
     "media-service",
     "crates/scope-media-storage",
-    "repo-router",
     "crates/scope-api-contract",
     "crates/scope-content-lifecycle",
     "crates/scope-dependency-analyzer",

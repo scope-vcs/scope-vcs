@@ -89,7 +89,6 @@ test('each backend component builds in its own cargo selection so shared crates 
   for (const component of backendPrebuiltComponents()) buildBackendComponent(component, join(root, 'bin'), { run, root });
   assert.deepEqual(builds.map(args => args.filter(arg => arg !== '--bin').slice(4)), [
     ['worker/Cargo.toml', 'worker'],
-    ['repo-router/Cargo.toml', 'scope-repo-router'],
     ['media-service/Cargo.toml', 'scope-media-service'],
     ['api/Cargo.toml', 'api', 'scope-maintenance'],
   ]);

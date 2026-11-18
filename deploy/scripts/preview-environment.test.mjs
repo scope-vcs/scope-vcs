@@ -20,7 +20,7 @@ const registryCredentials = { username: 'registry-user', password: 'registry-pas
 
 function stagingCopy() {
   const services = Object.fromEntries(Object.values(ids).map((id) => [id, {}]));
-  for (const component of ['api', 'web', 'git-router', 'media-api']) {
+  for (const component of ['api', 'web', 'media-api']) {
     services[ids[component]] = { networking: { serviceDomains: { [`${manifest.services[component].name}-pr-7.up.railway.app`]: {} } } };
   }
   const variables = Object.fromEntries(Object.values(ids).map((id) => [id, {}]));
@@ -142,11 +142,10 @@ test('generated secrets have the formats the services parse', () => {
 
 test('first provisioning points every service at preview domains, buckets, and fresh keys', () => {
   const secrets = generatePreviewSecrets();
-  const domains = { api: 'a.up.railway.app', web: 'w.up.railway.app', 'git-router': 'g.up.railway.app', 'media-api': 'm.up.railway.app' };
+  const domains = { api: 'a.up.railway.app', web: 'w.up.railway.app', 'media-api': 'm.up.railway.app' };
   const variables = previewVariables({ manifest, domains, current: stagingCopy().variables, secrets, clerk });
   assert.equal(variables[ids.api].SCOPE_APP_ORIGIN, 'https://w.up.railway.app');
   assert.equal(variables[ids.api].CLERK_AUTHORIZED_PARTIES, 'https://w.up.railway.app');
-  assert.equal(variables[ids.api].SCOPE_GIT_PUBLIC_URL, 'https://g.up.railway.app');
   assert.equal(variables[ids.web].CLERK_SECRET_KEY, 'sk_test_preview');
   assert.equal(variables[ids.api].CLERK_SECRET_KEY, 'sk_test_preview');
   assert.equal(variables[ids.web].VITE_CLERK_PUBLISHABLE_KEY, clerk.publishableKey);
@@ -173,7 +172,7 @@ test('first provisioning points every service at preview domains, buckets, and f
 });
 
 test('later provisioning keeps keys and passwords that already protect preview data', () => {
-  const domains = { api: 'a', web: 'w', 'git-router': 'g', 'media-api': 'm' };
+  const domains = { api: 'a', web: 'w', 'media-api': 'm' };
   const first = previewVariables({ manifest, domains, current: stagingCopy().variables, secrets: generatePreviewSecrets(), clerk });
   const current = Object.fromEntries(Object.values(ids).map((id) => [id, { ...stagingCopy().variables[id], ...first[id] }]));
   const second = previewVariables({ manifest, domains, current, secrets: generatePreviewSecrets(), clerk });
@@ -243,7 +242,7 @@ test('deletes only the pull request preview and tolerates an absent one', () => 
 });
 
 test('previews keep only reviewed staging settings and their own variables', () => {
-  const managed = previewVariables({ manifest, domains: { api: 'a', web: 'w', 'git-router': 'g', 'media-api': 'm' },
+  const managed = previewVariables({ manifest, domains: { api: 'a', web: 'w', 'media-api': 'm' },
     current: {}, secrets: generatePreviewSecrets(), clerk });
   const current = stagingCopy().variables;
   current[ids.api].SCOPE_FUTURE_SETTING = 'unreviewed';
@@ -266,7 +265,7 @@ test('stops provisioning when Railway cannot list a service variables', () => {
 });
 
 test('repairing a partial secret group reuses the value services still hold', () => {
-  const domains = { api: 'a', web: 'w', 'git-router': 'g', 'media-api': 'm' };
+  const domains = { api: 'a', web: 'w', 'media-api': 'm' };
   const original = generatePreviewSecrets();
   const first = previewVariables({ manifest, domains, current: stagingCopy().variables, secrets: original, clerk });
   const current = Object.fromEntries(Object.values(ids).map((id) => [id, { ...stagingCopy().variables[id], ...first[id] }]));

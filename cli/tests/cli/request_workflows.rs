@@ -633,7 +633,14 @@ impl FixtureServer {
         let aggregate_seen = inspected.clone();
         let app = Router::new()
                     .route("/v1/session", get(|| async { Json(crate::support::session_response("usr_test", "owner", "test@example.test")) }))
-                    .route("/v1/repos/owner/repo", get(move || { let repo=repo.clone(); async move { Json(repo) } }))
+                    .route("/v1/repos/owner/repo", get(move |headers: axum::http::HeaderMap| {
+                        let mut repo = repo.clone();
+                        async move {
+                            let host = headers[axum::http::header::HOST].to_str().unwrap();
+                            repo["git_remote_url"] = format!("http://{host}/git/public/owner/repo").into();
+                            Json(repo)
+                        }
+                    }))
                     .route("/v1/repos/owner/repo/requests/req_one/checks", get(move |OriginalUri(uri): OriginalUri| {
                         let seen = checks_seen.clone();
                         async move {

@@ -4,7 +4,6 @@ use scope_git::{DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits};
 
 pub(crate) const SCOPE_APP_ORIGIN_ENV: &str = "SCOPE_APP_ORIGIN";
 pub(crate) const SCOPE_API_PUBLIC_URL_ENV: &str = "SCOPE_API_PUBLIC_URL";
-pub(crate) const SCOPE_GIT_PUBLIC_URL_ENV: &str = "SCOPE_GIT_PUBLIC_URL";
 pub(crate) const DATABASE_URL_ENV: &str = "DATABASE_URL";
 pub(crate) const SCOPE_DATABASE_MAX_CONNECTIONS_ENV: &str = "SCOPE_DATABASE_MAX_CONNECTIONS";
 pub(crate) const SCOPE_REPO_ROOT_ENV: &str = "SCOPE_REPO_ROOT";
@@ -38,7 +37,7 @@ pub(crate) fn database_url_from_env() -> anyhow::Result<String> {
 }
 
 pub(crate) fn git_public_url_from_env(local_fallback: Option<&str>) -> anyhow::Result<String> {
-    git_public_url(std::env::var(SCOPE_GIT_PUBLIC_URL_ENV).ok(), local_fallback)
+    git_public_url(std::env::var(SCOPE_API_PUBLIC_URL_ENV).ok(), local_fallback)
 }
 
 fn git_public_url(
@@ -53,7 +52,7 @@ fn git_public_url(
         .map(|value| value.trim_end_matches('/').to_string())
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "{SCOPE_GIT_PUBLIC_URL_ENV} is required to create repository Git remote metadata"
+                "{SCOPE_API_PUBLIC_URL_ENV} is required to create repository Git remote metadata"
             )
         })
 }
@@ -133,7 +132,7 @@ mod tests {
     fn production_git_public_url_is_required() {
         for configured in [None, Some(String::new()), Some(" \t\n".to_string())] {
             let error = git_public_url(configured, None).unwrap_err();
-            assert!(error.to_string().contains(SCOPE_GIT_PUBLIC_URL_ENV));
+            assert!(error.to_string().contains(SCOPE_API_PUBLIC_URL_ENV));
         }
     }
 

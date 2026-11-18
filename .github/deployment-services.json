@@ -33,25 +33,6 @@
         }
       }
     },
-    "git-router": {
-      "name": "scope-git-router",
-      "id": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c",
-      "dependsOn": [],
-      "deployment": {
-        "backend": true,
-        "runtimeConfig": "repo-router/railway.json",
-        "verifyTransitionConfig": true,
-        "artifact": {
-          "kind": "binary",
-          "binary": "scope-repo-router",
-          "imageName": "router",
-          "dockerfile": "deploy/railway/prebuilt.Dockerfile",
-          "installGit": false,
-          "sourceBinary": "scope-repo-router",
-          "maxBytes": 9437184
-        }
-      }
-    },
     "media-api": {
       "name": "scope-media-api",
       "id": "6d7b48da-e52e-47bb-b4af-d6fc2d03aec3",
@@ -102,7 +83,6 @@
       "id": "9456cd8d-40bd-489a-a181-72b7f777c4a8",
       "dependsOn": [
         "run-worker",
-        "git-router",
         "media-api",
         "media-worker"
       ],
@@ -325,29 +305,6 @@
       "prefixes": [
         "media-service/",
         "crates/"
-      ]
-    },
-    "git-router": {
-      "files": [
-        "Cargo.lock",
-        "Cargo.toml",
-        "rust-toolchain.toml",
-        "deploy/railway/prebuilt.Dockerfile",
-        ".github/workflows/scope-api-ci.yml",
-        ".github/workflows/rust-workspace-checks.yml",
-        "dev/checks/backend",
-        "dev/checks/advisories",
-        "deny.toml",
-        "dev/install-cargo-tools.sh",
-        "deploy/scripts/deployment-components.mjs",
-        "deploy/scripts/check-backend-binary-sizes.mjs",
-        "deploy/scripts/prepare-railway-artifact.sh",
-        "deploy/scripts/extract-railway-release.py",
-        "deploy/scripts/railway-artifact.mjs"
-      ],
-      "prefixes": [
-        "crates/",
-        "repo-router/"
       ]
     },
     "web": {

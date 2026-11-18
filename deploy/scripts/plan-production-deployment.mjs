@@ -120,7 +120,6 @@ function main() {
     if (!SELECTIONS.includes(component) || typeof selected !== "boolean") throw new Error(`Invalid deployment selection for ${component}`);
     const outputName = {
       "run-worker": "worker",
-      "git-router": "router",
       "media-api": "media",
       "cli-downloads": "cli",
       "cli-distribution": "cli_distribution",

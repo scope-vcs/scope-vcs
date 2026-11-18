@@ -9,9 +9,6 @@ on:
       prepare_backend:
         type: boolean
         default: false
-      prepare_router:
-        type: boolean
-        default: false
       prepare_web:
         type: boolean
         default: false
@@ -72,7 +69,6 @@ jobs:
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
           SCOPE_MAINTENANCE_BINARY: artifacts/backend/bin/scope-maintenance
           PREPARE_BACKEND: ${{ inputs.prepare_backend && '1' || '0' }}
-          PREPARE_ROUTER: ${{ inputs.prepare_router && '1' || '0' }}
           PREPARE_WEB: ${{ inputs.prepare_web && '1' || '0' }}
           MEDIA_WORKER_IMAGE: ${{ inputs.media_worker_image }}
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}

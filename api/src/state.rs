@@ -6,7 +6,6 @@ use crate::{
     config::{database_max_connections_from_env, database_url_from_env, git_public_url_from_env},
     git::repository_engine::RepositoryEngine,
     github::GitHubApp,
-    http::merge_routing::MergeRouting,
     invite_mailer::InviteMailer,
     media_grants::MediaGrantIssuer,
     repo_events::RepoChangeBus,
@@ -39,7 +38,6 @@ pub struct AppState {
     pub(crate) push_intent_signing_key: Arc<[u8]>,
     pub(crate) repository_engine: Arc<RepositoryEngine>,
     pub(crate) git_public_url: Arc<str>,
-    pub(crate) merge_routing: Option<Arc<MergeRouting>>,
     #[cfg(test)]
     pub(crate) test_object_backend: Arc<scope_storage::MemoryBackend>,
     #[cfg(test)]
@@ -59,7 +57,6 @@ struct Integrations {
     clerk_backend: ClerkBackend,
     github: Option<Arc<GitHubApp>>,
     invite_mailer: InviteMailer,
-    merge_routing: Option<Arc<MergeRouting>>,
 }
 
 impl Integrations {
@@ -69,7 +66,6 @@ impl Integrations {
             clerk_backend: ClerkBackend::from_env(),
             github: GitHubApp::from_env()?.map(Arc::new),
             invite_mailer: InviteMailer::from_env(),
-            merge_routing: MergeRouting::from_env()?.map(Arc::new),
         })
     }
 
@@ -87,7 +83,6 @@ impl Integrations {
             clerk_backend: ClerkBackend::Scripted(Default::default()),
             github: None,
             invite_mailer: InviteMailer::Recording(Default::default()),
-            merge_routing: None,
         }
     }
 }
@@ -205,7 +200,6 @@ impl AppState {
             push_intent_signing_key: storage.push_intent_signing_key,
             repository_engine: storage.repository_engine,
             git_public_url: Arc::from(git_public_url),
-            merge_routing: integrations.merge_routing,
             #[cfg(test)]
             test_object_backend: storage.test_object_backend,
             #[cfg(test)]
@@ -258,7 +252,9 @@ impl AppState {
         )
         .unwrap();
         Self {
+            wakeups: Arc::default(),
             merge_committer: Arc::default(),
+            repo_events: RepoChangeBus::default(),
             data_dir: Arc::new(data_dir),
             git_segment_store,
             repository_engine,

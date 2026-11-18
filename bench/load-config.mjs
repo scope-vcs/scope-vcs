@@ -33,7 +33,7 @@ export function configuration() {
   const historyDepths = parseStages(process.env.SCOPE_LOAD_HISTORY_DEPTHS || '1,16,64');
   validateRepositoryMode(repositoryMode, workloads, historyDepths, process.env.SCOPE_LOAD_READ_REPLICA_COUNT);
   return {
-    apiUrls, gitUrl: process.env.SCOPE_BENCH_GIT_URL?.trim().replace(/\/$/, '') || null,
+    apiUrls,
     token, stages, routingMode, routingSeed, targetKind,
     endpointRouter: createEndpointRouter(apiUrls, routingMode, routingSeed),
     rates: process.env.SCOPE_LOAD_RATES ? parseRates(process.env.SCOPE_LOAD_RATES) : null,

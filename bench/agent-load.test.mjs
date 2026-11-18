@@ -17,7 +17,6 @@ const REQUIRED = { SCOPE_BENCH_API_URL: 'https://scope-api-loadtest.up.railway.a
 test('defaults describe a push run sized to the largest stage', () => {
   const config = configuration(REQUIRED);
   assert.equal(config.apiUrl, 'https://scope-api-loadtest.up.railway.app');
-  assert.equal(config.gitUrl, null);
   assert.equal(config.mode, 'push');
   assert.deepEqual(config.stages, [1, 8, 32, 128]);
   assert.equal(config.agents, 128);
@@ -36,7 +35,6 @@ test('defaults describe a push run sized to the largest stage', () => {
 test('overrides are parsed and secrets stay out of the public config', () => {
   const config = configuration({
     ...REQUIRED,
-    SCOPE_BENCH_GIT_URL: 'https://scope-git-loadtest.up.railway.app/',
     SCOPE_AGENT_MODE: 'merge',
     SCOPE_AGENT_STAGES: '32, 4,4',
     SCOPE_AGENT_COUNT: '36',
@@ -45,7 +43,6 @@ test('overrides are parsed and secrets stay out of the public config', () => {
     SCOPE_AGENT_SEED_FILES: '90000',
     SCOPE_BENCH_RUN_LABEL: 'tree-90k',
   });
-  assert.equal(config.gitUrl, 'https://scope-git-loadtest.up.railway.app');
   assert.equal(config.mode, 'merge');
   assert.deepEqual(config.stages, [4, 32]);
   assert.equal(config.agents, 36);

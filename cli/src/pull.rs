@@ -1,7 +1,9 @@
+mod remote_migration;
+
 use crate::api::ApiSession;
 use crate::display::short_oid;
 use crate::{
-    api::{api_url, get_repo, http_client},
+    api::{RepoSummaryResponse, api_url, get_repo, http_client},
     git_repo::{
         GitRepo, GitSnapshot, branch_config_value, clear_scope_push_address, current_branch,
         ensure_git_repo_ready, fetch_scope_remote_refs_with_bearer, head_oid,
@@ -26,22 +28,25 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     let branch = current_branch(&repo)?;
     let previous_head = head_oid(&repo)?;
     let api_url = api_url()?;
-    let target = crate::context::select_scope_remote(
-        &GitSnapshot::read(&repo)?,
-        &api_url,
-        explicit_remote,
-        false,
-    )?;
-    let remote = target.remote.clone();
+    let snapshot = GitSnapshot::read(&repo)?;
+    let configured =
+        crate::context::select_scope_remote(&snapshot, &api_url, explicit_remote, false)?;
+    let remote = configured.remote.clone();
     let client = http_client()?;
     let session = session_from_cache_or_browser(&client, &api_url)?;
-    let visibility_sync = sync_pull_visibility(
-        &repo,
-        ApiSession::new(&client, &api_url, &session.token),
-        &target,
-    )?;
+    let api = ApiSession::new(&client, &api_url, &session.token);
+    let summary = get_repo(api, &configured.owner, &configured.repo)?;
+    let target = configured.at_origin_of(&summary.git_remote_url)?;
+    let visibility_sync = sync_pull_visibility(&repo, api, &target, &summary)?;
 
     let result = (|| -> anyhow::Result<()> {
+        remote_migration::move_other_remotes_to_git_origin(
+            &repo,
+            &snapshot,
+            &configured,
+            &target,
+            &api_url,
+        )?;
         run_git_in_repo(&repo, &["remote", "set-url", &remote, &target.url()])?;
         install_scope_fetch_auth(&repo.root, &target.url(), &api_url)?;
         clear_scope_push_address(&repo.root, &remote)?;
@@ -116,13 +121,13 @@ fn sync_pull_visibility(
     repo: &GitRepo,
     api: ApiSession<'_>,
     target: &ScopeRemote,
+    summary: &RepoSummaryResponse,
 ) -> anyhow::Result<WorktreeRepoConfigSync> {
     if worktree_scope_repo_config_presence(&repo.root)? == WorktreeRepoConfigPresence::Complete {
         load_synced_worktree_scope_repo_config(&repo.root)?;
         return Ok(WorktreeRepoConfigSync::Unchanged);
     }
-    let summary = get_repo(api, &target.owner, &target.repo)?;
-    let config = reader_repo_config(api, &target.owner, &target.repo, &summary)?;
+    let config = reader_repo_config(api, &target.owner, &target.repo, summary)?;
     sync_missing_worktree_scope_repo_config(&repo.root, &config)
 }
 

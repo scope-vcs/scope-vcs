@@ -3740,20 +3740,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scope-repo-router"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "reqwest",
- "scope-service-runtime",
- "tokio",
- "tokio-stream",
- "tower",
- "tracing",
-]
-
-[[package]]
 name = "scope-service-runtime"
 version = "0.1.0"
 dependencies = [
@@ -3777,7 +3763,6 @@ dependencies = [
  "scope-postgres",
  "serde",
  "serde_json",
- "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tracing",

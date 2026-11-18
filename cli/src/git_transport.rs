@@ -72,6 +72,17 @@ impl ScopeRemote {
         })
     }
 
+    pub fn at_origin_of(&self, advertised_remote_url: &str) -> anyhow::Result<Self> {
+        Ok(Self {
+            origin: Self::from_url(advertised_remote_url)?.origin,
+            ..self.clone()
+        })
+    }
+
+    pub fn shares_origin_with(&self, other: &Self) -> bool {
+        self.origin == other.origin
+    }
+
     pub fn url(&self) -> String {
         self.url_for_view(&self.view)
     }

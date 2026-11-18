@@ -26,7 +26,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
 async function main() {
   const config = configuration();
   assertSafeTarget(config.apiUrl, config.targetKind);
-  if (config.gitUrl) assertSafeTarget(config.gitUrl, config.targetKind);
   await ready(config);
   const context = { config, interrupted: false };
   const interrupt = () => {
@@ -89,7 +88,7 @@ function describeRepository(config, owner, name, remotePath) {
     owner, name,
     view: remotePath.split('/')[2],
     apiPath: repoPath({ owner, repo: name }),
-    pushUrl: new URL(remotePath, `${config.gitUrl || config.apiUrl}/`).toString(),
+    pushUrl: new URL(remotePath, `${config.apiUrl}/`).toString(),
   };
 }
 
@@ -383,10 +382,8 @@ async function api(config, path, options = {}) {
 }
 
 async function ready(config) {
-  for (const endpoint of [config.apiUrl, config.gitUrl].filter(Boolean)) {
-    const response = await fetch(`${endpoint}/readyz`, { signal: AbortSignal.timeout(30_000) });
-    if (!response.ok) throw new Error(`${endpoint} is not ready: HTTP ${response.status}`);
-  }
+  const response = await fetch(`${config.apiUrl}/readyz`, { signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`${config.apiUrl} is not ready: HTTP ${response.status}`);
 }
 
 function repoPath(fixture) {

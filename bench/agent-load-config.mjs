@@ -33,7 +33,6 @@ export function configuration(env = process.env) {
   const seedFiles = positiveInteger('SCOPE_AGENT_SEED_FILES', 1, env);
   return {
     apiUrl: required('SCOPE_BENCH_API_URL', env).replace(/\/$/, ''),
-    gitUrl: env.SCOPE_BENCH_GIT_URL?.trim().replace(/\/$/, '') || null,
     token: required('SCOPE_BENCH_AUTH_TOKEN', env),
     targetKind,
     mode,
