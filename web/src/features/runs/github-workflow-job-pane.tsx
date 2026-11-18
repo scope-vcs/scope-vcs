@@ -50,11 +50,10 @@ export function GitHubWorkflowJobPane({
   const key = githubJobKey(job)
   const finished = job.status === 'completed'
   const load = useCallback(async (signal: AbortSignal) => {
-    if (includedLog && includedLog.state !== 'pending') return includedLog
     const answer = await loadLog(key, signal)
     if (answer.state === 'pending' || (answer.state === 'kept' && answer.fetched)) observeRunLogFetching(runId)
     return answer
-  }, [includedLog, key, loadLog, runId])
+  }, [key, loadLog, runId])
   const log = useCachedResource({
     fallbackError: 'The log could not load.',
     identity: scope && finished ? githubWorkflowJobLogIdentity(scope, runId, key) : null,

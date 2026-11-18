@@ -124,6 +124,18 @@ impl AfterCommit {
             description: "GitHub workflow job",
         }
     }
+
+    pub(crate) fn github_workflow_runs_expired(incarnation: &RepositoryIncarnation) -> Self {
+        Self::Live {
+            event: RepoChangeEvent {
+                repo_id: incarnation.repository_id().to_string(),
+                incarnation_id: incarnation.incarnation_id().to_string(),
+                version: 0,
+                kind: RepoChangeKind::GitHubWorkflowRunsExpired,
+            },
+            description: "GitHub workflow run retention",
+        }
+    }
 }
 
 impl AppState {

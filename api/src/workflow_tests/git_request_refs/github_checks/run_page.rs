@@ -4,10 +4,12 @@ use super::super::super::fake_github::{
 use super::public::private_file_repository;
 use super::public_repositories::make_github_repository_public;
 use super::*;
+use crate::retention::apply_github_workflow_retention_page;
 use crate::use_cases::github::job_logs::{JOB_LOG_WAIT, read_due_github_job_logs_once};
 use crate::use_cases::github::workflow_jobs::retry_github_workflow_job_reads_once;
 use scope_domain::{
     github::workflow_jobs::GitHubWorkflowJob,
+    github::workflow_retention::{GITHUB_WORKFLOW_RETENTION_SECS, GITHUB_WORKFLOW_RUN_LIMIT_SECS},
     github::workflow_runs::GitHubWorkflowRun,
     requests::{GitHubCheckConclusion, GitHubCheckStatus},
 };
@@ -217,6 +219,52 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
         open_run(state, 999, Some(&bearer_header())).await.status(),
         StatusCode::NOT_FOUND
     );
+
+    let checks = request.checks().await;
+    let mut expiry_events = state.repo_events.subscribe(TEST_REPO_ID);
+    let expiry = unix_now() + GITHUB_WORKFLOW_RUN_LIMIT_SECS + GITHUB_WORKFLOW_RETENTION_SECS;
+    let page = apply_github_workflow_retention_page(state, expiry, None, 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        page.expired_runs
+            .iter()
+            .map(|run| run.github_run_id)
+            .collect::<Vec<_>>(),
+        [RUN_ID]
+    );
+    assert!(page.deleted_runs.is_empty());
+    assert!(
+        std::iter::from_fn(|| expiry_events.try_recv().ok()).any(
+            |event| event.kind == crate::repo_events::RepoChangeKind::GitHubWorkflowRunsExpired
+        )
+    );
+    assert_eq!(
+        apply_github_workflow_retention_page(state, expiry, page.next, 1)
+            .await
+            .unwrap(),
+        scope_postgres::db::GitHubWorkflowRetentionPage::default()
+    );
+    assert_eq!(request.checks().await, checks);
+    let expired = opened_run(state).await;
+    assert_eq!(
+        expired["jobs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|job| (job["id"].as_u64().unwrap(), job["steps"].clone()))
+            .collect::<Vec<_>>(),
+        [(901, serde_json::json!([])), (902, serde_json::json!([]))]
+    );
+    assert_eq!(
+        expired["opening_job_log"],
+        serde_json::json!({ "state": "expired" })
+    );
+    assert_eq!(
+        expect_json(job_log(state, 902).await, StatusCode::OK).await,
+        serde_json::json!({ "state": "expired" })
+    );
+    assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), read_before);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -435,7 +483,7 @@ async fn request_viewers_open_its_github_runs_only_once_the_github_repository_is
     let main_run = stored_run(RUN_ID + 1, "main");
     for run in [&request_run, &main_run] {
         repositories
-            .save_github_workflow_run(TEST_REPO_ID, GITHUB_REPOSITORY_ID, run)
+            .save_github_workflow_run(TEST_REPO_ID, GITHUB_REPOSITORY_ID, run, run.updated_at_unix)
             .await
             .unwrap();
         repositories
@@ -454,6 +502,7 @@ async fn request_viewers_open_its_github_runs_only_once_the_github_repository_is
                     html_url: String::new(),
                     steps: Vec::new(),
                 }],
+                run.updated_at_unix,
             )
             .await
             .unwrap();

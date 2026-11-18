@@ -516,7 +516,7 @@ export type CreateRequestDiscussionReplyRequest = { body_markdown: string, clien
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
-export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "GitHubWorkflowRunChanged": { github_run_id: number, } } | { "RepositoryChanged": { reason: string, } } | { "RequestStateChanged": { request_id: string, view: ViewId, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } };
+export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | "GitHubWorkflowRunsExpired" | { "GitHubWorkflowRunChanged": { github_run_id: number, } } | { "RepositoryChanged": { reason: string, } } | { "RequestStateChanged": { request_id: string, view: ViewId, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } };
 
 export const ApiRouteTemplates = {
   account: "/v1/account",

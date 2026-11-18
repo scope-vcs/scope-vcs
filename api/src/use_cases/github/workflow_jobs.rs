@@ -41,6 +41,7 @@ pub(crate) async fn refresh_job_for_delivery(
     else {
         return Ok(());
     };
+    let now_unix = unix_now()?;
     let Some(job) = state
         .github_app()?
         .workflow_job(
@@ -59,9 +60,10 @@ pub(crate) async fn refresh_job_for_delivery(
             &connection.repository_id,
             connection.github_repository_id,
             std::slice::from_ref(&job),
+            now_unix,
         )
         .await?;
-    github::job_logs::queue_log_of_finished_failure(state, &job, unix_now()?).await?;
+    github::job_logs::queue_log_of_finished_failure(state, &job, now_unix).await?;
     publish(state, &connection, job.github_run_id).await
 }
 
@@ -104,6 +106,7 @@ pub(crate) async fn run_jobs(
             !jobs.is_empty(),
             connection.is_connected(),
             detail.jobs_read_queued || queued,
+            now_unix,
         ),
         jobs,
     })
@@ -182,6 +185,9 @@ async fn read_queued_jobs(
     else {
         return Ok(QueuedJobsRead::Missing);
     };
+    if detail.read.run.retention_over(now_unix) {
+        return Ok(QueuedJobsRead::Missing);
+    }
     let claimed = GitHubJobsRead {
         run_attempt: detail.read.run.run_attempt,
         read_at_unix: now_unix,
@@ -197,7 +203,7 @@ async fn read_queued_jobs(
     {
         return Ok(QueuedJobsRead::ClaimLost);
     }
-    match read_run_jobs(state, connection, &detail.read.run).await {
+    match read_run_jobs(state, connection, &detail.read.run, now_unix).await {
         Ok(()) => Ok(QueuedJobsRead::Saved),
         Err(error) => {
             repositories
@@ -233,6 +239,7 @@ async fn read_run_jobs(
     state: &AppState,
     connection: &GitHubConnection,
     run: &GitHubWorkflowRun,
+    now_unix: u64,
 ) -> Result<(), ApiError> {
     let Some(jobs) = state
         .github_app()?
@@ -253,9 +260,10 @@ async fn read_run_jobs(
             &connection.repository_id,
             connection.github_repository_id,
             &jobs,
+            now_unix,
         )
         .await?;
-    github::job_logs::queue_readable_logs(state, &jobs, unix_now()?).await
+    github::job_logs::queue_readable_logs(state, &jobs, now_unix).await
 }
 
 pub(in crate::use_cases) async fn publish(

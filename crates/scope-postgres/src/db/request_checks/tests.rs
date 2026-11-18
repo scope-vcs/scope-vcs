@@ -70,7 +70,7 @@ async fn evaluations_for_heads_match_exact_pairs_without_returning_history() {
     );
 }
 
-async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) {
+pub(in crate::db) async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) {
     store
         .requests()
         .start_request(StartRequestInput {
@@ -119,7 +119,12 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
         .unwrap();
 }
 
-async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &str, now_unix: u64) {
+pub(in crate::db) async fn record_no_checks(
+    store: &MetadataStore,
+    request_id: &str,
+    head_oid: &str,
+    now_unix: u64,
+) {
     let request = store
         .requests()
         .request_by_id(request_id)

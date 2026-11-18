@@ -112,6 +112,9 @@ pub fn github_jobs_need_read(
     has_jobs: bool,
     now_unix: u64,
 ) -> bool {
+    if run.retention_over(now_unix) {
+        return false;
+    }
     let Some(read) = last_read.filter(|read| read.run_attempt == run.run_attempt) else {
         return true;
     };
@@ -131,9 +134,11 @@ pub fn github_jobs_not_read_yet(
     has_jobs: bool,
     connected: bool,
     read_queued: bool,
+    now_unix: u64,
 ) -> bool {
     connected
         && !has_jobs
+        && !run.retention_over(now_unix)
         && (read_queued || !last_read.is_some_and(|read| read.run_attempt == run.run_attempt))
 }
 
@@ -181,6 +186,7 @@ pub fn github_run_visible(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::github::workflow_retention::GITHUB_WORKFLOW_RETENTION_SECS;
 
     fn run(status: GitHubCheckStatus, updated_at_unix: u64) -> GitHubWorkflowRun {
         GitHubWorkflowRun {
@@ -241,8 +247,8 @@ mod tests {
     }
 
     #[test]
-    fn jobs_are_read_for_a_new_attempt_a_stale_unfinished_or_jobless_run_and_a_run_finished_since()
-    {
+    fn jobs_are_read_for_a_new_attempt_a_stale_unfinished_or_jobless_run_and_a_run_finished_since_until_retention_ends()
+     {
         let running = run(GitHubCheckStatus::InProgress, 100);
         assert!(github_jobs_need_read(&running, None, true, 100));
         let read = |run_attempt, read_at_unix| {
@@ -264,6 +270,9 @@ mod tests {
         ));
         assert!(!github_jobs_need_read(&completed, read(2, 200), false, 229));
         assert!(github_jobs_need_read(&completed, read(2, 200), false, 230));
+        let over = 200 + GITHUB_WORKFLOW_RETENTION_SECS;
+        assert!(github_jobs_need_read(&completed, None, false, over - 1));
+        assert!(!github_jobs_need_read(&completed, None, false, over));
     }
 
     #[test]
@@ -352,38 +361,56 @@ mod tests {
     #[test]
     fn an_empty_attempt_is_pending_until_its_first_successful_read() {
         let run = run(GitHubCheckStatus::Completed, 200);
-        assert!(github_jobs_not_read_yet(&run, None, false, true, false));
+        let read = |run_attempt| {
+            Some(GitHubJobsRead {
+                run_attempt,
+                read_at_unix: 200,
+            })
+        };
+        assert!(github_jobs_not_read_yet(
+            &run, None, false, true, false, 200
+        ));
         assert!(github_jobs_not_read_yet(
             &run,
-            Some(GitHubJobsRead {
-                run_attempt: 1,
-                read_at_unix: 200
-            }),
+            read(1),
             false,
             true,
-            false
+            false,
+            200
         ));
         assert!(!github_jobs_not_read_yet(
             &run,
-            Some(GitHubJobsRead {
-                run_attempt: 2,
-                read_at_unix: 200
-            }),
+            read(2),
             false,
             true,
-            false
+            false,
+            200
         ));
-        assert!(!github_jobs_not_read_yet(&run, None, true, true, false));
-        assert!(!github_jobs_not_read_yet(&run, None, false, false, false));
+        assert!(!github_jobs_not_read_yet(
+            &run, None, true, true, false, 200
+        ));
+        assert!(!github_jobs_not_read_yet(
+            &run, None, false, false, false, 200
+        ));
         assert!(github_jobs_not_read_yet(
             &run,
-            Some(GitHubJobsRead {
-                run_attempt: 2,
-                read_at_unix: 200
-            }),
+            read(2),
             false,
             true,
-            true
+            true,
+            200
+        ));
+        let over = 200 + GITHUB_WORKFLOW_RETENTION_SECS;
+        assert!(github_jobs_not_read_yet(
+            &run,
+            None,
+            false,
+            true,
+            true,
+            over - 1
+        ));
+        assert!(!github_jobs_not_read_yet(
+            &run, None, false, true, true, over
         ));
     }
 

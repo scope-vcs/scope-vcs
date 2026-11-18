@@ -202,6 +202,7 @@ async fn stream_event_for_user(
             | RepoChangeKind::DependenciesChanged
             | RepoChangeKind::GitHubWorkflowRunsChanged
             | RepoChangeKind::GitHubWorkflowRunChanged { .. }
+            | RepoChangeKind::GitHubWorkflowRunsExpired
             | RepoChangeKind::RepositoryChanged { .. }
             | RepoChangeKind::RequestTimelineChanged { .. }
             | RepoChangeKind::RequestAttachmentChanged { .. } => policy.activity_stream_visible,
@@ -244,6 +245,7 @@ fn event_for_access(
         RepoChangeKind::DependenciesChanged
             | RepoChangeKind::GitHubWorkflowRunsChanged
             | RepoChangeKind::GitHubWorkflowRunChanged { .. }
+            | RepoChangeKind::GitHubWorkflowRunsExpired
     ) {
         return None;
     }
@@ -272,6 +274,7 @@ fn redacted_event(event: RepoChangeEvent) -> RepoChangeEvent {
             RepoChangeKind::DependenciesChanged
             | RepoChangeKind::GitHubWorkflowRunsChanged
             | RepoChangeKind::GitHubWorkflowRunChanged { .. }
+            | RepoChangeKind::GitHubWorkflowRunsExpired
             | RepoChangeKind::RepositoryChanged { .. }
             | RepoChangeKind::RequestStateChanged { .. }
             | RepoChangeKind::RequestTimelineChanged { .. }

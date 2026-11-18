@@ -23,18 +23,18 @@ fn failed(id: u64) -> GitHubWorkflowJob {
 }
 
 #[tokio::test]
-async fn a_log_read_is_queued_once_per_unstored_log_and_names_its_job() {
+async fn a_log_read_is_queued_once_per_unstored_log_of_a_stored_job_and_names_its_job() {
     let store = postgres_store();
     let repositories = store.repositories();
     repositories
-        .save_github_workflow_jobs(REPO, 42, &[failed(12), failed(13)])
+        .save_github_workflow_jobs(REPO, 42, &[failed(12), failed(13)], 100)
         .await
         .unwrap();
     repositories
         .save_github_workflow_job_log(13, &GitHubJobLogState::Expired, 50)
         .await
         .unwrap();
-    for job_ids in [&[12, 13, 12][..], &[12]] {
+    for job_ids in [&[12, 13, 12, 14][..], &[12]] {
         repositories
             .queue_github_job_log_reads(job_ids, 100)
             .await
@@ -62,7 +62,7 @@ async fn a_worker_whose_lease_lapsed_cannot_finish_the_next_claim() {
     let store = postgres_store();
     let repositories = store.repositories();
     repositories
-        .save_github_workflow_jobs(REPO, 42, &[failed(12)])
+        .save_github_workflow_jobs(REPO, 42, &[failed(12)], 100)
         .await
         .unwrap();
     repositories

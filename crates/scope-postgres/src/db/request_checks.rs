@@ -463,7 +463,7 @@ pub(super) async fn save_evaluation(
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 pub(super) async fn select_current_evaluation(
     tx: &DatabaseTransaction,

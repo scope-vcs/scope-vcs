@@ -21,6 +21,7 @@ import {
   githubWorkflowRunDetailResource,
 } from '../runs/github-workflow-run-detail-resource'
 import type { GitHubWorkflowRunDetailResponse } from '../../api/types.generated'
+import { HttpError } from '../../api/http'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
 function invalidate(scope: string, change?: RepoChangeEvent, resync?: { versioned?: boolean }) {
@@ -204,6 +205,50 @@ test('a GitHub run report asks again only for its logs still being read', () => 
   assert.equal(githubWorkflowJobLogResource.getSnapshot(pending).stale, true)
   assert.equal(githubWorkflowJobLogResource.getSnapshot(kept).stale, false)
   assert.equal(githubWorkflowJobLogResource.getSnapshot(otherRun).stale, false)
+})
+
+test('retention and resync ask again for every cached GitHub log in the repository and refresh its run lists', () => {
+  githubWorkflowJobLogResource.clear()
+  const kept = githubWorkflowJobLogIdentity('viewer-a', '7', '71')
+  const otherScope = githubWorkflowJobLogIdentity('viewer-b', '7', '71')
+  const log = { state: 'kept' as const, text: 'done', truncated: false, fetched: false }
+  const list = githubWorkflowRunsIdentity('viewer-a', null)
+  const runs = {
+    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], next_cursor: null },
+    pages: 1,
+  }
+  for (const change of [event('GitHubWorkflowRunsExpired'), undefined]) {
+    githubWorkflowJobLogResource.write(kept, log)
+    githubWorkflowJobLogResource.write(otherScope, log)
+    githubWorkflowRunsResource.write(list, runs)
+    invalidate('viewer-a', change)
+    assert.equal(githubWorkflowJobLogResource.getSnapshot(kept).stale, true)
+    assert.equal(githubWorkflowJobLogResource.peek(kept), log)
+    assert.equal(githubWorkflowJobLogResource.getSnapshot(otherScope).stale, false)
+    assert.equal(githubWorkflowRunsResource.getSnapshot(list).stale, true)
+  }
+})
+
+test('a GitHub run or log that is no longer found drops what it showed', async () => {
+  githubWorkflowJobLogResource.clear()
+  githubWorkflowRunDetailResource.clear()
+  const detail = githubWorkflowRunDetailIdentity('viewer-a', '7')
+  const log = githubWorkflowJobLogIdentity('viewer-a', '7', '71')
+  const offline = githubWorkflowJobLogIdentity('viewer-a', '7', '72')
+  githubWorkflowRunDetailResource.write(detail, { run: {}, jobs: [], jobs_not_read_yet: false } as unknown as GitHubWorkflowRunDetailResponse)
+  const kept = { state: 'kept' as const, text: 'done', truncated: false, fetched: false }
+  githubWorkflowJobLogResource.write(log, kept)
+  githubWorkflowJobLogResource.write(offline, kept)
+  const notFound = async () => { throw new HttpError(404, { code: 'not_found', message: 'Not found', retryable: false }) }
+  githubWorkflowRunDetailResource.invalidate(detail)
+  await githubWorkflowRunDetailResource.ensure(detail, '', notFound)
+  githubWorkflowJobLogResource.invalidate(log)
+  await githubWorkflowJobLogResource.ensure(log, '', notFound)
+  githubWorkflowJobLogResource.invalidate(offline)
+  await githubWorkflowJobLogResource.ensure(offline, '', async () => { throw new HttpError(503, { code: 'service_unavailable', message: 'Unavailable', retryable: true }) })
+  assert.equal(githubWorkflowRunDetailResource.peek(detail), null)
+  assert.equal(githubWorkflowJobLogResource.peek(log), null)
+  assert.equal(githubWorkflowJobLogResource.peek(offline), kept)
 })
 
 test('a GitHub run report during a log request keeps that request and asks again only if it answers pending', async () => {

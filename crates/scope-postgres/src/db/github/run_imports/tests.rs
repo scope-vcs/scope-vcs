@@ -90,7 +90,7 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
     );
     assert!(
         repositories
-            .store_github_run_import_page(REPO, "claim_1", &[])
+            .store_github_run_import_page(REPO, "claim_1", &[], 100)
             .await
             .unwrap()
     );
@@ -238,7 +238,7 @@ async fn importing_again_waits_for_a_working_import_but_replaces_one_waiting_to_
     );
     assert!(
         !repositories
-            .store_github_run_import_page(REPO, "claim_1", &[])
+            .store_github_run_import_page(REPO, "claim_1", &[], 100)
             .await
             .unwrap()
     );
@@ -316,7 +316,7 @@ async fn a_page_is_stored_only_while_its_claim_holds_and_the_repository_stays_co
         .unwrap();
     assert!(
         repositories
-            .store_github_run_import_page(REPO, "claim_1", &[run(1)])
+            .store_github_run_import_page(REPO, "claim_1", &[run(1)], 100)
             .await
             .unwrap()
     );
@@ -331,7 +331,7 @@ async fn a_page_is_stored_only_while_its_claim_holds_and_the_repository_stays_co
     assert_eq!(repositories.github_run_import(REPO).await.unwrap(), None);
     assert!(
         !repositories
-            .store_github_run_import_page(REPO, "claim_1", &[run(2)])
+            .store_github_run_import_page(REPO, "claim_1", &[run(2)], 100)
             .await
             .unwrap()
     );
@@ -340,7 +340,7 @@ async fn a_page_is_stored_only_while_its_claim_holds_and_the_repository_stays_co
     connect(&store, 42, 50).await;
     assert!(
         !repositories
-            .store_github_run_import_page(REPO, "claim_1", &[run(2)])
+            .store_github_run_import_page(REPO, "claim_1", &[run(2)], 100)
             .await
             .unwrap()
     );
@@ -350,7 +350,7 @@ async fn a_page_is_stored_only_while_its_claim_holds_and_the_repository_stays_co
         .unwrap();
     assert!(
         repositories
-            .store_github_run_import_page(REPO, "claim_2", &[run(2)])
+            .store_github_run_import_page(REPO, "claim_2", &[run(2)], 100)
             .await
             .unwrap()
     );
