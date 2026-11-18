@@ -31,5 +31,6 @@
   "m0112_remove_github_setup_checks.rs": "38ac0bc09d0c3854cc0a611c1372c6bd1300791f874f1efd6da8511720075587",
   "m0113_pool_pack_lookups.rs": "df9527a015cb2b16f718117fad431981662f6d94fd5ffd780a845d2c8be00e52",
   "m0114_github_skipped_reviews.rs": "18ac2e5772cde1b7c9db6e5d93c26e64db3a49c9ffa6deb5628ce89ef42f5a4e",
-  "m0115_github_webhook_deliveries.rs": "25fab7329674088c906c6e3a4f6740ded84f4d1c2783ea05945190ef0d932f78"
+  "m0115_github_webhook_deliveries.rs": "25fab7329674088c906c6e3a4f6740ded84f4d1c2783ea05945190ef0d932f78",
+  "m0116_drop_outbox_jobs.rs": "0f6d565683196291dbdedde4ea6d227639d176550055e4afed4268fc16cacb39"
 }
