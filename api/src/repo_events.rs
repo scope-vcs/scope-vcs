@@ -83,14 +83,16 @@ impl RepoChangeReason {
 
 #[derive(Clone, Debug)]
 pub(crate) struct RepoChangeBus {
-    channels: Arc<Mutex<BTreeMap<String, broadcast::Sender<RepoChangeEvent>>>>,
+    channels: Arc<Mutex<Option<RepoChannels>>>,
     origin_id: Arc<str>,
 }
+
+type RepoChannels = BTreeMap<String, broadcast::Sender<RepoChangeEvent>>;
 
 impl Default for RepoChangeBus {
     fn default() -> Self {
         Self {
-            channels: Arc::new(Mutex::new(BTreeMap::new())),
+            channels: Arc::new(Mutex::new(Some(BTreeMap::new()))),
             origin_id: Arc::from(new_origin_id()),
         }
     }
@@ -98,9 +100,7 @@ impl Default for RepoChangeBus {
 
 impl RepoChangeBus {
     #[expect(clippy::expect_used)]
-    fn channels(
-        &self,
-    ) -> std::sync::MutexGuard<'_, BTreeMap<String, broadcast::Sender<RepoChangeEvent>>> {
+    fn channels(&self) -> std::sync::MutexGuard<'_, Option<RepoChannels>> {
         self.channels
             .lock()
             .expect("repo change bus holders do not panic, so the lock is never poisoned")
@@ -111,15 +111,24 @@ impl RepoChangeBus {
     }
 
     pub(crate) fn subscribe(&self, repo_id: &str) -> broadcast::Receiver<RepoChangeEvent> {
-        let mut channels = self.channels();
-        let sender = channels
-            .entry(repo_id.to_string())
-            .or_insert_with(|| broadcast::channel(REPO_CHANGE_CHANNEL_CAPACITY).0);
-        sender.subscribe()
+        match self.channels().as_mut() {
+            Some(channels) => channels
+                .entry(repo_id.to_string())
+                .or_insert_with(|| broadcast::channel(REPO_CHANGE_CHANNEL_CAPACITY).0)
+                .subscribe(),
+            None => broadcast::channel(1).1,
+        }
+    }
+
+    pub(crate) fn close(&self) {
+        self.channels().take();
     }
 
     pub(crate) fn remove_if_idle(&self, repo_id: &str) {
         let mut channels = self.channels();
+        let Some(channels) = channels.as_mut() else {
+            return;
+        };
         if channels
             .get(repo_id)
             .is_some_and(|sender| sender.receiver_count() == 0)
@@ -130,6 +139,9 @@ impl RepoChangeBus {
 
     pub(crate) fn publish_event(&self, event: RepoChangeEvent) {
         let mut channels = self.channels();
+        let Some(channels) = channels.as_mut() else {
+            return;
+        };
         let Some(sender) = channels.get(&event.repo_id).cloned() else {
             return;
         };
@@ -397,6 +409,24 @@ mod tests {
         .unwrap();
         bus.publish_notification_payload(&external_payload);
         assert_eq!(receiver.try_recv().unwrap(), event("repo"));
+    }
+
+    #[test]
+    fn closing_ends_open_subscriptions_after_delivered_events_and_later_ones_at_once() {
+        let bus = RepoChangeBus::default();
+        let mut open = bus.subscribe("repo");
+        bus.publish_event(event("repo"));
+
+        bus.close();
+        bus.publish_event(event("repo"));
+
+        assert_eq!(open.try_recv().unwrap(), event("repo"));
+        for mut ended in [open, bus.subscribe("repo")] {
+            assert!(matches!(
+                ended.try_recv(),
+                Err(broadcast::error::TryRecvError::Closed)
+            ));
+        }
     }
 
     #[test]

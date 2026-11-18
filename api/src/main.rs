@@ -47,6 +47,7 @@ async fn app_state_from_env() -> anyhow::Result<AppState> {
 
 async fn serve(addr: SocketAddr, state: AppState) -> anyhow::Result<()> {
     let shutdown_state = state.clone();
+    let event_streams = state.clone();
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding server on {addr}"))?;
@@ -58,6 +59,7 @@ async fn serve(addr: SocketAddr, state: AppState) -> anyhow::Result<()> {
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
             stop_background_work.send_replace(true);
+            event_streams.end_event_streams();
         })
         .await
         .context("serving api");

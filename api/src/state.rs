@@ -213,6 +213,10 @@ impl AppState {
         }
     }
 
+    pub fn end_event_streams(&self) {
+        self.repo_events.close();
+    }
+
     pub async fn shutdown(&self) {
         if let Some(listener) = &self.repo_change_listener {
             listener.shutdown().await;
