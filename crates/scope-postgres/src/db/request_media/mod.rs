@@ -6,6 +6,7 @@ mod locks;
 mod persistence;
 mod processing;
 mod processing_support;
+mod stored_states;
 mod upload;
 mod upload_parts;
 

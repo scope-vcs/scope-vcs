@@ -164,7 +164,9 @@ pub fn postgres_error_kind(kind: scope_postgres::error::PostgresErrorKind) -> Er
         | PostgresErrorKind::RepositoryMoved => ErrorKind::Conflict,
         PostgresErrorKind::InvalidInput => ErrorKind::BadRequest,
         PostgresErrorKind::PermissionDenied => ErrorKind::Forbidden,
-        PostgresErrorKind::Internal => ErrorKind::Internal,
+        PostgresErrorKind::Internal
+        | PostgresErrorKind::Deadlock
+        | PostgresErrorKind::SerializationFailure => ErrorKind::Internal,
         PostgresErrorKind::NotFound => ErrorKind::NotFound,
         PostgresErrorKind::Unavailable => ErrorKind::ServiceUnavailable,
         PostgresErrorKind::ResourceExhausted => ErrorKind::TooManyRequests,

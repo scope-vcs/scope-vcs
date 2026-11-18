@@ -202,7 +202,10 @@ impl RequestStore {
         let lease_expires = u64_to_i64(command.lease_expires_at_unix, "auto-merge claim expiry")?;
         let tx = self.db.begin().await?;
         let query = entities::request_auto_merge_intent::Entity::find()
-            .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
+            .filter(
+                entities::request_auto_merge_intent::Column::Status
+                    .eq(entities::request_auto_merge_intent::Status::Active),
+            )
             .filter(entities::request_auto_merge_intent::Column::NextAttemptAtUnix.lte(now))
             .filter(
                 entities::request_auto_merge_intent::Column::ClaimExpiresAtUnix
@@ -287,7 +290,10 @@ impl RequestStore {
         }
         let result = update
             .filter(entities::request_auto_merge_intent::Column::Id.eq(command.intent_id))
-            .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
+            .filter(
+                entities::request_auto_merge_intent::Column::Status
+                    .eq(entities::request_auto_merge_intent::Status::Active),
+            )
             .filter(entities::request_auto_merge_intent::Column::ClaimToken.eq(command.claim_token))
             .exec(self.db.as_ref())
             .await?;
@@ -312,7 +318,7 @@ impl RequestStore {
             .one(&tx)
             .await?;
         let Some(row) = row.filter(|row| {
-            row.status == "Active"
+            row.status == entities::request_auto_merge_intent::Status::Active
                 && row.claim_token.as_deref() == Some(command.claim_token.as_str())
                 && row
                     .claim_expires_at_unix
@@ -359,7 +365,10 @@ pub(super) async fn lock_active_intent_for_request(
 ) -> Result<Option<StoredIntent>, PostgresError> {
     entities::request_auto_merge_intent::Entity::find()
         .filter(entities::request_auto_merge_intent::Column::RequestId.eq(request_id))
-        .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
+        .filter(
+            entities::request_auto_merge_intent::Column::Status
+                .eq(entities::request_auto_merge_intent::Status::Active),
+        )
         .lock_exclusive()
         .one(tx)
         .await?
@@ -376,7 +385,10 @@ pub(super) async fn stop_auto_merges_for_revoked_actor(
     let mut rows = entities::request_auto_merge_intent::Entity::find()
         .filter(entities::request_auto_merge_intent::Column::RepoId.eq(repo_id))
         .filter(entities::request_auto_merge_intent::Column::ActorUserId.eq(actor_user_id))
-        .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
+        .filter(
+            entities::request_auto_merge_intent::Column::Status
+                .eq(entities::request_auto_merge_intent::Status::Active),
+        )
         .order_by_asc(entities::request_auto_merge_intent::Column::RequestId)
         .all(tx)
         .await?;
@@ -386,7 +398,7 @@ pub(super) async fn stop_auto_merges_for_revoked_actor(
             .lock_exclusive()
             .one(tx)
             .await?
-            .filter(|row| row.status == "Active")
+            .filter(|row| row.status == entities::request_auto_merge_intent::Status::Active)
         else {
             continue;
         };

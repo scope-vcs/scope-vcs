@@ -18,6 +18,8 @@ mod content_push_transactions;
 mod content_version_tests;
 mod dependency_analysis;
 mod entities;
+#[cfg(test)]
+mod failure_kind_tests;
 mod fast_push;
 mod generated_ids;
 mod git_compaction;
