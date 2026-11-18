@@ -6,9 +6,9 @@ use super::{
     repo_lifecycle::delete_locked_repository,
     repository_access::load_repo_record,
     repository_from_model,
+    request_lifecycle_effects::persist_deleted_draft,
     request_revision_rows::revisions_for_request_ids,
     request_rows::{request_by_id, request_events_by_request_id},
-    requests::persist_deleted_draft,
 };
 use crate::error::PostgresError;
 use scope_domain::{
