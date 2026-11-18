@@ -6,4 +6,5 @@ pub mod review_bots;
 pub mod run_import;
 pub mod webhook_delivery;
 pub mod workflow_jobs;
+pub mod workflow_retention;
 pub mod workflow_runs;

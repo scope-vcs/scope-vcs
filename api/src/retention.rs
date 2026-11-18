@@ -1,9 +1,11 @@
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
-    persistence::unix_now, repo_events::RepoChangeReason, state::AppState,
+    after_commit::AfterCommit, error::ApiError, persistence::unix_now,
+    repo_events::RepoChangeReason, state::AppState,
     use_cases::repository_collaboration::publish_committed_mutation,
 };
-use std::time::Duration;
+use scope_postgres::db::GitHubWorkflowRetentionPass;
+use std::{collections::BTreeSet, time::Duration};
 use tokio::time::MissedTickBehavior;
 
 const RETENTION_BATCH_SIZE: u64 = 100;
@@ -32,6 +34,36 @@ pub(crate) async fn apply_invite_retention(
     Ok(pruned)
 }
 
+pub(crate) async fn apply_github_workflow_retention(
+    state: &AppState,
+    now_unix: u64,
+) -> Result<GitHubWorkflowRetentionPass, ApiError> {
+    let pass = state
+        .metadata
+        .repositories()
+        .apply_github_workflow_retention(now_unix, RETENTION_BATCH_SIZE)
+        .await?;
+    let repositories = pass
+        .deleted_runs
+        .iter()
+        .map(|run| run.repo_id.as_str())
+        .collect::<BTreeSet<_>>();
+    for repo_id in repositories {
+        if let Some(incarnation) = state.repository_incarnation(repo_id).await? {
+            state.after_commit([AfterCommit::github_workflow_runs(&incarnation)]);
+        }
+    }
+    for run in &pass.expired_runs {
+        if let Some(incarnation) = state.repository_incarnation(&run.repo_id).await? {
+            state.after_commit([AfterCommit::github_workflow_run(
+                &incarnation,
+                run.github_run_id,
+            )]);
+        }
+    }
+    Ok(pass)
+}
+
 impl BackgroundWork {
     pub(crate) fn start_retention(&mut self) {
         self.spawn(
@@ -52,6 +84,23 @@ impl BackgroundWork {
                     }
                     Err(error) => {
                         tracing::warn!(%error, "failed to apply invite retention");
+                    }
+                }
+                match apply_github_workflow_retention(&state, now_unix).await {
+                    Ok(pass) if pass == GitHubWorkflowRetentionPass::default() => {}
+                    Ok(pass) => {
+                        tracing::info!(
+                            deleted_runs = pass.deleted_runs.len(),
+                            expired_runs = pass.expired_runs.len(),
+                            deleted_jobs_without_run = pass.deleted_jobs_without_run,
+                            "applied GitHub workflow run retention"
+                        );
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            error = %error.operator_diagnostic(),
+                            "failed to apply GitHub workflow run retention"
+                        );
                     }
                 }
                 Ok(())

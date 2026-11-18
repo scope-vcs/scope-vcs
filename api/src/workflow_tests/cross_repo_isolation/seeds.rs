@@ -31,6 +31,7 @@ pub(super) async fn seed_github_run(state: &AppState) {
                 run_attempt: 1,
                 updated_at_unix: 20,
             },
+            20,
         )
         .await
         .unwrap();
@@ -50,6 +51,7 @@ pub(super) async fn seed_github_run(state: &AppState) {
                 html_url: String::new(),
                 steps: Vec::new(),
             }],
+            20,
         )
         .await
         .unwrap();

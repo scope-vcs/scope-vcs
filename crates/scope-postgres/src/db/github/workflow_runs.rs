@@ -12,12 +12,13 @@ use scope_domain::{
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
 
-const SELECT_RUN: &str = "run.github_run_id, run.workflow_name, run.head_branch, run.head_oid,
+pub(super) const SELECT_RUN: &str =
+    "run.github_run_id, run.workflow_name, run.head_branch, run.head_oid,
     run.event, run.status, run.conclusion, run.html_url, run.check_suite_id,
     run.run_started_at_unix, run.run_attempt, run.github_updated_at_unix";
 
 #[derive(FromQueryResult)]
-struct WorkflowRunRow {
+pub(super) struct WorkflowRunRow {
     github_run_id: i64,
     workflow_name: String,
     head_branch: Option<String>,
@@ -118,8 +119,16 @@ impl RepositoryStore {
         repo_id: &str,
         github_repository_id: u64,
         run: &GitHubWorkflowRun,
+        now_unix: u64,
     ) -> Result<(), PostgresError> {
-        save_workflow_run(self.db.as_ref(), repo_id, github_repository_id, run).await
+        save_workflow_run(
+            self.db.as_ref(),
+            repo_id,
+            github_repository_id,
+            run,
+            now_unix,
+        )
+        .await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "queue_github_workflow_run_read"))]
@@ -354,7 +363,11 @@ pub(in crate::db) async fn save_workflow_run<C: ConnectionTrait>(
     repo_id: &str,
     github_repository_id: u64,
     run: &GitHubWorkflowRun,
+    now_unix: u64,
 ) -> Result<(), PostgresError> {
+    if run.retention_over(now_unix) {
+        return Ok(());
+    }
     let progress = run.progress();
     let values: Vec<Value> = vec![
         u64_to_i64(run.github_run_id, "GitHub workflow run id")?.into(),
@@ -419,7 +432,7 @@ impl ListedRow {
 }
 
 impl WorkflowRunRow {
-    fn into_domain(self) -> Result<GitHubWorkflowRun, PostgresError> {
+    pub(super) fn into_domain(self) -> Result<GitHubWorkflowRun, PostgresError> {
         Ok(GitHubWorkflowRun {
             github_run_id: i64_to_u64(self.github_run_id, "GitHub workflow run id")?,
             workflow_name: self.workflow_name,

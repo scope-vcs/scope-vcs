@@ -11,7 +11,7 @@ use scope_domain::github::workflow_jobs::{GitHubJobLog, GitHubJobLogState, GitHu
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 #[derive(FromQueryResult)]
-struct JobRow {
+pub(super) struct JobRow {
     github_job_id: i64,
     github_run_id: i64,
     run_attempt: i32,
@@ -30,7 +30,8 @@ struct LogRow {
     truncated: bool,
 }
 
-const SELECT_JOB: &str = "github_job_id, github_run_id, run_attempt, name, status, conclusion,
+pub(super) const SELECT_JOB: &str =
+    "github_job_id, github_run_id, run_attempt, name, status, conclusion,
     started_at_unix, completed_at_unix, html_url, steps";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -151,8 +152,9 @@ impl RepositoryStore {
         repo_id: &str,
         github_repository_id: u64,
         jobs: &[GitHubWorkflowJob],
+        now_unix: u64,
     ) -> Result<(), PostgresError> {
-        for job in jobs {
+        for job in jobs.iter().filter(|job| !job.retention_over(now_unix)) {
             save_job(self.db.as_ref(), repo_id, github_repository_id, job).await?;
         }
         Ok(())
@@ -326,7 +328,7 @@ async fn save_job<C: ConnectionTrait>(
 }
 
 impl JobRow {
-    fn into_domain(self) -> Result<GitHubWorkflowJob, PostgresError> {
+    pub(super) fn into_domain(self) -> Result<GitHubWorkflowJob, PostgresError> {
         Ok(GitHubWorkflowJob {
             github_job_id: i64_to_u64(self.github_job_id, "GitHub job id")?,
             github_run_id: i64_to_u64(self.github_run_id, "GitHub workflow run id")?,

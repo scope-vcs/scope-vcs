@@ -12,4 +12,5 @@ pub(super) mod skipped_reviews;
 pub(super) mod webhook_deliveries;
 pub(super) mod workflow_job_log_reads;
 pub(super) mod workflow_jobs;
+pub(super) mod workflow_retention;
 pub(super) mod workflow_runs;

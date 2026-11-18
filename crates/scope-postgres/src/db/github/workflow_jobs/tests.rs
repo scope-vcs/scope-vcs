@@ -80,7 +80,12 @@ async fn jobs_list_by_attempt_and_a_read_reporting_less_does_not_replace_one_rep
     );
     let earlier_attempt = job(5, 1, Completed, vec![]);
     repositories
-        .save_github_workflow_jobs(REPO, 42, &[done.clone(), running.clone(), earlier_attempt])
+        .save_github_workflow_jobs(
+            REPO,
+            42,
+            &[done.clone(), running.clone(), earlier_attempt],
+            100,
+        )
         .await
         .unwrap();
     let late = job(
@@ -90,7 +95,7 @@ async fn jobs_list_by_attempt_and_a_read_reporting_less_does_not_replace_one_rep
         vec![step(1, Completed), step(2, InProgress)],
     );
     repositories
-        .save_github_workflow_jobs(REPO, 42, &[late])
+        .save_github_workflow_jobs(REPO, 42, &[late], 100)
         .await
         .unwrap();
 
@@ -130,7 +135,7 @@ async fn a_finished_jobs_first_stored_log_is_kept() {
     let repositories = store.repositories();
     let finished = job(12, 1, GitHubCheckStatus::Completed, vec![]);
     repositories
-        .save_github_workflow_jobs(REPO, 42, &[finished])
+        .save_github_workflow_jobs(REPO, 42, &[finished], 100)
         .await
         .unwrap();
     assert_eq!(
@@ -156,7 +161,7 @@ async fn a_finished_jobs_first_stored_log_is_kept() {
 
     let expired = job(13, 1, GitHubCheckStatus::Completed, vec![]);
     repositories
-        .save_github_workflow_jobs(REPO, 42, &[expired])
+        .save_github_workflow_jobs(REPO, 42, &[expired], 100)
         .await
         .unwrap();
     repositories
@@ -175,7 +180,7 @@ async fn one_reader_claims_each_jobs_read_and_a_run_names_its_request_and_check_
     start_public_request(&store).await;
     let repositories = store.repositories();
     repositories
-        .save_github_workflow_run(REPO, 42, &run("scope/requests/req_1"))
+        .save_github_workflow_run(REPO, 42, &run("scope/requests/req_1"), 100)
         .await
         .unwrap();
 
@@ -267,7 +272,7 @@ async fn a_newer_jobs_read_survives_completion_of_an_active_read() {
     let store = postgres_store();
     let repositories = store.repositories();
     repositories
-        .save_github_workflow_run(REPO, 42, &run("main"))
+        .save_github_workflow_run(REPO, 42, &run("main"), 100)
         .await
         .unwrap();
     repositories
@@ -320,7 +325,7 @@ async fn a_failed_jobs_read_keeps_its_backoff_when_the_run_is_queued_again() {
     let store = postgres_store();
     let repositories = store.repositories();
     repositories
-        .save_github_workflow_run(REPO, 42, &run("main"))
+        .save_github_workflow_run(REPO, 42, &run("main"), 100)
         .await
         .unwrap();
     repositories

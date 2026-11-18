@@ -54,7 +54,7 @@ async fn run_claimed_import(
     claim_token: &str,
     now_unix: u64,
 ) {
-    let imported = import_runs(state, import, claim_token).await;
+    let imported = import_runs(state, import, claim_token, now_unix).await;
     let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
     let Some(outcome) = job_outcome(imported, github_retry_at(import.attempts, now_unix)) else {
         return;
@@ -99,6 +99,7 @@ async fn import_runs(
     state: &AppState,
     import: &GitHubRunImport,
     claim_token: &str,
+    now_unix: u64,
 ) -> Result<u32, JobFailure> {
     let app = state.github_app()?;
     let repositories = state.metadata.repositories();
@@ -130,7 +131,7 @@ async fn import_runs(
         let wanted = usize::try_from(import.remaining(imported)).unwrap_or(usize::MAX);
         let runs = listed.runs.into_iter().take(wanted).collect::<Vec<_>>();
         if !repositories
-            .store_github_run_import_page(&import.repository_id, claim_token, &runs)
+            .store_github_run_import_page(&import.repository_id, claim_token, &runs, now_unix)
             .await?
         {
             return Err(JobFailure::Stale);

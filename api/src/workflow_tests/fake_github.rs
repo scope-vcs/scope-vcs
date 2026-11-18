@@ -148,6 +148,13 @@ pub(super) fn workflow_run(
     workflow_run_started_at(id, branch, commit_oid, conclusion, unix_now())
 }
 
+fn github_time(unix: u64) -> String {
+    time::OffsetDateTime::from_unix_timestamp(unix as i64)
+        .unwrap()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap()
+}
+
 pub(super) fn workflow_run_started_at(
     id: u64,
     branch: &str,
@@ -155,12 +162,6 @@ pub(super) fn workflow_run_started_at(
     conclusion: Option<&str>,
     started_at_unix: u64,
 ) -> serde_json::Value {
-    let time = |unix: u64| {
-        time::OffsetDateTime::from_unix_timestamp(unix as i64)
-            .unwrap()
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap()
-    };
     serde_json::json!({
         "id": id,
         "name": "ci",
@@ -171,9 +172,9 @@ pub(super) fn workflow_run_started_at(
         "conclusion": conclusion,
         "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/actions/runs/{id}"),
         "check_suite_id": id,
-        "run_started_at": time(started_at_unix),
+        "run_started_at": github_time(started_at_unix),
         "run_attempt": 1,
-        "updated_at": time(started_at_unix + if conclusion.is_some() { 30 } else { 0 }),
+        "updated_at": github_time(started_at_unix + if conclusion.is_some() { 30 } else { 0 }),
     })
 }
 
@@ -185,6 +186,7 @@ pub(super) fn workflow_job(
     steps: &[&str],
 ) -> serde_json::Value {
     let last = steps.len();
+    let started = unix_now() - 60 * 60;
     serde_json::json!({
         "id": id,
         "run_id": run_id,
@@ -192,8 +194,8 @@ pub(super) fn workflow_job(
         "name": name,
         "status": if conclusion.is_some() { "completed" } else { "in_progress" },
         "conclusion": conclusion,
-        "started_at": "2026-10-05T12:00:00Z",
-        "completed_at": conclusion.map(|_| "2026-10-05T12:01:00Z"),
+        "started_at": github_time(started),
+        "completed_at": conclusion.map(|_| github_time(started + 60)),
         "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/actions/runs/{run_id}/job/{id}"),
         "steps": steps.iter().enumerate().map(|(index, step)| {
             let finished = conclusion.is_some() || index + 1 < last;
@@ -202,8 +204,8 @@ pub(super) fn workflow_job(
                 "name": step,
                 "status": if finished { "completed" } else { "in_progress" },
                 "conclusion": finished.then_some("success"),
-                "started_at": "2026-10-05T12:00:00Z",
-                "completed_at": finished.then_some("2026-10-05T12:00:30Z"),
+                "started_at": github_time(started),
+                "completed_at": finished.then(|| github_time(started + 30)),
             })
         }).collect::<Vec<_>>(),
     })

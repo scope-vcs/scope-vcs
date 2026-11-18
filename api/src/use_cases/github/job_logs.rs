@@ -89,18 +89,18 @@ pub(crate) async fn stored_job_log(
     state: &AppState,
     job: &GitHubWorkflowJob,
 ) -> Result<Option<GitHubJobLogRead>, ApiError> {
-    if !job.ran() {
-        return Ok(Some(GitHubJobLogRead::NotRun));
-    }
-    Ok(state
+    if let Some(log) = state
         .metadata
         .repositories()
         .github_workflow_job_log(job.github_job_id)
         .await?
-        .map(|log| GitHubJobLogRead::Read {
+    {
+        return Ok(Some(GitHubJobLogRead::Read {
             log,
             fetched: false,
-        }))
+        }));
+    }
+    Ok((!job.ran()).then_some(GitHubJobLogRead::NotRun))
 }
 
 async fn wait_for_log(

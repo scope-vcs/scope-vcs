@@ -46,7 +46,7 @@ async fn an_older_read_of_a_run_does_not_replace_a_newer_one() {
         ..run(1, "main", 10, 50)
     };
     repositories
-        .save_github_workflow_run(REPO, 42, &completed)
+        .save_github_workflow_run(REPO, 42, &completed, 100)
         .await
         .unwrap();
     let stored = || async {
@@ -58,12 +58,12 @@ async fn an_older_read_of_a_run_does_not_replace_a_newer_one() {
             .run
     };
     repositories
-        .save_github_workflow_run(REPO, 42, &run(1, "main", 10, 40))
+        .save_github_workflow_run(REPO, 42, &run(1, "main", 10, 40), 100)
         .await
         .unwrap();
     assert_eq!(stored().await, completed);
     repositories
-        .save_github_workflow_run(REPO, 42, &run(1, "main", 10, 50))
+        .save_github_workflow_run(REPO, 42, &run(1, "main", 10, 50), 100)
         .await
         .unwrap();
     assert_eq!(stored().await, completed);
@@ -72,7 +72,7 @@ async fn an_older_read_of_a_run_does_not_replace_a_newer_one() {
         ..run(1, "main", 60, 60)
     };
     repositories
-        .save_github_workflow_run(REPO, 42, &rerun)
+        .save_github_workflow_run(REPO, 42, &rerun, 100)
         .await
         .unwrap();
     assert_eq!(stored().await, rerun);
@@ -84,7 +84,7 @@ async fn a_run_stays_with_the_scope_repository_its_github_repository_is_connecte
     let repositories = store.repositories();
     let saved = run(1, "main", 10, 10);
     repositories
-        .save_github_workflow_run(REPO, 42, &saved)
+        .save_github_workflow_run(REPO, 42, &saved, 100)
         .await
         .unwrap();
     store
@@ -109,12 +109,12 @@ async fn a_run_stays_with_the_scope_repository_its_github_repository_is_connecte
             .unwrap())
     }
     repositories
-        .save_github_workflow_run("owner/other", 42, &saved)
+        .save_github_workflow_run("owner/other", 42, &saved, 100)
         .await
         .unwrap();
     assert_eq!(listed(&repositories, "owner/other").await, [1]);
     repositories
-        .save_github_workflow_run(REPO, 42, &saved)
+        .save_github_workflow_run(REPO, 42, &saved, 100)
         .await
         .unwrap();
     assert_eq!(listed(&repositories, "owner/other").await, [1]);

@@ -137,6 +137,7 @@ impl RepositoryStore {
         repo_id: &str,
         claim_token: &str,
         runs: &[GitHubWorkflowRun],
+        now_unix: u64,
     ) -> Result<bool, PostgresError> {
         let tx = self.db.begin().await?;
         let Some(row) = tx
@@ -163,7 +164,7 @@ impl RepositoryStore {
             "GitHub repository id",
         )?;
         for run in runs {
-            save_workflow_run(&tx, repo_id, github_repository_id, run).await?;
+            save_workflow_run(&tx, repo_id, github_repository_id, run, now_unix).await?;
         }
         tx.commit().await?;
         Ok(true)

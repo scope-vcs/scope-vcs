@@ -33,7 +33,7 @@ pub(crate) async fn refresh_workflow_run_for_delivery(
         github_run_id: run_id,
         attempts: 0,
     };
-    match read_workflow_run(state, &connection, run_id).await {
+    match read_workflow_run(state, &connection, run_id, now_unix).await {
         Ok(()) => Ok(repositories
             .finish_github_workflow_run_read(&job, None)
             .await?),
@@ -70,7 +70,7 @@ pub(crate) async fn retry_github_workflow_run_reads_once(
         let retry_at = match connection {
             None => None,
             Some(connection) => {
-                match read_workflow_run(state, &connection, job.github_run_id).await {
+                match read_workflow_run(state, &connection, job.github_run_id, now_unix).await {
                     Ok(()) => {
                         answered += 1;
                         None
@@ -100,6 +100,7 @@ async fn read_workflow_run(
     state: &AppState,
     connection: &GitHubConnection,
     run_id: u64,
+    now_unix: u64,
 ) -> Result<(), ApiError> {
     let Some(run) = state
         .github_app()?
@@ -112,13 +113,14 @@ async fn read_workflow_run(
     else {
         return Ok(());
     };
-    save_runs(state, connection, &[run]).await
+    save_runs(state, connection, &[run], now_unix).await
 }
 
 async fn save_runs(
     state: &AppState,
     connection: &GitHubConnection,
     runs: &[scope_domain::github::workflow_runs::GitHubWorkflowRun],
+    now_unix: u64,
 ) -> Result<(), ApiError> {
     let repositories = state.metadata.repositories();
     for run in runs {
@@ -127,6 +129,7 @@ async fn save_runs(
                 &connection.repository_id,
                 connection.github_repository_id,
                 run,
+                now_unix,
             )
             .await?;
     }
