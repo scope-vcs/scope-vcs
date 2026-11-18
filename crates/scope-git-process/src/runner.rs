@@ -1,14 +1,17 @@
 use crate::{
     STDERR_DIAGNOSTIC_BYTES, configure_process_group,
     lifecycle::ChildGuard,
-    stdio::{diagnostic_suffix, join_reader, join_writer, read_stderr_diagnostic, read_stdout},
+    stdio::{
+        StdoutActivity, diagnostic_suffix, join_reader, join_writer, read_stderr_diagnostic,
+        read_stdout,
+    },
 };
 use std::{
     io::{Read, Write},
     process::{ChildStdin, Command, ExitStatus, Output, Stdio},
     sync::mpsc,
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 use tokio::sync::watch;
 
@@ -50,9 +53,34 @@ impl Default for ProcessCancellation {
     }
 }
 
+enum Expiry {
+    Timeout(Duration),
+    StdoutIdle(Duration),
+}
+
+impl Expiry {
+    fn into_error(self, action: &str, stderr: &[u8]) -> ProcessError {
+        let action = action.to_string();
+        let diagnostic = diagnostic_suffix(stderr, STDERR_DIAGNOSTIC_BYTES);
+        match self {
+            Self::Timeout(timeout) => ProcessError::TimedOut {
+                action,
+                timeout_ms: timeout.as_millis(),
+                diagnostic,
+            },
+            Self::StdoutIdle(idle) => ProcessError::Stalled {
+                action,
+                idle_ms: idle.as_millis(),
+                diagnostic,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ProcessLimits {
     timeout: Duration,
+    stdout_idle_timeout: Option<Duration>,
     max_stdout_bytes: Option<usize>,
 }
 
@@ -60,13 +88,34 @@ impl ProcessLimits {
     pub fn new(timeout: Duration) -> Self {
         Self {
             timeout,
+            stdout_idle_timeout: None,
             max_stdout_bytes: None,
         }
+    }
+
+    pub fn with_stdout_idle_timeout(mut self, stdout_idle_timeout: Duration) -> Self {
+        self.stdout_idle_timeout = Some(stdout_idle_timeout);
+        self
     }
 
     pub fn with_max_stdout_bytes(mut self, max_stdout_bytes: usize) -> Self {
         self.max_stdout_bytes = Some(max_stdout_bytes);
         self
+    }
+
+    fn expiry(&self, activity: &StdoutActivity) -> Option<Expiry> {
+        if activity.elapsed() >= self.timeout {
+            return Some(Expiry::Timeout(self.timeout));
+        }
+        self.stdout_idle_timeout
+            .filter(|idle| activity.idle() >= *idle)
+            .map(Expiry::StdoutIdle)
+    }
+
+    fn poll_interval(&self, activity: &StdoutActivity) -> Duration {
+        self.timeout
+            .saturating_sub(activity.elapsed())
+            .min(Duration::from_millis(1))
     }
 }
 
@@ -92,6 +141,12 @@ pub enum ProcessError {
     TimedOut {
         action: String,
         timeout_ms: u128,
+        diagnostic: String,
+    },
+    #[error("{action} produced no output for {idle_ms}ms{diagnostic}")]
+    Stalled {
+        action: String,
+        idle_ms: u128,
         diagnostic: String,
     },
     #[error("{action} was cancelled")]
@@ -121,7 +176,7 @@ pub enum StreamingProcessError<E> {
 
 impl ProcessError {
     pub fn is_timeout(&self) -> bool {
-        matches!(self, Self::TimedOut { .. })
+        matches!(self, Self::TimedOut { .. } | Self::Stalled { .. })
     }
 
     pub fn is_stdout_limit(&self) -> bool {
@@ -207,13 +262,14 @@ where
         })?;
     let cancellation = ProcessCancellation::new();
     let consumer_cancellation = cancellation.clone();
+    let activity = StdoutActivity::start();
+    let stdout = activity.reader(stdout);
     let mut stdout_consumer = Some(thread::spawn(move || {
         consume(Box::new(stdout), consumer_cancellation)
     }));
     let stderr_reader =
         thread::spawn(move || read_stderr_diagnostic(stderr, STDERR_DIAGNOSTIC_BYTES));
 
-    let started_at = Instant::now();
     let mut status = None;
     let mut value = None;
     let (status, value) = loop {
@@ -268,7 +324,7 @@ where
         {
             break (exit_status, consumed);
         }
-        if started_at.elapsed() >= limits.timeout {
+        if let Some(expiry) = limits.expiry(&activity) {
             cancellation.cancel();
             child.terminate_and_reap();
             join_writer(stdin_writer, action).ok();
@@ -276,15 +332,9 @@ where
                 stdout_consumer.join().ok();
             }
             let stderr = join_reader(stderr_reader, action).unwrap_or_default();
-            return Err(ProcessError::TimedOut {
-                action: action.to_string(),
-                timeout_ms: limits.timeout.as_millis(),
-                diagnostic: diagnostic_suffix(&stderr, STDERR_DIAGNOSTIC_BYTES),
-            }
-            .into());
+            return Err(expiry.into_error(action, &stderr).into());
         }
-        let remaining = limits.timeout.saturating_sub(started_at.elapsed());
-        thread::sleep(remaining.min(Duration::from_millis(1)));
+        thread::sleep(limits.poll_interval(&activity));
     };
 
     child.disarm();
@@ -382,12 +432,13 @@ fn wait_for_output(
             pipe: "stderr",
         })?;
     let (stdout_limit_sender, stdout_limit_receiver) = mpsc::channel();
+    let activity = StdoutActivity::start();
+    let stdout = activity.reader(stdout);
     let stdout_reader =
         thread::spawn(move || read_stdout(stdout, limits.max_stdout_bytes, stdout_limit_sender));
     let stderr_reader =
         thread::spawn(move || read_stderr_diagnostic(stderr, STDERR_DIAGNOSTIC_BYTES));
 
-    let started_at = Instant::now();
     let mut status = None;
     let status = loop {
         if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
@@ -426,19 +477,14 @@ fn wait_for_output(
         {
             break status;
         }
-        if started_at.elapsed() >= limits.timeout {
+        if let Some(expiry) = limits.expiry(&activity) {
             child.terminate_and_reap();
             join_writer(stdin_writer, action).ok();
             join_reader(stdout_reader, action).ok();
             let stderr = join_reader(stderr_reader, action).unwrap_or_default();
-            return Err(ProcessError::TimedOut {
-                action: action.to_string(),
-                timeout_ms: limits.timeout.as_millis(),
-                diagnostic: diagnostic_suffix(&stderr, STDERR_DIAGNOSTIC_BYTES),
-            });
+            return Err(expiry.into_error(action, &stderr));
         }
-        let remaining = limits.timeout.saturating_sub(started_at.elapsed());
-        thread::sleep(remaining.min(Duration::from_millis(1)));
+        thread::sleep(limits.poll_interval(&activity));
     };
 
     child.disarm();

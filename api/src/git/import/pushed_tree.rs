@@ -104,7 +104,7 @@ pub(crate) fn git_changed_tree_entries(
         staging_repo,
         base_oid,
         head_oid,
-        Instant::now() + RuntimeBudgets::default_git_command_timeout(),
+        Instant::now() + RuntimeBudgets::default_git_pack_processing_timeout(),
     )?;
     for entry in entries.iter().filter_map(|(_, entry)| entry.as_ref()) {
         ensure_supported_control_file(&entry.path)?;
@@ -302,7 +302,7 @@ pub(crate) fn validate_pushed_commit_range(
     base_oid: Option<&str>,
     head_oid: &str,
 ) -> Result<(), ApiError> {
-    let deadline = Instant::now() + RuntimeBudgets::default_git_command_timeout();
+    let deadline = Instant::now() + RuntimeBudgets::default_git_pack_processing_timeout();
     let mut args = vec!["rev-list", "--reverse", head_oid];
     let excluded_base = base_oid.map(|oid| format!("^{oid}"));
     if let Some(excluded_base) = excluded_base.as_deref() {

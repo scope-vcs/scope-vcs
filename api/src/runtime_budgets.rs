@@ -1,6 +1,10 @@
 use crate::{
-    config::{git_storage_limits_from_env, parse_positive_usize_env, parse_usize_env},
+    config::{
+        MAX_RECEIVE_PACK_BYTES, git_storage_limits_from_env, parse_positive_usize_env,
+        parse_usize_env,
+    },
     error::ApiError,
+    git::transfer::GitTransferLimits,
 };
 use async_trait::async_trait;
 use scope_git::GitStorageLimits;
@@ -20,6 +24,13 @@ const DEFAULT_GIT_MATERIALIZATION_CONCURRENCY: usize = 2;
 const DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY: usize = 4;
 const DEFAULT_OBJECT_STORE_CONCURRENCY: usize = 16;
 const DEFAULT_GIT_COMMAND_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_GIT_TRANSFER_IDLE_TIMEOUT_SECS: u64 = 120;
+const SLOWEST_COMPLETING_TRANSFER_BYTES_PER_SEC: usize = 150 * 1024;
+const DEFAULT_GIT_TRANSFER_TIMEOUT_SECS: u64 =
+    MAX_RECEIVE_PACK_BYTES.div_ceil(SLOWEST_COMPLETING_TRANSFER_BYTES_PER_SEC) as u64;
+const SLOWEST_COMPLETING_PACK_PROCESSING_BYTES_PER_SEC: usize = 2 * 1024 * 1024;
+const DEFAULT_GIT_PACK_PROCESSING_TIMEOUT_SECS: u64 =
+    MAX_RECEIVE_PACK_BYTES.div_ceil(SLOWEST_COMPLETING_PACK_PROCESSING_BYTES_PER_SEC) as u64;
 const DEFAULT_GIT_ADMISSION_WAIT_MS: u64 = 2_000;
 
 const RECEIVE_PACK_CONCURRENCY_ENV: &str = "SCOPE_GIT_RECEIVE_PACK_CONCURRENCY";
@@ -28,6 +39,9 @@ const GIT_MATERIALIZATION_CONCURRENCY_ENV: &str = "SCOPE_GIT_MATERIALIZATION_CON
 const GIT_SEGMENT_INGEST_CONCURRENCY_ENV: &str = "SCOPE_GIT_SEGMENT_INGEST_CONCURRENCY";
 const OBJECT_STORE_CONCURRENCY_ENV: &str = "SCOPE_OBJECT_STORE_CONCURRENCY";
 const GIT_COMMAND_TIMEOUT_SECS_ENV: &str = "SCOPE_GIT_COMMAND_TIMEOUT_SECS";
+const GIT_TRANSFER_IDLE_TIMEOUT_SECS_ENV: &str = "SCOPE_GIT_TRANSFER_IDLE_TIMEOUT_SECS";
+const GIT_TRANSFER_TIMEOUT_SECS_ENV: &str = "SCOPE_GIT_TRANSFER_TIMEOUT_SECS";
+const GIT_PACK_PROCESSING_TIMEOUT_SECS_ENV: &str = "SCOPE_GIT_PACK_PROCESSING_TIMEOUT_SECS";
 const GIT_ADMISSION_WAIT_MS_ENV: &str = "SCOPE_GIT_ADMISSION_WAIT_MS";
 
 #[derive(Clone, Debug)]
@@ -38,6 +52,7 @@ pub(crate) struct RuntimeBudgetConfig {
     pub(crate) git_segment_ingest_concurrency: usize,
     pub(crate) object_store_concurrency: usize,
     pub(crate) git_command_timeout: Duration,
+    pub(crate) git_transfer_limits: GitTransferLimits,
     pub(crate) git_admission_wait: Duration,
     pub(crate) git_storage_limits: GitStorageLimits,
 }
@@ -69,6 +84,20 @@ impl RuntimeBudgetConfig {
                 GIT_COMMAND_TIMEOUT_SECS_ENV,
                 DEFAULT_GIT_COMMAND_TIMEOUT_SECS as usize,
             )? as u64),
+            git_transfer_limits: GitTransferLimits {
+                idle: Duration::from_secs(parse_positive_usize_env(
+                    GIT_TRANSFER_IDLE_TIMEOUT_SECS_ENV,
+                    DEFAULT_GIT_TRANSFER_IDLE_TIMEOUT_SECS as usize,
+                )? as u64),
+                pack_processing: Duration::from_secs(parse_positive_usize_env(
+                    GIT_PACK_PROCESSING_TIMEOUT_SECS_ENV,
+                    DEFAULT_GIT_PACK_PROCESSING_TIMEOUT_SECS as usize,
+                )? as u64),
+                total: Duration::from_secs(parse_positive_usize_env(
+                    GIT_TRANSFER_TIMEOUT_SECS_ENV,
+                    DEFAULT_GIT_TRANSFER_TIMEOUT_SECS as usize,
+                )? as u64),
+            },
             git_admission_wait: Duration::from_millis(parse_usize_env(
                 GIT_ADMISSION_WAIT_MS_ENV,
                 DEFAULT_GIT_ADMISSION_WAIT_MS as usize,
@@ -87,6 +116,11 @@ impl Default for RuntimeBudgetConfig {
             git_segment_ingest_concurrency: DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY,
             object_store_concurrency: DEFAULT_OBJECT_STORE_CONCURRENCY,
             git_command_timeout: Duration::from_secs(DEFAULT_GIT_COMMAND_TIMEOUT_SECS),
+            git_transfer_limits: GitTransferLimits {
+                idle: Duration::from_secs(DEFAULT_GIT_TRANSFER_IDLE_TIMEOUT_SECS),
+                pack_processing: Duration::from_secs(DEFAULT_GIT_PACK_PROCESSING_TIMEOUT_SECS),
+                total: Duration::from_secs(DEFAULT_GIT_TRANSFER_TIMEOUT_SECS),
+            },
             git_admission_wait: Duration::from_millis(DEFAULT_GIT_ADMISSION_WAIT_MS),
             git_storage_limits: GitStorageLimits::default(),
         }
@@ -100,6 +134,7 @@ pub(crate) struct RuntimeBudgets {
     git_segment_ingest: Arc<Semaphore>,
     object_store: Arc<Semaphore>,
     git_command_timeout: Duration,
+    git_transfer_limits: GitTransferLimits,
     git_admission_wait: Duration,
     git_storage_limits: GitStorageLimits,
 }
@@ -117,6 +152,7 @@ impl RuntimeBudgets {
             git_segment_ingest: Arc::new(Semaphore::new(config.git_segment_ingest_concurrency)),
             object_store: Arc::new(Semaphore::new(config.object_store_concurrency)),
             git_command_timeout: config.git_command_timeout,
+            git_transfer_limits: config.git_transfer_limits,
             git_admission_wait: config.git_admission_wait,
             git_storage_limits: config.git_storage_limits,
         }
@@ -160,6 +196,10 @@ impl RuntimeBudgets {
         self.git_command_timeout
     }
 
+    pub(crate) fn git_transfer_limits(&self) -> GitTransferLimits {
+        self.git_transfer_limits
+    }
+
     pub(crate) fn git_storage_limits(&self) -> GitStorageLimits {
         self.git_storage_limits
     }
@@ -170,6 +210,16 @@ impl RuntimeBudgets {
             RuntimeBudgetConfig::from_env()
                 .map(|config| config.git_command_timeout)
                 .unwrap_or_else(|_| RuntimeBudgetConfig::default().git_command_timeout)
+        })
+    }
+
+    pub(crate) fn default_git_pack_processing_timeout() -> Duration {
+        static DEFAULT_GIT_PACK_PROCESSING_TIMEOUT: OnceLock<Duration> = OnceLock::new();
+        *DEFAULT_GIT_PACK_PROCESSING_TIMEOUT.get_or_init(|| {
+            RuntimeBudgetConfig::from_env()
+                .unwrap_or_default()
+                .git_transfer_limits
+                .pack_processing
         })
     }
 
@@ -424,6 +474,17 @@ mod tests {
         let rejected = budgets.admit_receive_pack().await.err().unwrap();
         assert_eq!(rejected.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
         assert!(started.elapsed() >= Duration::from_millis(500));
+    }
+
+    #[test]
+    fn a_pack_at_the_size_limit_fits_the_default_transfer_cap_on_a_slow_link() {
+        let limits = RuntimeBudgetConfig::default().git_transfer_limits;
+        let megabits_per_sec =
+            MAX_RECEIVE_PACK_BYTES as f64 * 8.0 / limits.total.as_secs_f64() / 1_000_000.0;
+        assert!(megabits_per_sec < 1.5, "{megabits_per_sec} Mbit/s");
+        assert!(limits.idle < limits.total);
+        assert!(limits.pack_processing < limits.total);
+        assert!(limits.pack_processing > RuntimeBudgetConfig::default().git_command_timeout);
     }
 
     #[tokio::test]

@@ -378,3 +378,39 @@ fn stderr_is_drained_after_diagnostic_cap() {
 
     assert_eq!(output.stdout, b"ok");
 }
+
+#[test]
+fn stdout_idle_limit_spares_steady_output_and_stops_a_silent_child() {
+    let mut command = Command::new("sh");
+    command
+        .arg("-c")
+        .arg("for tick in 1 2 3 4; do printf x; sleep 0.1; done; sleep 5");
+    let received = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let started_at = Instant::now();
+
+    let error = run_with_stdout(
+        &mut command,
+        None,
+        ProcessLimits::new(Duration::from_secs(5))
+            .with_stdout_idle_timeout(Duration::from_millis(400)),
+        "quiet stream",
+        {
+            let received = received.clone();
+            move |mut stdout, _cancellation| {
+                let mut byte = [0_u8; 1];
+                while stdout.read(&mut byte)? > 0 {
+                    received.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+                Ok::<_, std::io::Error>(())
+            }
+        },
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "quiet stream produced no output for 400ms"
+    );
+    assert_eq!(received.load(std::sync::atomic::Ordering::SeqCst), 4);
+    assert!(started_at.elapsed() < Duration::from_secs(3));
+}

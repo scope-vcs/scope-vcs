@@ -2,7 +2,7 @@ use crate::{
     error::ApiError,
     git::{
         cache::GitRepoHandle,
-        command::{git_main_oid, run_git},
+        command::{git_main_oid, run_pack_sized_git},
         repository_git::RepositoryGit,
         staging::add_receive_pack_alternate,
         storage::repository_storage_key,
@@ -79,7 +79,7 @@ async fn view_repos(
         let head = head.as_str();
         let retained = format!("refs/scope/projections/{head}");
         if super::request_ref_head(&base, &retained)?.as_deref() != Some(head)
-            && let Err(error) = run_git(
+            && let Err(error) = run_pack_sized_git(
                 Some(&base),
                 &[
                     "fetch",

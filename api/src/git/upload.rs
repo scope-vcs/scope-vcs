@@ -8,6 +8,7 @@ use crate::{
             record_git_exit, truncated_git_stderr,
         },
         git_read_scope_user,
+        transfer::GitTransferLimits,
     },
     runtime_budgets::RuntimePermit,
     state::AppState,
@@ -23,15 +24,11 @@ use axum::{
 use scope_domain::{
     repository::RepoLifecycleState, repository::access::RepositoryActor, views::ViewId,
 };
-use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
+use scope_git_process::{ProcessCancellation, StreamingProcessError, run_with_stdout};
 use scope_postgres::db::GitReadSource;
 use std::{
-    collections::BTreeSet,
-    io::Read,
-    path::Path as FsPath,
-    process::Command,
-    sync::OnceLock,
-    time::{Duration, Instant},
+    collections::BTreeSet, io::Read, path::Path as FsPath, process::Command, sync::OnceLock,
+    time::Duration,
 };
 use tracing::Instrument as _;
 pub(super) mod fetch_folder;
@@ -118,7 +115,7 @@ pub(crate) async fn git_upload_pack_response(
     repo: GitRepoHandle,
     request: &[u8],
     protocol: GitProtocol,
-    timeout: Duration,
+    limits: GitTransferLimits,
     permit: RuntimePermit,
 ) -> Result<Response, ApiError> {
     let repo_path = repo.as_ref().to_path_buf();
@@ -146,14 +143,13 @@ pub(crate) async fn git_upload_pack_response(
             let _entered = blocking_span.enter();
             let _permit = permit;
             let _repo = repo;
-            let deadline = Instant::now() + timeout;
             let _entered = git_span.enter();
             let output = run_with_stdout(
                 &mut command,
                 Some(request),
-                ProcessLimits::new(timeout),
+                limits.streaming_process(),
                 "Git upload-pack",
-                move |mut stdout, _cancellation| {
+                move |mut stdout, cancellation| {
                     let mut buffer = vec![0_u8; 64 * 1024];
                     loop {
                         let read = stdout.read(&mut buffer)?;
@@ -163,7 +159,7 @@ pub(crate) async fn git_upload_pack_response(
                         send_upload_pack_chunk(
                             &sender,
                             Bytes::copy_from_slice(&buffer[..read]),
-                            deadline,
+                            &cancellation,
                         )?;
                     }
                 },
@@ -353,14 +349,14 @@ const UNKNOWN_HAVE: &str = "0000000000000000000000000000000000000000";
 fn send_upload_pack_chunk(
     sender: &tokio::sync::mpsc::Sender<Result<Bytes, std::io::Error>>,
     chunk: Bytes,
-    deadline: Instant,
+    cancellation: &ProcessCancellation,
 ) -> std::io::Result<()> {
     let mut item = Ok(chunk);
     loop {
-        if Instant::now() >= deadline {
+        if cancellation.is_cancelled() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
-                "Git upload-pack client stopped reading before the command deadline",
+                "Git upload-pack client stopped reading before the transfer limits",
             ));
         }
         match sender.try_send(item) {
@@ -373,11 +369,7 @@ fn send_upload_pack_chunk(
             }
             Err(tokio::sync::mpsc::error::TrySendError::Full(returned)) => item = returned,
         }
-        std::thread::sleep(
-            deadline
-                .saturating_duration_since(Instant::now())
-                .min(Duration::from_millis(1)),
-        );
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
 
@@ -499,22 +491,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn upload_pack_chunk_send_stops_at_deadline_when_live_receiver_is_full() {
+    fn upload_pack_chunk_send_stops_on_cancellation_when_live_receiver_is_full() {
         let (sender, _receiver) = tokio::sync::mpsc::channel(1);
         sender
             .try_send(Ok(Bytes::from_static(b"already full")))
             .unwrap();
-        let started_at = Instant::now();
+        let cancellation = ProcessCancellation::new();
+        let canceller = std::thread::spawn({
+            let cancellation = cancellation.clone();
+            move || {
+                std::thread::sleep(Duration::from_millis(25));
+                cancellation.cancel();
+            }
+        });
 
-        let error = send_upload_pack_chunk(
-            &sender,
-            Bytes::from_static(b"blocked"),
-            started_at + Duration::from_millis(25),
-        )
-        .unwrap_err();
+        let error = send_upload_pack_chunk(&sender, Bytes::from_static(b"blocked"), &cancellation)
+            .unwrap_err();
 
+        canceller.join().unwrap();
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
-        assert!(started_at.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
@@ -525,7 +520,7 @@ mod tests {
         let error = send_upload_pack_chunk(
             &sender,
             Bytes::from_static(b"orphaned"),
-            Instant::now() + Duration::from_secs(1),
+            &ProcessCancellation::new(),
         )
         .unwrap_err();
 

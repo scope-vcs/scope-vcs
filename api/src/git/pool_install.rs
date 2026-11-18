@@ -183,7 +183,7 @@ async fn install_batch(
         .iter()
         .map(|(pack, _)| pack.clone())
         .collect::<Vec<_>>();
-    let timeout = state.runtime_budgets.git_command_timeout();
+    let timeout = state.runtime_budgets.git_transfer_limits().pack_processing;
     let target = objects_repo.to_path_buf();
     let objects_repo = objects_repo.to_path_buf();
     let installed = write_shelf(&target, move || {
@@ -257,7 +257,7 @@ pub(crate) async fn install_fetched(
     fetched: FetchedPack,
 ) -> Result<(), ApiError> {
     let objects_repo = objects_repo.to_path_buf();
-    let timeout = state.runtime_budgets.git_command_timeout();
+    let timeout = state.runtime_budgets.git_transfer_limits().pack_processing;
     let target = objects_repo.clone();
     write_shelf(&target, move || {
         index_fetched(&objects_repo, fetched, timeout)

@@ -382,7 +382,7 @@ impl RepositoryEngine {
                 install_verified_git_pack(
                     repo,
                     local_pack,
-                    crate::runtime_budgets::RuntimeBudgets::default_git_command_timeout(),
+                    crate::runtime_budgets::RuntimeBudgets::default_git_pack_processing_timeout(),
                 )?;
                 run_timed_git_restore_phase(
                     repository_id,

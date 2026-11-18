@@ -91,7 +91,7 @@ pub(crate) async fn repository_request(
             let route_template = upstream_route(&upstream_request.path_and_query);
             match send_traced(
                 state
-                    .http
+                    .http(GitRequestPhase::of(&upstream_request.method))
                     .request(upstream_request.method, url)
                     .headers(upstream_request.headers)
                     .body(reqwest::Body::wrap_stream(
@@ -128,7 +128,7 @@ async fn forward_upload_pack(
         );
         let response = send_traced(
             state
-                .http
+                .http(GitRequestPhase::of(&request.method))
                 .request(
                     request.method.clone(),
                     upstream_url(backend, &request.path_and_query),

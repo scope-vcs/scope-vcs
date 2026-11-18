@@ -14,6 +14,7 @@ const DEFAULT_WRITE_REPLICAS: usize = 1;
 const UPLOAD_PACK_REPLAY_MAX_BYTES: usize = 64 * 1024 * 1024;
 const UPLOAD_PACK_REPLAY_BUDGET_BYTES: usize = 4 * UPLOAD_PACK_REPLAY_MAX_BYTES;
 const INCOMING_BODY_TIMEOUT: Duration = Duration::from_secs(15);
+const GIT_TRANSFER_TIMEOUT: Duration = Duration::from_secs(90 * 60);
 
 #[derive(Clone, Debug)]
 pub(crate) struct RouterConfig {
@@ -22,6 +23,7 @@ pub(crate) struct RouterConfig {
     pub dns_max_stale: Duration,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
+    pub transfer_timeout: Duration,
     pub read_replicas: usize,
     pub write_replicas: usize,
     pub upload_pack_replay_max_bytes: usize,
@@ -42,6 +44,7 @@ impl RouterConfig {
             dns_max_stale: Duration::from_millis(DEFAULT_DNS_MAX_STALE_MILLIS),
             connect_timeout: Duration::from_millis(DEFAULT_CONNECT_TIMEOUT_MILLIS),
             read_timeout: Duration::from_millis(DEFAULT_READ_TIMEOUT_MILLIS),
+            transfer_timeout: GIT_TRANSFER_TIMEOUT,
             read_replicas: positive_usize_from_env(READ_REPLICAS_ENV, DEFAULT_READ_REPLICAS)?,
             write_replicas: positive_usize_from_env(WRITE_REPLICAS_ENV, DEFAULT_WRITE_REPLICAS)?,
             upload_pack_replay_budget_bytes: UPLOAD_PACK_REPLAY_BUDGET_BYTES,

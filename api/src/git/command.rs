@@ -258,6 +258,15 @@ pub(crate) fn successful_git_output(output: Output, action: &str) -> Result<Outp
     )))
 }
 
+pub(crate) fn run_pack_sized_git(
+    repo: Option<&FsPath>,
+    args: &[&str],
+    action: &str,
+) -> Result<(), ApiError> {
+    let deadline = Instant::now() + RuntimeBudgets::default_git_pack_processing_timeout();
+    successful_git_output(run_git_output_until(repo, args, action, deadline)?, action).map(drop)
+}
+
 pub(crate) fn run_git(repo: Option<&FsPath>, args: &[&str], action: &str) -> Result<(), ApiError> {
     successful_git_output(run_git_output(repo, args, action)?, action).map(drop)
 }
