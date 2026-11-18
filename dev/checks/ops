@@ -2,15 +2,10 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-bash -n deploy/scripts/deploy-preview-railway.sh deploy/scripts/preview-comment.sh
+bash -n deploy/scripts/deploy-preview-railway.sh deploy/scripts/deploy-production-railway.sh deploy/scripts/preview-comment.sh
 node --check deploy/scripts/deploy-railway-image.mjs
-bash -n deploy/scripts/deploy-staging-railway.sh
-bash -n deploy/scripts/staging-git-smoke.sh
-bash deploy/scripts/test-deploy-backend-railway.sh
-bash deploy/scripts/test-staging-git-smoke.sh
 bash -n deploy/railway/test-runtime-containers.sh
-bash -n deploy/scripts/write-release-marker.sh
-bash -n deploy/scripts/railway-private-command.sh deploy/scripts/railway-private-maintenance.sh deploy/scripts/production-readiness-preflight.sh
+bash -n deploy/scripts/railway-private-command.sh deploy/scripts/railway-private-maintenance.sh
 bash -n deploy/scripts/publish-maintenance-runtime.sh deploy/scripts/verify-maintenance-runtime.sh
 
 node deploy/scripts/check-rust-toolchain-sync.mjs
@@ -33,9 +28,6 @@ node --test \
   deploy/scripts/check-production-backups.test.mjs \
   deploy/scripts/production-deployment-progress.test.mjs \
   deploy/scripts/plan-production-deployment.test.mjs \
-  deploy/scripts/railway-deployment-history.test.mjs \
-  deploy/scripts/railway-production-target.test.mjs \
-  deploy/scripts/verify-staging-target.test.mjs \
   deploy/scripts/stop-railway-writers.test.mjs \
   deploy/scripts/preview-environment.test.mjs \
   deploy/scripts/preview-pull-request.test.mjs \
@@ -44,33 +36,19 @@ node --test \
   bench/*.test.mjs \
   deploy/scripts/railway-service-health.test.mjs \
   deploy/scripts/deploy-railway.test.mjs \
+  deploy/scripts/deploy-production-railway.test.mjs \
   deploy/scripts/railway-artifact.test.mjs \
   deploy/scripts/railway-read.test.mjs \
   deploy/scripts/railway-client.test.mjs \
   deploy/scripts/railway-retry.test.mjs \
   deploy/scripts/railway-environment-token.test.mjs \
-  deploy/scripts/release-availability.test.mjs \
-  deploy/scripts/release-cutover-journal.test.mjs \
-  deploy/scripts/recovery-preparation-trust.test.mjs \
-  deploy/scripts/release-selection.test.mjs \
-  deploy/scripts/staging-resume.test.mjs \
-  deploy/scripts/staging-smoke-seed.test.mjs \
   deploy/scripts/extract-railway-release.test.mjs \
   deploy/scripts/extract-railway-maintenance.test.mjs \
-  deploy/scripts/extract-staging-web-manifest.test.mjs \
-  deploy/scripts/railway-maintenance-gate.test.mjs \
-  deploy/scripts/staging-baseline.test.mjs \
-  deploy/scripts/staging-baseline-crypto.test.mjs \
-  deploy/scripts/staging-baseline.integration.test.mjs \
   deploy/postgres/runtime-roles.test.mjs \
   deploy/scripts/railway-private-maintenance.test.mjs \
   deploy/scripts/railway-ssh.test.mjs \
   deploy/scripts/maintenance-runtime.test.mjs \
   deploy/scripts/deploy-maintenance-runtime.test.mjs \
-  deploy/scripts/smoke-tools-evidence.test.mjs \
   deploy/scripts/railway-predecessor-teardown.test.mjs \
   deploy/scripts/merge-prepared-release.test.mjs \
-  deploy/scripts/run-bounded-image-builds.test.mjs \
-  deploy/scripts/production-readiness-preflight.test.mjs \
-  deploy/scripts/failed-web-replacement.test.mjs \
-  deploy/scripts/redeployed-service-replacement.test.mjs
+  deploy/scripts/run-bounded-image-builds.test.mjs

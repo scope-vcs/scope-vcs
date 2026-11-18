@@ -84,8 +84,6 @@ pub struct PendingMigration {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct MigrationPlan {
     pub exact: bool,
-    #[serde(rename = "metadataRestoreSafe")]
-    pub metadata_restore_safe: bool,
     pub applied: Vec<String>,
     pub pending: Vec<PendingMigration>,
 }
@@ -94,147 +92,43 @@ pub struct MigrationPlan {
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         migration_registry()
-            .into_iter()
-            .map(|entry| entry.migration)
-            .collect()
     }
 }
 
-struct RegisteredMigration {
-    migration: Box<dyn MigrationTrait>,
-    metadata_restore_safe: bool,
-}
-
-fn migration_registry() -> Vec<RegisteredMigration> {
+fn migration_registry() -> Vec<Box<dyn MigrationTrait>> {
     vec![
-        RegisteredMigration {
-            migration: Box::new(baseline::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0084_request_review_bases::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0085_request_check_identity::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0086_private_request_stacks::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0087_stack_auto_merge_stop_reasons::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0088_request_navigation_children_index::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0089_contribution_request_stacks::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0090_job_traceparents::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0091_media_reconcile_once::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0092_request_discussion_line_anchors::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0093_github_main_publication::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0094_github_carrier_pull_requests::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0095_github_review_imports::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0096_github_review_bot_gate::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0097_review_bot_status_carriers::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0098_live_file_views::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0099_request_object_pool::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0100_head_only_run_sources::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0101_main_pool_packs::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0102_projection_file_symlinks::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0103_review_request_times::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0104_request_revision_diff_stats::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0105_view_pool_packs::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0106_git_fetch_advertisements::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0107_delete_request_bundles::Migration),
-            metadata_restore_safe: false,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0108_github_pull_request_merges::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0109_main_advanced_by::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0110_request_diff_renames::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0111_remove_native_runs::Migration),
-            metadata_restore_safe: false,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0112_remove_github_setup_checks::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0113_pool_pack_lookups::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0114_github_skipped_reviews::Migration),
-            metadata_restore_safe: true,
-        },
+        Box::new(baseline::Migration),
+        Box::new(m0084_request_review_bases::Migration),
+        Box::new(m0085_request_check_identity::Migration),
+        Box::new(m0086_private_request_stacks::Migration),
+        Box::new(m0087_stack_auto_merge_stop_reasons::Migration),
+        Box::new(m0088_request_navigation_children_index::Migration),
+        Box::new(m0089_contribution_request_stacks::Migration),
+        Box::new(m0090_job_traceparents::Migration),
+        Box::new(m0091_media_reconcile_once::Migration),
+        Box::new(m0092_request_discussion_line_anchors::Migration),
+        Box::new(m0093_github_main_publication::Migration),
+        Box::new(m0094_github_carrier_pull_requests::Migration),
+        Box::new(m0095_github_review_imports::Migration),
+        Box::new(m0096_github_review_bot_gate::Migration),
+        Box::new(m0097_review_bot_status_carriers::Migration),
+        Box::new(m0098_live_file_views::Migration),
+        Box::new(m0099_request_object_pool::Migration),
+        Box::new(m0100_head_only_run_sources::Migration),
+        Box::new(m0101_main_pool_packs::Migration),
+        Box::new(m0102_projection_file_symlinks::Migration),
+        Box::new(m0103_review_request_times::Migration),
+        Box::new(m0104_request_revision_diff_stats::Migration),
+        Box::new(m0105_view_pool_packs::Migration),
+        Box::new(m0106_git_fetch_advertisements::Migration),
+        Box::new(m0107_delete_request_bundles::Migration),
+        Box::new(m0108_github_pull_request_merges::Migration),
+        Box::new(m0109_main_advanced_by::Migration),
+        Box::new(m0110_request_diff_renames::Migration),
+        Box::new(m0111_remove_native_runs::Migration),
+        Box::new(m0112_remove_github_setup_checks::Migration),
+        Box::new(m0113_pool_pack_lookups::Migration),
+        Box::new(m0114_github_skipped_reviews::Migration),
     ]
 }
 
@@ -316,7 +210,7 @@ where
     let migrations = migration_registry();
     let expected = migrations
         .iter()
-        .map(|entry| entry.migration.name().to_string())
+        .map(|migration| migration.name().to_string())
         .collect::<Vec<_>>();
     if !expected.starts_with(&actual) {
         return Err(DbErr::Custom(format!(
@@ -325,22 +219,15 @@ where
             actual.join(", ")
         )));
     }
-    let pending_entries = migrations
+    let pending = migrations
         .into_iter()
         .skip(actual.len())
-        .collect::<Vec<_>>();
-    let metadata_restore_safe = pending_entries
-        .iter()
-        .all(|entry| entry.metadata_restore_safe);
-    let pending = pending_entries
-        .into_iter()
-        .map(|entry| PendingMigration {
-            name: entry.migration.name().to_string(),
+        .map(|migration| PendingMigration {
+            name: migration.name().to_string(),
         })
         .collect::<Vec<_>>();
     Ok(MigrationPlan {
         exact: pending.is_empty(),
-        metadata_restore_safe,
         applied: actual,
         pending,
     })

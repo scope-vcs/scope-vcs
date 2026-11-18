@@ -23,15 +23,8 @@ prepared_release="${SCOPE_PREPARED_RELEASE_PATH:?SCOPE_PREPARED_RELEASE_PATH is 
 deployment_component="${SCOPE_DEPLOYMENT_COMPONENT:-}"
 deployment_source_sha="${SCOPE_DEPLOYMENT_SOURCE_SHA:-${GITHUB_SHA:-}}"
 deployment_evidence_path="${SCOPE_DEPLOYMENT_EVIDENCE_PATH:-}"
-defer_service_health="${SCOPE_DEFER_SERVICE_HEALTH:-0}"
-predecessor_teardown_dir="${SCOPE_PREDECESSOR_TEARDOWN_DIR:-}"
 railway_scope=(--project "$RAILWAY_PROJECT_ID" --environment "$railway_environment")
 expected_config=""
-
-if [[ "$defer_service_health" != "0" && "$defer_service_health" != "1" ]]; then
-  echo "SCOPE_DEFER_SERVICE_HEALTH must be 0 or 1." >&2
-  exit 2
-fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/railway-service-health.sh"
 
@@ -116,13 +109,9 @@ expected_service="$(jq -er --arg component "$deployment_component" '.components[
 if [[ "$(node deploy/scripts/deployment-components.mjs describe "$deployment_component" | jq -r '.verifyTransitionConfig')" == true ]]; then
   expected_config="$(railway_config_path "$deployment_component")"
 fi
-owned_teardown_dir=""
-if [[ -z "$predecessor_teardown_dir" ]]; then
-  owned_teardown_dir="$(mktemp -d)"
-  predecessor_teardown_dir="$owned_teardown_dir"
-fi
+predecessor_teardown_dir="$(mktemp -d)"
 deployed_metadata="$(mktemp)"
-trap 'rm -rf -- "$deployed_metadata" ${owned_teardown_dir:+"$owned_teardown_dir"}' EXIT
+trap 'rm -rf -- "$deployed_metadata" "$predecessor_teardown_dir"' EXIT
 node deploy/scripts/railway-predecessor-teardown.mjs snapshot \
   "$predecessor_teardown_dir" "$deployment_component" "$service_name"
 deploy_output="$(node deploy/scripts/railway-artifact.mjs activate \
@@ -136,17 +125,7 @@ node deploy/scripts/railway-artifact.mjs verify "$prepared_release" \
   "$deployment_component" "$deployed_metadata" "$deployment_id"
 node deploy/scripts/railway-predecessor-teardown.mjs activated \
   "$predecessor_teardown_dir" "$deployment_component" "$deployment_id"
-if [[ "$defer_service_health" == "0" ]]; then
-  wait_for_service_health "$service_name" "$deployment_id" "$expected_config"
-fi
-if [[ -n "${SCOPE_RELEASE_DEPLOYMENTS_FILE:-}" ]]; then
-  (
-    flock -x 9
-    jq --arg component "$deployment_component" --arg id "$deployment_id" \
-      '.[$component] = $id' "$SCOPE_RELEASE_DEPLOYMENTS_FILE" > "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp.$$"
-    mv "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp.$$" "$SCOPE_RELEASE_DEPLOYMENTS_FILE"
-  ) 9>>"$SCOPE_RELEASE_DEPLOYMENTS_FILE.lock"
-fi
+wait_for_service_health "$service_name" "$deployment_id" "$expected_config"
+node deploy/scripts/railway-predecessor-teardown.mjs wait "$predecessor_teardown_dir"
+wait_for_service_health "$service_name" "$deployment_id" "$expected_config"
 record_deployment_evidence "$deployment_id"
-
-[[ -z "$owned_teardown_dir" ]] || node deploy/scripts/railway-predecessor-teardown.mjs wait "$owned_teardown_dir"

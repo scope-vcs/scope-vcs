@@ -199,7 +199,7 @@ const alwaysOnGateInputs = [
   /^bench\//, /^deploy\/postgres\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.(sh|asc))$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
-  /^\.github\/workflows\/(audit-railway-experiments|ci-duration|run-log-budget|main-advisories|backup-monitor|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment(?:-cleanup|-signal)?|provision-staging-baseline)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|ci-duration|run-log-budget|main-advisories|backup-monitor|maintenance-runtime|preview-build|preview-environment(?:-cleanup|-signal)?)\.yml$/,
   /^deploy\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 
@@ -323,106 +323,51 @@ function releaseJobs() {
     .map(([, name, body]) => [name, { if: body.match(/^    if: >-\n((?:      .*\n)+)/m)?.[1].trim() }]));
 }
 
-function releasePath(selected, { reuse = false, resumeStaging = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false, replaceRedeployedComponent = '' } = {}) {
+function releasePath(selected, { failure = '', cancelled = false, ref = 'refs/heads/main' } = {}) {
   const jobs = releaseJobs();
-  const outputs = Object.fromEntries(['worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
-    .map((key) => [key, String(selected.includes(key))]));
-  outputs.backend_selected = String(['worker', 'media_worker', 'router', 'media', 'api']
-    .some((key) => outputs[key] === 'true'));
-  outputs.prepared_run_id = reuse || resumeStaging ? '123' : '';
-  outputs.recover_cutover_id = reuse ? '456' : '';
-  outputs.resume_staging = String(resumeStaging);
+  const outputs = Object.fromEntries(['backend_selected', 'web', 'cli'].map((key) => [key, String(selected.includes(key))]));
   const needs = { plan: { result: 'success', outputs }, ...Object.fromEntries(['policy', 'ops', 'validation', 'server-validation'].map(key => [key, { result: key === failure ? 'failure' : 'success' }])) };
-  for (const key of ['readiness-preflight', 'smoke-tools', 'release-preparation', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
+  for (const key of ['release-preparation', 'production-deploy', 'cli-deploy']) {
     const expression = jobs[key].if.replace(/needs\.([\w-]+)/g, 'needs["$1"]');
-    const enabled = Function('needs', 'github', 'cancelled', 'inputs', `return (${expression});`)(needs, { ref }, () => cancelled,
-      { replace_redeployed_component: replaceRedeployedComponent });
-    needs[key] = { result: enabled ? key === failure ? 'failure' : 'success' : 'skipped',
-      outputs: key === 'backend-deploy' ? { web_activated: String(enabled && key !== failure && backendActivatesWeb) } : {} };
+    const enabled = Function('needs', 'github', 'cancelled', `return (${expression});`)(needs, { ref }, () => cancelled);
+    needs[key] = { result: enabled ? key === failure ? 'failure' : 'success' : 'skipped' };
   }
   return needs;
 }
 
-test('release paths stage applications once and leave no-op and distribution-only polls cheap', () => {
+test('a release deploys the selected application once and publishes the CLI only after it', () => {
   const empty = releasePath([]);
-  for (const key of ['release-preparation', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) assert.equal(empty[key].result, 'skipped', key);
-  const web = releasePath(['web']);
-  assert.equal(web.staging.result, 'success');
-  assert.equal(web['production-preflight'].result, 'skipped');
-  assert.equal(web['web-deploy'].result, 'success');
-  assert.equal(web['production-health-gate'].result, 'success');
+  for (const key of ['release-preparation', 'production-deploy', 'cli-deploy']) assert.equal(empty[key].result, 'skipped', key);
+  for (const selected of [['web'], ['backend_selected'], ['backend_selected', 'web', 'cli']]) {
+    const path = releasePath(selected);
+    assert.equal(path['production-deploy'].result, 'success', selected.join());
+    assert.equal(path['cli-deploy'].result, selected.includes('cli') ? 'success' : 'skipped', selected.join());
+  }
   const cli = releasePath(['cli']);
-  assert.equal(cli.staging.result, 'skipped');
+  assert.equal(cli['production-deploy'].result, 'skipped');
   assert.equal(cli['cli-deploy'].result, 'success');
-  assert.equal(cli['production-health-gate'].result, 'success');
-  for (const selected of [[], ['cli']]) {
-    const replacement = releasePath(selected, { replaceRedeployedComponent: 'api', failure: 'readiness-preflight' });
-    assert.equal(replacement['readiness-preflight'].result, 'failure', 'explicit replacements must reach preflight');
-    assert.equal(replacement['production-health-gate'].result, 'skipped');
-    assert.equal(replacement['cli-deploy'].result, 'skipped');
-  }
 });
 
-test('failed preflight, staging or activation cannot publish a successful release', () => {
-  for (const failure of ['policy', 'ops', 'validation', 'server-validation', 'readiness-preflight', 'smoke-tools', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy']) {
-    const result = releasePath(['api', 'web', 'cli'], { failure });
-    assert.equal(result['production-health-gate'].result, 'skipped', failure);
+test('a failed check, build or deploy leaves production and the CLI unpublished', () => {
+  for (const failure of ['policy', 'ops', 'validation', 'server-validation', 'release-preparation', 'production-deploy']) {
+    const result = releasePath(['backend_selected', 'web', 'cli'], { failure });
+    if (failure !== 'production-deploy') assert.equal(result['production-deploy'].result, 'skipped', failure);
+    assert.equal(result['cli-deploy'].result, 'skipped', failure);
   }
-});
-
-test('interrupted releases reuse images and finish through the same final receipt', () => {
-  const result = releasePath(['api', 'worker', 'router', 'media', 'media_worker', 'web'], { reuse: true });
-  assert.equal(result['release-preparation'].result, 'success');
-  assert.equal(result.staging.result, 'skipped');
-  assert.equal(result['backend-deploy'].result, 'success');
-  assert.equal(result['web-deploy'].result, 'success');
-  assert.equal(result['production-health-gate'].result, 'success');
-});
-
-test('resumed staging reuses prepared images but must pass smoke before any production activation', () => {
-  const selected = ['api', 'worker', 'router', 'media', 'media_worker', 'web'];
-  const result = releasePath(selected, { resumeStaging: true });
-  assert.equal(result['production-preflight'].result, 'skipped');
-  for (const job of ['release-preparation', 'staging', 'backend-deploy', 'web-deploy', 'production-health-gate']) {
-    assert.equal(result[job].result, 'success', job);
-  }
-  for (const failure of ['release-preparation', 'staging']) {
-    const blocked = releasePath(selected, { resumeStaging: true, failure });
-    for (const job of ['backend-deploy', 'web-deploy', 'production-health-gate']) {
-      assert.equal(blocked[job].result, 'skipped', `${failure}: ${job}`);
-    }
-  }
-});
-
-
-test('cancelled releases and non-main refs cannot activate or record production', () => {
   for (const options of [{ cancelled: true }, { ref: 'refs/heads/feature' }]) {
-    const result = releasePath(['api', 'web', 'cli'], options);
-    for (const key of ['backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) assert.equal(result[key].result, 'skipped', key);
+    const result = releasePath(['backend_selected', 'web', 'cli'], options);
+    for (const key of ['release-preparation', 'production-deploy', 'cli-deploy']) assert.equal(result[key].result, 'skipped', key);
   }
 });
 
-
-test('maintenance publishes the backend-owned web receipt without deploying web twice', () => {
-  const result = releasePath(['api', 'web', 'cli'], { backendActivatesWeb: true });
-  assert.equal(result['backend-deploy'].result, 'success');
-  assert.equal(result['web-deploy'].result, 'skipped');
-  assert.equal(result['production-health-gate'].result, 'success');
-  const failed = releasePath(['api', 'web'], { backendActivatesWeb: true, failure: 'backend-deploy' });
-  assert.equal(failed['production-health-gate'].result, 'skipped');
-});
-
-test('prepared web and backend jobs cannot build after activation begins', () => {
-  const preparation = read('.github/workflows/prepare-release.yml');
-  const backendDeploy = read('.github/workflows/deploy-backend.yml');
-  for (const workflow of [backendDeploy, read('.github/workflows/deploy-web.yml')]) {
-    assert.match(workflow, /name: prepared-release-\$\{\{ inputs\.source_sha \}\}/);
-    assert.match(workflow, /SCOPE_PREPARED_RELEASE_PATH: prepared-release\.json/);
-    assert.doesNotMatch(workflow, /cargo build|docker build|railway up|pnpm build/);
-  }
-  assert.match(backendDeploy, /extract-railway-maintenance\.sh prepared-release\.json/);
-  assert.doesNotMatch(backendDeploy, /backend-release-\$\{\{ inputs\.source_sha \}\}/);
-  assert.match(preparation, /selected-release-\$\{\{ inputs\.source_sha \}\}/);
+test('production and CLI jobs deploy prepared images without building', () => {
+  const release = read('.github/workflows/release.yml');
+  const deploy = release.split('\n  production-deploy:\n')[1].split(/\n  [\w-]+:\n/)[0];
+  assert.match(deploy, /name: prepared-release-\$\{\{ github\.sha \}\}/);
+  assert.match(deploy, /SCOPE_PREPARED_RELEASE_PATH: artifacts\/prepared-release\.json/);
+  assert.match(deploy, /persist-credentials: false/);
+  assert.doesNotMatch(deploy, /cargo build|docker build|railway up|pnpm build|RAILWAY_API_TOKEN/);
+  assert.match(read('.github/workflows/prepare-release.yml'), /name: prepared-release-\$\{\{ inputs\.source_sha \}\}/);
   const cliDeploy = read('.github/workflows/publish-cli.yml');
   assert.match(cliDeploy, /SCOPE_PREPARED_RELEASE_PATH: prepared-cli-release\.json/);
   assert.match(cliDeploy, /prepare-railway-artifact\.sh cli-downloads \.railway-cli prepared-cli-release\.json/);
@@ -457,16 +402,6 @@ test('CLI publication configures the advertised installer origin before deployme
   ]);
 });
 
-test('staging verifies pinned Git before credentials or deployment mutations', () => {
-  const workflow = read('.github/workflows/deploy-staging.yml');
-  const install = workflow.indexOf('- name: Install reviewed Git for staging smoke');
-  const verify = workflow.indexOf('- name: Verify staging Git version');
-  const credentials = workflow.indexOf('- name: Create staging-scoped Railway token');
-  assert.ok(install > workflow.indexOf('- name: Checkout trusted orchestration'));
-  assert.ok(verify > install && credentials > verify);
-  assert.doesNotMatch(workflow.slice(install, credentials), /\n\s+(?:if:|continue-on-error:)/);
-});
-
 test('every external action and reusable workflow is pinned to a full commit SHA', () => {
   const unpinned = readdirSync(resolve(root, '.github/workflows')).filter((name) => /\.ya?ml$/.test(name)).flatMap((name) => (
     [...read(`.github/workflows/${name}`).matchAll(/^\s*(?:-\s+)?['"]?uses['"]?\s*:\s*['"]?([^\s'"#]+)/gm)]
@@ -477,27 +412,20 @@ test('every external action and reusable workflow is pinned to a full commit SHA
   assert.deepEqual(unpinned, []);
 });
 
-test('production success follows the complete monitored transition', () => {
-  for (const workflow of [read('.github/workflows/deploy-backend.yml'), read('.github/workflows/deploy-web.yml')]) {
-    const recordStep = workflow.slice(workflow.indexOf('      - name: Record successful Railway'));
-    assert.match(recordStep, /if: steps\.transition\.outcome == 'success'/);
-    assert.match(workflow, /name: Deploy to Railway\n\s+id: transition/);
-  }
-});
-
-test('release selection uses the trusted control revision before exposing a source revision', () => {
+test('a release is dispatched by hand from main and reads the repository without write access', () => {
   const release = read('.github/workflows/release.yml');
+  const triggers = release.split('\nconcurrency:')[0];
+  assert.match(triggers, /^on:\n  workflow_dispatch:\n/m);
+  assert.doesNotMatch(triggers, /schedule:|cron:|pull_request:|push:|workflow_run:/);
   const requireMain = release.indexOf('- name: Require main for releases');
-  const selection = release.indexOf('run: node deploy/scripts/release-selection.mjs');
-  const retain = release.indexOf('- name: Retain selected immutable release');
-  assert(requireMain >= 0 && selection > requireMain && retain > selection);
+  const selection = release.indexOf('run: node deploy/scripts/production-deployment-progress.mjs read');
+  assert(requireMain >= 0 && selection > requireMain);
   assert.match(release.slice(requireMain, selection), /test "\$GITHUB_REF" = refs\/heads\/main/);
-  assert.match(read('.github/workflows/deploy-backend.yml'), /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
   assert.match(release.split('\njobs:')[0], /deployments: read/);
   assert.doesNotMatch(release.split('\njobs:')[0], /: write/);
 });
 
-test('CI runs on pull requests and Scope request branches, and Release dispatch is owned by the watcher', () => {
+test('CI runs on pull requests and Scope request branches', () => {
   const ci = read('.github/workflows/ci.yml');
   const release = read('.github/workflows/release.yml');
   const ciTriggers = ci.split('\nconcurrency:')[0];
@@ -507,11 +435,6 @@ test('CI runs on pull requests and Scope request branches, and Release dispatch 
   assert.match(ci, /base="\$\(git merge-base origin\/main HEAD\)"/);
   assert.match(ci, /BASE_SHA: \$\{\{ steps\.base\.outputs\.sha \}\}/);
   assert.doesNotMatch(ci, /github\.event\.before/);
-  const triggers = release.split('\nconcurrency:')[0];
-  assert.doesNotMatch(triggers, /schedule:|cron:/);
-  assert.match(triggers, /schedule_intent:/);
-  assert.match(triggers, /workflow_dispatch:/);
-  assert.doesNotMatch(triggers, /pull_request:|push:/);
   for (const caller of [ci, release]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);
 });
 
@@ -646,16 +569,13 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
   }
 });
 
-test('staging overlaps CLI work while every production job joins validation', () => {
+test('preparation overlaps validation while production waits for every check', () => {
   const release = read('.github/workflows/release.yml');
   const section = (name) => release.split(`\n  ${name}:\n`)[1].split(/\n  [\w-]+:\n/)[0];
   const needs = (name) => section(name).match(/needs: \[(.+)\]/)[1].split(', ');
   assert.deepEqual(needs('release-preparation'), ['plan', 'server-validation']);
-  assert.deepEqual(needs('staging'), ['plan', 'policy', 'ops', 'release-preparation', 'readiness-preflight', 'production-preflight', 'smoke-tools']);
-  for (const job of ['backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
-    assert(needs(job).includes('validation'), `${job} must join validation`);
-    assert.match(section(job), /needs\.validation\.result == 'success'/, `${job} must require validation`);
-  }
+  assert.deepEqual(needs('production-deploy'), ['plan', 'policy', 'ops', 'validation', 'release-preparation']);
+  assert.deepEqual(needs('cli-deploy'), ['plan', 'policy', 'ops', 'validation', 'production-deploy']);
   assert.doesNotMatch(section('plan'), /dev\/checks\/(policy|ops)/);
   for (const job of ['policy', 'ops']) assert.doesNotMatch(section(job), /needs:/);
 });
