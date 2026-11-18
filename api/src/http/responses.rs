@@ -86,12 +86,6 @@ pub(crate) fn git_oid_response(value: String) -> Result<GitOid, ApiError> {
         .map_err(|error| ApiError::internal_message(format!("persisted {error}")))
 }
 
-pub(crate) fn git_oid_request(label: &str, value: &str) -> Result<String, ApiError> {
-    GitOid::try_from(value.trim())
-        .map(String::from)
-        .map_err(|_| ApiError::bad_request(format!("{label} must be a full SHA-1 Git object id")))
-}
-
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct DeviceLoginCompleteResponse {
