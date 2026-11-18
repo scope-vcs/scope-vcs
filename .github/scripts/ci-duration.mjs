@@ -1,3 +1,5 @@
+import { reportIssue } from './report-issue.mjs';
+
 const BUDGET_SECONDS = 450;
 const SAMPLE_SIZE = 10;
 const MAX_RUNS = 200;
@@ -84,9 +86,5 @@ export async function reportCiDuration({ github, owner, repo, runUrl }) {
   const since = await latestWorkflowChange({ github, owner, repo });
   const jobs = slowJobs(await recentPullRequestRuns({ github, owner, repo, since }));
   if (!jobs.length) return null;
-  const body = durationIssueBody(jobs, runUrl);
-  const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', per_page: 100 });
-  const existing = issues.find(issue => !issue.pull_request && issue.title === ISSUE_TITLE);
-  if (existing) return github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
-  return github.rest.issues.create({ owner, repo, title: ISSUE_TITLE, body, labels: ['bug'] });
+  return reportIssue({ github, owner, repo, title: ISSUE_TITLE, body: durationIssueBody(jobs, runUrl) });
 }
