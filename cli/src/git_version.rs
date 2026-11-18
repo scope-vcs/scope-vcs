@@ -1,18 +1,7 @@
 use anyhow::{Context, bail};
 use std::process::Command;
 
-#[expect(clippy::expect_used)]
-fn minimum_version() -> (u32, u32, u32) {
-    let contract: serde_json::Value =
-        serde_json::from_str(include_str!("../../dev/tool-versions.json"))
-            .expect("embedded tool version contract is valid JSON");
-    parse_number(
-        contract["git"]["version"]
-            .as_str()
-            .expect("embedded tool version contract names a Git version"),
-    )
-    .expect("embedded Git version is a dotted version number")
-}
+const MINIMUM_VERSION: (u32, u32, u32) = (2, 38, 0);
 
 fn parse_number(value: &str) -> Option<(u32, u32, u32)> {
     let mut parts = value.split('.');
@@ -27,11 +16,11 @@ pub fn supported(version_output: &str) -> bool {
     let Some(number) = version_output.strip_prefix("git version ") else {
         return false;
     };
-    parse_number(number).is_some_and(|version| version >= minimum_version())
+    parse_number(number).is_some_and(|version| version >= MINIMUM_VERSION)
 }
 
 pub fn minimum_version_text() -> String {
-    let (major, minor, patch) = minimum_version();
+    let (major, minor, patch) = MINIMUM_VERSION;
     format!("{major}.{minor}.{patch}")
 }
 
@@ -61,16 +50,18 @@ mod tests {
 
     #[test]
     fn recognizes_minimum_patch_and_native_suffixes() {
-        assert!(supported("git version 2.55.0"));
+        assert!(supported("git version 2.38.0"));
+        assert!(supported("git version 2.39.5 (Apple Git-154)"));
         assert!(supported("git version 2.55.1.windows.1"));
-        assert!(supported("git version 2.56.0 (Apple Git-154)"));
+        assert!(supported("git version 3.0.0"));
         for old_or_malformed in [
-            "git version 2.54.9",
-            "git version 2.55",
-            "git version 2.55.x",
-            "git version 2.55x.0",
-            "git version 2.55.0x",
-            "other version 2.55.0",
+            "git version 2.37.7",
+            "git version 1.99.0",
+            "git version 2.38",
+            "git version 2.38.x",
+            "git version 2.38x.0",
+            "git version 2.38.0x",
+            "other version 2.38.0",
         ] {
             assert!(!supported(old_or_malformed), "{old_or_malformed}");
         }
