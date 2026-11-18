@@ -57,6 +57,7 @@ pub fn router(state: AppState) -> Router {
     let router = Router::new()
         .route(routes::HEALTH, get(http::account::healthz))
         .route(routes::READINESS, get(http::account::readyz))
+        .route(routes::CLI_DOWNLOAD, get(http::cli_downloads::download))
         .route(routes::MCP, post(http::mcp::serve))
         .route(
             routes::MCP_PROTECTED_RESOURCE_METADATA,

@@ -117,6 +117,14 @@ FROM product_events
 WHERE event = 'run_log_timing' AND timestamp >= now() - INTERVAL 7 DAY
 GROUP BY trigger
 ORDER BY trigger`),
+    report('cli-downloads', 'Scope: CLI downloads',
+      'CLI binary downloads in the last 30 days through the tracked download route, by release, platform and installer. Counts are downloads, not people: the route records no visitor identity. A direct installer means the link was opened without an install script.', `
+SELECT properties.version AS release, properties.os AS os, properties.arch AS arch,
+  properties.installer AS installer, count() AS downloads
+FROM product_events
+WHERE event = 'cli:artifact_download' AND timestamp >= now() - INTERVAL 30 DAY
+GROUP BY release, os, arch, installer
+ORDER BY downloads DESC, release, os, arch, installer`),
   ]
 }
 

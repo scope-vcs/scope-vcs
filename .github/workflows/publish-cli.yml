@@ -2,28 +2,50 @@ name: Publish CLI
 
 on:
   workflow_call:
+    outputs:
+      tag:
+        description: GitHub Release tag that holds this revision's CLI artifacts
+        value: ${{ jobs.publish.outputs.tag }}
 
 permissions:
   actions: read
-  contents: read
-  deployments: write
-  packages: write
+  attestations: write
+  contents: write
+  id-token: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  deploy:
-    name: Deploy CLI downloads
+  publish:
+    name: Publish CLI release
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.published.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
 
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 26
+
+      - name: Reuse the release this revision already published
+        id: published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(node deploy/scripts/cli-release-manifest.mjs "$GITHUB_SHA")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          bash deploy/scripts/reuse-cli-release.sh "$tag" cli/dist/cli-release.json >> "$GITHUB_OUTPUT"
+
       - name: Download artifacts
+        if: steps.published.outputs.exists != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           run-id: ${{ github.run_id }}
@@ -32,96 +54,43 @@ jobs:
           path: cli/dist
           merge-multiple: true
 
-      - name: Download service
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          run-id: ${{ github.run_id }}
-          github-token: ${{ github.token }}
-          name: cli-service-release-${{ github.sha }}
-          path: artifacts
-
-      - name: Verify artifacts and write checksums
+      - name: Write the release manifest
+        if: steps.published.outputs.exists != 'true'
         shell: bash
-        run: |
-          mapfile -t expected < <(jq -r '.targets[].artifact' cli/distribution/targets.json)
+        run: node deploy/scripts/cli-release-manifest.mjs "$GITHUB_SHA" cli/dist cli/dist/cli-release.json
 
-          for artifact in "${expected[@]}"; do
-            test -s "cli/dist/$artifact"
-          done
-
-          (
-            cd cli/dist
-            for artifact in "${expected[@]}"; do
-              sha256sum "$artifact" > "$artifact.sha256"
-            done
-          )
-
-      - name: Install Node
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - name: Attest build provenance
+        if: steps.published.outputs.exists != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          node-version: 26
+          subject-path: |
+            cli/dist/scope-*
+            cli/dist/cli-release.json
 
-      - name: Stage CLI image context
-        shell: bash
-        run: |
-          rm -rf .railway-cli
-          mkdir -p .railway-cli/bin .railway-cli/dist
-          tar --extract --gzip \
-            --file artifacts/scope-cli-service.tar.gz \
-            --directory .railway-cli/bin
-          cp -a cli/dist/. .railway-cli/dist/
-          chmod 0755 .railway-cli/bin/scope-cli-service
-
-      - name: Set up image builder
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-      - name: Authenticate image publishing
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Prepare immutable CLI image
+      - name: Publish the GitHub Release
+        if: steps.published.outputs.exists != 'true'
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ github.sha }}
-          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
-          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
-        run: bash deploy/scripts/prepare-railway-artifact.sh cli-downloads .railway-cli prepared-cli-release.json
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.published.outputs.tag }}
+        run: |
+          mapfile -t artifacts < <(jq -r '.targets[].artifact | "cli/dist/" + .' cli/distribution/targets.json)
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Scope CLI ${TAG#cli-}" \
+            --notes "Scope CLI built from $GITHUB_SHA. Install with the commands at https://scopevcs.com." \
+            --latest=false \
+            "${artifacts[@]}" cli/dist/cli-release.json
 
       - uses: ./.github/actions/install-railway-cli
 
-      - name: Deploy artifacts to Railway
+      - name: Pin the web installers to this release
         shell: bash
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          SCOPE_PREPARED_RELEASE_PATH: prepared-cli-release.json
-          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
-          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
-          SCOPE_DEPLOYMENT_COMPONENT: cli-downloads
-          SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
-          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ github.sha }}
         run: |
           manifest=.github/deployment-services.json
-          RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"
-          SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.environments.production.environmentId' "$manifest")"
-          export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
-          service_id="$(jq -r '.services["cli-downloads"].id' "$manifest")"
-          public_origin="$(jq -er '.environments.production.cliPublicOrigin' "$manifest")"
-          railway variable set --project "$RAILWAY_PROJECT_ID" \
-            --environment "$SCOPE_RAILWAY_ENVIRONMENT_ID" --service "$service_id" \
-            --skip-deploys "SCOPE_CLI_PUBLIC_URL=$public_origin"
-          bash deploy/scripts/deploy-railway.sh "$service_id"
+          railway variable set --project "$(jq -er '.railway.projectId' "$manifest")" \
+            --environment "$(jq -er '.environments.production.environmentId' "$manifest")" \
+            --service "$(jq -er '.services.web.id' "$manifest")" --skip-deploys \
+            "SCOPE_CLI_RELEASE=$(jq -c '{tag, artifacts}' cli/dist/cli-release.json)" >/dev/null
 
-      - name: Record successful Railway deployment
-        if: always()
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          node deploy/scripts/production-deployment-progress.mjs record-file \
-            --file production-deployments.ndjson \
-            --log-url "$LOG_URL"

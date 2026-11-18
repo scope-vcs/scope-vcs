@@ -181,11 +181,3 @@ test("fails after three unsuccessful metadata reads without repeating activation
   assert.ok(!result.events.includes("verify"));
   assert.match(result.stderr, /Railway read failed after 3 attempts/);
 });
-
-test("prepared CLI image activates and verifies without requiring backend transition settings", (t) => {
-  const result = deploy(t, providerStatus([]), [], [], "cli-downloads");
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.events.filter((event) => event === "activate").length, 1);
-  assert.equal(result.events.filter((event) => event === "verify").length, 1);
-  assert.ok(!result.events.some((event) => event.startsWith("up ")));
-});

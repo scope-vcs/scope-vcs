@@ -33,12 +33,6 @@ elif [[ -z "$binary" ]]; then
 else
   test -x "$context_root/bin/$binary"
 fi
-if [[ "$component" == cli-downloads ]]; then
-  while IFS= read -r artifact; do
-    test -s "$context_root/dist/$artifact"
-    (cd "$context_root/dist" && sha256sum --check "$artifact.sha256")
-  done < <(jq -er '.targets[].artifact' cli/distribution/targets.json)
-fi
 if [[ "$component" == api ]]; then
   : "${SCOPE_MAINTENANCE_BINARY:?API preparation requires the original maintenance binary}"
   test -f "$context_root/bin/scope-maintenance"

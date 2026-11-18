@@ -28,6 +28,7 @@ const CALLER_SCOPED_SUCCESSES: &[(&str, &str)] = &[
     ("GET", routes::HEALTH),
     ("GET", routes::READINESS),
     ("GET", routes::MCP_PROTECTED_RESOURCE_METADATA),
+    ("GET", routes::CLI_DOWNLOAD),
     ("GET", routes::ACCOUNT_SESSION),
     ("GET", routes::CLI_SESSIONS),
     ("GET", routes::OWNER_REPOSITORIES),

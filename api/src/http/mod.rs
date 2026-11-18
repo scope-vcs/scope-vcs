@@ -1,6 +1,7 @@
 pub(crate) mod account;
 pub(crate) mod cli_auth;
 pub(crate) mod cli_compatibility;
+pub(crate) mod cli_downloads;
 pub(crate) mod dependencies;
 pub(crate) mod device_login;
 pub(crate) mod file_diffs;
