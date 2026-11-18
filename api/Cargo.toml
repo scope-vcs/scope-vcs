@@ -60,7 +60,7 @@ scope_git_process.workspace = true
 time = { workspace = true, features = ["parsing"] }
 tokio = { workspace = true, features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { version = "0.1.17", features = ["sync"] }
-tower-http = { workspace = true, features = ["cors"] }
+tower-http = { workspace = true, features = ["cors", "limit"] }
 tracing.workspace = true
 ts-rs = { workspace = true, optional = true }
 tikv-jemallocator = "0.7.0"

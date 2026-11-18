@@ -130,3 +130,27 @@ async fn cli_device_login_completion_requires_clerk_auth_and_is_single_use() {
         Some(serde_json::Value::String("conflict".into()))
     );
 }
+
+#[tokio::test]
+async fn cli_login_routes_throttle_a_flooding_address_and_spare_others() {
+    let app = router(AppState::test_state());
+    let exchange = |address: &'static str| {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v1/cli/exchange-grants/exchange")
+            .header("x-real-ip", address)
+            .body(Body::empty())
+            .unwrap();
+        app.clone().oneshot(request)
+    };
+    let mut admitted = 0;
+    while exchange("203.0.113.7").await.unwrap().status() != StatusCode::TOO_MANY_REQUESTS {
+        admitted += 1;
+        assert!(admitted < 1_000, "the flooding address was never throttled");
+    }
+    assert!(admitted > 1);
+    assert_ne!(
+        exchange("203.0.113.8").await.unwrap().status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+}

@@ -121,3 +121,41 @@ impl ObjectStore for UnavailableObjectStore {
         ))
     }
 }
+
+#[tokio::test]
+async fn bodies_over_the_default_limit_are_refused_and_git_routes_keep_their_own_limit() {
+    let app = crate::router(test_state_with_readme().await);
+    let oversized = crate::http::request_limits::DEFAULT_REQUEST_BODY_BYTES + 1;
+    let post = |uri: &'static str, declares_length: bool| {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("content-type", "application/json");
+        let body = if declares_length {
+            request = request.header("content-length", oversized);
+            Body::from(vec![b' '; oversized])
+        } else {
+            Body::from_stream(futures_util::stream::iter([oversized - 1, 1].map(
+                |bytes| Ok::<_, std::io::Error>(axum::body::Bytes::from(vec![b' '; bytes])),
+            )))
+        };
+        app.clone().oneshot(request.body(body).unwrap())
+    };
+    for declares_length in [true, false] {
+        assert_eq!(
+            post("/v1/repos", declares_length).await.unwrap().status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "declares length: {declares_length}"
+        );
+        for git in [
+            "/git/public/owner/repo/git-upload-pack",
+            "/git/public/owner/repo/git-receive-pack",
+        ] {
+            assert_ne!(
+                post(git, declares_length).await.unwrap().status(),
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "{git}, declares length: {declares_length}"
+            );
+        }
+    }
+}
