@@ -381,3 +381,36 @@ test('an active stream connects and reports interruption while an aborted stream
     assert.deepEqual(calls, aborted ? [] : ['connect', 'interrupted'])
   }
 })
+
+test('completed stream reconnect delays release abort listeners before reconnecting', async () => {
+  const { default: Events } = await import('node:events')
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  const controller = new AbortController()
+  const listenersAtConnect: number[] = []
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      setTimeout: (callback: () => void) => { queueMicrotask(callback); return 1 },
+      clearTimeout: () => {},
+    },
+  })
+  try {
+    await runRepoEventStream({
+      connect: async () => {
+        listenersAtConnect.push(Events.getEventListeners(controller.signal, 'abort').length)
+        if (listenersAtConnect.length === 20) controller.abort()
+        return { type: 'transport' }
+      },
+      onDiagnostic: () => {},
+      onEvent: () => {},
+      onInterrupted: () => {},
+      signal: controller.signal,
+    })
+    assert.deepEqual(listenersAtConnect, Array.from({ length: 20 }, () => 0))
+    assert.equal(Events.getEventListeners(controller.signal, 'abort').length, 0)
+  } finally {
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
+    else Reflect.deleteProperty(globalThis, 'window')
+  }
+})
+

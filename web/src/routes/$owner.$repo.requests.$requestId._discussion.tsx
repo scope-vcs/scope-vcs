@@ -34,6 +34,7 @@ import { loadRequestDiscussionRoutePage } from '@/routes/-request-discussion-loa
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
+import { repoSummaryIdentity, repoSummaryResource } from '@/features/repo-detail/repo-summary-resource'
 import { createFileRoute, Outlet, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useCallback, useMemo } from 'react'
@@ -115,6 +116,7 @@ function RequestDiscussionLayout() {
       result = await runRequestAction({ data: { ...requestParams, ...command } })
     } catch (error) {
       requestStateResource.invalidate(page.identity)
+      repoSummaryResource.invalidate(repoSummaryIdentity(repoParams))
       await router.invalidate({ sync: true }).catch(() => {})
       throw error
     }
@@ -124,6 +126,7 @@ function RequestDiscussionLayout() {
         await navigate({ params: repoParams, to: '/$owner/$repo/requests' })
       } else {
         requestStateResource.invalidate(page.identity)
+        repoSummaryResource.invalidate(repoSummaryIdentity(repoParams))
         await router.invalidate({ sync: true })
       }
       return result
@@ -174,6 +177,7 @@ function RequestDiscussionLayout() {
           return result
         } catch (error) {
           requestStateResource.invalidate(page.identity)
+          repoSummaryResource.invalidate(repoSummaryIdentity(repoParams))
           await router.invalidate().catch(() => {})
           throw error
         }

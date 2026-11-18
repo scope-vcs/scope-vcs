@@ -23,7 +23,7 @@ import {
 import type { GitHubWorkflowRunDetailResponse } from '../../api/types.generated'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
-function invalidate(scope: string, change?: RepoChangeEvent, resync?: { summaryPending?: boolean; versioned?: boolean }) {
+function invalidate(scope: string, change?: RepoChangeEvent, resync?: { versioned?: boolean }) {
   invalidateRepoResources(scope, change ? topicsOf(change, resync) : resyncTopics(resync))
 }
 function seed() {
@@ -249,17 +249,6 @@ test('versioned resyncs leave content-versioned resources to the reloaded reposi
   invalidate('viewer-a', event({ RepositoryChanged: { reason: 'push' } }), { versioned: true })
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
   assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
-})
-
-test('a pending summary owns queue reconciliation while other resources refresh immediately', () => {
-  seed()
-  invalidate('viewer-a', event('Lagged'), { summaryPending: true })
-  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
-  assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
-  invalidateRepoResources('viewer-a', [{ topic: 'requestList' }])
-  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
-  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'public')).stale, true)
-  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
 })
 
 test('public code with unchanged version refreshes retained tree and file on repository changes', async () => {

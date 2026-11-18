@@ -68,7 +68,7 @@ const attachmentActions = {
 function Changes() {
   const [search, setSearch] = useState<RequestChangesSearch>({ revision: 'revision-2', path })
   return (
-    <RepoLayoutProvider live={live} subscribe={() => () => {}}>
+    <RepoLayoutProvider live={live} subscribe={() => () => {}} summaryIdentity="fixture">
       <RequestAttachmentProvider actions={attachmentActions as never} live={live} requestId="request" viewerId="adam">
         <ul aria-label="Discussion page anchors" className="flex flex-wrap gap-2 border-b border-border px-3 py-2">
           {discussions.filter(({ anchor }) => anchor?.lines && anchor.revision_id === 'revision-1').map(({ anchor, id }) => (

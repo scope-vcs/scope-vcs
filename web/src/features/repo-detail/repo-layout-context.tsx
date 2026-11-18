@@ -9,10 +9,12 @@ import {
   useMemo,
 } from 'react'
 import type { SubscribeToRepoChanges } from './repo-live-refresh'
+import { forgetRepoSummary, repoSummaryResource } from './repo-summary-resource'
 
 type RepoLayoutContextValue = {
   live: RepoLiveState
   subscribe: SubscribeToRepoChanges
+  summaryIdentity: string
   views: RepoViews
 }
 
@@ -22,13 +24,15 @@ export function RepoLayoutProvider({
   children,
   live,
   subscribe,
+  summaryIdentity,
 }: {
   children: ReactNode
   live: RepoLiveState
   subscribe: SubscribeToRepoChanges
+  summaryIdentity: string
 }) {
   const views = useMemo(() => repoViews(live.repo.views), [live.repo.views])
-  const value = useMemo(() => ({ live, subscribe, views }), [live, subscribe, views])
+  const value = useMemo(() => ({ live, subscribe, summaryIdentity, views }), [live, subscribe, summaryIdentity, views])
   return (
     <RepoLayoutContext.Provider value={value}>
       {children}
@@ -42,6 +46,14 @@ export function useRepoLayout() {
 
 export function useLoadedRepoLayout(): RepoLiveState | null {
   return use(RepoLayoutContext)?.live ?? null
+}
+
+export function useRepoSummaryRetention() {
+  const { summaryIdentity } = useRepoLayoutContext()
+  return useMemo(() => ({
+    refresh: () => repoSummaryResource.invalidate(summaryIdentity),
+    forget: () => forgetRepoSummary(summaryIdentity),
+  }), [summaryIdentity])
 }
 
 export function useRepoViews() {

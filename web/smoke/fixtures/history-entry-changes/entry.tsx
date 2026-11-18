@@ -53,7 +53,7 @@ function App() {
   const navigation = useChangedFileNavigation(() => setSelection({ path: null, visibilityId: null }), true)
   const label = selection.visibilityId ? `visibility preview ${selection.visibilityId}` : `code diff ${selection.path}`
   return (
-    <RepoLayoutProvider live={live} subscribe={() => () => {}}>
+    <RepoLayoutProvider live={live} subscribe={() => () => {}} summaryIdentity="fixture">
       <main className="mx-auto max-w-6xl">
         <HistoryEntryChanges
           detail={detail}

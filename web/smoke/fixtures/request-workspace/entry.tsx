@@ -48,7 +48,7 @@ function Repository() {
     open_request_count: items.length, views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' as const }, { id: 'private', name: 'Private', includes: 'all' as const, readers: 'assigned' as const }], access: { actor, view: 'private' },
   } } as RepoLiveState
   return <FixtureViewer value={viewer}>
-    <RepoLayoutProvider live={live} subscribe={subscribe}>
+    <RepoLayoutProvider live={live} subscribe={subscribe} summaryIdentity="fixture">
       <RepoShell params={{ owner: owner!, repo: repo! }} repo={live.repo}><Outlet /></RepoShell>
     </RepoLayoutProvider>
   </FixtureViewer>

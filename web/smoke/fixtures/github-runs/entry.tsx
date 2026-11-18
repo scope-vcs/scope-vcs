@@ -213,7 +213,7 @@ function Repository() {
   const [actor, setActor] = useState('Owner')
   Object.assign(window, { setActor })
   const state = { ...live, repo: repoSummary(actor) }
-  return <RepoLayoutProvider live={state} subscribe={subscribe}>
+  return <RepoLayoutProvider live={state} subscribe={subscribe} summaryIdentity="fixture">
     <RepoShell params={{ owner: owner!, repo: repo! }} repo={state.repo}><Outlet /></RepoShell>
   </RepoLayoutProvider>
 }

@@ -39,7 +39,7 @@ import { MemberAccessSummary } from './repo-member-permissions'
 import { RepoCiSection } from './repo-ci-section'
 import { RepositoryMetadataForm } from './repository-metadata-form'
 import { AccessSection, DangerZoneSection } from './repo-settings-sections'
-import { useRepoLayout, useRepoViews } from './repo-layout-context'
+import { useRepoLayout, useRepoSummaryRetention, useRepoViews } from './repo-layout-context'
 import { RepositoryViewsSection } from './repo-views-section'
 import {
   initialRepoSettingsPageState,
@@ -119,6 +119,7 @@ export function RepoSettingsPage({
   const navigate = useNavigate()
   const router = useRouter()
   const { repo } = useRepoLayout()
+  const summary = useRepoSummaryRetention()
   const views = useRepoViews()
   const readsFullView = views.full !== null && views.mayRead(repo.access.view, views.full)
   const [state, dispatch] = useReducer(
@@ -130,7 +131,10 @@ export function RepoSettingsPage({
 
   async function mutateAndRefresh<T>(mutation: Promise<T>) {
     setRefreshError(null)
-    return mutateSettings(mutation, () => router.invalidate(), () => {
+    return mutateSettings(mutation, () => {
+      summary.refresh()
+      return router.invalidate()
+    }, () => {
       setRefreshError('Your change was saved, but the updated settings could not be loaded. Refresh to try again.')
     })
   }
@@ -144,6 +148,7 @@ export function RepoSettingsPage({
       })
       storeHomeFlash(`${target.id} deleted.`)
       await navigate({ to: '/' })
+      summary.forget()
       void router.invalidate().catch(() => undefined)
     } catch (error) {
       dispatch({

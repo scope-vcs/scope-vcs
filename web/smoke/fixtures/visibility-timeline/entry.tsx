@@ -17,7 +17,7 @@ const live = {
 } as RepoLiveState
 
 createRoot(document.getElementById('root')!).render(
-  <RepoLayoutProvider live={live} subscribe={() => () => {}}>
+  <RepoLayoutProvider live={live} subscribe={() => () => {}} summaryIdentity="fixture">
     <RepositorySearchProvider>
       <main className="mx-auto max-w-4xl px-4">
         <VisibilityLogSection params={{ owner: 'dev', repo: 'demo' }} view="private" />

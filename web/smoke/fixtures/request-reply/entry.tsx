@@ -79,7 +79,7 @@ const noop = () => {}
 function App() {
   const [composerOpen, setComposerOpen] = useState(false)
   return (
-    <RepoLayoutProvider live={live} subscribe={() => noop}>
+    <RepoLayoutProvider live={live} subscribe={() => noop} summaryIdentity="fixture">
       <RequestAttachmentProvider actions={attachmentActions as never} live={live} requestId="request" viewerId={viewer.id}>
         <RequestDiscussionThread
           actions={actions}

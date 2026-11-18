@@ -1,6 +1,3 @@
-import { isNotFoundError } from '@/api/http'
-import { loadRepoLiveStateForRequest } from '@/api/repo-detail'
-import { parseRepoParams } from '@/api/repo-params'
 import { RepoShell } from '@/components/repo-shell'
 import { RepositoryRoutePending } from '@/components/repository-route-pending'
 import { RepositoryHtmlPreviewProvider } from '@/components/repository-html-preview-store'
@@ -8,50 +5,24 @@ import { RouteErrorPage } from '@/components/route-error-page'
 import { RouteNotFoundPage } from '@/components/route-not-found-page'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
 import { useRepoLiveRefresh } from '@/features/repo-detail/repo-live-refresh'
-import {
-  fetchRepoRouteState,
-  isRetryableRepoLoadError,
-  loadRepoRouteState,
-  type RepoRouteLoadResult,
-} from '@/features/repo-detail/repo-route-recovery'
+import { loadRepoSummary, repoSummaryIdentity } from '@/features/repo-detail/repo-summary-resource'
+import { useRepoSummary } from '@/features/repo-detail/use-repo-summary'
 import { parseViewingAsSearch } from '@/features/repo-detail/viewing-as'
+import { loadRepoSummaryState } from '@/routes/-repo-summary-actions'
 import {
   Outlet,
   createFileRoute,
-  notFound,
   retainSearchParams,
   useRouter,
 } from '@tanstack/react-router'
-import { createServerFn } from '@tanstack/react-start'
 import { useCallback } from 'react'
-
-const loadRepoLiveState = createServerFn({ method: 'GET' })
-  .validator(parseRepoParams)
-  .handler(async ({ data }): Promise<RepoRouteLoadResult> => {
-    try {
-      return { live: await loadRepoLiveStateForRequest(data) }
-    } catch (error) {
-      if (isNotFoundError(error)) notFound({ throw: true })
-      if (isRetryableRepoLoadError(error)) {
-        return { unavailable: 'Repository refresh is temporarily unavailable.' }
-      }
-      throw error
-    }
-  })
 
 export const Route = createFileRoute('/$owner/$repo')({
   validateSearch: parseViewingAsSearch,
   search: { middlewares: [retainSearchParams(['view'])] },
-  staleTime: Infinity,
-  loader: ({ params, cause, abortController }) => loadRepoRouteState({
-    load: () => loadRepoLiveState({
-      data: params,
-      fetch: fetchRepoRouteState,
-      signal: abortController.signal,
-    }),
-    refresh: cause === 'stay',
-    signal: abortController.signal,
-  }),
+  loader: ({ params, abortController }) => typeof window === 'undefined'
+    ? loadRepoSummaryState(params, abortController.signal)
+    : loadRepoSummary(repoSummaryIdentity(params), (signal) => loadRepoSummaryState(params, signal)),
   errorComponent: RepoLayoutError,
   notFoundComponent: RouteNotFoundPage,
   pendingComponent: RepositoryRoutePending,
@@ -69,13 +40,19 @@ function RepoLayoutError({ error }: { error: unknown }) {
 }
 
 function RepoLayoutRoute() {
-  const live = Route.useLoaderData()
   const params = Route.useParams()
+  const { owner, repo } = params
   const router = useRouter()
-  const invalidate = useCallback(() => router.invalidate({ sync: true }), [router])
-  const subscribe = useRepoLiveRefresh(live, invalidate, live.refreshId)
+  const identity = repoSummaryIdentity({ owner, repo })
+  const live = useRepoSummary({
+    identity,
+    initial: Route.useLoaderData(),
+    load: useCallback((signal: AbortSignal) => loadRepoSummaryState({ owner, repo }, signal), [owner, repo]),
+    onRejected: useCallback(() => void router.invalidate(), [router]),
+  })
+  const subscribe = useRepoLiveRefresh(live)
   return (
-    <RepoLayoutProvider live={live} subscribe={subscribe}>
+    <RepoLayoutProvider live={live} subscribe={subscribe} summaryIdentity={identity}>
       <RepositoryHtmlPreviewProvider>
         <RepoShell params={params} repo={live.repo}>
           <Outlet />
