@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     auth::{scope::require_scope_user, viewer::Viewer},
     error::ApiError,
@@ -481,8 +482,10 @@ pub(crate) async fn leave_request(
         })
         .await?;
     let invitee = request_invitee_response(invitee);
-    state
-        .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestInviteeLeft);
+    state.after_commit([AfterCommit::request_summary(
+        &repo.incarnation(),
+        RepoChangeReason::RequestInviteeLeft,
+    )]);
     Ok(Json(LeaveRequestResponse { invitee }))
 }
 

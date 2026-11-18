@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     error::ApiError, github::pull_requests::PullRequestCallError, persistence::unix_now,
@@ -148,16 +149,16 @@ async fn queue_review_import(
             unix_now()?,
         )
         .await?;
-    state.wakeups.github_review_imports.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::GitHubReviewImports)]);
     Ok(())
 }
 
 async fn publish_change(state: &AppState, reconcile: &GitHubReviewBotReconcile) {
-    state.wakeups.auto_merge.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::AutoMerge)]);
     match state.repository_incarnation(&reconcile.repo_id).await {
         Ok(Some(incarnation)) => {
             state
-                .publish_request_state_refresh(&incarnation, &reconcile.request_id)
+                .after_commit_request_state(&incarnation, &reconcile.request_id)
                 .await;
         }
         Ok(None) => {}
@@ -207,7 +208,7 @@ pub(crate) async fn note_review_bot_activity(
         .requeue_github_review_bot_reconcile(github_repository_id, number, unix_now()?)
         .await?
     {
-        state.wakeups.github_review_bot_statuses.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::GitHubReviewBotStatuses)]);
     }
     Ok(())
 }

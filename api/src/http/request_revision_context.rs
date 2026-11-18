@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     auth::{scope::require_scope_user, viewer::Viewer},
     error::ApiError,
@@ -169,19 +170,17 @@ pub(crate) async fn publish(
         publication?
     };
     if mutation.event.id == event_id {
-        state
-            .product_analytics
-            .capture(ProductEvent::request_revised(
-                &actor.id,
-                incarnation.incarnation_id(),
-                &request.id,
-                request.view.clone(),
-            ));
+        state.after_commit([AfterCommit::Analytics(ProductEvent::request_revised(
+            &actor.id,
+            incarnation.incarnation_id(),
+            &request.id,
+            request.view.clone(),
+        ))]);
     }
-    state.publish_request_summary_refresh(
+    state.after_commit([AfterCommit::request_summary(
         &incarnation,
         crate::repo_events::RepoChangeReason::RequestRevised,
-    );
+    )]);
     crate::use_cases::request_diff_stats::record_published_revision_diff_stat(
         &state,
         &incarnation,

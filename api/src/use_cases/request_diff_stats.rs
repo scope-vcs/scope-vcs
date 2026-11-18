@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
     background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness},
     error::ApiError,
@@ -215,8 +216,10 @@ fn listed_path(path: &BoundedNulField) -> Option<ScopePath> {
 }
 
 fn publish_recorded(state: &AppState, incarnation: &RepositoryIncarnation, request: &Request) {
-    state.publish_request_summary_refresh(incarnation, RepoChangeReason::RequestRevised);
-    state.publish_known_request_state_refresh(incarnation, request);
+    state.after_commit([
+        AfterCommit::request_summary(incarnation, RepoChangeReason::RequestRevised),
+        AfterCommit::request_state(incarnation, request),
+    ]);
 }
 
 #[derive(Clone, Default)]
@@ -256,7 +259,7 @@ pub(crate) async fn backfill_request_diff_stats(
         .requests_missing_current_diff_stat(cursor.after_id.as_deref(), BACKFILL_BATCH_SIZE)
         .await?;
     cursor.after_id = if requests.len() as u64 == BACKFILL_BATCH_SIZE {
-        state.wakeups.request_diff_stats.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::RequestDiffStats)]);
         requests.last().map(|request| request.id.clone())
     } else {
         None

@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     error::ApiError,
@@ -37,7 +38,7 @@ pub(crate) async fn accept_github_delivery(
         .repositories()
         .queue_github_webhook_delivery(delivery_id, event, payload, now_unix)
         .await?;
-    state.wakeups.github_webhook_deliveries.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::GitHubWebhookDeliveries)]);
     Ok(())
 }
 
@@ -76,7 +77,7 @@ pub(crate) async fn process_due_github_deliveries(
                 .await?;
         }
     }
-    state.wakeups.github_webhook_deliveries.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::GitHubWebhookDeliveries)]);
     Ok(processed)
 }
 
@@ -221,12 +222,9 @@ async fn apply(state: &AppState, event: GitHubWebhookEvent) -> Result<(), ApiErr
                     confirmed_installation_change(app, installation_id, &change).await
                 })
                 .await?;
-            for incarnation in changed {
-                state.publish_request_summary_refresh(
-                    &incarnation,
-                    RepoChangeReason::GitHubConnectionChanged,
-                );
-            }
+            state.after_commit(changed.iter().map(|incarnation| {
+                AfterCommit::request_summary(incarnation, RepoChangeReason::GitHubConnectionChanged)
+            }));
         }
         GitHubWebhookEvent::RepositoryVisibilityChanged {
             github_repository_id,

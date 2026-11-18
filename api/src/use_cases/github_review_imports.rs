@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     error::ApiError,
@@ -67,7 +68,7 @@ pub(crate) async fn queue_github_review_delivery(
         )
         .await?;
     if accepted {
-        state.wakeups.github_review_imports.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::GitHubReviewImports)]);
     }
     Ok(())
 }
@@ -425,10 +426,10 @@ async fn skip_review(
         )
         .await?;
     if recorded && let Some(incarnation) = state.repository_incarnation(&job.repo_id).await? {
-        state.publish_request_summary_refresh(
+        state.after_commit([AfterCommit::request_summary(
             &incarnation,
             RepoChangeReason::GitHubConnectionChanged,
-        );
+        )]);
     }
     Ok(())
 }
@@ -485,13 +486,13 @@ async fn publish(state: &AppState, request: &Request, discussions: &[RequestDisc
         }
     };
     for discussion in discussions {
-        state.publish_request_timeline_change(
+        state.after_commit([AfterCommit::request_timeline(
             &incarnation,
             request.id.clone(),
             discussion.id.clone(),
             discussion.last_activity_position,
             request.view.clone(),
-        );
+        )]);
     }
 }
 

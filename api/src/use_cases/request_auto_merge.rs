@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
     background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness},
     error::{ApiError, ErrorKind},
@@ -42,7 +43,7 @@ pub(crate) async fn authorize(
         })
         .await?;
     publish_change(state, &mutation.intent).await?;
-    state.wakeups.auto_merge.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::AutoMerge)]);
     Ok(())
 }
 
@@ -71,7 +72,7 @@ async fn publish_change(state: &AppState, intent: &RequestAutoMergeIntent) -> Re
         RepositoryIncarnation::new(&intent.repo_id, &intent.repository_incarnation_id)
             .map_err(ApiError::internal)?;
     state
-        .publish_request_state_refresh(&incarnation, &intent.request_id)
+        .after_commit_request_state(&incarnation, &intent.request_id)
         .await;
     Ok(())
 }

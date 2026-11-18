@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     auth::tokens::random_token,
@@ -73,10 +74,10 @@ async fn run_claimed_import(
     {
         Ok(true) => match state.repository_incarnation(&import.repository_id).await {
             Ok(Some(incarnation)) => {
-                state.publish_request_summary_refresh(
+                state.after_commit([AfterCommit::request_summary(
                     &incarnation,
                     RepoChangeReason::GitHubConnectionChanged,
-                );
+                )]);
             }
             Ok(None) => {}
             Err(error) => tracing::warn!(

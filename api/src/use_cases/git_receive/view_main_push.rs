@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
     error::ApiError,
     git::{
@@ -192,7 +193,10 @@ pub(super) async fn complete_view_main_push(
         persisted.pool_pack,
     )
     .await;
-    state.publish_request_summary_refresh(&push.incarnation, RepoChangeReason::RequestStarted);
+    state.after_commit([AfterCommit::request_summary(
+        &push.incarnation,
+        RepoChangeReason::RequestStarted,
+    )]);
     crate::use_cases::request_checks::best_effort_evaluate_request_checks(
         state,
         &git,
@@ -203,7 +207,7 @@ pub(super) async fn complete_view_main_push(
         staging_repo,
     )
     .await;
-    state.wakeups.auto_merge.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::AutoMerge)]);
     crate::use_cases::request_diff_stats::record_published_revision_diff_stat(
         state,
         &push.incarnation,

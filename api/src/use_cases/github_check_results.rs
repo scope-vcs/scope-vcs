@@ -1,3 +1,4 @@
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     error::ApiError, persistence::unix_now, repo_events::RepoChangeReason, state::AppState,
@@ -135,16 +136,16 @@ pub(crate) async fn refresh_commit_checks(
             .requests_testing_github_commit(&connection.repository_id, commit_oid)
             .await?;
         if associated.is_empty() {
-            state.publish_request_summary_refresh(
+            state.after_commit([AfterCommit::request_summary(
                 &incarnation,
                 RepoChangeReason::RequestChecksUpdated,
-            );
+            )]);
         }
         for request in associated {
-            state.publish_known_request_state_refresh(&incarnation, &request);
+            state.after_commit([AfterCommit::request_state(&incarnation, &request)]);
         }
     }
-    state.wakeups.auto_merge.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::AutoMerge)]);
     Ok(())
 }
 

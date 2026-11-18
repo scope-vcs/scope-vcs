@@ -1,3 +1,4 @@
+mod after_commit;
 pub mod app;
 mod background_work;
 pub mod maintenance_http;

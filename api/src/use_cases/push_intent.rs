@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     error::ApiError,
     persistence::unix_now,
@@ -234,11 +235,11 @@ async fn apply_reviewed_config_before_push(
             .git_push_state(owner, repo_name, user_id)
             .await?
             .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
-        state.publish_repo_change(
+        state.after_commit([AfterCommit::repo_change(
             &repo.incarnation,
             repo.change_version,
             RepoChangeReason::ConfigApplied,
-        );
+        )]);
     }
     Ok(())
 }

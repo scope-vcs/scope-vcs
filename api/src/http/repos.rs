@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     auth::{
         scope::{optional_scope_user, require_scope_user},
@@ -140,7 +141,11 @@ pub(crate) async fn delete_repo(
         .repositories()
         .delete_repo(&owner, &repo_name, &incarnation, &user.id, unix_now()?)
         .await?;
-    state.publish_repo_change(&incarnation, delete_version, RepoChangeReason::RepoDeleted);
+    state.after_commit([AfterCommit::repo_change(
+        &incarnation,
+        delete_version,
+        RepoChangeReason::RepoDeleted,
+    )]);
 
     crate::use_cases::content_cleanup::best_effort_drain_pending_repo_storage_deletions(&state)
         .await;

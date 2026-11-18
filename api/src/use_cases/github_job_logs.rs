@@ -1,4 +1,5 @@
 use super::github_workflow_jobs::publish;
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::repo_events::{RepoChangeEvent, RepoChangeKind};
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
@@ -163,7 +164,7 @@ async fn queue(state: &AppState, github_job_ids: &[u64], now_unix: u64) -> Resul
         .repositories()
         .queue_github_job_log_reads(github_job_ids, now_unix)
         .await?;
-    state.wakeups.github_job_logs.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::GitHubJobLogs)]);
     Ok(())
 }
 

@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     error::ApiError, persistence::unix_now, persistence_ids::generate_prefixed_id,
     repo_events::RepoChangeReason, state::AppState,
@@ -39,17 +40,17 @@ pub(crate) async fn close_request(
             (RequestCloseOutcome::Closed, RepoChangeReason::RequestClosed)
         }
     };
-    state
-        .product_analytics
-        .capture(ProductEvent::request_closed(
+    state.after_commit([
+        AfterCommit::Analytics(ProductEvent::request_closed(
             user_id,
             repo.incarnation().incarnation_id(),
             &request.id,
             request.view.clone(),
             request_actor_role(repo.access.clone()),
             outcome,
-        ));
-    state.publish_request_summary_refresh(&repo.incarnation(), reason);
+        )),
+        AfterCommit::request_summary(&repo.incarnation(), reason),
+    ]);
     Ok(mutation)
 }
 

@@ -7,6 +7,7 @@ use super::responses::{
     SetGitHubReviewRequestCommentRequest, SetGitHubRunImportCountRequest,
     github_connection_response, github_repository_response, github_workflow_run_response,
 };
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
@@ -183,8 +184,10 @@ pub(crate) async fn connect_github_repository(
             },
         )
         .await?;
-    state.wakeups.github_pushes.notify_one();
-    state.wakeups.github_run_imports.notify_one();
+    state.after_commit([
+        AfterCommit::Wake(Wakeup::GitHubPushes),
+        AfterCommit::Wake(Wakeup::GitHubRunImports),
+    ]);
     changed(&state, &context, &incarnation).await
 }
 
@@ -240,7 +243,7 @@ pub(crate) async fn set_github_review_bots(
                 .collect(),
         )
         .await?;
-    state.wakeups.github_review_imports.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::GitHubReviewImports)]);
     changed(&state, &context, &incarnation).await
 }
 
@@ -261,7 +264,7 @@ pub(crate) async fn set_github_review_bot_pull_requests(
             unix_now()?,
         )
         .await?;
-    state.wakeups.github_pull_requests.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::GitHubPullRequests)]);
     changed(&state, &context, &incarnation).await
 }
 
@@ -291,7 +294,7 @@ pub(crate) async fn confirm_public_github_repository(
         .repositories()
         .acknowledge_public_github_repository(&context.record.id, &user_id)
         .await?;
-    state.wakeups.github_pushes.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::GitHubPushes)]);
     changed(&state, &context, &incarnation).await
 }
 
@@ -323,7 +326,7 @@ pub(crate) async fn set_github_main_publication(
         .set_github_main_publication(&context.record.id, &user_id, input.enabled, unix_now()?)
         .await?;
     if queued {
-        state.wakeups.github_pushes.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::GitHubPushes)]);
     }
     changed(&state, &context, &incarnation).await
 }
@@ -340,7 +343,7 @@ pub(crate) async fn start_github_run_import(
         .repositories()
         .start_github_run_import(&context.record.id, &user_id, unix_now()?)
         .await?;
-    state.wakeups.github_run_imports.notify_one();
+    state.after_commit([AfterCommit::Wake(Wakeup::GitHubRunImports)]);
     changed(&state, &context, &incarnation).await
 }
 
@@ -557,5 +560,8 @@ async fn connection_response(
 }
 
 fn publish_connection_change(state: &AppState, incarnation: &RepositoryIncarnation) {
-    state.publish_request_summary_refresh(incarnation, RepoChangeReason::GitHubConnectionChanged);
+    state.after_commit([AfterCommit::request_summary(
+        incarnation,
+        RepoChangeReason::GitHubConnectionChanged,
+    )]);
 }

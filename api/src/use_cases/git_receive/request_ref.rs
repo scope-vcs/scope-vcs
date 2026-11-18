@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     error::ApiError,
     git::{
@@ -471,15 +472,15 @@ pub(super) async fn persist_request_ref_revision(
         .await;
     match mutation {
         Ok(mutation) => {
-            state
-                .product_analytics
-                .capture(ProductEvent::request_revised(
+            state.after_commit([
+                AfterCommit::Analytics(ProductEvent::request_revised(
                     actor_user_id,
                     incarnation.incarnation_id(),
                     &request.id,
                     request_view,
-                ));
-            state.publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised);
+                )),
+                AfterCommit::request_summary(&incarnation, RepoChangeReason::RequestRevised),
+            ]);
 
             retain_staged_pool_pack(
                 state,

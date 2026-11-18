@@ -2,6 +2,7 @@ use super::{
     PreparedRequestMerge, RequestMergeFailure,
     tree::{MergeMainFailure, merge_main_oid_for_execution},
 };
+use crate::after_commit::AfterCommit;
 use crate::{
     error::ApiError,
     git::{
@@ -331,10 +332,10 @@ pub(super) async fn record_integration_conflict(
         .await
     {
         Ok(_) => {
-            state.publish_request_summary_refresh(
+            state.after_commit([AfterCommit::request_summary(
                 &committed.incarnation(),
                 RepoChangeReason::RequestStackUpdated,
-            );
+            )]);
             Ok(())
         }
         Err(error) if error.kind == scope_postgres::error::PostgresErrorKind::Conflict => Ok(()),

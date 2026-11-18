@@ -1,3 +1,4 @@
+use crate::after_commit::AfterCommit;
 use crate::{
     auth::scope::require_scope_user, error::ApiError, persistence::unix_now,
     repo_events::RepoChangeReason, state::AppState,
@@ -31,7 +32,11 @@ pub(crate) async fn update_repo_metadata(
     let (incarnation, version) = (repo.incarnation(), repo.record.change_version);
     tx.save(repo, RepositoryMutation::new(()), now_unix).await?;
     if changed {
-        state.publish_repo_change(&incarnation, version, RepoChangeReason::MetadataUpdated);
+        state.after_commit([AfterCommit::repo_change(
+            &incarnation,
+            version,
+            RepoChangeReason::MetadataUpdated,
+        )]);
     }
     let summary = state
         .metadata

@@ -6,6 +6,7 @@ use super::{
     },
     retries_preparation,
 };
+use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{error::ApiError, state::AppState};
 use persist::{Persisted, persist_batch};
 use scope_domain::{
@@ -241,7 +242,7 @@ async fn lead(state: AppState, repository_id: String) {
         }
         let retry = drain(&state, &repository_id, batch).await;
         turn.release().await;
-        state.wakeups.auto_merge.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::AutoMerge)]);
         state.merge_committer.requeue(&repository_id, retry);
     }
 }
@@ -287,7 +288,7 @@ async fn drain(state: &AppState, repository_id: &str, batch: Vec<QueuedMerge>) -
         } else {
             persist_while_preparing(state, repository_id, ready, &proposed, &mut staging).await
         };
-        state.wakeups.auto_merge.notify_one();
+        state.after_commit([AfterCommit::Wake(Wakeup::AutoMerge)]);
         if !all_landed {
             let mut retry = retry;
             if let Some(next) = next {

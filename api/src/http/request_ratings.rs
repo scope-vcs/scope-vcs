@@ -1,4 +1,5 @@
 use super::requests::{actor_request, repo_metadata_and_access, visible_request};
+use crate::after_commit::AfterCommit;
 use crate::{
     auth::viewer::Viewer, error::ApiError, persistence::unix_now, repo_events::RepoChangeReason,
     state::AppState,
@@ -51,14 +52,16 @@ pub(crate) async fn create_request_rating(
             now_unix: unix_now()?,
         })
         .await?;
-    state.product_analytics.capture(ProductEvent::request_rated(
-        &user.id,
-        &repo.record.incarnation_id,
-        &request.id,
-        request.view,
-        rating.score,
-    ));
-    state.publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestRated);
+    state.after_commit([
+        AfterCommit::Analytics(ProductEvent::request_rated(
+            &user.id,
+            &repo.record.incarnation_id,
+            &request.id,
+            request.view,
+            rating.score,
+        )),
+        AfterCommit::request_summary(&repo.incarnation(), RepoChangeReason::RequestRated),
+    ]);
     let users = state
         .metadata
         .auth()
