@@ -23,7 +23,13 @@ fn explicit_base_publication_transitions_between_main_and_different_parents() {
         },
         ..publication_input(&original)
     };
-    let stacked = record_request_revision(original.clone(), false, input).unwrap();
+    let stacked = record_request_revision(
+        original.clone(),
+        crate::requests::fixtures::owner_actor(),
+        false,
+        input,
+    )
+    .unwrap();
     assert_eq!(stacked.request.base, selected);
     assert_eq!(stacked.request.stack_depth, 3);
     assert_eq!(
@@ -40,6 +46,7 @@ fn explicit_base_publication_transitions_between_main_and_different_parents() {
     let replacement = selected_parent("replacement-parent");
     let reparented = record_request_revision(
         rewritten.clone(),
+        crate::requests::fixtures::owner_actor(),
         false,
         RecordRequestRevisionInput {
             new_base: Some(replacement.clone()),
@@ -70,6 +77,7 @@ fn explicit_base_publication_transitions_between_main_and_different_parents() {
     };
     let main = record_request_revision(
         blocked.clone(),
+        crate::requests::fixtures::owner_actor(),
         false,
         RecordRequestRevisionInput {
             new_base: Some(selected_main.clone()),
@@ -109,6 +117,7 @@ fn selecting_a_different_parent_recovers_old_parent_blocks_without_rewriting_the
         blocked.stack_status = status;
         let reparented = record_request_revision(
             blocked.clone(),
+            crate::requests::fixtures::owner_actor(),
             false,
             RecordRequestRevisionInput {
                 new_base: Some(selected.clone()),
@@ -149,6 +158,7 @@ fn explicit_parent_publication_requires_validated_depth_and_main_ancestry() {
     for depth in [None, Some(0), Some(1), Some(REQUEST_STACK_MAX_DEPTH + 1)] {
         let error = record_request_revision(
             request.clone(),
+            crate::requests::fixtures::owner_actor(),
             false,
             RecordRequestRevisionInput {
                 new_base_stack_depth: depth,
@@ -164,7 +174,13 @@ fn explicit_parent_publication_requires_validated_depth_and_main_ancestry() {
     for view in [ViewId::public(), crate::requests::fixtures::agent()] {
         let mut restricted = request.clone();
         restricted.view = view;
-        let published = record_request_revision(restricted.clone(), false, valid.clone()).unwrap();
+        let published = record_request_revision(
+            restricted.clone(),
+            crate::requests::fixtures::owner_actor(),
+            false,
+            valid.clone(),
+        )
+        .unwrap();
         assert_eq!(published.request.view, restricted.view);
         assert_eq!(
             published.request.stack_status,
@@ -175,6 +191,7 @@ fn explicit_parent_publication_requires_validated_depth_and_main_ancestry() {
         assert_eq!(
             record_request_revision(
                 request.clone(),
+                crate::requests::fixtures::owner_actor(),
                 false,
                 RecordRequestRevisionInput {
                     git_facts: RequestRevisionGitFacts {
@@ -205,6 +222,7 @@ fn explicit_parent_publication_requires_validated_depth_and_main_ancestry() {
         assert_eq!(
             record_request_revision(
                 request.clone(),
+                crate::requests::fixtures::owner_actor(),
                 false,
                 RecordRequestRevisionInput {
                     new_base: Some(base),
@@ -232,6 +250,7 @@ fn explicit_main_publication_requires_the_selected_containing_main_fact() {
         assert_eq!(
             record_request_revision(
                 request.clone(),
+                crate::requests::fixtures::owner_actor(),
                 false,
                 RecordRequestRevisionInput {
                     new_base: Some(selected.clone()),
@@ -251,6 +270,7 @@ fn explicit_main_publication_requires_the_selected_containing_main_fact() {
     assert_eq!(
         record_request_revision(
             request.clone(),
+            crate::requests::fixtures::owner_actor(),
             false,
             RecordRequestRevisionInput {
                 new_base: None,
@@ -265,6 +285,7 @@ fn explicit_main_publication_requires_the_selected_containing_main_fact() {
     assert_eq!(
         record_request_revision(
             request.clone(),
+            crate::requests::fixtures::owner_actor(),
             false,
             RecordRequestRevisionInput {
                 new_base: Some(selected),
@@ -288,13 +309,23 @@ fn explicit_unchanged_review_context_cannot_clear_a_block_or_create_a_revision()
         ..publication_input(&blocked)
     };
     assert_eq!(
-        record_request_revision(blocked.clone(), false, unchanged.clone())
-            .unwrap_err()
-            .message,
+        record_request_revision(
+            blocked.clone(),
+            crate::requests::fixtures::owner_actor(),
+            false,
+            unchanged.clone()
+        )
+        .unwrap_err()
+        .message,
         "revision context requires a changed review base"
     );
-    let ordinary =
-        record_request_revision(blocked.clone(), false, publication_input(&blocked)).unwrap();
+    let ordinary = record_request_revision(
+        blocked.clone(),
+        crate::requests::fixtures::owner_actor(),
+        false,
+        publication_input(&blocked),
+    )
+    .unwrap();
     assert_eq!(
         ordinary.request.stack_status,
         RequestStackStatus::IntegrationConflict
@@ -302,6 +333,7 @@ fn explicit_unchanged_review_context_cannot_clear_a_block_or_create_a_revision()
     assert_eq!(ordinary.request.base_version, blocked.base_version);
     let repaired = record_request_revision(
         blocked.clone(),
+        crate::requests::fixtures::owner_actor(),
         false,
         RecordRequestRevisionInput {
             new_head_oid: "repaired-head".into(),

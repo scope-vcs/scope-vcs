@@ -9,8 +9,7 @@ use {
         repository::access::RepositoryActor,
         repository::{RepoLifecycleState, access::RepositoryAccessContext},
         requests::{
-            Request, RequestActorRole, RequestPolicyDecision, RequestViewer, StartRequestInput,
-            request_policy,
+            Request, RequestActor, RequestActorRole, RequestPolicyDecision, StartRequestInput,
         },
     },
 };
@@ -48,13 +47,25 @@ pub(super) async fn request_policy_for_user<C>(
 where
     C: sea_orm::ConnectionTrait,
 {
-    let is_invitee =
-        super::request_invitees::request_is_invitee(conn, &request.id, user_id).await?;
-    Ok(request_policy(
-        request,
-        RequestViewer::new(repo.access.clone(), Some(user_id), is_invitee),
-        &repo.views,
-    ))
+    Ok(request_actor(conn, repo, request, user_id)
+        .await?
+        .policy(request, user_id))
+}
+
+pub(super) async fn request_actor<'a, C>(
+    conn: &C,
+    repo: &'a RepositoryAccessContext,
+    request: &Request,
+    user_id: &str,
+) -> Result<RequestActor<'a>, PostgresError>
+where
+    C: sea_orm::ConnectionTrait,
+{
+    Ok(RequestActor {
+        access: &repo.access,
+        is_invitee: super::request_invitees::request_is_invitee(conn, &request.id, user_id).await?,
+        views: &repo.views,
+    })
 }
 
 pub(super) async fn ensure_user_exists<C>(conn: &C, user_id: &str) -> Result<(), PostgresError>

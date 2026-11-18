@@ -2,7 +2,7 @@ use super::{
     RequestStore, SubmitRequestCommand,
     github_pull_requests::queue_carrier_for_pushed_head,
     github_pushes::latest_github_push,
-    request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
+    request_access::{ensure_user_exists, lock_request_repository, request_actor},
     request_lifecycle_effects::persist_lifecycle_mutation,
 };
 use sea_orm::{DatabaseTransaction, TransactionTrait};
@@ -25,19 +25,14 @@ impl RequestStore {
         let tx = self.db.begin().await?;
         let (repo, request) =
             lock_submission_context(&tx, &command.actor_user_id, &command.request_id).await?;
-        let actor_can_submit =
-            request_policy_for_user(&tx, &repo, &request, &command.actor_user_id)
-                .await?
-                .permissions
-                .can_submit;
+        let actor = request_actor(&tx, &repo, &request, &command.actor_user_id).await?;
         let now_unix = command.now_unix;
         let mutation = submit_request(
             &request,
+            actor,
             SubmitRequestInput {
                 request_id: command.request_id,
-                actor_is_author: request.is_author(&command.actor_user_id),
                 actor_user_id: command.actor_user_id,
-                actor_can_submit,
                 event_id: command.event_id,
                 now_unix,
             },

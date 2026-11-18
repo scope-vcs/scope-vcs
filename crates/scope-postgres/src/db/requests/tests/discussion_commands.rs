@@ -138,7 +138,6 @@ async fn line_anchor_columns_are_all_set_or_all_null() {
             new_base_stack_depth: None,
             request_id: "req_1".into(),
             actor_user_id: "user_public".into(),
-            actor_can_edit: true,
             expected_old_head_oid: Some("head".into()),
             new_head_oid: "head_lines".into(),
             git_facts: RequestRevisionGitFacts {

@@ -8,7 +8,9 @@ use super::{
 };
 use crate::{
     db::{
-        request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
+        request_access::{
+            ensure_user_exists, lock_request_repository, request_actor, request_policy_for_user,
+        },
         request_media::access::cleanup_tombstone_exists,
     },
     error::{PostgresError, PostgresErrorKind},
@@ -30,7 +32,8 @@ impl MediaStore {
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
+        let actor = request_actor(&tx, &repo, &request, &command.actor_user_id).await?;
+        let policy = actor.policy(&request, &command.actor_user_id);
         let actor_can_write_target =
             target_is_writable(&tx, &command.request_id, &command.target, &policy).await?;
 
@@ -89,25 +92,27 @@ impl MediaStore {
         )
         .await?;
         let usage = media_usage(&tx, &repo.record.id, Some(&command.request_id), None).await?;
-        let decision = validate_prepare_attachment(PrepareRequestAttachmentInput {
-            attachment_id: command.attachment_id,
-            repository_id: repo.record.id.clone(),
-            request_id: command.request_id,
-            uploader_user_id: command.actor_user_id,
-            upload_id: command.upload_id,
-            operation_id: command.operation_id,
-            target: command.target,
-            filename: command.filename,
-            declared_media_type: command.declared_media_type,
-            size_bytes: command.size_bytes,
-            sha256: command.sha256,
-            actor_can_write_target,
-            request_is_open: !request.is_terminal(),
-            target_attachment_count,
-            request_source_bytes: usage.request_source_bytes,
-            repository_reserved_bytes: usage.repository_bytes,
-            now_unix: command.now_unix,
-        })?;
+        let decision = validate_prepare_attachment(
+            &request,
+            actor,
+            PrepareRequestAttachmentInput {
+                attachment_id: command.attachment_id,
+                repository_id: repo.record.id.clone(),
+                request_id: command.request_id,
+                uploader_user_id: command.actor_user_id,
+                upload_id: command.upload_id,
+                operation_id: command.operation_id,
+                target: command.target,
+                filename: command.filename,
+                declared_media_type: command.declared_media_type,
+                size_bytes: command.size_bytes,
+                sha256: command.sha256,
+                target_attachment_count,
+                request_source_bytes: usage.request_source_bytes,
+                repository_reserved_bytes: usage.repository_bytes,
+                now_unix: command.now_unix,
+            },
+        )?;
         insert_prepared_attachment(
             &tx,
             &decision.attachment,

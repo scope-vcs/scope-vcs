@@ -4,7 +4,9 @@ use super::request_discussion_commands::{
 };
 use super::{
     RequestStore,
-    request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
+    request_access::{
+        ensure_user_exists, lock_request_repository, request_actor, request_policy_for_user,
+    },
     request_discussion_actors::{DiscussionActorIds, RequestDiscussionActors},
     request_discussion_rows::{
         DiscussionPageFilter, RequestDiscussionReplyReadModel,
@@ -309,13 +311,13 @@ impl RequestStore {
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
+        let actor = request_actor(&tx, &repo, &request, &command.actor_user_id).await?;
+        let policy = actor.policy(&request, &command.actor_user_id);
         let now_unix = command.now_unix;
         let input = CreateRequestDiscussionInput {
             request_id: command.request_id,
             id: command.id,
             actor_user_id: command.actor_user_id,
-            actor_can_participate: policy.permissions.can_open_discussion,
             client_discussion_id: command.client_discussion_id,
             body_markdown: command.body_markdown,
             anchor: command.anchor,
@@ -357,7 +359,7 @@ impl RequestStore {
 
         let discussion_id_exists = discussion_by_id(&tx, &input.id).await?.is_some();
         let actor_user_id = input.actor_user_id.clone();
-        let mutation = create_request_discussion(request, discussion_id_exists, input)?;
+        let mutation = create_request_discussion(request, actor, discussion_id_exists, input)?;
         save_request_row(&tx, &mutation.request).await?;
         insert_discussion(&tx, &mutation.discussion).await?;
         save_read_state(&tx, &mutation.read_state).await?;
@@ -409,30 +411,32 @@ impl RequestStore {
         let tx = self.db.begin().await?;
         let (repo, request) = lock_request_repository(&tx, &request_id, &actor_user_id).await?;
         ensure_user_exists(&tx, &actor_user_id).await?;
-        let policy = request_policy_for_user(&tx, &repo, &request, &actor_user_id).await?;
-        if !policy.discussion_visible {
+        let request_actor = request_actor(&tx, &repo, &request, &actor_user_id).await?;
+        if !request_actor
+            .policy(&request, &actor_user_id)
+            .discussion_visible
+        {
             return Err(PostgresError::not_found("request not found"));
         }
         let discussion = discussion_by_id(&tx, &discussion_id)
             .await?
             .filter(|discussion| discussion.request_id == request_id)
             .ok_or_else(|| PostgresError::not_found("request discussion not found"))?;
-        let actor_is_maintainer = repo.access.is_maintainer();
         let actor = actor_user_id.clone();
         let input = RequestDiscussionTransitionInput {
             request_id,
             discussion_id,
             actor_user_id,
-            actor_is_maintainer,
-            actor_can_transition: policy.permissions.can_transition_discussion,
             event_id,
             now_unix,
         };
         let mutation = match transition {
             DiscussionTransition::Resolve => {
-                resolve_request_discussion(request, discussion, input)?
+                resolve_request_discussion(request, request_actor, discussion, input)?
             }
-            DiscussionTransition::Reopen => reopen_request_discussion(request, discussion, input)?,
+            DiscussionTransition::Reopen => {
+                reopen_request_discussion(request, request_actor, discussion, input)?
+            }
         };
         save_request_row(&tx, &mutation.request).await?;
         save_discussion(&tx, &mutation.discussion).await?;
@@ -492,15 +496,12 @@ impl RequestStore {
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        let actor_is_maintainer = repo.access.is_maintainer();
+        let actor = request_actor(&tx, &repo, &request, &command.actor_user_id).await?;
+        let policy = actor.policy(&request, &command.actor_user_id);
         let wait_after_reply = command.wait_after_reply;
         let now_unix = command.now_unix;
         if reopen_event_id.is_some() {
-            ensure_request_discussion_transition_allowed(
-                &request,
-                policy.permissions.can_transition_discussion,
-            )?;
+            ensure_request_discussion_transition_allowed(&request, actor, &command.actor_user_id)?;
         }
         let discussion = discussion_by_id(&tx, &command.discussion_id)
             .await?
@@ -543,6 +544,7 @@ impl RequestStore {
         let mutation = match reopen_event_id {
             Some(event_id) => reopen_and_reply_to_request_discussion(
                 request,
+                actor,
                 discussion,
                 quoted_reply.as_ref(),
                 ReopenAndReplyToRequestDiscussionInput {
@@ -550,9 +552,6 @@ impl RequestStore {
                     discussion_id: command.discussion_id,
                     reply_id: command.id,
                     actor_user_id: command.actor_user_id,
-                    actor_is_maintainer,
-                    actor_can_transition: policy.permissions.can_transition_discussion,
-                    actor_can_participate: policy.permissions.can_reply_to_discussion,
                     event_id,
                     client_reply_id: command.client_reply_id,
                     body_markdown: command.body_markdown,
@@ -564,6 +563,7 @@ impl RequestStore {
                 let reply_id_exists = reply_by_id(&tx, &command.id).await?.is_some();
                 create_request_discussion_reply(
                     request,
+                    actor,
                     discussion,
                     quoted_reply.as_ref(),
                     reply_id_exists,
@@ -572,7 +572,6 @@ impl RequestStore {
                         discussion_id: command.discussion_id,
                         id: command.id,
                         actor_user_id: command.actor_user_id,
-                        actor_can_participate: policy.permissions.can_reply_to_discussion,
                         client_reply_id: command.client_reply_id,
                         body_markdown: command.body_markdown,
                         reply_to_reply_id: command.reply_to_reply_id,
@@ -601,7 +600,7 @@ impl RequestStore {
                 &tx,
                 &mutation.request,
                 &actor_user_id,
-                actor_is_maintainer,
+                repo.access.is_maintainer(),
                 mutation.reply.position,
                 mutation.reply.created_at_unix,
             )

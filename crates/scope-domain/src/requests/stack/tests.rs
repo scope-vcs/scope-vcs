@@ -51,7 +51,6 @@ fn publication_input(request: &Request) -> RecordRequestRevisionInput {
         new_base_stack_depth: None,
         request_id: request.id.clone(),
         actor_user_id: "author".into(),
-        actor_can_edit: true,
         expected_old_head_oid: Some(request.head_oid.clone()),
         new_head_oid: request.head_oid.clone(),
         git_facts: RequestRevisionGitFacts {
@@ -296,7 +295,13 @@ fn ordinary_child_push_retains_pin_and_explicit_repin_records_same_head() {
     let child = child(&parent);
     let mut input = publication_input(&child);
     input.git_facts.contained_main_oid = Some("new-main".into());
-    let push = record_request_revision(child.clone(), false, input.clone()).unwrap();
+    let push = record_request_revision(
+        child.clone(),
+        crate::requests::fixtures::owner_actor(),
+        false,
+        input.clone(),
+    )
+    .unwrap();
     assert_eq!(push.request.base, child.base);
     assert_eq!(push.request.main_ancestor_oid, "new-main");
     let new_base = RequestBase::Request {
@@ -306,6 +311,7 @@ fn ordinary_child_push_retains_pin_and_explicit_repin_records_same_head() {
     };
     let repin = record_request_revision(
         child.clone(),
+        crate::requests::fixtures::owner_actor(),
         false,
         RecordRequestRevisionInput {
             new_base: Some(new_base.clone()),
@@ -509,7 +515,13 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
         .is_err()
     );
     let input = publication_input(&marked.request);
-    let unchanged = record_request_revision(marked.request.clone(), false, input.clone()).unwrap();
+    let unchanged = record_request_revision(
+        marked.request.clone(),
+        crate::requests::fixtures::owner_actor(),
+        false,
+        input.clone(),
+    )
+    .unwrap();
     assert_eq!(
         unchanged.request.stack_status,
         RequestStackStatus::IntegrationConflict
@@ -517,6 +529,7 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
     let new_head = "cccccccccccccccccccccccccccccccccccccccc";
     let repaired = record_request_revision(
         marked.request,
+        crate::requests::fixtures::owner_actor(),
         false,
         RecordRequestRevisionInput {
             new_base: None,
@@ -629,13 +642,20 @@ fn main_update_block_survives_unchanged_publication_and_clears_on_repaired_head(
         request.view = view;
         request.stack_status = RequestStackStatus::NeedsMainUpdate;
         let input = publication_input(&request);
-        let unchanged = record_request_revision(request.clone(), false, input.clone()).unwrap();
+        let unchanged = record_request_revision(
+            request.clone(),
+            crate::requests::fixtures::owner_actor(),
+            false,
+            input.clone(),
+        )
+        .unwrap();
         assert_eq!(
             unchanged.request.stack_status,
             RequestStackStatus::NeedsMainUpdate
         );
         let repaired = record_request_revision(
             request,
+            crate::requests::fixtures::owner_actor(),
             false,
             RecordRequestRevisionInput {
                 new_head_oid: "repaired-head".into(),

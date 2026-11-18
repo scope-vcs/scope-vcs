@@ -451,7 +451,6 @@ pub(super) async fn persist_request_ref_revision(
             RecordRequestRevisionInput {
                 request_id: request.id.clone(),
                 actor_user_id: actor_user_id.to_string(),
-                actor_can_edit: false,
                 expected_old_head_oid,
                 new_head_oid: update.new_head_oid.clone(),
                 new_base: base_publication.map(|headers| headers.base),

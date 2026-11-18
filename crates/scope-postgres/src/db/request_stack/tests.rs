@@ -60,7 +60,6 @@ fn input(request: &Request, head: &str, event: &str, now: u64) -> RecordRequestR
         new_base_stack_depth: None,
         request_id: request.id.clone(),
         actor_user_id: "user_owner".into(),
-        actor_can_edit: true,
         expected_old_head_oid: Some(request.head_oid.clone()),
         new_head_oid: head.into(),
         git_facts: RequestRevisionGitFacts {

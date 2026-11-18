@@ -147,7 +147,6 @@ pub(super) async fn record_github_checks(
             new_base_stack_depth: None,
             request_id: request.id.clone(),
             actor_user_id: test_owner_id(),
-            actor_can_edit: true,
             expected_old_head_oid: Some(request.head_oid.clone()),
             new_head_oid: head.into(),
             git_facts: scope_domain::requests::RequestRevisionGitFacts {

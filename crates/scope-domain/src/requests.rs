@@ -39,9 +39,10 @@ pub use merge_gate::{
 };
 mod access;
 pub use access::{
-    REQUEST_BRANCH_MUTABLE_STATES, RequestListPredicate, RequestPermissions, RequestPolicyDecision,
-    RequestViewer, request_actor_role, request_list_mergeability, request_list_predicate,
-    request_mergeability, request_policy, request_visible_to_every_maintainer,
+    REQUEST_BRANCH_MUTABLE_STATES, RequestActor, RequestListPredicate, RequestPermissions,
+    RequestPolicyDecision, RequestViewer, request_actor_role, request_list_mergeability,
+    request_list_predicate, request_mergeability, request_policy,
+    request_visible_to_every_maintainer,
 };
 mod auto_merge;
 pub use auto_merge::{

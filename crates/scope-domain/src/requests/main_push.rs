@@ -1,9 +1,9 @@
 use super::{
-    AuthorizeRequestAutoMergeInput, RecordRequestRevisionInput, Request, RequestAutoMergeIntent,
-    RequestEvent, RequestRevision, RequestRevisionGitFacts, RequestViewer, StartRequestFacts,
-    StartRequestInput, StartRequestMutation, SubmitRequestInput, authorize_request_auto_merge,
-    lifecycle::open_request, record_request_revision, request_actor_role, request_policy,
-    submit_request,
+    AuthorizeRequestAutoMergeInput, RecordRequestRevisionInput, Request, RequestActor,
+    RequestAutoMergeIntent, RequestEvent, RequestRevision, RequestRevisionGitFacts,
+    StartRequestFacts, StartRequestInput, StartRequestMutation, SubmitRequestInput,
+    authorize_request_auto_merge, lifecycle::open_request, record_request_revision,
+    request_actor_role, submit_request,
 };
 use crate::{
     error::DomainError,
@@ -219,15 +219,20 @@ pub fn start_main_push_request(
         &input.head_oid,
         views,
     )?;
+    let actor = RequestActor {
+        access,
+        is_invitee: false,
+        views,
+    };
     let revised = record_request_revision(
         started.request,
+        actor,
         false,
         RecordRequestRevisionInput {
             new_base: None,
             new_base_stack_depth: None,
             request_id: input.id.clone(),
             actor_user_id: input.pusher_user_id.clone(),
-            actor_can_edit: true,
             expected_old_head_oid: None,
             new_head_oid: input.head_oid.clone(),
             git_facts: input.git_facts,
@@ -238,24 +243,17 @@ pub fn start_main_push_request(
     )?;
     let submitted = submit_request(
         &revised.request,
+        actor,
         SubmitRequestInput {
             request_id: input.id.clone(),
             actor_user_id: input.pusher_user_id.clone(),
-            actor_is_author: true,
-            actor_can_submit: true,
             event_id: input.submitted_event_id,
             now_unix: input.now_unix,
         },
     )?;
-    let pusher_can_merge = request_policy(
-        &submitted.request,
-        RequestViewer::new(access.clone(), Some(&input.pusher_user_id), false),
-        views,
-    )
-    .permissions
-    .can_merge;
     let auto_merge = authorize_request_auto_merge(
         &submitted.request,
+        actor,
         &revised.revision,
         None,
         AuthorizeRequestAutoMergeInput {
@@ -264,7 +262,6 @@ pub fn start_main_push_request(
             repository_incarnation_id: input.repository_incarnation_id,
             request_id: input.id,
             actor_user_id: input.pusher_user_id,
-            actor_can_merge: pusher_can_merge,
             readiness: super::RequestAutoMergeReadiness::Waiting(
                 super::RequestAutoMergeWaitingReason::CheckEvaluationMissing,
             ),

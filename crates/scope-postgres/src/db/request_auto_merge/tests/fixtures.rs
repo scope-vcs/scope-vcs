@@ -33,7 +33,6 @@ pub(super) async fn open_request_with_revision(store: &crate::db::MetadataStore)
             new_base_stack_depth: None,
             request_id: "req_1".into(),
             actor_user_id: "user_public".into(),
-            actor_can_edit: true,
             expected_old_head_oid: Some("head".into()),
             new_head_oid: "a".repeat(40),
             git_facts: RequestRevisionGitFacts {

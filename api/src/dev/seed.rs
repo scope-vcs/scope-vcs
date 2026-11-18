@@ -462,12 +462,19 @@ fn seed_owner_request(
     catalog
         .request_events
         .insert(started.event.id.clone(), started.event);
+    let views = Views::builtin();
+    let access = scope_domain::repository::access::RepositoryAccess::full_view_reader(&views);
+    let actor = scope_domain::requests::RequestActor {
+        access: &access,
+        is_invitee: false,
+        views: &views,
+    };
     let uploaded = record_working_request_upload(
         started.request,
+        actor,
         RecordWorkingRequestUploadInput {
             request_id: id.to_string(),
             actor_user_id: owner.id.clone(),
-            actor_can_edit: true,
             expected_old_head_oid: None,
             new_head_oid: head_oid.clone(),
             now_unix: now_unix + 1,
@@ -478,11 +485,11 @@ fn seed_owner_request(
         let event_id = format!("event_{id}_identity_edited");
         let mutation = edit_request_identity(
             request,
+            actor,
             catalog.request_events.contains_key(&event_id),
             EditRequestIdentityInput {
                 request_id: id.to_string(),
                 actor_user_id: owner.id.clone(),
-                actor_can_edit_identity: true,
                 event_id,
                 title: None,
                 description_markdown: Some(description_markdown.to_string()),
@@ -502,13 +509,13 @@ fn seed_owner_request(
         let event_id = format!("event_{id}_revision_{}", index + 1);
         let mutation = record_request_revision(
             request,
+            actor,
             catalog.request_events.contains_key(&event_id),
             RecordRequestRevisionInput {
                 new_base: None,
                 new_base_stack_depth: None,
                 request_id: id.to_string(),
                 actor_user_id: owner.id.clone(),
-                actor_can_edit: true,
                 expected_old_head_oid: Some(current_head_oid),
                 new_head_oid: revision.head_oid.clone(),
                 git_facts: RequestRevisionGitFacts {

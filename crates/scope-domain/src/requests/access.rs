@@ -26,6 +26,27 @@ impl<'a> RequestViewer<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct RequestActor<'a> {
+    pub access: &'a RepositoryAccess,
+    pub is_invitee: bool,
+    pub views: &'a Views,
+}
+
+impl RequestActor<'_> {
+    pub fn policy(self, request: &Request, user_id: &str) -> RequestPolicyDecision {
+        request_policy(
+            request,
+            RequestViewer::new(self.access.clone(), Some(user_id), self.is_invitee),
+            self.views,
+        )
+    }
+
+    pub fn permissions(self, request: &Request, user_id: &str) -> RequestPermissions {
+        self.policy(request, user_id).permissions
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RequestPermissions {
     pub can_open_discussion: bool,

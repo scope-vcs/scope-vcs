@@ -9,7 +9,10 @@ use super::{
         REQUEST_ATTACHMENT_ID_MAX_BYTES, request_attachment_references, validate_attachment_id,
     },
 };
-use crate::{error::DomainError, requests::validate_required};
+use crate::{
+    error::DomainError,
+    requests::{Request, RequestActor, validate_required},
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug)]
@@ -25,8 +28,6 @@ pub struct PrepareRequestAttachmentInput {
     pub declared_media_type: String,
     pub size_bytes: u64,
     pub sha256: String,
-    pub actor_can_write_target: bool,
-    pub request_is_open: bool,
     pub target_attachment_count: usize,
     pub request_source_bytes: u64,
     pub repository_reserved_bytes: u64,
@@ -41,6 +42,8 @@ pub struct PrepareRequestAttachmentDecision {
 }
 
 pub fn validate_prepare_attachment(
+    request: &Request,
+    actor: RequestActor<'_>,
     input: PrepareRequestAttachmentInput,
 ) -> Result<PrepareRequestAttachmentDecision, DomainError> {
     let limits = RequestAttachmentLimits::default();
@@ -58,12 +61,15 @@ pub fn validate_prepare_attachment(
     validate_identifier("operation id", &input.operation_id)?;
     validate_filename(&input.filename)?;
     validate_target(&input.target)?;
-    if !input.actor_can_write_target {
+    if !input
+        .target
+        .writable_with(&actor.permissions(request, &input.uploader_user_id))
+    {
         return Err(DomainError::forbidden(
             "request attachment target write access required",
         ));
     }
-    if !input.request_is_open {
+    if request.is_terminal() {
         return Err(DomainError::conflict(
             "request attachments require a writable request",
         ));
@@ -359,10 +365,15 @@ pub fn validate_processing_failure(
 
 pub fn retry_attachment_processing(
     attachment: &RequestAttachment,
-    actor_can_write_target: bool,
+    request: &Request,
+    actor: RequestActor<'_>,
+    actor_user_id: &str,
     now_unix: u64,
 ) -> Result<RequestAttachment, DomainError> {
-    if !actor_can_write_target {
+    if !attachment
+        .target
+        .writable_with(&actor.permissions(request, actor_user_id))
+    {
         return Err(DomainError::forbidden(
             "request attachment target write access required",
         ));
@@ -378,18 +389,12 @@ pub fn retry_attachment_processing(
 pub fn replace_attachment_bindings(
     request_id: &str,
     actor_user_id: &str,
-    actor_can_write_target: bool,
     target: RequestAttachmentBindingTarget,
     markdown: &str,
     attachments: &[RequestAttachment],
     existing_bindings: &[RequestAttachmentBinding],
 ) -> Result<Vec<RequestAttachmentBinding>, DomainError> {
     let limits = RequestAttachmentLimits::default();
-    if !actor_can_write_target {
-        return Err(DomainError::forbidden(
-            "request attachment target write access required",
-        ));
-    }
     validate_binding_target(&target)?;
     let references = request_attachment_references(markdown)?;
     if references.len() > limits.max_attachments_per_content {

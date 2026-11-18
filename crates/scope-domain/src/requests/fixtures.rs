@@ -1,6 +1,6 @@
 use super::{
-    Request, RequestActorRole, StartRequestFacts, StartRequestInput, SubmitRequestInput,
-    start_request, submit_request,
+    Request, RequestActor, RequestActorRole, RequestViewer, StartRequestFacts, StartRequestInput,
+    SubmitRequestInput, start_request, submit_request,
 };
 use crate::repository::access::{RepositoryAccess, RepositoryActor};
 use crate::views::{ViewDefinition, ViewId, ViewIncludes, ViewReaders, Views};
@@ -14,6 +14,47 @@ pub(crate) fn access(actor: RepositoryActor, view: ViewId, can_push: bool) -> Re
         can_manage_members: false,
         can_delete_repo: false,
     }
+}
+
+static VIEWS: std::sync::LazyLock<Views> = std::sync::LazyLock::new(views_with_agent);
+static PUBLIC_ACCESS: std::sync::LazyLock<RepositoryAccess> =
+    std::sync::LazyLock::new(RepositoryAccess::public);
+static OWNER_ACCESS: std::sync::LazyLock<RepositoryAccess> =
+    std::sync::LazyLock::new(|| access(RepositoryActor::Owner, ViewId::private(), true));
+
+pub(crate) fn author_actor() -> RequestActor<'static> {
+    RequestActor {
+        access: &PUBLIC_ACCESS,
+        is_invitee: false,
+        views: &VIEWS,
+    }
+}
+
+pub(crate) fn invitee_actor() -> RequestActor<'static> {
+    RequestActor {
+        is_invitee: true,
+        ..author_actor()
+    }
+}
+
+pub(crate) fn owner_actor() -> RequestActor<'static> {
+    RequestActor {
+        access: &OWNER_ACCESS,
+        is_invitee: false,
+        views: &VIEWS,
+    }
+}
+
+pub(crate) fn owner_viewer(user_id: &'static str) -> RequestViewer<'static> {
+    RequestViewer::new(OWNER_ACCESS.clone(), Some(user_id), false)
+}
+
+pub(crate) fn public_viewer(user_id: &'static str) -> RequestViewer<'static> {
+    RequestViewer::new(PUBLIC_ACCESS.clone(), Some(user_id), false)
+}
+
+pub(crate) fn actor_views() -> &'static Views {
+    &VIEWS
 }
 
 pub(crate) fn agent() -> ViewId {
@@ -54,8 +95,6 @@ pub(crate) fn submit_input() -> SubmitRequestInput {
     SubmitRequestInput {
         request_id: "request_1".to_string(),
         actor_user_id: "author".to_string(),
-        actor_is_author: true,
-        actor_can_submit: true,
         event_id: "event_submitted".to_string(),
         now_unix: 20,
     }
@@ -86,7 +125,11 @@ pub(crate) fn pushed_draft(author_role: RequestActorRole) -> Request {
 }
 
 pub(crate) fn open_request() -> Request {
-    submit_request(&pushed_draft(RequestActorRole::Public), submit_input())
-        .unwrap()
-        .request
+    submit_request(
+        &pushed_draft(RequestActorRole::Public),
+        author_actor(),
+        submit_input(),
+    )
+    .unwrap()
+    .request
 }

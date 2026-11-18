@@ -217,7 +217,6 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
             new_base_stack_depth: None,
             request_id: "req_attention_activity".to_string(),
             actor_user_id: author_id,
-            actor_can_edit: true,
             expected_old_head_oid: Some(REQUEST_HEAD.to_string()),
             new_head_oid: revision_head.to_string(),
             git_facts: RequestRevisionGitFacts {

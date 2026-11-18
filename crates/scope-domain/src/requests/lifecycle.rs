@@ -1,8 +1,8 @@
 use super::{
     MAIN_PUSH_REQUEST_NAME_PREFIX, PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request,
-    RequestActorRole, RequestEvent, RequestEventKind, RequestEventPayload, RequestRevision,
-    RequestState, advance_request_activity, ensure_event_id_available, ensure_request_matches,
-    request_identity_audit_fact, validate_body_size, validate_required,
+    RequestActor, RequestActorRole, RequestEvent, RequestEventKind, RequestEventPayload,
+    RequestRevision, RequestState, advance_request_activity, ensure_event_id_available,
+    ensure_request_matches, request_identity_audit_fact, validate_body_size, validate_required,
 };
 use crate::error::DomainError;
 use crate::views::{ViewId, Views};
@@ -52,7 +52,6 @@ pub struct StartRequestMutation {
 pub struct RecordWorkingRequestUploadInput {
     pub request_id: String,
     pub actor_user_id: String,
-    pub actor_can_edit: bool,
     pub expected_old_head_oid: Option<String>,
     pub new_head_oid: String,
     pub now_unix: u64,
@@ -69,7 +68,6 @@ pub struct RecordRequestRevisionInput {
     pub new_base_stack_depth: Option<u32>,
     pub request_id: String,
     pub actor_user_id: String,
-    pub actor_can_edit: bool,
     pub expected_old_head_oid: Option<String>,
     pub new_head_oid: String,
     pub git_facts: RequestRevisionGitFacts,
@@ -191,13 +189,14 @@ pub(super) fn open_request(
 
 pub fn record_working_request_upload(
     mut request: Request,
+    actor: RequestActor<'_>,
     input: RecordWorkingRequestUploadInput,
 ) -> Result<WorkingRequestUploadMutation, DomainError> {
     validate_required("request id", &input.request_id)?;
     validate_required("actor user id", &input.actor_user_id)?;
     validate_required("head oid", &input.new_head_oid)?;
     ensure_request_matches(&request, &input.request_id)?;
-    if !input.actor_can_edit {
+    if !actor.policy(&request, &input.actor_user_id).branch_mutable {
         return Err(DomainError::forbidden(
             "request branch edit access required",
         ));
@@ -220,6 +219,7 @@ pub fn record_working_request_upload(
 
 pub fn record_request_revision(
     mut request: Request,
+    actor: RequestActor<'_>,
     event_id_exists: bool,
     input: RecordRequestRevisionInput,
 ) -> Result<RequestRevisionMutation, DomainError> {
@@ -229,7 +229,7 @@ pub fn record_request_revision(
     validate_required("event id", &input.event_id)?;
     ensure_event_id_available(event_id_exists)?;
     ensure_request_matches(&request, &input.request_id)?;
-    if !input.actor_can_edit {
+    if !actor.policy(&request, &input.actor_user_id).branch_mutable {
         return Err(DomainError::forbidden(
             "request branch edit access required",
         ));
