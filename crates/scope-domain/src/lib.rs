@@ -9,6 +9,7 @@ pub mod github_connection;
 pub mod github_connection_test;
 pub mod github_review_bots;
 pub mod github_run_import;
+pub mod github_webhook_delivery;
 pub mod github_workflow_jobs;
 pub mod github_workflow_runs;
 pub mod history;

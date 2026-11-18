@@ -4,6 +4,7 @@ pub(crate) mod config;
 mod jobs;
 pub(crate) mod pull_requests;
 pub(crate) mod push;
+mod rate_limit_pauses;
 mod review_signals;
 mod reviews;
 pub(crate) mod setup_tokens;
@@ -35,6 +36,7 @@ pub(crate) struct GitHubApp {
     oauth_authorize_url: reqwest::Url,
     git_url: String,
     installation_tokens: Mutex<HashMap<u64, client::InstallationToken>>,
+    rate_limit_pauses: rate_limit_pauses::RateLimitPauses,
 }
 
 impl GitHubApp {
@@ -78,7 +80,16 @@ impl GitHubApp {
             oauth_authorize_url,
             git_url: git_url.trim_end_matches('/').to_string(),
             installation_tokens: Mutex::default(),
+            rate_limit_pauses: rate_limit_pauses::RateLimitPauses::new(std::sync::Arc::new(
+                crate::persistence::unix_now,
+            )),
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_rate_limit_clock(mut self, now_unix: rate_limit_pauses::UnixClock) -> Self {
+        self.rate_limit_pauses = rate_limit_pauses::RateLimitPauses::new(now_unix);
+        self
     }
 
     pub(crate) fn setup_tokens(&self) -> &SetupTokenSigner {

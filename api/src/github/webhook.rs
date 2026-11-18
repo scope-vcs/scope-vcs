@@ -15,6 +15,7 @@ pub(crate) use reviews::GitHubReviewDelivery;
 
 pub(crate) const GITHUB_SIGNATURE_HEADER: &str = "x-hub-signature-256";
 pub(crate) const GITHUB_EVENT_HEADER: &str = "x-github-event";
+pub(crate) const GITHUB_DELIVERY_HEADER: &str = "x-github-delivery";
 
 pub(crate) fn signature_matches(secret: &[u8], signature: Option<&str>, body: &[u8]) -> bool {
     let Some(signature) = signature

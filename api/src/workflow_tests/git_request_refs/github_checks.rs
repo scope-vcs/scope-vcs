@@ -12,6 +12,7 @@ use scope_postgres::db::RecordRequestChecksCommand;
 use std::sync::atomic::Ordering;
 
 mod carrier_pull_requests;
+mod delivery_queue;
 mod public;
 mod public_repositories;
 mod push_failures;

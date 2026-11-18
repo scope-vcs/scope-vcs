@@ -11,6 +11,7 @@ pub(crate) mod github_pushes;
 pub(crate) mod github_review_bot_statuses;
 pub(crate) mod github_review_imports;
 pub(crate) mod github_run_imports;
+pub(crate) mod github_webhook_deliveries;
 pub(crate) mod github_workflow_jobs;
 pub(crate) mod github_workflow_runs;
 pub(crate) mod invite_email_delivery;

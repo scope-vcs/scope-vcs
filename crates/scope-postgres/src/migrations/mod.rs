@@ -61,6 +61,8 @@ mod m0112_remove_github_setup_checks;
 mod m0113_pool_pack_lookups;
 #[expect(unreachable_pub)]
 mod m0114_github_skipped_reviews;
+#[expect(unreachable_pub)]
+mod m0115_github_webhook_deliveries;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -129,6 +131,7 @@ fn migration_registry() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m0112_remove_github_setup_checks::Migration),
         Box::new(m0113_pool_pack_lookups::Migration),
         Box::new(m0114_github_skipped_reviews::Migration),
+        Box::new(m0115_github_webhook_deliveries::Migration),
     ]
 }
 

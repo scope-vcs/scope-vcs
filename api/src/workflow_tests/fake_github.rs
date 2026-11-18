@@ -70,6 +70,8 @@ pub(super) struct FakeGitHub {
     pub(super) check_runs: Mutex<HashMap<String, Vec<serde_json::Value>>>,
     pub(super) check_run_reads: AtomicUsize,
     pub(super) check_runs_unavailable: AtomicBool,
+    pub(super) check_runs_rate_limited_until: Mutex<Option<u64>>,
+    pub(super) client_clock_unix: Arc<std::sync::atomic::AtomicU64>,
     workflow_runs: Mutex<HashMap<String, Vec<serde_json::Value>>>,
     pub(super) workflow_run_unavailable: AtomicBool,
     workflow_jobs: Mutex<HashMap<u64, Vec<serde_json::Value>>>,
@@ -253,8 +255,16 @@ impl FakeGitHub {
             webhook_secret: WEBHOOK_SECRET.to_string(),
         };
         let git_url = fake.git_root.0.path().to_str().unwrap().to_string();
+        let client_clock_unix = fake.client_clock_unix.clone();
         state.github = Some(Arc::new(
-            GitHubApp::new(config, &url, &url, &git_url).unwrap(),
+            GitHubApp::new(config, &url, &url, &git_url)
+                .unwrap()
+                .with_rate_limit_clock(Arc::new(move || {
+                    match client_clock_unix.load(Ordering::SeqCst) {
+                        0 => crate::persistence::unix_now(),
+                        set_unix => Ok(set_unix),
+                    }
+                })),
         ));
         fake
     }
@@ -491,6 +501,19 @@ impl FakeGitHub {
                         if fake.check_runs_unavailable.load(Ordering::SeqCst) {
                             return StatusCode::SERVICE_UNAVAILABLE.into_response();
                         }
+                        if let Some(reset) = *fake.check_runs_rate_limited_until.lock().unwrap() {
+                            return (
+                                StatusCode::FORBIDDEN,
+                                [
+                                    ("x-ratelimit-remaining", "0".to_string()),
+                                    ("x-ratelimit-reset", reset.to_string()),
+                                ],
+                                Json(serde_json::json!({
+                                    "message": "API rate limit exceeded for installation ID 7."
+                                })),
+                            )
+                                .into_response();
+                        }
                         let runs = if query["page"] == "1" {
                             fake.check_runs
                                 .lock()
@@ -668,6 +691,25 @@ pub(super) async fn webhook(
     body: serde_json::Value,
     secret: &str,
 ) -> Response {
+    static DELIVERIES: AtomicUsize = AtomicUsize::new(0);
+    let delivery_id = format!("delivery-{}", DELIVERIES.fetch_add(1, Ordering::SeqCst));
+    let response = queue_webhook(state, &delivery_id, event, body, secret).await;
+    crate::use_cases::github_webhook_deliveries::process_due_github_deliveries(
+        state,
+        crate::persistence::unix_now,
+    )
+    .await
+    .unwrap();
+    response
+}
+
+pub(super) async fn queue_webhook(
+    state: &AppState,
+    delivery_id: &str,
+    event: &str,
+    body: serde_json::Value,
+    secret: &str,
+) -> Response {
     let body = body.to_string();
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
     mac.update(body.as_bytes());
@@ -678,6 +720,7 @@ pub(super) async fn webhook(
                 .method("POST")
                 .uri("/v1/github/webhooks")
                 .header("X-GitHub-Event", event)
+                .header("X-GitHub-Delivery", delivery_id)
                 .header("X-Hub-Signature-256", signature)
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(body))

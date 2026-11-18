@@ -38,10 +38,12 @@ mod github_review_bots;
 mod github_review_imports;
 mod github_run_imports;
 mod github_skipped_reviews;
+mod github_webhook_deliveries;
 mod github_workflow_job_log_reads;
 mod github_workflow_jobs;
 #[cfg(test)]
 mod transaction_cancellation_tests;
+pub use github_webhook_deliveries::GitHubWebhookDelivery;
 pub use github_workflow_jobs::GitHubWorkflowJobReadJob;
 mod github_workflow_runs;
 mod history_reads;

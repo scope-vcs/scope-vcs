@@ -525,10 +525,13 @@ impl GitHubApp {
         path: &str,
         route: &'static str,
     ) -> Result<Option<T>, ApiError> {
-        let Some(token) = self.installation_token(installation_id).await? else {
+        self.rate_limit_pauses.check(installation_id)?;
+        let minted = self.installation_token(installation_id).await;
+        let Some(token) = self.rate_limit_pauses.note(installation_id, minted)? else {
             return Ok(None);
         };
-        send(self.request(Method::GET, path).bearer_auth(token), route).await
+        let answer = send(self.request(Method::GET, path).bearer_auth(token), route).await;
+        self.rate_limit_pauses.note(installation_id, answer)
     }
 
     pub(super) async fn installation_pages<P: DeserializeOwned, T>(
@@ -538,10 +541,13 @@ impl GitHubApp {
         route: &'static str,
         items: impl Fn(P) -> Vec<T>,
     ) -> Result<Option<Vec<T>>, ApiError> {
-        let Some(token) = self.installation_token(installation_id).await? else {
+        self.rate_limit_pauses.check(installation_id)?;
+        let minted = self.installation_token(installation_id).await;
+        let Some(token) = self.rate_limit_pauses.note(installation_id, minted)? else {
             return Ok(None);
         };
-        self.pages(&token, path, route, items).await
+        let listed = self.pages(&token, path, route, items).await;
+        self.rate_limit_pauses.note(installation_id, listed)
     }
 
     async fn pages<P: DeserializeOwned, T>(
