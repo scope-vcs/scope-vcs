@@ -114,12 +114,17 @@ pub(super) fn apply_history_rewrites(
     }
 
     for set in &mut repo.visibility_change_sets {
-        set.changes.retain(|change| {
-            let redact = should_redact(&change.path);
-            if redact {
-                redacted_paths.insert(change.path.clone());
+        set.changes.retain_mut(|change| {
+            if !should_redact(&change.path) {
+                return true;
             }
-            !redact
+            for label in [&mut change.old_label, &mut change.new_label] {
+                if *label == ViewId::public() {
+                    *label = ViewId::private();
+                    redacted_paths.insert(change.path.clone());
+                }
+            }
+            change.old_label != change.new_label
         });
     }
     repo.visibility_change_sets

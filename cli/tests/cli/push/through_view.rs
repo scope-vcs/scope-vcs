@@ -22,6 +22,7 @@ struct FakeScope {
     git_root: PathBuf,
     access_view: &'static str,
     request_list_fails: bool,
+    has_public_view: bool,
     seen: Arc<Mutex<Vec<String>>>,
     intents: Arc<Mutex<Vec<Value>>>,
 }
@@ -40,6 +41,7 @@ fn a_narrower_member_pushes_main_through_their_view_and_lands_as_a_request() {
         .unwrap();
 
     assert_success(&output, "push main through the agent view");
+    assert_eq!(public_commit_metadata_notices(&output), 1);
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
         stdout.contains(&format!(
@@ -76,6 +78,28 @@ fn a_narrower_member_pushes_main_through_their_view_and_lands_as_a_request() {
         ),
         head
     );
+}
+
+#[test]
+fn a_push_to_a_repository_without_a_public_view_says_nothing_about_public_commits() {
+    let workspace = TempDir::new("no-public-view-main-push");
+    let (_scope, server) = start_fake_scope_with(&workspace, "agent", false, false);
+    let checkout = checkout_with_new_commit(&workspace, &server, "agent");
+
+    let output = server
+        .command(&checkout)
+        .args(["push", "--main"])
+        .output()
+        .unwrap();
+
+    assert_success(&output, "push main in a repository without a public view");
+    assert_eq!(public_commit_metadata_notices(&output), 0);
+}
+
+fn public_commit_metadata_notices(output: &std::process::Output) -> usize {
+    String::from_utf8_lossy(&output.stderr)
+        .matches("keep their messages and authors in the public view")
+        .count()
 }
 
 #[test]
@@ -123,7 +147,7 @@ fn pushing_the_view_main_again_lands_nothing_and_invents_no_request() {
 #[test]
 fn a_landed_push_whose_request_lookup_fails_says_not_to_push_again() {
     let workspace = TempDir::new("landed-lookup-failure");
-    let (scope, server) = start_fake_scope_with(&workspace, "agent", true);
+    let (scope, server) = start_fake_scope_with(&workspace, "agent", true, true);
     let checkout = checkout_with_new_commit(&workspace, &server, "agent");
     let head = git_stdout(&checkout, ["rev-parse", "HEAD"]);
 
@@ -189,13 +213,14 @@ fn a_full_view_member_cannot_push_main_through_a_narrower_remote() {
 }
 
 fn start_fake_scope(workspace: &TempDir, access_view: &'static str) -> (FakeScope, TestServer) {
-    start_fake_scope_with(workspace, access_view, false)
+    start_fake_scope_with(workspace, access_view, false, true)
 }
 
 fn start_fake_scope_with(
     workspace: &TempDir,
     access_view: &'static str,
     request_list_fails: bool,
+    has_public_view: bool,
 ) -> (FakeScope, TestServer) {
     let git_root = workspace.path().join("server");
     let bare = git_root.join("owner/repo");
@@ -205,6 +230,7 @@ fn start_fake_scope_with(
         git_root,
         access_view,
         request_list_fails,
+        has_public_view,
         seen: Arc::default(),
         intents: Arc::default(),
     };
@@ -223,11 +249,18 @@ fn start_fake_scope_with(
                     Json(repository_response(json!({
                         "git_remote_url": format!("{api_url}/git/{}/owner/repo", scope.access_view),
                         "access": {"actor": "Member", "view": scope.access_view, "can_push": true},
-                        "views": [
-                            {"id": "public", "name": "Public", "includes": [], "readers": "anyone"},
-                            {"id": "private", "name": "Private", "includes": "all", "readers": "assigned"},
-                            {"id": "agent", "name": "Agent", "includes": ["public"], "readers": "assigned"},
-                        ],
+                        "views": if scope.has_public_view {
+                            json!([
+                                {"id": "public", "name": "Public", "includes": [], "readers": "anyone"},
+                                {"id": "private", "name": "Private", "includes": "all", "readers": "assigned"},
+                                {"id": "agent", "name": "Agent", "includes": ["public"], "readers": "assigned"},
+                            ])
+                        } else {
+                            json!([
+                                {"id": "private", "name": "Private", "includes": "all", "readers": "assigned"},
+                                {"id": "agent", "name": "Agent", "includes": [], "readers": "assigned"},
+                            ])
+                        },
                     })))
                     }
                 }),
