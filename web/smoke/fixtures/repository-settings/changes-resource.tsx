@@ -3,17 +3,9 @@ import { useCachedResource } from '@/lib/use-cached-resource'
 import { useCallback, useRef, useState } from 'react'
 import type { RequestRevisionListResponse } from '@/api/types.generated'
 import { requestChangesResource, requestChangesSelectionIdentity } from '@/features/requests/request-changes-resource'
-import { useRequestChangesResource } from '@/features/requests/use-request-changes-resource'
-
-const originalViewer = 'user_clerk_original'
-const initial = {
-  viewerId: originalViewer,
-  revisions: { comparison: null, has_earlier_revisions: false, revisions: [], review_revision_id: 'server-seed' } satisfies RequestRevisionListResponse,
-  discussionReferences: { referenceKey: null, page: null },
-}
 
 export function ChangesResourceFixture() {
-  const [viewerId, setViewerId] = useState(originalViewer)
+  const [viewerId, setViewerId] = useState('user_clerk_original')
   const [access, setAccess] = useState('private')
   const [opened, setOpened] = useState(true)
   const [loads, setLoads] = useState(0)
@@ -29,13 +21,13 @@ export function ChangesResourceFixture() {
     <button onClick={() => requestChangesResource.invalidate(identity)}>Invalidate changes</button>
     <button onClick={() => setViewerId('user_clerk_other')}>Switch changes viewer</button>
     <button onClick={() => setAccess('public')}>Switch changes access</button>
-    {opened && <Changes initial={initial} access={access} identity={identity} load={load} viewerId={viewerId} />}
+    {opened && <Changes identity={identity} load={load} />}
   </section>
 }
 
-function Changes(props: Parameters<typeof useRequestChangesResource>[0]) {
-  const { resource, initial } = useRequestChangesResource(props)
-  return <output aria-label="Selected revision">{(resource.value ?? initial?.revisions)?.review_revision_id}</output>
+function Changes({ identity, load }: { identity: string; load: () => Promise<RequestRevisionListResponse> }) {
+  const resource = useCachedResource({ fallbackError: 'Request changes are unavailable.', identity, load, resource: requestChangesResource })
+  return <output aria-label="Selected revision">{resource.value?.review_revision_id}</output>
 }
 
 const coalescedResource = createCachedResource<{ value: string }>({ maxEntries: 1, coalesceInvalidations: true })

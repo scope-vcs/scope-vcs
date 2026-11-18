@@ -1,5 +1,4 @@
 import type { RepoParams, ReviewDiffRenderBudget } from '@/api/types'
-import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
@@ -27,8 +26,6 @@ import type { UpdateSearch } from './update-search'
 import { useViewingAs } from '@/features/repo-detail/use-viewing-as'
 
 type UpdatePageProps = {
-  initialEntry: HistoryEntryDetailResponse
-  initialEntryScope: string | null
   params: RepoParams & { entryId: string }
   search: UpdateSearch
 }
@@ -76,7 +73,7 @@ export function UpdatePage(props: UpdatePageProps) {
   )
 }
 
-function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }: UpdatePageProps) {
+function useUpdatePageModel({ params, search }: UpdatePageProps) {
   const navigate = useNavigate()
   const { userId, isLoaded } = useAuth()
   const { repo } = useRepoLayout()
@@ -95,7 +92,6 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   const entryResource = useCachedResource({
     fallbackError: 'This update is unavailable.',
     identity: entryIdentity,
-    initialValue: scope === initialEntryScope && initialEntry.source_id === entryId && initialEntry.view === view ? initialEntry : null,
     load: loadEntry,
     resource: historyEntryResource,
     version,

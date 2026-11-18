@@ -3,7 +3,7 @@ import type {
   GitHubWorkflowRunDetailResponse,
   GitHubWorkflowRunResponse,
 } from '@/api/types.generated'
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { createRepoResource, repoResourceKey, type RepoChange } from '../repo-detail/repo-resource'
 
 const RECHECK_INTERVAL_MS = 15_000
@@ -83,9 +83,7 @@ export function githubWorkflowJobLogIdentity(scope: string, runId: string, jobKe
 export function useGitHubWorkflowRunRecheck(
   identity: string | null,
   mutable: boolean,
-  pageValue: GitHubWorkflowRunDetailResponse | null,
 ) {
-  const pageValueRef = useRef(pageValue)
   useEffect(() => {
     if (!identity) return
     const recheck = () => {
@@ -95,7 +93,7 @@ export function useGitHubWorkflowRunRecheck(
     }
     const cached = githubWorkflowRunDetailResource.peek(identity)
     const fresh = cached !== null && Date.now() - (fetchedAt.get(cached) ?? 0) < RECHECK_INTERVAL_MS
-    if (cached !== pageValueRef.current && !fresh) recheck()
+    if (cached !== null && !fresh) recheck()
     const onFocus = () => {
       if (document.visibilityState === 'visible') recheck()
     }

@@ -35,16 +35,12 @@ import { RunDetailPagePending } from './run-detail-pending'
 import { RunHeaderStatus, RunPageHeader } from './run-detail-header'
 
 type GitHubWorkflowRunDetailPageProps = {
-  initialDetail: GitHubWorkflowRunDetailResponse | null
-  initialScope: string | null
   loadDetail: (signal: AbortSignal) => Promise<GitHubWorkflowRunDetailResponse>
   loadLog: (jobId: string, signal: AbortSignal) => Promise<GitHubWorkflowJobLogResponse>
   params: RunActionInput
 }
 
 export function GitHubWorkflowRunDetailPage({
-  initialDetail,
-  initialScope,
   loadDetail,
   loadLog,
   params,
@@ -54,12 +50,10 @@ export function GitHubWorkflowRunDetailPage({
   useRunLogTimingPage(params.run_id)
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const identity = scope ? githubWorkflowRunDetailIdentity(scope, params.run_id) : null
-  const pageDetail = initialDetail && initialScope === scope ? initialDetail : null
   const load = useMemo(() => recordingFetch(loadDetail), [loadDetail])
   const resource = useCachedResource({
     fallbackError: 'The run could not refresh.',
     identity,
-    initialValue: pageDetail,
     load,
     resource: githubWorkflowRunDetailResource,
   })
@@ -73,7 +67,6 @@ export function GitHubWorkflowRunDetailPage({
       identity={identity}
       loadLog={loadLog}
       onRetry={resource.retry}
-      pageDetail={pageDetail}
       params={params}
       scope={scope}
     />
@@ -86,7 +79,6 @@ function GitHubWorkflowRunView({
   identity,
   loadLog,
   onRetry,
-  pageDetail,
   params,
   scope,
 }: {
@@ -95,11 +87,10 @@ function GitHubWorkflowRunView({
   identity: string | null
   loadLog: GitHubWorkflowRunDetailPageProps['loadLog']
   onRetry: () => void
-  pageDetail: GitHubWorkflowRunDetailResponse | null
   params: RunActionInput
   scope: string | null
 }) {
-  useGitHubWorkflowRunRecheck(identity, githubRunCanChange(detail), pageDetail)
+  useGitHubWorkflowRunRecheck(identity, githubRunCanChange(detail))
 
   const [chosenKey, setChosenKey] = useState<string | null>(null)
   const [link, setLink] = useState<RunJobLink | null>(null)

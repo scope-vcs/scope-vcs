@@ -13,7 +13,7 @@ async function screenshot(page, options) {
 }
 
 const githubRunsFixture = { aliases: [fixtureClerk, fixtureRepositorySearch], tailwind: true }
-const runPageRequestBudget = { listClick: 1, pageLoad: 1 }
+const runPageRequestBudget = { listClick: 1, pageLoad: 2 }
 const compareScreenshot = visualBaseline('run-page')
 const requestsSoFar = (page) => page.evaluate(() => window.loads.length + window.runLoads.length + window.logLoads.length)
 
@@ -288,6 +288,8 @@ test('a GitHub run groups its jobs, opens the failed step at its error, and sear
 
   await page.goto(new URL('/octo/demo/runs', base).href)
   await page.goto(new URL('/octo/demo/runs/1#run-job-101', base).href)
+  await page.waitForFunction(() => window.runLoads.length === 1)
+  await page.evaluate(() => window.finishRunLoad())
   await output('Lint').getByText('Found 0 warnings and 0 errors.').waitFor()
   assert.equal(await requestsSoFar(page), runPageRequestBudget.pageLoad,
     'a run loaded directly stays within its request budget before log text shows')
@@ -295,6 +297,8 @@ test('a GitHub run groups its jobs, opens the failed step at its error, and sear
 
   await page.goto(new URL('/octo/demo/runs', base).href)
   await page.goto(new URL(`/octo/demo/runs/1${lineHash}`, base).href)
+  await page.waitForFunction(() => window.runLoads.length === 1)
+  await page.evaluate(() => window.finishRunLoad())
   const linked = output(testStep).locator(`[data-line="${lineHash.split('L')[1]}"]`)
   await linked.waitFor()
   assert.equal(await failed.getAttribute('aria-pressed'), 'true')
@@ -347,6 +351,8 @@ test('the run page keeps its reviewed look at desktop and phone widths in light 
   const { base, errors, page } = await openFixture(t, 'github-runs', githubRunsFixture)
   await page.clock.setFixedTime(new Date('2026-11-06T12:00:00Z'))
   await page.goto(new URL('/octo/demo/runs/1', base).href, { timeout: 30_000 })
+  await page.waitForFunction(() => window.runLoads.length === 1)
+  await page.evaluate(() => window.finishRunLoad())
   await page.getByText('Process completed with exit code 1.').waitFor()
   await page.evaluate(() => document.fonts.ready)
   const pane = page.locator('.scope-content-enter')

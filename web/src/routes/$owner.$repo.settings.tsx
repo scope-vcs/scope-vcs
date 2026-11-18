@@ -44,9 +44,7 @@ import { RepoContentError } from '@/components/repo-content-error'
 import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
-import type { RepoLiveState } from '@/api/types'
 import { useAuth } from '@clerk/tanstack-react-start'
-import { auth } from '@clerk/tanstack-react-start/server'
 import { useCallback, useEffect } from 'react'
 import { useRepoLayout, useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
@@ -137,13 +135,6 @@ const deleteRepoInvite = createServerFn({ method: 'POST' })
   .handler(({ data }) => deleteRepoInviteForRequest(data))
 
 export const Route = createFileRoute('/$owner/$repo/settings')({
-  loader: async ({ params, parentMatchPromise, abortController }) => {
-    if (typeof window !== 'undefined') return null
-    const live = (await parentMatchPromise).loaderData as RepoLiveState
-    const { userId } = await auth()
-    const settings = await loadRepoSettingsData(params, abortController.signal).catch(() => null)
-    return settings && { scope: repoResourceScope(live.repo, userId), settings }
-  },
   errorComponent: RepoContentError,
   pendingComponent: RepoSettingsPending,
   component: RepoSettingsRoute,
@@ -151,12 +142,10 @@ export const Route = createFileRoute('/$owner/$repo/settings')({
 
 function RepoSettingsRoute() {
   const params = Route.useParams()
-  const initial = Route.useLoaderData()
   const { repo } = useRepoLayout()
   const views = useRepoViews()
   const { isLoaded, userId } = useAuth()
-  const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : initial?.scope ?? null
-  const initialValue = initial?.scope === scope ? initial.settings : null
+  const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const { owner, repo: repoName } = params
   const load = useCallback(
     (signal: AbortSignal) => loadRepoSettingsData({ owner, repo: repoName }, signal),
@@ -165,11 +154,10 @@ function RepoSettingsRoute() {
   const resource = useCachedResource({
     identity: scope,
     resource: repoSettingsResource,
-    initialValue,
     load,
     fallbackError: 'Repository settings could not be loaded.',
   })
-  const settings = resource.value ?? initialValue
+  const settings = resource.value
   const github = settings?.github ?? null
   const checksVersion = githubChecksVersion(repo.content_version, github)
   const loadChecks = useCallback(

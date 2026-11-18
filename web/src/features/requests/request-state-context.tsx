@@ -5,8 +5,8 @@ import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { useCachedResource, useRetryOnReconnect } from '@/lib/use-cached-resource'
 import { loadRequestChildrenForViewer, loadRequestStateForViewer } from '@/routes/-request-state-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
-import { createContext, use, useCallback, useMemo, type ReactNode } from 'react'
-import { reloadRequestStateValue, requestStateIdentity, requestStateResource, type RequestRouteState } from './request-state-resource'
+import { createContext, use, useCallback, type ReactNode } from 'react'
+import { reloadRequestStateValue, requestStateIdentity, requestStateResource } from './request-state-resource'
 
 type RequestStateContextValue = {
   childrenError: string | null
@@ -21,27 +21,25 @@ type RequestStateContextValue = {
 
 const RequestStateContext = createContext<RequestStateContextValue | null>(null)
 
-export function RequestStateProvider({ children, initial, params }: {
+export function RequestStateProvider({ children, loadedViewerId, params }: {
   children: ReactNode
-  initial: RequestRouteState
+  loadedViewerId: string | null
   params: RequestParams
 }) {
   const live = useRepoLayout()
   const { isLoaded, userId } = useAuth()
-  const viewerId = isLoaded ? userId ?? null : initial.viewerId
+  const viewerId = isLoaded ? userId ?? null : loadedViewerId
   const scope = repoResourceScope(live.repo, viewerId)
   const identity = requestStateIdentity(scope, params.request_id)
-  const initialValue = useMemo(() => scope === initial.scope ? { state: initial.state, childrenPages: initial.childrenPages, childrenError: initial.childrenError } : null, [initial.childrenError, initial.childrenPages, initial.scope, initial.state, scope])
   const load = useCallback((signal: AbortSignal) => reloadRequestStateValue(identity, (stateSignal) => loadRequestStateForViewer(params, viewerId, stateSignal), (cursor, childSignal) => loadRequestChildrenForViewer({ ...params, cursor }, viewerId, childSignal), signal), [identity, params, viewerId])
   const resource = useCachedResource({
     fallbackError: 'Request state is unavailable.',
     identity,
-    initialValue,
     load,
     resource: requestStateResource,
   })
   useRetryOnReconnect(resource)
-  const value = resource.value ?? initialValue
+  const value = resource.value
   return (
     <RequestStateContext value={{
       childrenError: value?.childrenError ?? null,

@@ -2,7 +2,7 @@ import type { RequestParams } from '@/api/types'
 import type { RequestComparisonMode, RequestRevisionListResponse } from '@/api/types.generated'
 import { affectsRequestKey, createRepoResource, repoResourceKey } from '../repo-detail/repo-resource'
 import type { LoadDiscussionsInput } from './request-discussion-api'
-import { latestRequestRevision, requestChangeSelection } from './request-changes-model'
+import { latestRequestRevision } from './request-changes-model'
 import type { RequestDiscussionPage } from './request-discussion-types'
 
 const DISCUSSION_REFERENCE_LIMITS = { items: 100, bytes: 512 * 1024, milliseconds: 2_000 }
@@ -45,31 +45,8 @@ export function comparisonDiscussionReferenceQuery(
   return { key: JSON.stringify(filter), input: { ...params, ...filter } }
 }
 
-export function selectedDiscussionReferenceQuery(
-  params: RequestParams & { commit_oid?: string; revision_id?: string; comparison?: string },
-  revisions: RequestRevisionListResponse,
-) {
-  const { revision, commit } = requestChangeSelection(
-    revisions.revisions,
-    revisions.review_revision_id,
-    { commit: params.commit_oid, revision: params.revision_id },
-  )
-  const mode = params.comparison === 'push' || params.comparison === 'commit' || params.comparison === 'request'
-    ? params.comparison
-    : params.commit_oid ? 'commit' : revisions.comparison?.mode ?? 'request'
-  if (!revision) return null
-  return comparisonDiscussionReferenceQuery(params, revisions.revisions, revision, mode, commit)
-}
-
 export function refreshRequestDiscussionReferences(accessScope: string, requestId: string) {
   requestDiscussionReferenceResource.invalidateFor(accessScope, [{ topic: 'requestTimeline', requestId }])
-}
-
-export function openRequestDiscussionReferences(identity: string, page: RequestDiscussionPage) {
-  const cached = requestDiscussionReferenceResource.peek(identity)
-  if (cached && cached.snapshot_version >= page.snapshot_version) return cached
-  requestDiscussionReferenceResource.write(identity, page)
-  return page
 }
 
 export function loadMoreRequestDiscussionReferences(

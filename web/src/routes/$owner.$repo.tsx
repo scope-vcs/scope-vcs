@@ -20,9 +20,11 @@ import { useCallback } from 'react'
 export const Route = createFileRoute('/$owner/$repo')({
   validateSearch: parseViewingAsSearch,
   search: { middlewares: [retainSearchParams(['view'])] },
-  loader: ({ params, abortController }) => typeof window === 'undefined'
-    ? loadRepoSummaryState(params, abortController.signal)
-    : loadRepoSummary(repoSummaryIdentity(params), (signal) => loadRepoSummaryState(params, signal)),
+  ssr: false,
+  loader: ({ params }) => loadRepoSummary(
+    repoSummaryIdentity(params),
+    (signal) => loadRepoSummaryState(params, signal),
+  ),
   errorComponent: RepoLayoutError,
   notFoundComponent: RouteNotFoundPage,
   pendingComponent: RepositoryRoutePending,
@@ -44,12 +46,12 @@ function RepoLayoutRoute() {
   const { owner, repo } = params
   const router = useRouter()
   const identity = repoSummaryIdentity({ owner, repo })
+  const loaded = Route.useLoaderData()
   const live = useRepoSummary({
     identity,
-    initial: Route.useLoaderData(),
     load: useCallback((signal: AbortSignal) => loadRepoSummaryState({ owner, repo }, signal), [owner, repo]),
     onRejected: useCallback(() => void router.invalidate(), [router]),
-  })
+  }) ?? loaded
   const subscribe = useRepoLiveRefresh(live)
   return (
     <RepoLayoutProvider live={live} subscribe={subscribe} summaryIdentity={identity}>

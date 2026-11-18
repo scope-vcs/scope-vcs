@@ -1,19 +1,8 @@
 import type { RequestChildrenPageResponse, RequestStateResponse } from '../../api/types.generated'
-import type { RepoLiveState } from '../../api/types'
 import { createRepoResource, repoResourceKey } from '../repo-detail/repo-resource'
 import { resourceErrorMessage } from '../../lib/use-cached-resource'
-import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 
 export type RequestStateValue = { state: RequestStateResponse | null; childrenPages?: number; childrenError?: string | null }
-
-export type RequestRouteState = RequestStateValue & {
-  scope: string
-  viewerId: string | null
-}
-
-export function requestRouteState(live: RepoLiveState, value: RequestStateValue, viewerId: string | null): RequestRouteState {
-  return { ...value, scope: repoResourceScope(live.repo, viewerId), viewerId }
-}
 
 export const requestStateResource = createRepoResource<RequestStateValue>({
   invalidatedBy: ['request', 'requestTimeline', 'checks'],
