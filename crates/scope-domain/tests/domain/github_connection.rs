@@ -1,7 +1,7 @@
 use crate::support::{OWNER, member, outsider, owner};
 use scope_domain::{
     error::DomainErrorKind,
-    github_connection::{
+    github::connection::{
         ConnectGitHubRepository, GITHUB_REQUIRED_CHECKS_LIMIT, GitHubConnection,
         GitHubConnectionStatus, GitHubDisconnectReason, GitHubInstallationChange,
         GitHubRepositoryVisibility, MAIN_PUBLICATION_OFF_MESSAGE, MAIN_WITHHELD_MESSAGE,

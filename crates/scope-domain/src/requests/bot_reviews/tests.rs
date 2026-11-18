@@ -1,5 +1,5 @@
 use super::*;
-use crate::github_review_bots::GitHubBotLogin;
+use crate::github::review_bots::GitHubBotLogin;
 use crate::requests::fixtures::{agent, views_with_agent};
 
 const HEAD: &str = "1196d9ca5d1e0e7b8b1f6f0d6c2d3a4b5c6d7e8f";

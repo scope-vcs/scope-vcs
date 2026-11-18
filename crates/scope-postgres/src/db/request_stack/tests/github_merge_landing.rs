@@ -4,7 +4,7 @@ use super::{
 };
 use crate::db::{
     GitHubJobOutcome, GitHubPullRequestFinish, MainContains,
-    github_pull_requests::tests::{
+    github::pull_requests::tests::{
         merge_landing::{MAIN, SQUASH, squash_merged_on_github, squash_seen_in},
         oid,
     },
@@ -90,7 +90,7 @@ async fn a_parent_merged_on_github_lands_with_every_child_moved_to_main_or_not_a
     .unwrap_err();
     assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
     let unrecorded =
-        crate::db::github_pull_requests::github_pull_request(store.db.as_ref(), &parent.id)
+        crate::db::github::pull_requests::github_pull_request(store.db.as_ref(), &parent.id)
             .await
             .unwrap()
             .unwrap();

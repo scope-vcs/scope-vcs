@@ -1,12 +1,12 @@
 use super::super::super::fake_github::webhook;
 use super::*;
 use crate::use_cases::{
-    github_pull_requests::run_due_github_pull_requests,
-    github_review_bot_statuses::reconcile_due_review_bot_statuses,
-    github_review_imports::import_due_github_reviews,
+    github::pull_requests::run_due_github_pull_requests,
+    github::review_bot_statuses::reconcile_due_review_bot_statuses,
+    github::review_imports::import_due_github_reviews,
 };
 use scope_domain::{
-    github_review_bots::GitHubReviewBotInput, requests::REVIEW_BOT_START_DEADLINE_SECS,
+    github::review_bots::GitHubReviewBotInput, requests::REVIEW_BOT_START_DEADLINE_SECS,
 };
 
 const CODEX: &str = "chatgpt-codex-connector[bot]";

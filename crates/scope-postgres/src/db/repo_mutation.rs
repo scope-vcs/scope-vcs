@@ -4,7 +4,7 @@ use super::{
     entities,
     git_compaction::schedule_git_compaction,
     git_segments::register_git_pool_pack,
-    github_pushes::queue_main_publication,
+    github::pushes::queue_main_publication,
     landing_files::apply_repository_landing_file_mutation,
     repository_from_model,
     repository_rows::save_repository_delta,

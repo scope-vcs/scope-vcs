@@ -2,7 +2,7 @@ use super::{auth::load_users_by_ids, entities};
 use crate::{db::integer_columns::u64_to_i64, error::PostgresError};
 use scope_domain::{
     account::UserAccount,
-    github_account::GitHubAccount,
+    github::account::GitHubAccount,
     requests::{RequestDiscussionAuthor, RequestDiscussionResolver},
 };
 use sea_orm::{

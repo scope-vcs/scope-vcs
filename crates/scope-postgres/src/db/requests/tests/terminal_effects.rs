@@ -69,7 +69,7 @@ async fn rolling_back_terminal_persistence_restores_request_invitees_push_and_ev
             .unwrap()
     );
     assert!(
-        crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+        crate::db::github::pushes::latest_github_push(store.db.as_ref(), "req_1")
             .await
             .unwrap()
             .unwrap()
@@ -98,7 +98,7 @@ pub(crate) async fn seed_terminal_effects(store: &MetadataStore) {
         })
         .await
         .unwrap();
-    crate::db::github_pushes::queue_github_push(
+    crate::db::github::pushes::queue_github_push(
         store.db.as_ref(),
         "owner/repo",
         &GitHubBranch::Request("req_1".into()),
@@ -123,7 +123,7 @@ pub(crate) async fn assert_terminal_effects(store: &MetadataStore, event_id: &st
             .unwrap()
     );
     assert_eq!(
-        crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+        crate::db::github::pushes::latest_github_push(store.db.as_ref(), "req_1")
             .await
             .unwrap()
             .unwrap()

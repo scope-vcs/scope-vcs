@@ -137,7 +137,7 @@ pub(crate) async fn request_queue(
         .collect::<Vec<_>>();
     let checks =
         crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &rows).await?;
-    let reviews = crate::use_cases::github_review_bot_statuses::reviews_outcomes(
+    let reviews = crate::use_cases::github::review_bot_statuses::reviews_outcomes(
         &state,
         &repo.record.id,
         &repo.views,

@@ -1,7 +1,7 @@
 use super::{GitHubApp, GitHubRepository, client::unavailable};
 use crate::error::ApiError;
 use reqwest::{Method, StatusCode};
-use scope_domain::github_check_catalog::GitHubWorkflowState;
+use scope_domain::github::check_catalog::GitHubWorkflowState;
 use serde::Deserialize;
 
 const BRANCH_RULES_ROUTE: &str = "/repos/{owner}/{repo}/rules/branches/{branch}";

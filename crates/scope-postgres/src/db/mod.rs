@@ -25,29 +25,15 @@ mod generated_ids;
 mod git_compaction;
 mod git_fetch_advertisements;
 mod git_heads;
+mod github;
 pub use git_fetch_advertisements::GitFetchReader;
 mod git_push_reads;
 mod git_segments;
 mod git_transport_reads;
-mod github_check_runs;
-mod github_connections;
-mod github_pull_requests;
-mod github_pushes;
-mod github_read_queue;
-mod github_required_checks;
-mod github_review_bot_statuses;
-mod github_review_bots;
-mod github_review_imports;
-mod github_run_imports;
-mod github_skipped_reviews;
-mod github_webhook_deliveries;
-mod github_workflow_job_log_reads;
-mod github_workflow_jobs;
 #[cfg(test)]
 mod transaction_cancellation_tests;
-pub use github_webhook_deliveries::GitHubWebhookDelivery;
-pub use github_workflow_jobs::GitHubWorkflowJobReadJob;
-mod github_workflow_runs;
+pub use github::webhook_deliveries::GitHubWebhookDelivery;
+pub use github::workflow_jobs::GitHubWorkflowJobReadJob;
 mod history_reads;
 mod history_rows;
 mod integer_columns;
@@ -130,20 +116,20 @@ pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::{GitPushCredentials, GitPushState};
 pub use git_segments::{ListedMainPoolPack, PooledRequest, PooledRequestPack};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
-pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
-pub use github_connections::GitHubConnectionRead;
-pub use github_pull_requests::{GitHubMergeCheckedAgainstMain, GitHubPullRequestFinish};
-pub use github_pushes::GitHubPushStanding;
-pub use github_read_queue::GitHubJobOutcome;
-pub use github_review_bot_statuses::GitHubReviewBotReconcile;
-pub use github_review_imports::{
+pub use github::check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
+pub use github::connections::GitHubConnectionRead;
+pub use github::pull_requests::{GitHubMergeCheckedAgainstMain, GitHubPullRequestFinish};
+pub use github::pushes::GitHubPushStanding;
+pub use github::read_queue::GitHubJobOutcome;
+pub use github::review_bot_statuses::GitHubReviewBotReconcile;
+pub use github::review_imports::{
     GitHubImportedComment, GitHubReviewImport, GitHubReviewImportFinish, GitHubReviewImportJob,
     GitHubThreadTransition, ImportGitHubReviewCommand, QueueGitHubReviewImport,
     TransitionGitHubDiscussionCommand,
 };
-pub use github_skipped_reviews::{GitHubUnlistedReviewBot, SkipGitHubReview};
-pub use github_workflow_job_log_reads::GitHubJobLogReadJob;
-pub use github_workflow_runs::{
+pub use github::skipped_reviews::{GitHubUnlistedReviewBot, SkipGitHubReview};
+pub use github::workflow_job_log_reads::GitHubJobLogReadJob;
+pub use github::workflow_runs::{
     GitHubWorkflowRunCursor, GitHubWorkflowRunDetailRead, GitHubWorkflowRunPageQuery,
     GitHubWorkflowRunRead, GitHubWorkflowRunReadJob, GitHubWorkflowRunReference,
 };

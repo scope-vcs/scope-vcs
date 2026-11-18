@@ -48,7 +48,7 @@ async fn github_push_claim_obeys_stack_gate_without_delaying_recovery() {
             github_full_name: "octo/checks".into(),
         };
         let branch = scope_domain::requests::GitHubBranch::Request(request.id.clone());
-        crate::db::github_pushes::queue_github_push(
+        crate::db::github::pushes::queue_github_push(
             store.db.as_ref(),
             &request.repo_id,
             &branch,
@@ -81,7 +81,7 @@ async fn github_push_claim_obeys_stack_gate_without_delaying_recovery() {
         super::super::super::request_rows::save_request_row(store.db.as_ref(), &request)
             .await
             .unwrap();
-        crate::db::github_pushes::queue_github_push(
+        crate::db::github::pushes::queue_github_push(
             store.db.as_ref(),
             &request.repo_id,
             &branch,
@@ -128,7 +128,7 @@ async fn github_push_claim_and_completion_wait_for_rewritten_dependencies_then_r
         github_full_name: "octo/checks".into(),
     };
     for request in [&child, &grandchild] {
-        crate::db::github_pushes::queue_github_push(
+        crate::db::github::pushes::queue_github_push(
             store.db.as_ref(),
             &request.repo_id,
             &scope_domain::requests::GitHubBranch::Request(request.id.clone()),
@@ -200,7 +200,7 @@ async fn github_push_claim_and_completion_wait_for_rewritten_dependencies_then_r
         .await
         .unwrap()
         .request;
-    crate::db::github_pushes::queue_github_push(
+    crate::db::github::pushes::queue_github_push(
         store.db.as_ref(),
         &recovered.repo_id,
         &scope_domain::requests::GitHubBranch::Request(recovered.id.clone()),

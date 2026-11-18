@@ -1,6 +1,6 @@
 use super::RequestCheckEvaluation;
 use crate::{
-    github_connection::GitHubConnection,
+    github::connection::GitHubConnection,
     requests::{Request, RequestState},
 };
 use serde::{Deserialize, Serialize};

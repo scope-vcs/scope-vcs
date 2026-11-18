@@ -1,7 +1,7 @@
 use super::super::*;
 use scope_domain::{
-    github_workflow_jobs::GitHubWorkflowJob,
-    github_workflow_runs::GitHubWorkflowRun,
+    github::workflow_jobs::GitHubWorkflowJob,
+    github::workflow_runs::GitHubWorkflowRun,
     requests::{GitHubCheckConclusion, GitHubCheckStatus},
 };
 
@@ -58,7 +58,7 @@ pub(super) async fn seed_github_run(state: &AppState) {
             TEST_REPO_ID,
             GITHUB_RUN_ID,
             None,
-            Some(scope_domain::github_workflow_jobs::GitHubJobsRead {
+            Some(scope_domain::github::workflow_jobs::GitHubJobsRead {
                 run_attempt: 1,
                 read_at_unix: unix_now(),
             }),

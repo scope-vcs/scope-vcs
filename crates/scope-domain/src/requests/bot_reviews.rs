@@ -1,5 +1,5 @@
 use crate::{
-    github_review_bots::GitHubReviewBot,
+    github::review_bots::GitHubReviewBot,
     requests::GitHubReviewRequest,
     views::{ViewId, Views},
 };

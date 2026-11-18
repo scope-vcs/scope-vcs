@@ -1,15 +1,15 @@
 use crate::github::GitHubRepository;
 use scope_api_contract::{GitHubCheckConclusion, GitHubCheckStatus, RequestActorSummaryResponse};
 use scope_domain::{
-    github_check_catalog::{
+    github::check_catalog::{
         GitHubCatalogCheck, GitHubCheckCatalog, GitHubCheckRuns, GitHubWorkflowSummary,
     },
-    github_connection::{
+    github::connection::{
         GitHubConnectionStatus, GitHubDisconnectReason, GitHubRepositoryVisibility,
     },
-    github_connection_test::{GitHubConnectionTestResult, GitHubConnectionTestStep},
-    github_run_import::{GitHubRunImport, GitHubRunImportState},
-    github_workflow_jobs::GitHubWorkflowJob,
+    github::connection_test::{GitHubConnectionTestResult, GitHubConnectionTestStep},
+    github::run_import::{GitHubRunImport, GitHubRunImportState},
+    github::workflow_jobs::GitHubWorkflowJob,
     requests::{GitHubPush, GitHubPushState},
 };
 use scope_postgres::db::{GitHubConnectionRead, GitHubUnlistedReviewBot, GitHubWorkflowRunRead};
@@ -463,7 +463,7 @@ pub(crate) fn github_workflow_job_response(job: GitHubWorkflowJob) -> GitHubWork
 pub(crate) struct GitHubConnectionParts {
     pub(crate) read: Option<GitHubConnectionRead>,
     pub(crate) required_checks: Vec<String>,
-    pub(crate) review_bots: Vec<scope_domain::github_review_bots::GitHubReviewBot>,
+    pub(crate) review_bots: Vec<scope_domain::github::review_bots::GitHubReviewBot>,
     pub(crate) unlisted_review_bots: Vec<GitHubUnlistedReviewBot>,
     pub(crate) can_confirm_public: bool,
     pub(crate) can_publish_main: bool,

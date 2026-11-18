@@ -135,7 +135,7 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
                 .unwrap()
         );
         assert_eq!(
-            crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+            crate::db::github::pushes::latest_github_push(store.db.as_ref(), "req_1")
                 .await
                 .unwrap()
                 .unwrap()
@@ -184,7 +184,7 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
                 .unwrap()
         );
         assert_eq!(
-            crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+            crate::db::github::pushes::latest_github_push(store.db.as_ref(), "req_1")
                 .await
                 .unwrap()
                 .unwrap()

@@ -3,8 +3,8 @@ use super::client::{parse_enum, parse_time, send, unavailable};
 use crate::error::ApiError;
 use reqwest::{Method, StatusCode};
 use scope_domain::{
-    github_account::{GitHubAccount, GitHubAccountType},
-    github_review_bots::{GitHubPermissionGrant, GitHubRepositoryPermission},
+    github::account::{GitHubAccount, GitHubAccountType},
+    github::review_bots::{GitHubPermissionGrant, GitHubRepositoryPermission},
     requests::{GitHubCommentPosition, GitHubCommentSubject, RequestDiffSide},
 };
 use serde::Deserialize;

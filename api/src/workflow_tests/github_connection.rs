@@ -3,7 +3,7 @@ use super::fake_github::{
     github_api, github_json, github_repository, github_state, user_repository, webhook,
 };
 use super::*;
-use scope_domain::github_connection::ConnectGitHubRepository;
+use scope_domain::github::connection::ConnectGitHubRepository;
 use std::sync::atomic::Ordering;
 
 async fn setup_state(state: &AppState, bearer: &str) -> String {
@@ -418,7 +418,7 @@ async fn a_public_github_repository_connects_only_with_a_confirmation_from_who_m
     let unconfirmed = connect_public(bearer_header(), grant.clone(), false).await;
     assert_eq!(
         expect_json(unconfirmed, StatusCode::CONFLICT).await["message"],
-        scope_domain::github_connection::PUBLIC_GITHUB_REPOSITORY_CONFIRMATION
+        scope_domain::github::connection::PUBLIC_GITHUB_REPOSITORY_CONFIRMATION
     );
     assert_eq!(
         connection(&state).await["connection"],

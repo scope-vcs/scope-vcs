@@ -23,7 +23,7 @@ async fn a_private_request_is_not_sent_to_a_repository_that_became_public_until_
     assert_eq!(held["mergeability"]["status"], "ChecksConfigurationError");
     assert_eq!(
         held["message"],
-        scope_domain::github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
+        scope_domain::github::connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
     );
     assert_eq!(held["private_request_on_public_github"], true);
     let settings = github_settings(state).await;

@@ -4,10 +4,10 @@ use crate::{error::ApiError, persistence::unix_now};
 use jsonwebtoken::{Algorithm, Header};
 use reqwest::{Method, RequestBuilder, StatusCode, header::HeaderMap};
 use scope_domain::{
-    github_connection_test::{
+    github::connection_test::{
         GitHubInstallationFacts, GitHubInstallationState, GitHubPermissionLevel,
     },
-    github_workflow_runs::GitHubWorkflowRun,
+    github::workflow_runs::GitHubWorkflowRun,
     requests::{GitHubCheckConclusion, GitHubCheckRun, GitHubCheckStatus},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};

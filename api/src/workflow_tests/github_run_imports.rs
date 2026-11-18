@@ -3,7 +3,7 @@ use super::fake_github::{
     github_state, reconnect_test_repository, workflow_run_started_at,
 };
 use super::*;
-use crate::use_cases::github_run_imports::import_due_github_runs;
+use crate::use_cases::github::run_imports::import_due_github_runs;
 use std::sync::atomic::Ordering;
 
 const OTHER_REPOSITORY_ID: u64 = GITHUB_REPOSITORY_ID + 1;

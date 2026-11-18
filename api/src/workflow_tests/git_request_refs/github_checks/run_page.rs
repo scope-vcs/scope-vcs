@@ -4,11 +4,11 @@ use super::super::super::fake_github::{
 use super::public::private_file_repository;
 use super::public_repositories::make_github_repository_public;
 use super::*;
-use crate::use_cases::github_job_logs::{JOB_LOG_WAIT, read_due_github_job_logs_once};
-use crate::use_cases::github_workflow_jobs::retry_github_workflow_job_reads_once;
+use crate::use_cases::github::job_logs::{JOB_LOG_WAIT, read_due_github_job_logs_once};
+use crate::use_cases::github::workflow_jobs::retry_github_workflow_job_reads_once;
 use scope_domain::{
-    github_workflow_jobs::GitHubWorkflowJob,
-    github_workflow_runs::GitHubWorkflowRun,
+    github::workflow_jobs::GitHubWorkflowJob,
+    github::workflow_runs::GitHubWorkflowRun,
     requests::{GitHubCheckConclusion, GitHubCheckStatus},
 };
 
@@ -184,7 +184,7 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
                 TEST_REPO_ID,
                 RUN_ID,
                 read,
-                Some(scope_domain::github_workflow_jobs::GitHubJobsRead {
+                Some(scope_domain::github::workflow_jobs::GitHubJobsRead {
                     run_attempt: 1,
                     read_at_unix: unix_now() - 31,
                 }),
@@ -372,7 +372,7 @@ async fn a_failed_jobs_long_log_is_read_when_it_finishes_and_only_its_end_is_dow
     assert_eq!(read_logs(state, 0).await, 1);
     assert!(
         fake.job_log_bytes_served.load(Ordering::SeqCst)
-            <= scope_domain::github_workflow_jobs::GITHUB_JOB_LOG_LIMIT_BYTES + 1
+            <= scope_domain::github::workflow_jobs::GITHUB_JOB_LOG_LIMIT_BYTES + 1
     );
 
     let reads = fake.job_log_reads.load(Ordering::SeqCst);
@@ -462,7 +462,7 @@ async fn request_viewers_open_its_github_runs_only_once_the_github_repository_is
                 TEST_REPO_ID,
                 run.github_run_id,
                 None,
-                Some(scope_domain::github_workflow_jobs::GitHubJobsRead {
+                Some(scope_domain::github::workflow_jobs::GitHubJobsRead {
                     run_attempt: 1,
                     read_at_unix: unix_now(),
                 }),

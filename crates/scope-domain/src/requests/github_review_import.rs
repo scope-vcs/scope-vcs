@@ -8,7 +8,7 @@ use super::{
     advance_request_activity, reactivate_request_attention, validate_body_size, validate_required,
 };
 use crate::{
-    error::DomainError, github_review_bots::GitHubAuthorStanding, policy::ScopePath, views::Views,
+    error::DomainError, github::review_bots::GitHubAuthorStanding, policy::ScopePath, views::Views,
 };
 
 #[cfg(test)]

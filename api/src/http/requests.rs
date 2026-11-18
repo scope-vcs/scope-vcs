@@ -100,7 +100,7 @@ pub(crate) async fn list_requests(
     let checks =
         crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &requests)
             .await?;
-    let reviews = crate::use_cases::github_review_bot_statuses::reviews_outcomes(
+    let reviews = crate::use_cases::github::review_bot_statuses::reviews_outcomes(
         &state,
         &repo.record.id,
         &repo.views,

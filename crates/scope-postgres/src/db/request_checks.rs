@@ -1,7 +1,7 @@
 use super::{
     RequestStore, entities,
-    github_connections::repository_github_connection,
-    github_pushes::queue_github_push,
+    github::connections::repository_github_connection,
+    github::pushes::queue_github_push,
     request_access::{ensure_user_exists, lock_request_repository},
 };
 use crate::error::PostgresError;
@@ -335,7 +335,7 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
         GitHubCheckResults::Connected(Vec::new())
     } else if let Some(connection) = connection {
         GitHubCheckResults::Connected(
-            super::github_check_runs::latest_github_check_runs(
+            super::github::check_runs::latest_github_check_runs(
                 conn,
                 repo_id,
                 connection.github_repository_id,

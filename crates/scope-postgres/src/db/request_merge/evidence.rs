@@ -1,6 +1,6 @@
 use super::super::{
     RequestStore, begin_metadata_read_snapshot,
-    github_connections::repository_github_connection,
+    github::connections::repository_github_connection,
     integer_columns::{i64_to_u64, optional_i64_to_u64, u64_to_i64},
     request_checks::{evaluation_for_head, request_check_results},
     request_lifecycle_commands::{

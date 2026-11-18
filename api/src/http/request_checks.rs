@@ -15,8 +15,8 @@ use scope_api_contract::{
     RequestReviewBotResponse,
 };
 use scope_domain::{
-    github_connection::GitHubRepositoryVisibility,
-    github_workflow_jobs::github_run_visible,
+    github::connection::GitHubRepositoryVisibility,
+    github::workflow_jobs::github_run_visible,
     repository::access::RepositoryAccess,
     requests::{
         GitHubBranch, GitHubPullRequest, GitHubPullRequestStatus, GitHubPullRequestStatusState,

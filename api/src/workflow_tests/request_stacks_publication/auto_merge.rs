@@ -297,7 +297,7 @@ async fn retargeted_child_requires_fresh_github_confirmation_before_automatic_la
             head,
             vec![check_run(run_id, REQUIRED_CHECK, head, Some("success"))],
         );
-        crate::use_cases::github_check_results::refresh_checks_for_delivery(
+        crate::use_cases::github::check_results::refresh_checks_for_delivery(
             &fixture.state,
             GITHUB_REPOSITORY_ID,
             head,

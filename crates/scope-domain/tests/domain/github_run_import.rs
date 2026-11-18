@@ -1,11 +1,11 @@
 use crate::support::{OWNER, member, outsider, owner};
 use scope_domain::{
     error::DomainErrorKind,
-    github_connection::{
+    github::connection::{
         ConnectGitHubRepository, GitHubConnection, GitHubConnectionStatus, GitHubDisconnectReason,
         connect_github_repository,
     },
-    github_run_import::{
+    github::run_import::{
         GITHUB_RUN_IMPORT_DEFAULT_COUNT, GitHubRunImport, GitHubRunImportState,
         github_run_import_error, set_github_run_import_count, start_github_run_import,
     },

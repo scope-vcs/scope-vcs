@@ -32,15 +32,15 @@ async fn persist_ended_request_effects(
     tx: &DatabaseTransaction,
     request: &Request,
 ) -> Result<(), PostgresError> {
-    let child_carriers = super::github_pull_requests::lock_carrier_and_child_carriers(
+    let child_carriers = super::github::pull_requests::lock_carrier_and_child_carriers(
         tx,
         &request.repo_id,
         &request.id,
     )
     .await?;
     let connection =
-        super::github_connections::repository_github_connection(tx, &request.repo_id).await?;
-    let carrier = super::github_pull_requests::github_pull_request(tx, &request.id).await?;
+        super::github::connections::repository_github_connection(tx, &request.repo_id).await?;
+    let carrier = super::github::pull_requests::github_pull_request(tx, &request.id).await?;
     let now_unix = request.updated_at_unix;
     for effect in ended_request_effects(
         request,
@@ -54,7 +54,7 @@ async fn persist_ended_request_effects(
                 super::request_invitees::delete_request_invitees(tx, &request.id).await?;
             }
             EndedRequestEffect::DeleteGitHubBranch => {
-                super::github_pushes::queue_github_branch_deletion(
+                super::github::pushes::queue_github_branch_deletion(
                     tx,
                     &request.repo_id,
                     &request.id,
@@ -63,7 +63,7 @@ async fn persist_ended_request_effects(
                 .await?;
             }
             EndedRequestEffect::CloseCarrierPullRequest => {
-                super::github_pull_requests::queue_carrier_close(tx, request).await?;
+                super::github::pull_requests::queue_carrier_close(tx, request).await?;
             }
             EndedRequestEffect::RecomputeChildCarrierBases => {
                 child_carriers.recompute_bases(tx, now_unix).await?;
@@ -84,7 +84,7 @@ pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
                 super::git_segments::retire_request_pool_packs(tx, &request.id, now_unix).await?;
             }
             DeletedDraftEffect::DeleteGitHubBranch => {
-                super::github_pushes::queue_github_branch_deletion(
+                super::github::pushes::queue_github_branch_deletion(
                     tx,
                     &request.repo_id,
                     &request.id,

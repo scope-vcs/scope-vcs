@@ -3,10 +3,10 @@ use super::super::fake_github::{
 };
 use super::github_checks::{OwnerRequest, connect_github, owner_request, push_pass};
 use super::*;
-use crate::use_cases::github_pull_requests::run_due_github_pull_requests;
+use crate::use_cases::github::pull_requests::run_due_github_pull_requests;
 use scope_api_contract::routes::repo_request_merge;
 use scope_domain::{
-    github_connection::MAIN_WITHHELD_MESSAGE, requests::GITHUB_MAIN_DIVERGED_MESSAGE,
+    github::connection::MAIN_WITHHELD_MESSAGE, requests::GITHUB_MAIN_DIVERGED_MESSAGE,
 };
 
 const LATER: u64 = 24 * 60 * 60;

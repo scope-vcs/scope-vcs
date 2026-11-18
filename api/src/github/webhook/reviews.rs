@@ -2,7 +2,7 @@ use super::{malformed, required};
 use crate::error::ApiError;
 use crate::github::reviews::{GitHubUser, github_account};
 use scope_domain::{
-    github_account::GitHubAccount,
+    github::account::GitHubAccount,
     requests::{GitHubBranch, GitHubReviewImportSubject},
 };
 use serde::Deserialize;
@@ -126,7 +126,7 @@ pub(super) fn parse(event: &str, body: &[u8]) -> Result<Option<GitHubReviewDeliv
 mod tests {
     use super::*;
     use crate::github::webhook::GitHubWebhookEvent;
-    use scope_domain::github_account::GitHubAccountType;
+    use scope_domain::github::account::GitHubAccountType;
 
     fn payload(action: &str, head_repo: u64, branch: &str) -> serde_json::Value {
         serde_json::json!({

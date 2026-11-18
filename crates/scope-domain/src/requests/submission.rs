@@ -2,7 +2,7 @@ use super::{
     GitHubPullRequest, Request, RequestActor, RequestEvent, RequestEventKind, RequestEventPayload,
     RequestState, validate_required,
 };
-use crate::{error::DomainError, github_connection::GitHubConnection};
+use crate::{error::DomainError, github::connection::GitHubConnection};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestLifecycleMutation {

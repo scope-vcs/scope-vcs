@@ -4,7 +4,7 @@ use super::{
     git_compaction::schedule_git_compaction,
     git_heads::advance_git_head,
     git_segments::register_git_pool_pack,
-    github_pushes::queue_main_publication,
+    github::pushes::queue_main_publication,
     history_rows::{
         LiveFileRow, LiveFiles, file_rules, insert_commits, load_live_files_at, save_live_files,
     },

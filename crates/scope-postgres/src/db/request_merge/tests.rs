@@ -97,7 +97,7 @@ async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
 
 #[tokio::test]
 async fn a_native_merge_by_a_member_without_push_access_lands_a_waiting_github_merge() {
-    use crate::db::github_pull_requests::tests::{
+    use crate::db::github::pull_requests::tests::{
         claim,
         merge_landing::{finish_merged, squash_merged_on_github},
         oid, push_succeeds, submitted_full_view_request,

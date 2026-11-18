@@ -243,7 +243,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_request_head_is_rewritten_only_for_a_new_request_or_view() {
-        use crate::db::github_pull_requests::tests::{REPO, submitted_full_view_request};
+        use crate::db::github::pull_requests::tests::{REPO, submitted_full_view_request};
         let store = crate::db::requests::tests::postgres_store();
         let mut first = submitted_full_view_request(&store, "req_first").await;
         let mut second = submitted_full_view_request(&store, "req_second").await;

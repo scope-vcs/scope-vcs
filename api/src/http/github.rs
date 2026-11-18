@@ -1,3 +1,6 @@
+pub(crate) mod checks;
+pub(crate) mod runs;
+
 use super::responses::{
     ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
     GitHubConnectionParts, GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
@@ -20,7 +23,7 @@ use crate::{
     repo_access::{find_read_access, require_full_view_member},
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::github_webhook_deliveries,
+    use_cases::github,
 };
 use axum::{
     Json,
@@ -29,12 +32,12 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use scope_domain::{
-    github_connection::{
+    github::connection::{
         ConnectGitHubRepository, can_publish_main_to_github, can_publish_to_github,
         ensure_can_manage_github_connection,
     },
-    github_connection_test::GitHubInstallationState,
-    github_review_bots::GitHubReviewBotInput,
+    github::connection_test::GitHubInstallationState,
+    github::review_bots::GitHubReviewBotInput,
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
 };
 use scope_postgres::db::{GitHubWorkflowRunCursor, GitHubWorkflowRunPageQuery};
@@ -453,7 +456,7 @@ pub(crate) async fn receive_github_webhook(
         .and_then(|value| value.to_str().ok())
         .filter(|delivery_id| !delivery_id.is_empty())
         .ok_or_else(|| ApiError::bad_request("missing GitHub delivery id"))?;
-    github_webhook_deliveries::accept_github_delivery(
+    github::webhook_deliveries::accept_github_delivery(
         &state,
         delivery_id,
         event,
