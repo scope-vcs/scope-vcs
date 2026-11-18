@@ -1,6 +1,6 @@
 # Privacy policy
 
-Current policy effective October 13, 2026.
+Current policy effective November 18, 2026.
 
 Location analytics update prepared October 21, 2026. The planned collection
 described below is not active yet. It will take effect with a future release,
@@ -90,8 +90,7 @@ job.
 | Provider | Purpose | Location |
 | --- | --- | --- |
 | Clerk | Sign-in and account identity | United States |
-| Railway | Application hosting, database and file storage | United States |
-| Amazon Web Services | Workflow runners and encrypted database backups | United States |
+| Railway | Application hosting, database and its backups, file storage | United States |
 | PostHog | Product analytics, planned approximate location enrichment, application logs and traces | United States |
 | Resend | Sending invitation emails | United States |
 
