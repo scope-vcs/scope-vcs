@@ -134,16 +134,17 @@ async fn reparenting_recovers_from_closed_or_rewritten_parent_to_main_or_other_p
             .unwrap()
             .unwrap();
         if close_old {
-            store
-                .requests()
-                .close_request(CloseRequestCommand {
+            crate::db::test_support::request_fixtures::closed(
+                &store.requests(),
+                scope_domain::requests::CloseRequestInput {
+                    actor_is_maintainer: true,
                     request_id: old.id.clone(),
                     actor_user_id: "user_owner".into(),
                     event_id: "close_old_parent".into(),
                     now_unix: 22,
-                })
-                .await
-                .unwrap();
+                },
+            )
+            .await;
         } else {
             let rewritten = input(&old, "rewritten_old_parent", "rewrite_old_parent", 22);
             let child_facts = vec![fact(&rewritten.new_head_oid, &child, false)];
@@ -398,16 +399,17 @@ async fn reparenting_rejects_changed_parent_and_cycles_without_committing() {
         assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
         assert_eq!(load(&store, &child.id).await, child);
     }
-    store
-        .requests()
-        .close_request(CloseRequestCommand {
+    crate::db::test_support::request_fixtures::closed(
+        &store.requests(),
+        scope_domain::requests::CloseRequestInput {
+            actor_is_maintainer: true,
             request_id: parent.id,
             actor_user_id: "user_owner".into(),
             event_id: "close_new_parent".into(),
             now_unix: 19,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     let child_facts = vec![fact(&publication.new_head_oid, &descendant, true)];
     let error = store
         .requests()
@@ -538,16 +540,17 @@ async fn context_receipt_replays_after_main_reparent_and_requires_current_edit_r
         )
         .await
         .unwrap();
-    store
-        .requests()
-        .close_request(CloseRequestCommand {
+    crate::db::test_support::request_fixtures::closed(
+        &store.requests(),
+        scope_domain::requests::CloseRequestInput {
+            actor_is_maintainer: true,
             request_id: parent.id,
             actor_user_id: "user_owner".into(),
             event_id: "closed_after_detach".into(),
             now_unix: 12,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     set_main(&store, &"f".repeat(40)).await;
     let main_receipt = store
         .requests()

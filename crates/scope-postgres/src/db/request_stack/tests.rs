@@ -1,7 +1,5 @@
 use super::*;
-use crate::db::{
-    CloseRequestCommand, MetadataStore, RequestRevisionContextPublication, SubmitRequestCommand,
-};
+use crate::db::{MetadataStore, RequestRevisionContextPublication};
 use scope_domain::{
     requests::{
         RecordRequestRevisionInput, RequestActorRole, RequestAutoMergeStopReason,
@@ -141,16 +139,16 @@ async fn start(store: &MetadataStore, id: &str, base: RequestBase, now: u64) -> 
         )
         .await
         .unwrap();
-    store
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    crate::db::test_support::request_fixtures::submitted(
+        &store.requests(),
+        scope_domain::requests::SubmitRequestInput {
             request_id: id.into(),
             actor_user_id: "user_owner".into(),
             event_id: format!("submit_{id}"),
             now_unix: now + 2,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     load(store, &mutation.request.id).await
 }
 
@@ -299,16 +297,17 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
         blocked.request.stack_status,
         RequestStackStatus::AncestorBlocked
     );
-    store
-        .requests()
-        .close_request(CloseRequestCommand {
+    crate::db::test_support::request_fixtures::closed(
+        &store.requests(),
+        scope_domain::requests::CloseRequestInput {
+            actor_is_maintainer: true,
             request_id: parent.id,
             actor_user_id: "user_owner".into(),
             event_id: "close".into(),
             now_unix: 15,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     let closed = load(&store, "child").await;
     assert_eq!(closed.stack_status, RequestStackStatus::ParentClosed);
     assert_eq!(closed.base, child.base);
@@ -363,16 +362,17 @@ async fn committed_context_receipt_survives_parent_close_and_rejects_changed_pay
         .unwrap();
     assert_eq!(accepted.revision.new_head_oid, revision.new_head_oid);
     assert_ne!(accepted.revision.id, context.expected_revision_id);
-    store
-        .requests()
-        .close_request(CloseRequestCommand {
+    crate::db::test_support::request_fixtures::closed(
+        &store.requests(),
+        scope_domain::requests::CloseRequestInput {
+            actor_is_maintainer: true,
             request_id: parent.id,
             actor_user_id: "user_owner".into(),
             event_id: "close".into(),
             now_unix: 12,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     let receipt = store
         .requests()
         .request_revision_context_receipt(&child.id, "user_owner", &context)

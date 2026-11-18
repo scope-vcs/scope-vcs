@@ -16,16 +16,16 @@ pub(super) async fn request_check_context(store: &crate::db::MetadataStore) -> R
 
 pub(super) async fn open_request_with_revision(store: &crate::db::MetadataStore) -> String {
     start_public_request(store).await;
-    store
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    crate::db::test_support::request_fixtures::submitted(
+        &store.requests(),
+        scope_domain::requests::SubmitRequestInput {
             request_id: "req_1".into(),
             actor_user_id: "user_public".into(),
             event_id: "submitted".into(),
             now_unix: 4,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     store
         .requests()
         .record_request_revision(RecordRequestRevisionInput {

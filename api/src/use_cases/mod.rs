@@ -33,6 +33,8 @@ pub(crate) mod request_revision_inspection;
 pub(crate) mod request_revision_list;
 pub(crate) mod request_start;
 pub(crate) mod request_submit;
+#[cfg(test)]
+pub(crate) mod request_test_fixtures;
 pub(crate) mod request_tree;
 pub(crate) mod scope_path_input;
 pub(crate) mod view_check_commits;

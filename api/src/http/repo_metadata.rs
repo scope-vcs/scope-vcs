@@ -20,19 +20,16 @@ pub(crate) async fn update_repo_metadata(
     let user = require_scope_user(&state, &headers).await?;
     crate::repo_access::find_read_access(&state, &owner, &repo_name, Some(&user.id)).await?;
     let user_id = user.id.clone();
-    let (changed, incarnation, version) = state
+    let now_unix = unix_now()?;
+    let tx = state
         .metadata
         .repositories()
-        .mutate_repository(&owner, &repo_name, unix_now()?, move |repo| {
-            let changed = update_metadata(repo, &user_id, input.description, input.website_url)?;
-            Ok(RepositoryMutation::new((
-                changed,
-                repo.incarnation(),
-                repo.record.change_version,
-            )))
-        })
-        .await?
-        .result;
+        .begin_repository(&owner, &repo_name)
+        .await?;
+    let mut repo = tx.repository().clone();
+    let changed = update_metadata(&mut repo, &user_id, input.description, input.website_url)?;
+    let (incarnation, version) = (repo.incarnation(), repo.record.change_version);
+    tx.save(repo, RepositoryMutation::new(()), now_unix).await?;
     if changed {
         state.publish_repo_change(&incarnation, version, RepoChangeReason::MetadataUpdated);
     }

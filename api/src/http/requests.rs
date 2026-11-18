@@ -23,6 +23,7 @@ use scope_api_contract::{
     RequestInviteeResponse, RequestListResponse, RequestMutationResponse, StartRequestRequest,
     SubmitRequestRequest,
 };
+use scope_domain::requests::EditRequestIdentityInput;
 use scope_domain::views::ViewId;
 use scope_domain::{
     account::UserAccount,
@@ -33,7 +34,7 @@ use scope_domain::{
         request_actor_role, request_policy, validate_start_request_view,
     },
 };
-use scope_postgres::db::{EditRequestIdentityCommand, RepositoryReadPolicy};
+use scope_postgres::db::RepositoryReadPolicy;
 use serde::Deserialize;
 
 mod summary;
@@ -374,7 +375,7 @@ pub(crate) async fn edit_request_identity(
     let mutation = request_identity::edit_request_identity(
         &state,
         &repo,
-        EditRequestIdentityCommand {
+        EditRequestIdentityInput {
             request_id: request.id,
             actor_user_id: user.id.clone(),
             event_id: crate::persistence_ids::generate_prefixed_id(

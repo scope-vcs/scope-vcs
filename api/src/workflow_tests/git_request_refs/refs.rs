@@ -7,17 +7,17 @@ async fn shallow_public_clone_omits_another_authors_request_until_it_is_fetched_
     let (_author_checkout, private_remote, _server, _request_head) =
         request_checkout(&state, "published-request-clone-source").await;
     let public_remote = private_remote.replace("/git/private/", "/git/public/");
-    state
-        .metadata
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    crate::use_cases::request_submit::persist_submission(
+        &state.metadata.requests(),
+        SubmitRequestInput {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
             event_id: "event_published_clone_submitted".to_string(),
             now_unix: 4,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     insert_public_contributor(&state).await;
     let contributor = bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL);
     let checkout = TempGitRepo(unique_test_path("named-request-clone"));

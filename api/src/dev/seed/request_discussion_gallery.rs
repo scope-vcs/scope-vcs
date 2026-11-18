@@ -1,10 +1,10 @@
 use super::request_discussions::{CONTRIBUTOR_ID, MAINTAINER_ID};
 use crate::error::ApiError;
-use scope_domain::requests::RequestDiscussionAnchor;
-use scope_postgres::db::{
-    CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
-    MetadataStore, TransitionRequestDiscussionCommand,
+use crate::use_cases::request_discussion_mutation::{
+    CreateRequestDiscussionReplyCommand, DiscussionTransition, TransitionRequestDiscussionCommand,
 };
+use scope_domain::requests::{CreateRequestDiscussionInput, RequestDiscussionAnchor};
+use scope_postgres::db::MetadataStore;
 
 const REQUEST_ID: &str = "req_demo_ready";
 const RETRY_CAP_ID: &str = "discussion_demo_retry_cap";
@@ -66,9 +66,9 @@ async fn create_revision_conversations(metadata: &MetadataStore) -> Result<(), A
         },
     ];
     for (index, discussion) in discussions.into_iter().enumerate() {
-        metadata
-            .requests()
-            .create_request_discussion(CreateRequestDiscussionCommand {
+        crate::use_cases::request_discussion_mutation::persist_discussion(
+            &metadata.requests(),
+            CreateRequestDiscussionInput {
                 request_id: REQUEST_ID.to_string(),
                 id: discussion.discussion_id.to_string(),
                 actor_user_id: discussion.actor_user_id.to_string(),
@@ -81,16 +81,17 @@ async fn create_revision_conversations(metadata: &MetadataStore) -> Result<(), A
                     lines: None,
                 }),
                 now_unix: 1_800_000_150 + index as u64,
-            })
-            .await?;
+            },
+        )
+        .await?;
     }
     Ok(())
 }
 
 async fn create_retry_cap_conversation(metadata: &MetadataStore) -> Result<(), ApiError> {
-    metadata
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
+    crate::use_cases::request_discussion_mutation::persist_discussion(
+        &metadata.requests(),
+        CreateRequestDiscussionInput {
             request_id: REQUEST_ID.to_string(),
             id: RETRY_CAP_ID.to_string(),
             actor_user_id: CONTRIBUTOR_ID.to_string(),
@@ -103,11 +104,12 @@ async fn create_retry_cap_conversation(metadata: &MetadataStore) -> Result<(), A
             .to_string(),
             anchor: None,
             now_unix: 1_800_000_120,
-        })
-        .await?;
-    metadata
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+        },
+    )
+    .await?;
+    crate::use_cases::request_discussion_mutation::persist_reply(
+        &metadata.requests(),
+        CreateRequestDiscussionReplyCommand {
             request_id: REQUEST_ID.to_string(),
             discussion_id: RETRY_CAP_ID.to_string(),
             id: RETRY_CAP_MAINTAINER_REPLY_ID.to_string(),
@@ -121,11 +123,12 @@ async fn create_retry_cap_conversation(metadata: &MetadataStore) -> Result<(), A
             reply_to_reply_id: None,
             wait_after_reply: false,
             now_unix: 1_800_000_121,
-        })
-        .await?;
-    metadata
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+        },
+    )
+    .await?;
+    crate::use_cases::request_discussion_mutation::persist_reply(
+        &metadata.requests(),
+        CreateRequestDiscussionReplyCommand {
             request_id: REQUEST_ID.to_string(),
             discussion_id: RETRY_CAP_ID.to_string(),
             id: RETRY_CAP_CONTRIBUTOR_REPLY_ID.to_string(),
@@ -139,11 +142,12 @@ async fn create_retry_cap_conversation(metadata: &MetadataStore) -> Result<(), A
             reply_to_reply_id: Some(RETRY_CAP_MAINTAINER_REPLY_ID.to_string()),
             wait_after_reply: false,
             now_unix: 1_800_000_122,
-        })
-        .await?;
-    metadata
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+        },
+    )
+    .await?;
+    crate::use_cases::request_discussion_mutation::persist_reply(
+        &metadata.requests(),
+        CreateRequestDiscussionReplyCommand {
             request_id: REQUEST_ID.to_string(),
             discussion_id: RETRY_CAP_ID.to_string(),
             id: "discussion_reply_demo_retry_cap_nested".to_string(),
@@ -157,15 +161,16 @@ async fn create_retry_cap_conversation(metadata: &MetadataStore) -> Result<(), A
             reply_to_reply_id: Some(RETRY_CAP_CONTRIBUTOR_REPLY_ID.to_string()),
             wait_after_reply: false,
             now_unix: 1_800_000_123,
-        })
-        .await?;
+        },
+    )
+    .await?;
     Ok(())
 }
 
 async fn create_jitter_conversation(metadata: &MetadataStore) -> Result<(), ApiError> {
-    metadata
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
+    crate::use_cases::request_discussion_mutation::persist_discussion(
+        &metadata.requests(),
+        CreateRequestDiscussionInput {
             request_id: REQUEST_ID.to_string(),
             id: JITTER_ID.to_string(),
             actor_user_id: MAINTAINER_ID.to_string(),
@@ -177,11 +182,12 @@ async fn create_jitter_conversation(metadata: &MetadataStore) -> Result<(), ApiE
             .to_string(),
             anchor: None,
             now_unix: 1_800_000_130,
-        })
-        .await?;
-    metadata
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+        },
+    )
+    .await?;
+    crate::use_cases::request_discussion_mutation::persist_reply(
+        &metadata.requests(),
+        CreateRequestDiscussionReplyCommand {
             request_id: REQUEST_ID.to_string(),
             discussion_id: JITTER_ID.to_string(),
             id: "discussion_reply_demo_jitter".to_string(),
@@ -195,15 +201,16 @@ async fn create_jitter_conversation(metadata: &MetadataStore) -> Result<(), ApiE
             reply_to_reply_id: None,
             wait_after_reply: false,
             now_unix: 1_800_000_131,
-        })
-        .await?;
+        },
+    )
+    .await?;
     Ok(())
 }
 
 async fn create_resolved_docs_conversation(metadata: &MetadataStore) -> Result<(), ApiError> {
-    metadata
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
+    crate::use_cases::request_discussion_mutation::persist_discussion(
+        &metadata.requests(),
+        CreateRequestDiscussionInput {
             request_id: REQUEST_ID.to_string(),
             id: RESOLVED_DOCS_ID.to_string(),
             actor_user_id: CONTRIBUTOR_ID.to_string(),
@@ -215,11 +222,12 @@ async fn create_resolved_docs_conversation(metadata: &MetadataStore) -> Result<(
             .to_string(),
             anchor: None,
             now_unix: 1_800_000_140,
-        })
-        .await?;
-    metadata
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+        },
+    )
+    .await?;
+    crate::use_cases::request_discussion_mutation::persist_reply(
+        &metadata.requests(),
+        CreateRequestDiscussionReplyCommand {
             request_id: REQUEST_ID.to_string(),
             discussion_id: RESOLVED_DOCS_ID.to_string(),
             id: "discussion_reply_demo_resolved_docs".to_string(),
@@ -230,18 +238,20 @@ async fn create_resolved_docs_conversation(metadata: &MetadataStore) -> Result<(
             reply_to_reply_id: None,
             wait_after_reply: false,
             now_unix: 1_800_000_141,
-        })
-        .await?;
-    metadata
-        .requests()
-        .transition_request_discussion(TransitionRequestDiscussionCommand {
+        },
+    )
+    .await?;
+    crate::use_cases::request_discussion_mutation::persist_discussion_transition(
+        &metadata.requests(),
+        TransitionRequestDiscussionCommand {
             request_id: REQUEST_ID.to_string(),
             discussion_id: RESOLVED_DOCS_ID.to_string(),
             actor_user_id: MAINTAINER_ID.to_string(),
             event_id: "event_demo_discussion_resolved".to_string(),
             now_unix: 1_800_000_142,
             transition: DiscussionTransition::Resolve,
-        })
-        .await?;
+        },
+    )
+    .await?;
     Ok(())
 }

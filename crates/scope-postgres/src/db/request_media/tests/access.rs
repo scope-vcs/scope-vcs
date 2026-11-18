@@ -1,10 +1,9 @@
 use super::*;
 
 async fn bind_and_submit(fixture: &Fixture, request_id: &str, attachment_id: &str) {
-    fixture
-        .store
-        .requests()
-        .edit_request_identity(EditRequestIdentityCommand {
+    crate::db::test_support::request_fixtures::identity_edited(
+        &fixture.store.requests(),
+        scope_domain::requests::EditRequestIdentityInput {
             request_id: request_id.to_string(),
             actor_user_id: OWNER_ID.to_string(),
             event_id: format!("event_bind_{attachment_id}"),
@@ -12,9 +11,9 @@ async fn bind_and_submit(fixture: &Fixture, request_id: &str, attachment_id: &st
             description_markdown: Some(attachment_markdown(attachment_id)),
             expected_description_markdown: Some(String::new()),
             now_unix: 30,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     fixture
         .store
         .requests()
@@ -44,10 +43,9 @@ async fn attachment_lists_show_unbound_drafts_only_to_their_uploader() {
     start_request(&fixture, "list_request", "list-request", 1).await;
     upload_attachment(&fixture, "list_request", "bound_attachment", 10).await;
     upload_attachment(&fixture, "list_request", "draft_attachment", 20).await;
-    fixture
-        .store
-        .requests()
-        .edit_request_identity(EditRequestIdentityCommand {
+    crate::db::test_support::request_fixtures::identity_edited(
+        &fixture.store.requests(),
+        scope_domain::requests::EditRequestIdentityInput {
             request_id: "list_request".to_string(),
             actor_user_id: OWNER_ID.to_string(),
             event_id: "event_bind_before_submit".to_string(),
@@ -55,9 +53,9 @@ async fn attachment_lists_show_unbound_drafts_only_to_their_uploader() {
             description_markdown: Some(attachment_markdown("bound_attachment")),
             expected_description_markdown: Some(String::new()),
             now_unix: 30,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     assert!(
         visible_ids(&fixture, "list_request", Some(VIEWER_ID))
             .await
@@ -219,17 +217,17 @@ async fn retry_replay_returns_the_saved_attachment_only_to_viewers_who_can_see_i
         .unwrap_err();
     assert_eq!(denied.kind, PostgresErrorKind::NotFound);
 
-    fixture
-        .store
-        .requests()
-        .close_request(CloseRequestCommand {
+    crate::db::test_support::request_fixtures::closed(
+        &fixture.store.requests(),
+        scope_domain::requests::CloseRequestInput {
+            actor_is_maintainer: true,
             request_id: "retry_request".to_string(),
             actor_user_id: OWNER_ID.to_string(),
             event_id: "event_close_retry".to_string(),
             now_unix: 34,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     let replayed = media
         .retry_request_attachment_processing(
             "retry_request",

@@ -599,17 +599,17 @@ async fn assert_removed_view_pool_isolation(prepare_before_removal: bool) {
             .await
             .contains(&hidden_head)
     );
-    state
-        .metadata
-        .requests()
-        .close_request(scope_postgres::db::CloseRequestCommand {
+    crate::use_cases::request_close::persist_close(
+        &state.metadata.requests(),
+        crate::use_cases::request_close::CloseRequestCommand {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
             event_id: "close_before_view_removal".to_string(),
             now_unix: unix_now(),
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     let preparation = if prepare_before_removal {
         Some(
             git_receive_use_case::prepare(

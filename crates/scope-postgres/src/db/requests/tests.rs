@@ -6,17 +6,13 @@ pub(crate) mod terminal_effects;
 use terminal_effects::{assert_terminal_effects, seed_terminal_effects};
 
 use super::super::MetadataStore;
-use super::super::{
-    CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
-    ReopenAndReplyToRequestDiscussionCommand, TransitionRequestDiscussionCommand,
-};
 use super::*;
 use scope_domain::{
     account::UserAccount,
     repository::{RepoLifecycleState, Repository},
     requests::{
-        RecordRequestRevisionInput, RequestActorRole, RequestDiscussionAnchor,
-        RequestDiscussionStatus, RequestRevisionGitFacts, RequestState,
+        CloseRequestMutation, RecordRequestRevisionInput, RequestActorRole,
+        RequestDiscussionAnchor, RequestRevisionGitFacts, RequestState,
     },
     views::ViewId,
 };
@@ -121,286 +117,12 @@ async fn rewritten_revision_moves_the_stored_request_base() {
 }
 
 #[tokio::test]
-async fn discussion_transactions_are_idempotent_atomic_and_self_read() {
-    let store = postgres_store();
-    start_public_request(&store).await;
-
-    let first = store
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
-            request_id: "req_1".to_string(),
-            id: "discussion_1".to_string(),
-            actor_user_id: "user_public".to_string(),
-            client_discussion_id: "client_root".to_string(),
-            body_markdown: "Parser ownership".to_string(),
-            anchor: None,
-            now_unix: 10,
-        })
-        .await
-        .unwrap();
-    assert!(first.created);
-    let mut request = store
-        .requests()
-        .request_for_tests("req_1")
-        .await
-        .unwrap()
-        .unwrap();
-    request.submitted_at_unix = Some(11);
-    request.updated_at_unix = 11;
-    save_request_row(store.db.as_ref(), &request).await.unwrap();
-    store
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
-            request_id: "req_1".to_string(),
-            discussion_id: first.discussion.id.clone(),
-            id: "reply_before_retry".to_string(),
-            actor_user_id: "user_owner".to_string(),
-            client_reply_id: "client_before_retry".to_string(),
-            body_markdown: "Maintainer reply".to_string(),
-            reply_to_reply_id: None,
-            wait_after_reply: false,
-            now_unix: 11,
-        })
-        .await
-        .unwrap();
-    let retried = store
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
-            request_id: "req_1".to_string(),
-            id: "discussion_retry_id".to_string(),
-            actor_user_id: "user_public".to_string(),
-            client_discussion_id: "client_root".to_string(),
-            body_markdown: "Parser ownership".to_string(),
-            anchor: None,
-            now_unix: 12,
-        })
-        .await
-        .unwrap();
-    assert!(!retried.created);
-    assert_eq!(retried.discussion.id, first.discussion.id);
-    assert_eq!(
-        retried.read_state.read_through_position,
-        first.discussion.opened_position
-    );
-    let unread_after_retry = store
-        .requests()
-        .request_discussion("req_1", &first.discussion.id, Some("user_public"))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(unread_after_retry.0.unread_count, 1);
-
-    let resolved = store
-        .requests()
-        .transition_request_discussion(TransitionRequestDiscussionCommand {
-            request_id: "req_1".to_string(),
-            discussion_id: first.discussion.id.clone(),
-            actor_user_id: "user_public".to_string(),
-            event_id: "event_discussion_resolved".to_string(),
-            now_unix: 13,
-            transition: DiscussionTransition::Resolve,
-        })
-        .await
-        .unwrap();
-    assert_eq!(resolved.status, RequestDiscussionStatus::Resolved);
-    let reply_error = store
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
-            request_id: "req_1".to_string(),
-            discussion_id: first.discussion.id.clone(),
-            id: "reply_rejected".to_string(),
-            actor_user_id: "user_public".to_string(),
-            client_reply_id: "client_rejected".to_string(),
-            body_markdown: "One more point".to_string(),
-            reply_to_reply_id: None,
-            wait_after_reply: false,
-            now_unix: 14,
-        })
-        .await
-        .unwrap_err();
-    assert_eq!(reply_error.kind, crate::error::PostgresErrorKind::Conflict);
-
-    let reopened = store
-        .requests()
-        .reopen_and_reply_to_request_discussion(ReopenAndReplyToRequestDiscussionCommand {
-            request_id: "req_1".to_string(),
-            discussion_id: first.discussion.id,
-            reply_id: "reply_1".to_string(),
-            actor_user_id: "user_public".to_string(),
-            event_id: "event_discussion_reopened".to_string(),
-            client_reply_id: "client_reply".to_string(),
-            body_markdown: "One more point".to_string(),
-            reply_to_reply_id: None,
-            wait_after_reply: false,
-            now_unix: 15,
-        })
-        .await
-        .unwrap();
-    assert_eq!(reopened.discussion.status, RequestDiscussionStatus::Open);
-    assert_eq!(
-        reopened.activity_event.as_ref().unwrap().position,
-        reopened.reply.position
-    );
-    let batch = store
-        .requests()
-        .request_discussion("req_1", &reopened.discussion.id, Some("user_public"))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(batch.0.unread_count, 0);
-}
-
-#[tokio::test]
-async fn completed_private_discussion_transitions_persist_nothing() {
-    let store = postgres_store();
-    let requests = store.requests();
-    let mut input = public_start_input();
-    input.author_user_id = "user_owner".to_string();
-    input.author_role = RequestActorRole::Owner;
-    input.view = ViewId::private();
-    requests.start_request(input).await.unwrap();
-    let mut upload = public_upload_input();
-    upload.actor_user_id = "user_owner".to_string();
-    requests
-        .record_working_request_upload(upload)
-        .await
-        .unwrap();
-    for id in [
-        "discussion_open",
-        "discussion_resolved",
-        "discussion_retried",
-    ] {
-        requests
-            .create_request_discussion(CreateRequestDiscussionCommand {
-                request_id: "req_1".to_string(),
-                id: id.to_string(),
-                actor_user_id: "user_owner".to_string(),
-                client_discussion_id: format!("client_{id}"),
-                body_markdown: "Review this invariant".to_string(),
-                anchor: None,
-                now_unix: 4,
-            })
-            .await
-            .unwrap();
-    }
-    for id in ["discussion_resolved", "discussion_retried"] {
-        requests
-            .transition_request_discussion(TransitionRequestDiscussionCommand {
-                request_id: "req_1".into(),
-                discussion_id: id.into(),
-                actor_user_id: "user_owner".into(),
-                event_id: format!("initial_resolve_{id}"),
-                now_unix: 5,
-                transition: DiscussionTransition::Resolve,
-            })
-            .await
-            .unwrap();
-    }
-    let retry_input = ReopenAndReplyToRequestDiscussionCommand {
-        request_id: "req_1".to_string(),
-        discussion_id: "discussion_retried".to_string(),
-        reply_id: "reply_before_completion".to_string(),
-        actor_user_id: "user_owner".to_string(),
-        event_id: "event_retry_reopened".to_string(),
-        client_reply_id: "client_retry_reopened".to_string(),
-        body_markdown: "Reopen before completion".to_string(),
-        reply_to_reply_id: None,
-        wait_after_reply: false,
-        now_unix: 6,
-    };
-    requests
-        .reopen_and_reply_to_request_discussion(retry_input.clone())
-        .await
-        .unwrap();
-    requests
-        .mutate_request_for_tests("req_1", |request| {
-            request.submitted_at_unix = Some(7);
-            request.closed_at_unix = Some(8);
-            request.closed_by_user_id = Some("user_owner".to_string());
-            request.updated_at_unix = 8;
-        })
-        .await
-        .unwrap();
-    let expected_request = requests.request_for_tests("req_1").await.unwrap().unwrap();
-    let mut expected_discussions = Vec::new();
-    for id in [
-        "discussion_open",
-        "discussion_resolved",
-        "discussion_retried",
-    ] {
-        let (discussion, _) = requests
-            .request_discussion("req_1", id, Some("user_owner"))
-            .await
-            .unwrap()
-            .unwrap();
-        expected_discussions.push((id, discussion));
-    }
-    let expected_events = requests
-        .request_events_by_request_id("req_1")
-        .await
-        .unwrap();
-
-    for (id, transition) in [
-        ("discussion_open", DiscussionTransition::Resolve),
-        ("discussion_resolved", DiscussionTransition::Reopen),
-    ] {
-        let error = requests
-            .transition_request_discussion(TransitionRequestDiscussionCommand {
-                request_id: "req_1".into(),
-                discussion_id: id.into(),
-                actor_user_id: "user_owner".into(),
-                event_id: format!("rejected_{id}"),
-                now_unix: 9,
-                transition,
-            })
-            .await
-            .unwrap_err();
-        assert_eq!(
-            error.kind,
-            crate::error::PostgresErrorKind::PermissionDenied
-        );
-    }
-    let retry_error = requests
-        .reopen_and_reply_to_request_discussion(ReopenAndReplyToRequestDiscussionCommand {
-            now_unix: 10,
-            ..retry_input
-        })
-        .await
-        .unwrap_err();
-    assert_eq!(
-        retry_error.kind,
-        crate::error::PostgresErrorKind::PermissionDenied
-    );
-
-    assert_eq!(
-        requests.request_for_tests("req_1").await.unwrap().unwrap(),
-        expected_request
-    );
-    for (id, expected) in expected_discussions {
-        let (actual, _) = requests
-            .request_discussion("req_1", id, Some("user_owner"))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(actual.discussion, expected.discussion);
-        assert_eq!(actual.unread_count, expected.unread_count);
-    }
-    assert_eq!(
-        requests
-            .request_events_by_request_id("req_1")
-            .await
-            .unwrap(),
-        expected_events
-    );
-}
-
-#[tokio::test]
 async fn discussion_replies_are_read_as_flat_chronological_pages() {
     let store = postgres_store();
     start_public_request(&store).await;
-    let discussion = store
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
+    let discussion = crate::db::test_support::request_fixtures::discussion_created(
+        &store.requests(),
+        scope_domain::requests::CreateRequestDiscussionInput {
             request_id: "req_1".to_string(),
             id: "discussion_tree".to_string(),
             actor_user_id: "user_public".to_string(),
@@ -408,9 +130,9 @@ async fn discussion_replies_are_read_as_flat_chronological_pages() {
             body_markdown: "Tree shape".to_string(),
             anchor: None,
             now_unix: 10,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     for (id, parent, time) in [
         ("root_a", None, 11),
         ("root_b", None, 12),
@@ -564,9 +286,9 @@ async fn close_draft_request_deletes_request_and_events() {
         )
         .await
         .unwrap();
-    store
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
+    crate::db::test_support::request_fixtures::discussion_created(
+        &store.requests(),
+        scope_domain::requests::CreateRequestDiscussionInput {
             request_id: "req_1".to_string(),
             id: "discussion_revision".to_string(),
             actor_user_id: "user_public".to_string(),
@@ -579,20 +301,21 @@ async fn close_draft_request_deletes_request_and_events() {
                 lines: None,
             }),
             now_unix: 5,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
 
-    let mutation = store
-        .requests()
-        .close_request(CloseRequestCommand {
+    let mutation = crate::db::test_support::request_fixtures::closed(
+        &store.requests(),
+        scope_domain::requests::CloseRequestInput {
+            actor_is_maintainer: true,
             request_id: "req_1".to_string(),
             actor_user_id: "user_public".to_string(),
             event_id: "event_closed".to_string(),
             now_unix: 6,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
 
     assert!(matches!(
         mutation,
@@ -643,16 +366,17 @@ async fn close_open_request_persists_exact_closer() {
     save_request_row(store.db.as_ref(), &request).await.unwrap();
     seed_terminal_effects(&store).await;
 
-    let mutation = store
-        .requests()
-        .close_request(CloseRequestCommand {
+    let mutation = crate::db::test_support::request_fixtures::closed(
+        &store.requests(),
+        scope_domain::requests::CloseRequestInput {
+            actor_is_maintainer: true,
             request_id: request.id.clone(),
             actor_user_id: request.author_user_id.clone().unwrap(),
             event_id: "event_closed".to_string(),
             now_unix: 4,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
 
     assert!(matches!(mutation, CloseRequestMutation::Closed { .. }));
     let stored = store
@@ -727,9 +451,9 @@ async fn create_test_reply(
     parent_id: Option<&str>,
     now_unix: u64,
 ) {
-    store
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+    crate::db::test_support::request_fixtures::replied(
+        &store.requests(),
+        scope_domain::requests::CreateRequestDiscussionReplyInput {
             request_id: "req_1".to_string(),
             discussion_id: discussion_id.to_string(),
             id: id.to_string(),
@@ -737,11 +461,11 @@ async fn create_test_reply(
             client_reply_id: format!("client_{id}"),
             body_markdown: format!("Reply {id}"),
             reply_to_reply_id: parent_id.map(str::to_string),
-            wait_after_reply: false,
             now_unix,
-        })
-        .await
-        .unwrap();
+        },
+        false,
+    )
+    .await;
 }
 
 pub(crate) fn public_start_input() -> StartRequestInput {
@@ -777,6 +501,5 @@ mod authorization_locks;
 
 mod draft_count;
 mod open_counts;
-mod replay_authorization;
 mod revision_locks;
 mod start_locks;

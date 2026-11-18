@@ -1,6 +1,6 @@
 use super::*;
 use crate::db::{
-    AddRequestInviteeCommand, SubmitRequestCommand,
+    AddRequestInviteeCommand,
     test_support::{fixtures, read_budget::assert_round_trips},
 };
 use crate::error::PostgresErrorKind;
@@ -59,15 +59,16 @@ async fn state_reads_preserve_viewer_visibility_and_bound_round_trips() {
         .err()
         .unwrap();
     assert_eq!(draft_error.message, "request not found");
-    requests
-        .submit_request(SubmitRequestCommand {
+    crate::db::test_support::request_fixtures::submitted(
+        &requests,
+        scope_domain::requests::SubmitRequestInput {
             request_id: "req_1".into(),
             actor_user_id: "user_public".into(),
             event_id: "submitted".into(),
             now_unix: 5,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await;
     let expected = requests.request_for_tests("req_1").await.unwrap().unwrap();
     for viewer in [
         Some("user_owner"),

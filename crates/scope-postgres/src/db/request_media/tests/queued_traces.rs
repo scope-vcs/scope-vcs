@@ -59,15 +59,18 @@ async fn claimed_media_jobs_carry_the_trace_that_queued_them() {
 
     queued_by(
         "trace-request-close",
-        fixture.store.requests().close_request(CloseRequestCommand {
-            request_id: "traced_request".to_string(),
-            actor_user_id: OWNER_ID.to_string(),
-            event_id: "event_close_traced_request".to_string(),
-            now_unix: 22,
-        }),
+        crate::db::test_support::request_fixtures::closed(
+            &fixture.store.requests(),
+            scope_domain::requests::CloseRequestInput {
+                actor_is_maintainer: true,
+                request_id: "traced_request".to_string(),
+                actor_user_id: OWNER_ID.to_string(),
+                event_id: "event_close_traced_request".to_string(),
+                now_unix: 22,
+            },
+        ),
     )
-    .await
-    .unwrap();
+    .await;
     let (_, cleanup_trace) = fixture
         .store
         .media()

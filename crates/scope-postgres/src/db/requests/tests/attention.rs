@@ -34,9 +34,9 @@ async fn other_peoples_discussions_and_replies_reactivate_settled_attention() {
             .reason,
         RequestAttentionReason::Settled
     );
-    store
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+    crate::db::test_support::request_fixtures::replied(
+        &store.requests(),
+        scope_domain::requests::CreateRequestDiscussionReplyInput {
             request_id: request.id.clone(),
             discussion_id: discussion.discussion.id.clone(),
             id: "reply_attention".into(),
@@ -44,11 +44,11 @@ async fn other_peoples_discussions_and_replies_reactivate_settled_attention() {
             client_reply_id: "client_reply_attention".into(),
             body_markdown: "New information".into(),
             reply_to_reply_id: None,
-            wait_after_reply: false,
             now_unix: 7,
-        })
-        .await
-        .unwrap();
+        },
+        false,
+    )
+    .await;
     let woke_from_reply = queue_row(&store, RequestQueueSection::Active, 7).await;
     assert_eq!(
         woke_from_reply.attention.reason,
@@ -56,9 +56,9 @@ async fn other_peoples_discussions_and_replies_reactivate_settled_attention() {
     );
     assert_eq!(woke_from_reply.request.updated_at_unix, 7);
 
-    store
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+    crate::db::test_support::request_fixtures::replied(
+        &store.requests(),
+        scope_domain::requests::CreateRequestDiscussionReplyInput {
             request_id: request.id,
             discussion_id: discussion.discussion.id,
             id: "reply_and_wait".into(),
@@ -66,11 +66,11 @@ async fn other_peoples_discussions_and_replies_reactivate_settled_attention() {
             client_reply_id: "client_reply_and_wait".into(),
             body_markdown: "Please confirm".into(),
             reply_to_reply_id: None,
-            wait_after_reply: true,
             now_unix: 8,
-        })
-        .await
-        .unwrap();
+        },
+        true,
+    )
+    .await;
     let waiting = queue(&store, RequestQueueSection::SetAside, 8).await;
     assert_eq!(
         waiting.rows[0].attention.state,
@@ -137,9 +137,9 @@ async fn create_discussion(
     suffix: &str,
     now_unix: u64,
 ) -> scope_domain::requests::CreateRequestDiscussionMutation {
-    store
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
+    crate::db::test_support::request_fixtures::discussion_created(
+        &store.requests(),
+        scope_domain::requests::CreateRequestDiscussionInput {
             request_id: "req_1".into(),
             id: format!("discussion_{suffix}"),
             actor_user_id: "user_public".into(),
@@ -147,9 +147,9 @@ async fn create_discussion(
             body_markdown: "Please review".into(),
             anchor: None,
             now_unix,
-        })
-        .await
-        .unwrap()
+        },
+    )
+    .await
 }
 
 async fn set_attention(
@@ -177,118 +177,6 @@ fn command(
         expected_activity_version: request.activity_version,
         action,
         now_unix,
-    }
-}
-
-#[tokio::test]
-async fn reply_wait_retries_preserve_later_attention_for_both_reply_commands() {
-    for reopen in [false, true] {
-        let store = postgres_store();
-        let request = open_public_request(&store).await;
-        let discussion = create_discussion(&store, "retry", 4).await.discussion;
-        if reopen {
-            store
-                .requests()
-                .transition_request_discussion(TransitionRequestDiscussionCommand {
-                    request_id: request.id.clone(),
-                    discussion_id: discussion.id.clone(),
-                    actor_user_id: "user_owner".into(),
-                    event_id: "resolve_before_wait".into(),
-                    now_unix: 5,
-                    transition: DiscussionTransition::Resolve,
-                })
-                .await
-                .unwrap();
-        }
-        let original = post_wait_reply(&store, &discussion.id, reopen, 6).await;
-        assert_eq!(
-            queue_row(&store, RequestQueueSection::SetAside, 6)
-                .await
-                .attention
-                .state,
-            RequestAttentionState::Waiting
-        );
-        set_attention(&store, &original.request, RequestAttentionAction::Settle, 7).await;
-        let retry = post_wait_reply(&store, &discussion.id, reopen, 8).await;
-        assert_eq!(retry.reply.id, original.reply.id);
-        assert!(retry.activity_event.is_none());
-        assert_eq!(
-            queue_row(&store, RequestQueueSection::SetAside, 8)
-                .await
-                .attention
-                .state,
-            RequestAttentionState::Settled
-        );
-
-        store
-            .requests()
-            .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
-                request_id: request.id,
-                discussion_id: discussion.id.clone(),
-                id: "reply_after_wait".into(),
-                actor_user_id: "user_public".into(),
-                client_reply_id: "client_reply_after_wait".into(),
-                body_markdown: "Confirmed".into(),
-                reply_to_reply_id: None,
-                wait_after_reply: false,
-                now_unix: 9,
-            })
-            .await
-            .unwrap();
-        let retry = post_wait_reply(&store, &discussion.id, reopen, 10).await;
-        assert_eq!(retry.reply.id, original.reply.id);
-        assert_eq!(retry.reply.position, original.reply.position);
-        assert!(retry.request.activity_version > original.request.activity_version);
-        assert!(retry.activity_event.is_none());
-        assert_eq!(
-            queue_row(&store, RequestQueueSection::Active, 10)
-                .await
-                .attention
-                .reason,
-            RequestAttentionReason::NewActivity
-        );
-    }
-}
-
-async fn post_wait_reply(
-    store: &MetadataStore,
-    discussion_id: &str,
-    reopen: bool,
-    now_unix: u64,
-) -> scope_domain::requests::CreateRequestDiscussionReplyMutation {
-    if reopen {
-        store
-            .requests()
-            .reopen_and_reply_to_request_discussion(ReopenAndReplyToRequestDiscussionCommand {
-                request_id: "req_1".into(),
-                discussion_id: discussion_id.into(),
-                reply_id: "reply_owner_wait".into(),
-                actor_user_id: "user_owner".into(),
-                event_id: "reopen_owner_wait".into(),
-                client_reply_id: "client_owner_wait".into(),
-                body_markdown: "Please confirm".into(),
-                reply_to_reply_id: None,
-                wait_after_reply: true,
-                now_unix,
-            })
-            .await
-            .unwrap()
-    } else {
-        store
-            .requests()
-            .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
-                request_id: "req_1".into(),
-                discussion_id: discussion_id.into(),
-                id: "reply_owner_wait".into(),
-                actor_user_id: "user_owner".into(),
-                client_reply_id: "client_owner_wait".into(),
-                body_markdown: "Please confirm".into(),
-                reply_to_reply_id: None,
-                wait_after_reply: true,
-                now_unix,
-            })
-            .await
-            .unwrap()
     }
 }
 
@@ -424,9 +312,9 @@ async fn reactivated_and_expired_requests_sort_before_older_active_pages() {
     newer.updated_at_unix = 20;
     save_request_row(store.db.as_ref(), &newer).await.unwrap();
     set_attention(&store, &newer, RequestAttentionAction::Claim, 21).await;
-    let incoming = store
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+    let incoming = crate::db::test_support::request_fixtures::replied(
+        &store.requests(),
+        scope_domain::requests::CreateRequestDiscussionReplyInput {
             request_id: old.id.clone(),
             discussion_id: discussion.discussion.id,
             id: "reply_order".into(),
@@ -434,11 +322,11 @@ async fn reactivated_and_expired_requests_sort_before_older_active_pages() {
             client_reply_id: "client_reply_order".into(),
             body_markdown: "New details".into(),
             reply_to_reply_id: None,
-            wait_after_reply: false,
             now_unix: 30,
-        })
-        .await
-        .unwrap();
+        },
+        false,
+    )
+    .await;
     let repo = repo_by_id(store.db.as_ref(), "owner/repo", "user_owner")
         .await
         .unwrap();

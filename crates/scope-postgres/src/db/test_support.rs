@@ -40,6 +40,8 @@ use {
 pub(super) mod fixtures;
 #[cfg(test)]
 pub(super) mod read_budget;
+#[cfg(test)]
+pub(crate) mod request_fixtures;
 
 #[cfg(any(test, feature = "test-support"))]
 #[expect(clippy::expect_used)]
@@ -51,6 +53,11 @@ mod process_os;
 
 #[cfg(any(test, feature = "test-support"))]
 mod process_server;
+
+#[cfg(any(test, feature = "test-support"))]
+mod held_removal;
+#[cfg(any(test, feature = "test-support"))]
+pub use held_removal::HeldRemoval;
 
 #[cfg(any(test, feature = "test-support"))]
 mod stale_cleanup;

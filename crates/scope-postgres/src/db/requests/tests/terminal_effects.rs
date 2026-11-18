@@ -1,5 +1,8 @@
 use super::*;
-use scope_domain::requests::{GitHubBranch, GitHubPushDestination};
+use crate::db::request_lifecycle_effects::persist_lifecycle_mutation;
+use scope_domain::requests::{
+    CloseRequestInput, CloseRequestMutation, GitHubBranch, GitHubPushDestination, close_request,
+};
 
 #[tokio::test]
 async fn rolling_back_terminal_persistence_restores_request_invitees_push_and_event() {

@@ -5,22 +5,27 @@ use crate::{
     state::AppState,
     use_cases::request_anchor_projection::{self, AnchorProjections},
 };
+pub(crate) use commands::{
+    CreateRequestDiscussionReplyCommand, DiscussionTransition,
+    ReopenAndReplyToRequestDiscussionCommand, TransitionRequestDiscussionCommand,
+    persist_discussion, persist_discussion_read, persist_discussion_transition,
+    persist_reopen_and_reply, persist_reply,
+};
 use scope_domain::{
     repository::access::RepositoryAccessContext,
     requests::{
-        CreateRequestDiscussionReplyMutation, MarkRequestDiscussionReadInput, Request,
-        RequestDiscussionAnchor, RequestViewer, request_actor_role, request_policy,
+        CreateRequestDiscussionInput, CreateRequestDiscussionReplyMutation,
+        MarkRequestDiscussionReadInput, Request, RequestDiscussionAnchor, RequestViewer,
+        request_actor_role, request_policy,
     },
 };
-pub(crate) use scope_postgres::db::DiscussionTransition;
 use scope_postgres::db::{
-    CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand,
-    ReopenAndReplyToRequestDiscussionCommand, RequestDiscussionActors, RequestDiscussionReadModel,
-    RequestDiscussionReplyReadModel, TransitionRequestDiscussionCommand,
+    RequestDiscussionActors, RequestDiscussionReadModel, RequestDiscussionReplyReadModel,
 };
 use scope_product_analytics::ProductEvent;
 
 mod anchor;
+mod commands;
 #[cfg(test)]
 mod tests;
 
@@ -108,10 +113,9 @@ pub(crate) async fn create_discussion(
         Some(anchor) => Some(anchor::validate(state, &context, anchor).await?),
         None => None,
     };
-    let mutation = state
-        .metadata
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
+    let mutation = crate::use_cases::request_discussion_mutation::persist_discussion(
+        &state.metadata.requests(),
+        CreateRequestDiscussionInput {
             request_id: context.request.id.clone(),
             id: crate::persistence_ids::generate_prefixed_id("discussion")?,
             actor_user_id: command.actor_user_id.clone(),
@@ -119,8 +123,9 @@ pub(crate) async fn create_discussion(
             body_markdown: command.body_markdown,
             anchor,
             now_unix: unix_now()?,
-        })
-        .await?;
+        },
+    )
+    .await?;
     if mutation.created {
         state
             .product_analytics
@@ -152,10 +157,9 @@ pub(crate) async fn create_reply(
         &command.actor_user_id,
     )
     .await?;
-    let mutation = state
-        .metadata
-        .requests()
-        .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
+    let mutation = crate::use_cases::request_discussion_mutation::persist_reply(
+        &state.metadata.requests(),
+        CreateRequestDiscussionReplyCommand {
             request_id: context.request.id.clone(),
             discussion_id: command.discussion_id,
             id: crate::persistence_ids::generate_prefixed_id("discussion_reply")?,
@@ -165,8 +169,9 @@ pub(crate) async fn create_reply(
             reply_to_reply_id: command.reply_to_reply_id,
             wait_after_reply: command.wait_after_reply,
             now_unix: unix_now()?,
-        })
-        .await?;
+        },
+    )
+    .await?;
     reply_mutation_result(state, &context, &command.actor_user_id, mutation).await
 }
 
@@ -186,18 +191,18 @@ pub(crate) async fn transition_discussion(
         DiscussionTransition::Resolve => "event_request_discussion_resolved",
         DiscussionTransition::Reopen => "event_request_discussion_reopened",
     };
-    let discussion = state
-        .metadata
-        .requests()
-        .transition_request_discussion(TransitionRequestDiscussionCommand {
+    let discussion = crate::use_cases::request_discussion_mutation::persist_discussion_transition(
+        &state.metadata.requests(),
+        TransitionRequestDiscussionCommand {
             request_id: context.request.id.clone(),
             discussion_id: command.discussion_id.clone(),
             actor_user_id: command.actor_user_id.clone(),
             event_id: crate::persistence_ids::generate_prefixed_id(event_prefix)?,
             now_unix: unix_now()?,
             transition: command.transition,
-        })
-        .await?;
+        },
+    )
+    .await?;
     if matches!(command.transition, DiscussionTransition::Resolve) {
         state
             .product_analytics
@@ -238,10 +243,9 @@ pub(crate) async fn reopen_and_reply(
         &command.actor_user_id,
     )
     .await?;
-    let mutation = state
-        .metadata
-        .requests()
-        .reopen_and_reply_to_request_discussion(ReopenAndReplyToRequestDiscussionCommand {
+    let mutation = crate::use_cases::request_discussion_mutation::persist_reopen_and_reply(
+        &state.metadata.requests(),
+        ReopenAndReplyToRequestDiscussionCommand {
             request_id: context.request.id.clone(),
             discussion_id: command.discussion_id,
             reply_id: crate::persistence_ids::generate_prefixed_id("discussion_reply")?,
@@ -254,8 +258,9 @@ pub(crate) async fn reopen_and_reply(
             reply_to_reply_id: command.reply_to_reply_id,
             wait_after_reply: command.wait_after_reply,
             now_unix: unix_now()?,
-        })
-        .await?;
+        },
+    )
+    .await?;
     reply_mutation_result(state, &context, &command.actor_user_id, mutation).await
 }
 
@@ -272,16 +277,16 @@ pub(crate) async fn mark_read(
     )
     .await?;
     ensure_discussion_in_request(state, &context.request.id, &command.discussion_id).await?;
-    let read_state = state
-        .metadata
-        .requests()
-        .mark_request_discussion_read(MarkRequestDiscussionReadInput {
+    let read_state = crate::use_cases::request_discussion_mutation::persist_discussion_read(
+        &state.metadata.requests(),
+        MarkRequestDiscussionReadInput {
             discussion_id: command.discussion_id,
             user_id: command.actor_user_id,
             through_position: command.through_position,
             now_unix: unix_now()?,
-        })
-        .await?;
+        },
+    )
+    .await?;
     Ok(MarkDiscussionReadResult {
         read_through_position: read_state.read_through_position,
     })

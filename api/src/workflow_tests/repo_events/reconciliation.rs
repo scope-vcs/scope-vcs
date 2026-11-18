@@ -1,7 +1,7 @@
 use super::*;
 use crate::auth::cli::CliAuthService;
+use scope_domain::requests::EditRequestIdentityInput;
 use scope_domain::views::ViewId;
-use scope_postgres::db::EditRequestIdentityCommand;
 
 async fn advance_reconciliation() {
     tokio::time::pause();
@@ -62,10 +62,9 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
             .contains(r#""kind":"Connected""#)
     );
 
-    writer
-        .metadata
-        .requests()
-        .edit_request_identity(EditRequestIdentityCommand {
+    crate::use_cases::request_identity::persist_identity_edit(
+        &writer.metadata.requests(),
+        EditRequestIdentityInput {
             request_id: request_id.to_string(),
             actor_user_id: test_owner_id(),
             event_id: "event_request_title_after_commit".to_string(),
@@ -73,9 +72,10 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
             description_markdown: None,
             expected_description_markdown: None,
             now_unix: unix_now(),
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     writer.publish_request_summary_refresh(
         &test_repo_incarnation(),
         RepoChangeReason::RequestIdentityEdited,

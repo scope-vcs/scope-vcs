@@ -91,35 +91,33 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{
-        CloseRequestCommand, SubmitRequestCommand,
-        requests::tests::{postgres_store, start_public_request},
-    };
+    use crate::db::requests::tests::{postgres_store, start_public_request};
 
     #[tokio::test]
     async fn terminal_participants_persist_at_most_one_immutable_rating_each() {
         let store = postgres_store();
         start_public_request(&store).await;
-        store
-            .requests()
-            .submit_request(SubmitRequestCommand {
+        crate::db::test_support::request_fixtures::submitted(
+            &store.requests(),
+            scope_domain::requests::SubmitRequestInput {
                 request_id: "req_1".to_string(),
                 actor_user_id: "user_public".to_string(),
                 event_id: "event_submitted".to_string(),
                 now_unix: 4,
-            })
-            .await
-            .unwrap();
-        store
-            .requests()
-            .close_request(CloseRequestCommand {
+            },
+        )
+        .await;
+        crate::db::test_support::request_fixtures::closed(
+            &store.requests(),
+            scope_domain::requests::CloseRequestInput {
+                actor_is_maintainer: true,
                 request_id: "req_1".to_string(),
                 actor_user_id: "user_owner".to_string(),
                 event_id: "event_closed".to_string(),
                 now_unix: 5,
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await;
 
         store
             .requests()

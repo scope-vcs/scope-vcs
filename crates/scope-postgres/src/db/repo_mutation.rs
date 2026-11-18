@@ -89,46 +89,18 @@ impl<R> RepositoryMutation<R> {
     }
 }
 
+pub struct RepositoryTransaction {
+    tx: DatabaseTransaction,
+    repository: Repository,
+}
+
 impl RepositoryStore {
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mutate_repository"))]
-    pub async fn mutate_repository<R, F>(
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "begin_repository"))]
+    pub async fn begin_repository(
         &self,
         owner: &str,
         name: &str,
-        now_unix: u64,
-        op: F,
-    ) -> Result<RepositoryMutationResult<R>, RepositoryMutationError>
-    where
-        F: FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError>,
-    {
-        let (tx, repo) = self.lock_repository(owner, name).await?;
-        save_repository_mutation(tx, repo, now_unix, op).await
-    }
-
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mutate_repository_with_open_requests"))]
-    pub async fn mutate_repository_with_open_requests<R, F>(
-        &self,
-        owner: &str,
-        name: &str,
-        now_unix: u64,
-        op: F,
-    ) -> Result<RepositoryMutationResult<R>, RepositoryMutationError>
-    where
-        F: FnOnce(
-            &mut Repository,
-            BTreeMap<ViewId, usize>,
-        ) -> Result<RepositoryMutation<R>, DomainError>,
-    {
-        let (tx, repo) = self.lock_repository(owner, name).await?;
-        let open_requests_by_view = open_request_counts_by_view(&tx, &repo.record.id).await?;
-        save_repository_mutation(tx, repo, now_unix, |repo| op(repo, open_requests_by_view)).await
-    }
-
-    async fn lock_repository(
-        &self,
-        owner: &str,
-        name: &str,
-    ) -> Result<(DatabaseTransaction, Repository), PostgresError> {
+    ) -> Result<RepositoryTransaction, PostgresError> {
         let repo_id = repo_id(owner, name);
         let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
@@ -136,64 +108,96 @@ impl RepositoryStore {
             .one(&tx)
             .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
-        let repo = repository_from_model(&tx, repo).await?;
-        Ok((tx, repo))
+        let repository = repository_from_model(&tx, repo).await?;
+        Ok(RepositoryTransaction { tx, repository })
     }
 }
 
-async fn save_repository_mutation<R, F>(
-    tx: DatabaseTransaction,
-    mut repo: Repository,
-    now_unix: u64,
-    op: F,
-) -> Result<RepositoryMutationResult<R>, RepositoryMutationError>
-where
-    F: FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError>,
-{
-    let before = repo.clone();
-    let mutation = op(&mut repo)?;
-    let advanced_head = repo.git_head.as_ref().filter(|head| {
-        before.git_head.as_ref().map(|head| head.frontier()) != Some(head.frontier())
-    });
-    match (advanced_head, &mutation.main_pack) {
-        (None, None) => {}
-        (Some(head), Some(pack)) if pack.head_oid == head.head_oid => {}
-        _ => {
-            return Err(PostgresError::internal_message(
-                "a repository mutation must register exactly one main pack for each new Git head",
-            )
-            .into());
+impl RepositoryTransaction {
+    pub fn repository(&self) -> &Repository {
+        &self.repository
+    }
+
+    pub async fn open_request_counts_by_view(
+        &self,
+    ) -> Result<BTreeMap<ViewId, usize>, PostgresError> {
+        open_request_counts_by_view(&self.tx, &self.repository.record.id).await
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "save_repository"))]
+    pub async fn save<R>(
+        self,
+        repo: Repository,
+        mutation: RepositoryMutation<R>,
+        now_unix: u64,
+    ) -> Result<RepositoryMutationResult<R>, PostgresError> {
+        let Self {
+            tx,
+            repository: before,
+        } = self;
+
+        let advanced_head = repo.git_head.as_ref().filter(|head| {
+            before.git_head.as_ref().map(|head| head.frontier()) != Some(head.frontier())
+        });
+        match (advanced_head, &mutation.main_pack) {
+            (None, None) => {}
+            (Some(head), Some(pack)) if pack.head_oid == head.head_oid => {}
+            _ => {
+                return Err(PostgresError::internal_message(
+                    "a repository mutation must register exactly one main pack for each new Git head",
+                ));
+            }
         }
-    }
-    save_repository_delta(&tx, &before, &repo, now_unix).await?;
-    if let (Some(pack), Some(head)) = (&mutation.main_pack, &repo.git_head) {
-        register_git_pool_pack(&tx, &repo.record.id, pack, now_unix).await?;
-        schedule_git_compaction(&tx, &repo.record.id, head.push_sequence, now_unix).await?;
-    }
-    apply_repository_landing_file_mutation(&tx, &repo.record.id, mutation.landing_file_mutation)
+        save_repository_delta(&tx, &before, &repo, now_unix).await?;
+        if let (Some(pack), Some(head)) = (&mutation.main_pack, &repo.git_head) {
+            register_git_pool_pack(&tx, &repo.record.id, pack, now_unix).await?;
+            schedule_git_compaction(&tx, &repo.record.id, head.push_sequence, now_unix).await?;
+        }
+        apply_repository_landing_file_mutation(
+            &tx,
+            &repo.record.id,
+            mutation.landing_file_mutation,
+        )
         .await?;
-    let completed_landed_requests = if let Some(completion) = mutation.landed_requests {
-        let head = repo.git_head.as_ref().ok_or_else(|| {
-            PostgresError::internal_message("landed requests require an accepted Git head")
-        })?;
-        complete_main_push(&tx, &repo.record.id, &head.head_oid, completion, now_unix).await?
-    } else {
-        0
-    };
-    let changed_main = repo.git_head.as_ref().filter(|head| {
-        before.git_head.as_ref().map(|before| &before.head_oid) != Some(&head.head_oid)
-    });
-    let queued_main_publication = match changed_main {
-        Some(head) => {
-            queue_main_publication(&tx, &repo.record.id, &head.head_oid, now_unix).await?
-        }
-        None => false,
-    };
-    queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects, now_unix).await?;
-    tx.commit().await.map_err(PostgresError::internal)?;
-    Ok(RepositoryMutationResult {
-        result: mutation.result,
-        completed_landed_requests,
-        queued_main_publication,
-    })
+        let completed_landed_requests = if let Some(completion) = mutation.landed_requests {
+            let head = repo.git_head.as_ref().ok_or_else(|| {
+                PostgresError::internal_message("landed requests require an accepted Git head")
+            })?;
+            complete_main_push(&tx, &repo.record.id, &head.head_oid, completion, now_unix).await?
+        } else {
+            0
+        };
+        let changed_main = repo.git_head.as_ref().filter(|head| {
+            before.git_head.as_ref().map(|before| &before.head_oid) != Some(&head.head_oid)
+        });
+        let queued_main_publication = match changed_main {
+            Some(head) => {
+                queue_main_publication(&tx, &repo.record.id, &head.head_oid, now_unix).await?
+            }
+            None => false,
+        };
+        queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects, now_unix).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(RepositoryMutationResult {
+            result: mutation.result,
+            completed_landed_requests,
+            queued_main_publication,
+        })
+    }
+}
+
+#[cfg(test)]
+impl RepositoryStore {
+    pub(crate) async fn mutate_repository<R>(
+        &self,
+        owner: &str,
+        name: &str,
+        now_unix: u64,
+        decide: impl FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError>,
+    ) -> Result<RepositoryMutationResult<R>, RepositoryMutationError> {
+        let tx = self.begin_repository(owner, name).await?;
+        let mut repo = tx.repository().clone();
+        let mutation = decide(&mut repo)?;
+        Ok(tx.save(repo, mutation, now_unix).await?)
+    }
 }

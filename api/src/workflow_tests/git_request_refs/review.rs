@@ -74,17 +74,17 @@ async fn open_revision_stays_open_and_publishes_refresh() {
     let state = test_state_with_request().await;
     let (source, permissioned_remote, _server, _first_request_head) =
         request_checkout(&state, "request-ref-revision-rollback").await;
-    state
-        .metadata
-        .requests()
-        .submit_request(SubmitRequestCommand {
+    crate::use_cases::request_submit::persist_submission(
+        &state.metadata.requests(),
+        SubmitRequestInput {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
             event_id: "event_submit_for_revision".to_string(),
             now_unix: 4,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     let before_event_count = request_event_count(&state).await;
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 

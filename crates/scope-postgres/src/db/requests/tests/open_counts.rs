@@ -1,5 +1,4 @@
 use super::*;
-use crate::db::RepositoryMutation;
 use sea_orm::TransactionTrait;
 use std::collections::BTreeMap;
 
@@ -93,10 +92,10 @@ async fn a_repository_mutation_counts_requests_started_while_it_waited_for_the_l
 async fn open_counts_under_lock(store: &MetadataStore) -> BTreeMap<ViewId, usize> {
     store
         .repositories()
-        .mutate_repository_with_open_requests("owner", "repo", 5, |_, open_requests_by_view| {
-            Ok(RepositoryMutation::new(open_requests_by_view))
-        })
+        .begin_repository("owner", "repo")
         .await
         .unwrap()
-        .result
+        .open_request_counts_by_view()
+        .await
+        .unwrap()
 }
