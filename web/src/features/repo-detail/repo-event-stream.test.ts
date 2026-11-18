@@ -163,6 +163,47 @@ test('stream decoding handles split CRLF frames before a public stream error', a
   })
 })
 
+test('a stream silent for 45 seconds ends and releases its connection', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] })
+  try {
+    const keepAlive = new TextEncoder().encode(': keep-alive\n\n')
+    const settle = () => new Promise<void>((resolve) => setImmediate(resolve))
+    let body!: ReadableStreamDefaultController<Uint8Array>
+    let canceled = false
+    globalThis.fetch = async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        body = controller
+        controller.enqueue(keepAlive)
+      },
+      cancel() {
+        canceled = true
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } })
+    let outcome: RepoStreamEnd | null = null
+    const ended = streamRepoEvents(
+      { clerk_token_template: 'scope_api', event_stream_url: 'https://api.scope.test/v1/repos/owner/repo/events' },
+      async () => 'token',
+      () => {},
+      new AbortController().signal,
+    ).then((end) => { outcome = end })
+
+    await settle()
+    mock.timers.tick(44_999)
+    body.enqueue(keepAlive)
+    await settle()
+    mock.timers.tick(44_999)
+    await settle()
+    assert.equal(outcome, null)
+
+    mock.timers.tick(1)
+    await ended
+    assert.deepEqual(outcome, { type: 'transport' })
+    assert.equal(canceled, true)
+  } finally {
+    mock.timers.reset()
+  }
+})
+
 test('protocol failures cancel response bodies before reconnecting', async () => {
   const onEvent = mock.fn()
   const encoder = new TextEncoder()

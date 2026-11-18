@@ -1,4 +1,4 @@
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource, repoResourceKey } from './repo-resource'
 import type {
   HistoryEntrySummaryResponse,
   ViewId,
@@ -10,12 +10,13 @@ type RepositoryActivity = {
   head_oid: string | null
 }
 
-export const repositoryActivityResource = createCachedResource<RepositoryActivity>({
+export const repositoryActivityResource = createRepoResource<RepositoryActivity>({
+  invalidatedBy: ['content'],
   maxEntries: 16,
   maxWeight: 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
 export function repositoryActivityIdentity(scope: string, view: ViewId) {
-  return [scope, view].join('\0')
+  return repoResourceKey(scope, view)
 }

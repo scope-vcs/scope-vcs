@@ -18,6 +18,42 @@ test('handles local recursive helpers without hanging', () => {
   assert.deepEqual(check(`import {useEffect} from 'react'; function View(){ const tick=()=>tick(); useEffect(tick, []) }`), [])
 })
 
+test('repository features create resources only through the owner that requires invalidation topics', () => {
+  const source = `import { createCachedResource } from '../../lib/cached-resource'`
+  assert.equal(resourceBoundaryViolations('src/features/runs/example-resource.ts', source).length, 1)
+  assert.deepEqual(resourceBoundaryViolations('src/features/repo-detail/repo-resource.ts', source), [])
+  assert.deepEqual(resourceBoundaryViolations('src/features/account/example-resource.ts', source), [])
+})
+test('a Windows path is checked like its POSIX form', () => {
+  const source = `import { createCachedResource } from '../../lib/cached-resource'`
+  assert.equal(resourceBoundaryViolations('src\\features\\runs\\example-resource.ts', source).length, 1)
+  assert.deepEqual(resourceBoundaryViolations('src\\features\\repo-detail\\repo-resource.ts', source), [])
+  assert.equal(resourceBoundaryViolations(
+    'src\\routes\\example.tsx',
+    `import {thingsResource} from '@/features/things/things-resource'; function Page(){ thingsResource.write(identity, value) }`,
+  ).length, 1)
+})
+test('repository features cannot reach the cache factory through another import or export form', () => {
+  for (const source of [
+    `import * as resources from '../../lib/cached-resource'; export const example = resources.createCachedResource({ maxEntries: 1 })`,
+    `import resources from '@/lib/cached-resource'`,
+    `import { createCachedResource as createResource } from '../../lib/cached-resource'`,
+    `export { createCachedResource } from '../../lib/cached-resource'`,
+    `export { createCachedResource as createResource } from '../../lib/cached-resource'`,
+    `export * from '../../lib/cached-resource'`,
+    `export * as resources from '../../lib/cached-resource'`,
+    `const resources = await import('../../lib/cached-resource')`,
+    `const resources = require('../../lib/cached-resource')`,
+    `import { createCachedResource } from '../shared/resource-factory'`,
+  ]) assert.equal(resourceBoundaryViolations('src/features/runs/example-resource.ts', source).length, 1, source)
+  for (const source of [
+    `import type { CachedResourceStore } from '../../lib/cached-resource'`,
+    `import { type CachedResourceStore } from '../../lib/cached-resource'`,
+    `export type { CachedResourceStore } from '../../lib/cached-resource'`,
+    `import { useCachedResource } from '../../lib/use-cached-resource'`,
+  ]) assert.deepEqual(resourceBoundaryViolations('src/features/runs/example-resource.ts', source), [], source)
+})
+
 const checkRoute = (source) => resourceBoundaryViolations('src/routes/example.tsx', source)
 test('blocks any api import called inside a route effect, whatever it is named', () => {
   for (const source of [

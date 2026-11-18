@@ -1,6 +1,6 @@
 import type { RequestParams } from '@/api/types'
 import type { RequestComparisonMode, RequestRevisionListResponse } from '@/api/types.generated'
-import { createCachedResource } from '../../lib/cached-resource'
+import { affectsRequestKey, createRepoResource, repoResourceKey } from '../repo-detail/repo-resource'
 import type { LoadDiscussionsInput } from './request-discussion-api'
 import { latestRequestRevision, requestChangeSelection } from './request-changes-model'
 import type { RequestDiscussionPage } from './request-discussion-types'
@@ -14,14 +14,16 @@ type LoadReferencePage = (
 
 type RequestRevision = RequestRevisionListResponse['revisions'][number]
 
-export const requestDiscussionReferenceResource = createCachedResource<RequestDiscussionPage>({
+export const requestDiscussionReferenceResource = createRepoResource<RequestDiscussionPage>({
+  invalidatedBy: ['requestHead', 'requestTimeline'],
+  affectedBy: affectsRequestKey,
   maxEntries: 16,
   maxWeight: 8 * DISCUSSION_REFERENCE_LIMITS.bytes,
   weightOf: (page) => JSON.stringify(page).length * 2,
 })
 
 export function requestDiscussionReferenceIdentity(accessScope: string, requestId: string, referenceKey: string) {
-  return `${accessScope}\0${requestId}\0${referenceKey}`
+  return repoResourceKey(accessScope, requestId, referenceKey)
 }
 
 export function comparisonDiscussionReferenceQuery(
@@ -60,7 +62,7 @@ export function selectedDiscussionReferenceQuery(
 }
 
 export function refreshRequestDiscussionReferences(accessScope: string, requestId: string) {
-  requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${accessScope}\0${requestId}\0`))
+  requestDiscussionReferenceResource.invalidateFor(accessScope, [{ topic: 'requestTimeline', requestId }])
 }
 
 export function openRequestDiscussionReferences(identity: string, page: RequestDiscussionPage) {

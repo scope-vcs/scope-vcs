@@ -3,7 +3,8 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { invalidateRequestQueues } from './request-queue-cache'
+import { requestQueueResource } from './request-queue-cache'
+import { repoResourceKey } from '../repo-detail/repo-resource'
 import { runRequestContentSubmission } from './request-attachment-drafts'
 import {
   createRequestDiscussionReplyReads,
@@ -61,7 +62,7 @@ export function useRequestDiscussionReplies({
 }) {
   const { userId } = useAuth()
   const { repo } = useRepoLayout()
-  const key = `${repoResourceScope(repo, actor.id)}\0${params.request_id}\0${discussion.id}`
+  const key = repoResourceKey(repoResourceScope(repo, actor.id), params.request_id, discussion.id)
   const session = useMemo(() => openRequestDiscussionReplies(key), [key])
   const subscribe = useCallback((listener: () => void) => requestDiscussionRepliesResource.subscribe(key, listener), [key])
   const read = useCallback(() => requestDiscussionRepliesResource.peek(key) ?? session, [key, session])
@@ -146,7 +147,7 @@ export function useRequestDiscussionReplies({
       onExpandedChange(discussion.id, true)
       setQuoteId(null)
       if (waitAfterReply) {
-        invalidateRequestQueues(repoResourceScope(repo, userId ?? null))
+        requestQueueResource.invalidateFor(repoResourceScope(repo, userId ?? null), [{ topic: 'requestList' }])
       }
       return true
     } catch (error) {

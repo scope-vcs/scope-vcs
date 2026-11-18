@@ -4,18 +4,20 @@ import type {
   GitHubWorkflowRunResponse,
 } from '@/api/types.generated'
 import { useEffect, useRef } from 'react'
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource, repoResourceKey, type RepoChange } from '../repo-detail/repo-resource'
 
 const RECHECK_INTERVAL_MS = 15_000
 
-export const githubWorkflowRunDetailResource = createCachedResource<GitHubWorkflowRunDetailResponse>({
+export const githubWorkflowRunDetailResource = createRepoResource<GitHubWorkflowRunDetailResponse>({
+  invalidatedBy: ['checks', 'workflowRun'],
+  affectedBy: affectsRunKey,
   maxEntries: 16,
   maxWeight: 16 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
 export function githubWorkflowRunDetailIdentity(scope: string, runId: string) {
-  return `${scope}\0${runId}`
+  return repoResourceKey(scope, runId)
 }
 
 export type GitHubWorkflowRunDetailLoad = (signal: AbortSignal) => Promise<GitHubWorkflowRunDetailResponse>
@@ -44,19 +46,8 @@ export function startGitHubWorkflowRunDetail(
   void githubWorkflowRunDetailResource.load(identity, '', recordingFetch(load)).catch(() => {})
 }
 
-export function invalidateGitHubWorkflowRunDetails(scope: string, runId?: number) {
-  if (runId === undefined) {
-    githubWorkflowRunDetailResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-  } else {
-    githubWorkflowRunDetailResource.invalidate(githubWorkflowRunDetailIdentity(scope, String(runId)))
-  }
-  const logs = runId === undefined ? `${scope}\0` : `${scope}\0${runId}\0`
-  githubWorkflowJobLogResource.invalidateMatching((identity) => {
-    if (!identity.startsWith(logs)) return false
-    const log = githubWorkflowJobLogResource.getSnapshot(identity)
-    if (log.pending) recheckIfStillPending(identity)
-    return !log.pending && log.value?.state === 'pending'
-  })
+function affectsRunKey(change: RepoChange, key: string[]) {
+  return change.runId === undefined || key[0] === String(change.runId)
 }
 
 const logsAwaitingAnswer = new Set<string>()
@@ -73,14 +64,20 @@ function recheckIfStillPending(identity: string) {
   })
 }
 
-export const githubWorkflowJobLogResource = createCachedResource<GitHubWorkflowJobLogResponse>({
+export const githubWorkflowJobLogResource = createRepoResource<GitHubWorkflowJobLogResponse>({
+  invalidatedBy: ['checks', 'workflowRun'],
+  affectedBy: (change, key, { identity, snapshot }) => {
+    if (!affectsRunKey(change, key)) return false
+    if (snapshot.pending) recheckIfStillPending(identity)
+    return !snapshot.pending && snapshot.value?.state === 'pending'
+  },
   maxEntries: 24,
   maxWeight: 16 * 1024 * 1024,
   weightOf: (value) => value.state === 'kept' ? value.text.length * 2 : 0,
 })
 
 export function githubWorkflowJobLogIdentity(scope: string, runId: string, jobKey: string) {
-  return `${scope}\0${runId}\0${jobKey}`
+  return repoResourceKey(scope, runId, jobKey)
 }
 
 export function useGitHubWorkflowRunRecheck(

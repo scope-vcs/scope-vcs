@@ -1,6 +1,6 @@
 import type { RequestChildrenPageResponse, RequestStateResponse } from '../../api/types.generated'
 import type { RepoLiveState } from '../../api/types'
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource, repoResourceKey } from '../repo-detail/repo-resource'
 import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 
@@ -15,7 +15,15 @@ export function requestRouteState(live: RepoLiveState, value: RequestStateValue,
   return { ...value, scope: repoResourceScope(live.repo, viewerId), viewerId }
 }
 
-export const requestStateResource = createCachedResource<RequestStateValue>({
+export const requestStateResource = createRepoResource<RequestStateValue>({
+  invalidatedBy: ['request', 'requestTimeline', 'checks'],
+  affectedBy: ({ requestId }, key, { snapshot }) => {
+    if (requestId === undefined || key[0] === requestId) return true
+    const navigation = snapshot.value?.state?.detail.stack_navigation
+    return snapshot.pending || Boolean(navigation && (
+      navigation.ancestors.some((node) => node.id === requestId) ||
+      navigation.children.requests.some((node) => node.id === requestId)))
+  },
   maxEntries: 16,
   maxWeight: 2 * 1024 * 1024,
   weightOf: ({ state }) => JSON.stringify(state).length * 2,
@@ -23,7 +31,7 @@ export const requestStateResource = createCachedResource<RequestStateValue>({
 })
 
 export function requestStateIdentity(scope: string, requestId: string) {
-  return `${scope}\0${requestId}`
+  return repoResourceKey(scope, requestId)
 }
 
 export async function loadRequestStateValue(
@@ -54,18 +62,6 @@ export async function reloadRequestStateValue(identity: string, load: (signal: A
     }
   }
   return value
-}
-
-export function refreshRequestState(scope: string, requestId?: string) {
-  requestStateResource.invalidateMatching((identity) => {
-    if (!identity.startsWith(`${scope}\0`)) return false
-    if (!requestId || identity === requestStateIdentity(scope, requestId)) return true
-    const snapshot = requestStateResource.getSnapshot(identity)
-    const navigation = snapshot.value?.state?.detail.stack_navigation
-    return snapshot.pending || Boolean(navigation && (
-      navigation.ancestors.some((node) => node.id === requestId) ||
-      navigation.children.requests.some((node) => node.id === requestId)))
-  })
 }
 
 export async function loadMoreRequestChildren(identity: string, load: (cursor: string, signal: AbortSignal) => Promise<RequestChildrenPageResponse>) {

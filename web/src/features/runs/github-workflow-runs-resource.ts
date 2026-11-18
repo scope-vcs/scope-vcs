@@ -1,19 +1,16 @@
 import type { GitHubWorkflowRunListResponse } from '@/api/types.generated'
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource, repoResourceKey } from '../repo-detail/repo-resource'
 import { type GitHubWorkflowRunPages, mergeNextPage } from './github-workflow-run-model'
 
-export const githubWorkflowRunsResource = createCachedResource<GitHubWorkflowRunPages>({
+export const githubWorkflowRunsResource = createRepoResource<GitHubWorkflowRunPages>({
+  invalidatedBy: ['checks'],
   maxEntries: 12,
   maxWeight: 2 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
 export function githubWorkflowRunsIdentity(scope: string, workflow: string | null) {
-  return `${scope}\0${workflow ?? ''}`
-}
-
-export function invalidateGitHubWorkflowRuns(scope: string) {
-  githubWorkflowRunsResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+  return repoResourceKey(scope, workflow ?? '')
 }
 
 export async function loadMoreGitHubWorkflowRuns(

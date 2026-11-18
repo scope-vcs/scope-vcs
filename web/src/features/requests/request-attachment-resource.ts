@@ -3,7 +3,7 @@ import type {
   RequestAttachmentLimitsResponse,
   RequestAttachmentResponse,
 } from '@/api/types.generated'
-import { createCachedResource } from '../../lib/cached-resource'
+import { affectsRequestKey, createRepoResource, repoResourceKey, repoResourceKeyParts } from '../repo-detail/repo-resource'
 import { onViewerChange } from '../../lib/viewer-state'
 import { repoResourceScopeOwner } from '../repo-detail/repo-resource-scope'
 
@@ -12,13 +12,16 @@ export type RequestAttachmentResourceValue = {
   limits: RequestAttachmentLimitsResponse
 }
 
-export const requestAttachmentResource = createCachedResource<RequestAttachmentResourceValue>({
+export const requestAttachmentResource = createRepoResource<RequestAttachmentResourceValue>({
+  invalidatedBy: ['requestTimeline', 'requestAttachments'],
+  affectedBy: affectsRequestKey,
   maxEntries: 16,
   maxWeight: 8 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
-export const requestAttachmentMediaGrantResource = createCachedResource<CreateRequestAttachmentMediaGrantResponse>({
+export const requestAttachmentMediaGrantResource = createRepoResource<CreateRequestAttachmentMediaGrantResponse>({
+  invalidatedBy: [],
   maxEntries: 64,
 })
 
@@ -31,7 +34,7 @@ export function activateRequestAttachmentResourceScope(accessScope: string) {
   if (!owner) return
   const previous = activeAccessScopes.get(owner)
   if (previous && previous !== accessScope) {
-    const inPreviousScope = (identity: string) => identity.startsWith(`${previous}\0`)
+    const inPreviousScope = (identity: string) => repoResourceKeyParts(previous, identity) !== null
     requestAttachmentResource.removeMatching(inPreviousScope)
     requestAttachmentMediaGrantResource.removeMatching(inPreviousScope)
   }
@@ -47,7 +50,7 @@ export function requestAttachmentResourceIdentity(
   accessScope: string,
   requestId: string,
 ) {
-  return `${accessScope}\0${requestId}`
+  return repoResourceKey(accessScope, requestId)
 }
 
 export function refreshRequestAttachments(accessScope: string, requestId: string) {

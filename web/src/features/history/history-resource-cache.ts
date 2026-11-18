@@ -4,7 +4,7 @@ import type {
   ViewId,
 } from '@/api/types.generated'
 import { createBoundedCache } from '../../lib/bounded-cache'
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource, repoResourceKey } from '../repo-detail/repo-resource'
 import { onViewerChange } from '../../lib/viewer-state'
 import type { LoadedHistory } from './history-pagination'
 
@@ -13,18 +13,21 @@ const MAX_ENTRY_BYTES = 4 * 1024 * 1024
 const MAX_DIFF_ENTRIES = 20
 const MAX_DIFF_BYTES = 32 * 1024 * 1024
 
-export const historyFeedResource = createCachedResource<LoadedHistory>({
+export const historyFeedResource = createRepoResource<LoadedHistory>({
+  invalidatedBy: ['repository'],
   maxEntries: 16,
   maxWeight: 2 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
-export const historyEntryResource = createCachedResource<HistoryEntryDetailResponse>({
+export const historyEntryResource = createRepoResource<HistoryEntryDetailResponse>({
+  invalidatedBy: ['repository'],
   maxEntries: MAX_ENTRY_ENTRIES,
   maxWeight: MAX_ENTRY_BYTES,
   weightOf: approximateSerializedBytes,
 })
-export const historyDiffResource = createCachedResource<ReviewFileDiff>({
+export const historyDiffResource = createRepoResource<ReviewFileDiff>({
+  invalidatedBy: [],
   maxEntries: MAX_DIFF_ENTRIES,
   maxWeight: MAX_DIFF_BYTES,
   weightOf: approximateSerializedBytes,
@@ -53,17 +56,17 @@ export function historyEntryCacheKey(identity: {
   entry: string
 }) {
   const { scope, view, entry } = identity
-  return [scope, view, entry].join('\0')
+  return repoResourceKey(scope, view, entry)
 }
 
 export function historyDiffCacheKey(identity: HistoryScope & HistoryFileIdentity & { commit: string }) {
   const { scope, repoId, generation, revisionKey, view, commit } = identity
-  return [
+  return repoResourceKey(
     scope, repoId, generation, revisionKey, view, commit,
     identity.path,
     identity.oldOid ?? '',
     identity.newOid ?? '',
-  ].join('\0')
+  )
 }
 
 export function historyEntryDiffCacheKey(identity: HistoryFileIdentity & {
@@ -72,13 +75,13 @@ export function historyEntryDiffCacheKey(identity: HistoryFileIdentity & {
   entry: string
   visibilityChange: string | null
 }) {
-  return [
+  return repoResourceKey(
     historyEntryCacheKey(identity),
     identity.path,
     identity.oldOid ?? '',
     identity.newOid ?? '',
     identity.visibilityChange ?? '',
-  ].join('\0')
+  )
 }
 
 export function readHistoryDiffScroll(key: string | null) {

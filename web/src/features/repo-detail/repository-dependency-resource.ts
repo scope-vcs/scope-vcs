@@ -2,7 +2,7 @@ import type {
   RepositoryDependencyCheckResponse,
   RepoSummaryResponse,
 } from '../../api/types.generated'
-import { createCachedResource } from '../../lib/cached-resource'
+import { createRepoResource } from './repo-resource'
 import { onViewerChange } from '../../lib/viewer-state'
 import { repoResourceScope } from './repo-resource-scope'
 
@@ -16,12 +16,14 @@ export const repositoryDependencyResource = createRepositoryDependencyResource()
 export function createRepositoryDependencyResource(
   schedulePoll: PollScheduler = browserPollScheduler,
 ) {
-  const cache = createCachedResource<RepositoryDependencyCheckResponse>({
+  const polls = new Map<string, () => void>()
+  const cache = createRepoResource<RepositoryDependencyCheckResponse>({
+    invalidatedBy: ['content', 'dependencies'],
+    onInvalidate: stopPoll,
     maxEntries: 16,
     maxWeight: 16 * 1024 * 1024,
     weightOf: (value) => JSON.stringify(value).length * 2,
   })
-  const polls = new Map<string, () => void>()
 
   function stopPoll(identity: string) {
     polls.get(identity)?.()

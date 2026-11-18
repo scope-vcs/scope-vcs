@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { resetViewerState } from '../../lib/viewer-state'
-import { invalidateRepoResources } from '../repo-detail/repo-resource-invalidation'
+import { invalidateRepoResources, topicsOf } from '../repo-detail/repo-resource'
 import {
   activateRequestAttachmentResourceScope as activate,
   requestAttachmentMediaGrantResource,
@@ -152,7 +152,7 @@ for (const kind of [
     const other = requestAttachmentResourceIdentity('other-viewer', 'request')
     requestAttachmentResource.write(identity, resourceValue('Processing'))
     requestAttachmentResource.write(other, resourceValue('Processing'))
-    invalidateRepoResources('viewer/private', { repo_id: 'repo', incarnation_id: 'incarnation', version: 2, kind })
+    invalidateRepoResources('viewer/private', topicsOf({ repo_id: 'repo', incarnation_id: 'incarnation', version: 2, kind }))
     assert.equal(requestAttachmentResource.getSnapshot(identity).stale, true)
     assert.equal(requestAttachmentResource.peek(identity)?.attachments[0]?.state, 'Processing')
     assert.equal(requestAttachmentResource.getSnapshot(other).stale, false)

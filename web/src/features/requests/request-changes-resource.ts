@@ -1,16 +1,17 @@
 import type { RequestComparisonMode, RequestRevisionListResponse } from '../../api/types.generated'
-import { createCachedResource } from '../../lib/cached-resource'
+import { affectsRequestKey, createRepoResource, repoResourceKey } from '../repo-detail/repo-resource'
 
-const limits = { maxEntries: 48, maxWeight: 8 * 1024 * 1024, weightOf: (value: object) => JSON.stringify(value).length * 2 }
-export const requestChangesResource = createCachedResource<RequestRevisionListResponse>(limits)
-
-function requestChangesIdentity(scope: string, requestId: string) {
-  return `${scope}\0${requestId}`
-}
+export const requestChangesResource = createRepoResource<RequestRevisionListResponse>({
+  invalidatedBy: ['requestTimeline'],
+  affectedBy: affectsRequestKey,
+  maxEntries: 48,
+  maxWeight: 8 * 1024 * 1024,
+  weightOf: (value) => JSON.stringify(value).length * 2,
+})
 
 export function requestChangesSelectionIdentity(scope: string, requestId: string, revision?: string, commit?: string, comparison?: RequestComparisonMode) {
   const query = requestChangesQuery({ comparison, commit, revision })
-  return `${requestChangesIdentity(scope, requestId)}\0${query.revision_id ?? ''}\0${query.comparison}\0${query.commit_oid ?? ''}`
+  return repoResourceKey(scope, requestId, query.revision_id ?? '', query.comparison, query.commit_oid ?? '')
 }
 
 export function retainPinnedRequestChanges(
