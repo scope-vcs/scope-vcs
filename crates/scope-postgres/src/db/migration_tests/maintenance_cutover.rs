@@ -1,8 +1,5 @@
 use super::*;
-use crate::db::{
-    apply_maintenance_migrations, connect_postgres_store, connect_writer_database,
-    terminate_metadata_writer_sessions, verify_writer_fence_available,
-};
+use crate::db::{apply_maintenance_migrations, connect_postgres_store, connect_writer_database};
 
 #[tokio::test]
 async fn ordinary_startup_refuses_pending_maintenance_migration() {
@@ -90,52 +87,6 @@ async fn maintenance_migrations_apply_while_a_writer_stays_connected() {
     .await
     .unwrap();
     assert!(worker_store.admin().readiness_check().await.is_err());
-}
-
-#[tokio::test]
-async fn a_reconnected_writer_holds_the_fence_until_it_is_drained() {
-    let (target, db, _lease) = isolated_database().await;
-    let database_url = target.schema_database_url();
-    let writer = connect_writer_database(
-        &database_url,
-        database_url.parse().unwrap(),
-        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
-    )
-    .await
-    .unwrap();
-
-    let writer_pid = writer
-        .query_one_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT pg_backend_pid() AS pid".to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<i32>("", "pid")
-        .unwrap();
-    db.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT pg_terminate_backend($1)",
-        [writer_pid.into()],
-    ))
-    .await
-    .unwrap();
-    writer.ping().await.unwrap();
-
-    let fence_error = verify_writer_fence_available(database_url.clone())
-        .await
-        .unwrap_err();
-    assert!(fence_error.to_string().contains("writer still holds"));
-
-    assert!(
-        terminate_metadata_writer_sessions(database_url.clone())
-            .await
-            .unwrap()
-            >= 1
-    );
-    writer.close().await.unwrap();
-    verify_writer_fence_available(database_url).await.unwrap();
 }
 
 #[tokio::test]

@@ -113,11 +113,8 @@ pub use cli_auth_results::{
     BrowserLoginCompletion, CliSessionSummary, CreateCliExchangeGrantCommand, DeviceLoginPoll,
     NewCliSession, StartBrowserLoginCommand, StartDeviceLoginCommand,
 };
+pub use connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS;
 use connection::begin_metadata_read_snapshot;
-pub use connection::{
-    DEFAULT_METADATA_POOL_MAX_CONNECTIONS, ExclusiveWriterFence,
-    terminate_metadata_writer_sessions, verify_writer_fence_available,
-};
 #[cfg(test)]
 use connection::{connect_postgres_store, connect_writer_database};
 pub use content_fences::ContentRefFence;

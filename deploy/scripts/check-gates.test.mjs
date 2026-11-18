@@ -200,7 +200,7 @@ const alwaysOnGateInputs = [
   /^dev\/checks\/(ops|policy)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.(sh|asc))$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
   /^\.github\/workflows\/(audit-railway-experiments|ci-duration|run-log-budget|main-advisories|backup-monitor|maintenance-runtime|preview-build|preview-environment(?:-cleanup|-signal)?)\.yml$/,
-  /^deploy\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
+  /\.test\.mjs$/, /\.md$/,
 ];
 
 const scriptDirectories = ['.github/scripts', 'deploy/scripts'];
@@ -208,7 +208,6 @@ const scriptDirectories = ['.github/scripts', 'deploy/scripts'];
 function scriptsCoveredByAlwaysOnGates() {
   const commandText = ['ops', 'policy'].flatMap((gate) => commands(gate)).join('\n');
   const entries = scriptDirectories.flatMap((directory) => readdirSync(resolve(root, directory))
-    .filter((name) => name !== 'fixtures')
     .map((name) => ({ directory, name, path: `${directory}/${name}` })));
   const tests = entries.filter(({ name }) => name.endsWith('.test.mjs'));
   const scripts = entries.filter(({ name }) => !name.endsWith('.test.mjs'));

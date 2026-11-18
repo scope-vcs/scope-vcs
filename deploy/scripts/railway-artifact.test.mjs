@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activateArtifact, artifactDeploymentInput, assertActivatedArtifact, configureStagingRegistry, releaseImageRepository, validateMaintenanceArtifact, validatePreparedRelease, verifyPrivateReleasePackage } from './railway-artifact.mjs';
+import { activateArtifact, artifactDeploymentInput, assertActivatedArtifact, releaseImageRepository, validateMaintenanceArtifact, validatePreparedRelease, verifyPrivateReleasePackage } from './railway-artifact.mjs';
 
 const sourceSha = 'a'.repeat(40);
 const image = `ghcr.io/owner/repo/railway-private-api@sha256:${'b'.repeat(64)}`;
@@ -114,7 +114,6 @@ test('maintenance recovery metadata is validated independently of image identity
   assert.throws(() => validatePreparedRelease({ ...manifest, preparationRunId: '../run' }), /preparation run/);
 });
 
-
 test('successful deployment must carry exact immutable artifact evidence', () => {
   const deployment = { id: 'exact-id', status: 'SUCCESS', serviceId: 'api-id', meta: { image, imageDigest: image.split('@')[1] } };
   assert.equal(assertActivatedArtifact(release(), 'api', deployment, { deploymentId: 'exact-id' }), deployment);
@@ -126,7 +125,6 @@ test('successful deployment must carry exact immutable artifact evidence', () =>
   assert.doesNotThrow(() => assertActivatedArtifact(release(), 'api', { ...deployment, meta: { serviceManifest: { source: { image } } } }, { deploymentId: 'exact-id' }));
 });
 
-
 test('maintenance binary is bound to the original prepared release', () => {
   const binary = Buffer.from('original maintenance binary');
   const hash = createHash('sha256').update(binary).digest('hex');
@@ -136,7 +134,6 @@ test('maintenance binary is bound to the original prepared release', () => {
   assert.throws(() => validateMaintenanceArtifact(manifest, Buffer.alloc(0)), /missing or empty/);
   assert.throws(() => validateMaintenanceArtifact(manifest, Buffer.from('rebuilt binary')), /does not match/);
 });
-
 
 test('checked-in Railway string durations become GraphQL integers', () => {
   const input = artifactDeploymentInput('api', release().components.api, { deploy: { ...config.deploy, overlapSeconds: '45', drainingSeconds: '15' } });
@@ -152,31 +149,6 @@ test('checked-in Railway string durations become GraphQL integers', () => {
     assert.throws(() => artifactDeploymentInput('api', release().components.api, { deploy: { ...config.deploy, overlapSeconds: value } }), /GraphQL Int/);
   }
 });
-
-
-test('trusted staging registry configuration touches only fixed environment credentials', () => {
-  const manifest = JSON.parse(readFileSync(new URL('../../.github/deployment-services.json', import.meta.url), 'utf8'));
-  const calls = [];
-  const credentials = { username: 'registry-user', password: 'private-pull-token' };
-  const result = configureStagingRegistry(manifest, credentials, (query, variables) => {
-    calls.push({ query, variables });
-    return { data: { serviceInstanceUpdate: true } };
-  });
-  assert.deepEqual(result, { configured: true, serviceCount: 6 });
-  assert.equal(calls.length, 6);
-  assert.deepEqual(calls.map(({ variables }) => variables.serviceId), [manifest.services['run-worker'].id, manifest.services['git-router'].id, manifest.services['media-api'].id, manifest.services['media-worker'].id, manifest.services.api.id, manifest.services.web.id]);
-  for (const { query, variables } of calls) {
-    assert.equal(variables.environmentId, manifest.environments.staging.environmentId);
-    assert.deepEqual(variables.input, { registryCredentials: credentials });
-    assert.ok(query.includes('serviceInstanceUpdate'));
-    assert.ok(!query.includes('Deploy'));
-  }
-  assert.deepEqual(configureStagingRegistry(manifest, {}, () => assert.fail('empty credentials should not call Railway')), { configured: false });
-  assert.throws(() => configureStagingRegistry(manifest, { username: 'partial' }), /Both/);
-  assert.throws(() => configureStagingRegistry({ ...manifest, environments: { ...manifest.environments, staging: { ...manifest.environments.staging, environmentId: manifest.environments.production.environmentId } } }, credentials), /distinct/);
-  assert.throws(() => configureStagingRegistry({ ...manifest, services: { ...manifest.services, api: {} } }, credentials), /api service/);
-});
-
 
 test('release package naming has one validated manifest owner', () => {
   const manifest = JSON.parse(readFileSync(new URL('../../.github/deployment-services.json', import.meta.url), 'utf8'));
@@ -199,7 +171,6 @@ test('release package naming has one validated manifest owner', () => {
   assert.throws(() => releaseImageRepository(manifest, 'owner/repo/escape', 'api'), /OWNER\/REPOSITORY/);
   assert.throws(() => releaseImageRepository(manifest, 'owner/repo', '../api'), /Unknown release component/);
 });
-
 
 for (const [accountType, namespace] of [['Organization', 'orgs'], ['User', 'users']]) {
   test(`private package verification uses the exact encoded package for a ${accountType}`, async () => {
@@ -230,22 +201,6 @@ test('package verification rejects public, internal, mismatched and unreadable p
     }), /must be private|different release package|HTTP 403/);
   }
   await assert.rejects(verifyPrivateReleasePackage(manifest, 'owner/repo', 'api'), /GITHUB_TOKEN/);
-});
-
-test('registry configuration retries the same service credentials without deploying', () => {
-  const manifest = JSON.parse(readFileSync(new URL('../../.github/deployment-services.json', import.meta.url), 'utf8'));
-  const calls = [];
-  const credentials = { username: 'registry-user', password: 'private-pull-token' };
-  configureStagingRegistry(manifest, credentials, (query, variables) => {
-    calls.push({ query, variables });
-    if (calls.length === 1) throw new Error('HTTP 500 with SECRET provider body');
-    if (calls.length === 2) return { errors: [{ message: 'SECRET' }], data: { serviceInstanceUpdate: true } };
-    return { data: { serviceInstanceUpdate: true } };
-  });
-  assert.equal(calls.length, 8);
-  assert.deepEqual(calls[0], calls[1]);
-  assert.deepEqual(calls[1], calls[2]);
-  assert.ok(calls.every(({ query }) => !query.includes('Deploy')));
 });
 
 test('CLI images start the download service from the image root with its readiness check', () => {

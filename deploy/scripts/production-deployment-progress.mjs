@@ -184,17 +184,6 @@ async function main() {
     }
     return;
   }
-  if (command === "record") {
-    const deploymentId = await recordSuccessfulDeployment({
-      component: argument("--component"),
-      sourceSha: argument("--source-sha"),
-      provider: argument("--provider"),
-      evidenceId: argument("--evidence-id"),
-      logUrl: argument("--log-url"),
-    });
-    process.stdout.write(`Recorded GitHub deployment ${deploymentId}.\n`);
-    return;
-  }
   if (command === "record-file") {
     const deploymentIds = await recordEvidenceFile(
       argument("--file"),
@@ -203,7 +192,7 @@ async function main() {
     process.stdout.write(`Recorded ${deploymentIds.length} GitHub deployment(s).\n`);
     return;
   }
-  throw new Error("usage: production-deployment-progress.mjs <read|record|record-file> [options]");
+  throw new Error("usage: production-deployment-progress.mjs <read|record-file> [options]");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
