@@ -379,7 +379,7 @@ impl RepositoryStore {
                 save_repository_rows(&tx, &before, &repo).await?;
                 refresh_content_read_models(&tx, &repo, CATALOG_SEED_NOW_UNIX).await?;
             }
-            None => insert_repository(&tx, &repo, CATALOG_SEED_NOW_UNIX).await?,
+            None => insert_repository(&tx, &repo).await?,
         }
         tx.commit().await.map_err(PostgresError::internal)
     }
@@ -394,7 +394,7 @@ impl RepositoryStore {
         entities::repository::Entity::delete_by_id(repo.record.id.clone())
             .exec(&tx)
             .await?;
-        insert_repository(&tx, &repo, CATALOG_SEED_NOW_UNIX).await?;
+        insert_repository(&tx, &repo).await?;
         tx.commit().await.map_err(PostgresError::internal)
     }
 
@@ -610,7 +610,7 @@ async fn seed_catalog_rows(
             .await?;
     }
     for repo in catalog.repositories.values() {
-        insert_repository(tx, repo, CATALOG_SEED_NOW_UNIX).await?;
+        insert_repository(tx, repo).await?;
         if let Some(landing) = catalog.repository_landing_files.remove(&repo.record.id) {
             let path = scope_domain::policy::ScopePath::parse(
                 scope_domain::landing_file::REPOSITORY_LANDING_FILE_PATH,

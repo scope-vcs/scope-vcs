@@ -91,10 +91,6 @@ async fn public_files_follow_the_projection_not_the_live_tree() {
         );
     })
     .await;
-    let rebuilt = drain_outbox(&state, "repo-visibility-test").await;
-    assert_eq!(rebuilt.failed, 0);
-    assert!(rebuilt.completed > 0);
-
     let files = api_request(
         router(state.clone()),
         "GET",
@@ -254,7 +250,6 @@ async fn canonical_rules_alone_do_not_publish_a_repository() {
         ));
     })
     .await;
-    drain_outbox(&state, "rules-only-visibility-test").await;
     let files = api_request(
         router(state.clone()),
         "GET",
@@ -335,7 +330,6 @@ async fn owner_profile_lists_only_repositories_visible_to_the_viewer() {
     );
 
     mutate_repo(&state, |repo| add_mixed_commit(&state, repo)).await;
-    drain_outbox(&state, "owner-profile-test").await;
 
     let anonymous = api_request(
         router(state.clone()),

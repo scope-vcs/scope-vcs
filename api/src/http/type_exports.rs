@@ -430,10 +430,10 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
     .join("\n\n");
 
     fs::write(output_path, format!("{declarations}\n")).expect("write generated API types");
-    let schema_document = serde_json::json!({
+    let schema_document = with_sorted_keys(serde_json::json!({
         "generated_from": "Rust API response/request types",
         "schemas": schemas,
-    });
+    }));
     fs::write(
         schema_output_path,
         format!(
@@ -443,6 +443,23 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         ),
     )
     .expect("write generated API schemas");
+}
+
+fn with_sorted_keys(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(fields) => serde_json::Value::Object(
+            fields
+                .into_iter()
+                .collect::<std::collections::BTreeMap<_, _>>()
+                .into_iter()
+                .map(|(name, field)| (name, with_sorted_keys(field)))
+                .collect(),
+        ),
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(with_sorted_keys).collect())
+        }
+        scalar => scalar,
+    }
 }
 
 fn api_route_template_declarations() -> String {

@@ -240,7 +240,6 @@ pub(super) async fn repo_a() -> RepoA {
         })
         .await
         .unwrap();
-    drain_outbox(&state, "cross-repo-isolation").await;
 
     let request_id =
         super::super::requests::start_private_request(&state, REQUEST_NAME, None).await;

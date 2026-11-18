@@ -31,8 +31,7 @@ function validMainMetadata() {
     packageFixture('scope-api-contract', [dependency('scope-domain')]),
     packageFixture('scope-content-lifecycle', [dependency('scope-domain')]),
     packageFixture('scope-dependency-analyzer', [dependency('scope-domain')]),
-    packageFixture('api', [dependency('scope-content-lifecycle')]),
-    packageFixture('worker', [dependency('scope-content-lifecycle'), dependency('scope-dependency-analyzer')]),
+    packageFixture('api', [dependency('scope-content-lifecycle'), dependency('scope-dependency-analyzer')]),
   ])
 }
 
@@ -46,10 +45,9 @@ function validCliMetadata() {
   ], cliRoot)
 }
 
-test('accepts domain leaves, narrow contracts, shared orchestration, and standalone CLI', () => {
+test('accepts domain leaves, narrow contracts, and standalone CLI', () => {
   const result = validateRustBoundaries(validMainMetadata(), validCliMetadata(), cliRoot)
   assert.deepEqual(result.errors, [])
-  assert.deepEqual(result.lifecycleConsumers, ['api', 'worker'])
 })
 
 test('rejects outward domain dependencies and reusable-to-application edges', () => {
@@ -61,13 +59,11 @@ test('rejects outward domain dependencies and reusable-to-application edges', ()
   assert.ok(result.errors.some((error) => error.includes('reusable package depends on application api')))
 })
 
-test('rejects broad contracts and orchestration without two real consumers', () => {
+test('rejects broad contracts', () => {
   const main = validMainMetadata()
   main.packages.find(({ name }) => name === 'scope-api-contract').dependencies.push(dependency('scope-content-lifecycle'))
-  main.packages.find(({ name }) => name === 'worker').dependencies = []
   const result = validateRustBoundaries(main, validCliMetadata(), cliRoot)
   assert.ok(result.errors.some((error) => error.includes('scope-api-contract: contract depends on')))
-  assert.ok(result.errors.some((error) => error.includes('expected API and worker consumers')))
 })
 
 test('rejects OpenTelemetry dependencies outside scope-service-runtime', () => {

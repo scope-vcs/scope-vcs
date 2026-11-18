@@ -116,7 +116,7 @@ impl RepositoryStore {
                 None => {}
             }
 
-            insert_repository(&tx, &repo, now_unix).await?;
+            insert_repository(&tx, &repo).await?;
             tx.commit().await.map_err(PostgresError::internal)?;
             Ok(repo)
         })

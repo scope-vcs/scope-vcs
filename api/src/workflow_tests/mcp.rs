@@ -25,7 +25,6 @@ async fn signed_in_app() -> (AppState, axum::Router) {
     });
     repo.live_files.insert(path, content);
     replace_test_repo(&state, repo).await;
-    drain_outbox(&state, "mcp").await;
     let app = router(state.clone());
     for session in [
         bearer_header(),

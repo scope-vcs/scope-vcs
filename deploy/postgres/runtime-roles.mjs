@@ -38,19 +38,6 @@ function policy(write, read = [], lock = []) {
 }
 export const grants = {
   scope_api: policy([...repositoryTables, ...collaborationTables, ...authTables, ...mediaTables]),
-  scope_run_worker: { ...policy([...names(`git_compaction_jobs git_pool_packs git_segment_uploads
-    metadata_locks object_references orphan_object_jobs outbox_jobs projection_files
-    projection_read_models repo_storage_cleanup_jobs dependency_analyses dependency_reports
-    dependency_analysis_jobs`)],
-    names(`file_changes git_heads live_files logical_commits repositories repository_first_push_tokens
-    repository_git_push_tokens repository_invites
-    repository_invite_links repository_landing_files repository_members
-    visibility_change_sets visibility_changes requests request_revisions users request_check_evaluations`)),
-    scope_repository_history_payloads: ['SELECT', 'INSERT', 'DELETE'],
-    scope_repository_history_entries: ['SELECT', 'INSERT'],
-    scope_requests: ['SELECT', 'UPDATE'],
-    scope_request_auto_merge_intents: ['SELECT', 'UPDATE'],
-    scope_request_events: ['SELECT', 'INSERT'] },
   scope_media_api: { ...policy(names('request_media_upload_parts request_media_abandoned_objects'),
     [...names('request_media_bindings request_media_cleanup_jobs request_media_derivatives request_media_manifest_chunks request_media_manifests'),
       ...names('repositories repository_members requests request_invitees request_discussions')],

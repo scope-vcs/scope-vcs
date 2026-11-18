@@ -10,7 +10,6 @@ const ADMIN_DATABASE_URL = `\${{${POSTGRES}.DATABASE_URL}}`;
 const PUBLIC_COMPONENTS = ['api', 'web', 'media-api'];
 export const RUNTIME_ROLES = Object.freeze({
   api: 'scope_api',
-  'run-worker': 'scope_run_worker',
   'media-api': 'scope_media_api',
   'media-worker': 'scope_media_worker',
 });
@@ -121,7 +120,6 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
     SCOPE_API_HOST: domains.api,
     SCOPE_API_PUBLIC_URL: url('api'),
   });
-  set('run-worker', { SCOPE_PUBLIC_API_URL: url('api'), SCOPE_BUCKET_SECRET_ACCESS_KEY: blobs('SECRET_ACCESS_KEY') });
   set('media-api', {
     SCOPE_MEDIA_ALLOWED_ORIGIN: url('web'),
     SCOPE_MEDIA_BUCKET_SECRET_ACCESS_KEY: '${{scope-request-media.SECRET_ACCESS_KEY}}',
@@ -134,7 +132,7 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
     SCOPE_BUCKET_SECRET_ACCESS_KEY: blobs('SECRET_ACCESS_KEY'),
   });
 
-  shared(['api', 'run-worker', 'maintenance'], 'SCOPE_OBJECT_ENCRYPTION_KEY', secrets.objectEncryptionKey);
+  shared(['api', 'maintenance'], 'SCOPE_OBJECT_ENCRYPTION_KEY', secrets.objectEncryptionKey);
   shared(['media-api', 'media-worker'], 'SCOPE_MEDIA_ENCRYPTION_KEY', secrets.mediaEncryptionKey);
   signingPair(['api', 'SCOPE_MEDIA_GRANT_PRIVATE_KEY'], ['media-api', 'SCOPE_MEDIA_GRANT_PUBLIC_KEY'], secrets.mediaGrant);
 
@@ -172,15 +170,14 @@ const MEDIA_BUCKET = ['SCOPE_MEDIA_BUCKET_ACCESS_KEY_ID', 'SCOPE_MEDIA_BUCKET_EN
   'SCOPE_MEDIA_BUCKET_REGION'];
 export const KEPT_STAGING_SETTINGS = Object.freeze({
   api: ['PORT', 'RAILPACK_CONFIG_FILE', 'SCOPE_DATABASE_MAX_CONNECTIONS', 'SCOPE_DATA_DIR',
-    'SCOPE_GIT_ADMISSION_WAIT_MS', 'SCOPE_GIT_COMMAND_TIMEOUT_SECS', 'SCOPE_GIT_MATERIALIZATION_CONCURRENCY',
+    'SCOPE_GIT_ADMISSION_WAIT_MS', 'SCOPE_GIT_COMMAND_TIMEOUT_SECS', 'SCOPE_GIT_COMPACTION_CONCURRENCY',
+    'SCOPE_GIT_MATERIALIZATION_CONCURRENCY',
     'SCOPE_GIT_RECEIVE_PACK_CONCURRENCY', 'SCOPE_GIT_SEGMENT_INGEST_CONCURRENCY', 'SCOPE_GIT_UPLOAD_PACK_CONCURRENCY',
     'SCOPE_MEDIA_PUBLIC_URL', 'SCOPE_OBJECT_STORE_CONCURRENCY', 'SCOPE_OBJECT_STORE_MAX_BYTES', ...GIT_SEGMENT_SETTINGS,
     ...BLOB_REFERENCES],
   web: ['PAGENT_ENABLED', 'SCOPE_API_INTERNAL_URL', 'SCOPE_CLI_INSTALL_URL', 'VITE_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL',
     'VITE_CLERK_SIGN_IN_URL', 'VITE_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL', 'VITE_CLERK_SIGN_UP_URL',
     'VITE_SCOPE_WEB_FORCE_SIGNED_OUT'],
-  'run-worker': ['SCOPE_DATA_DIR', 'SCOPE_GIT_COMPACTION_CONCURRENCY', 'SCOPE_OBJECT_STORE_MAX_BYTES',
-    ...GIT_SEGMENT_SETTINGS, ...BLOB_REFERENCES],
   'media-api': MEDIA_BUCKET,
   'media-worker': MEDIA_BUCKET,
   'cli-downloads': ['SCOPE_API_PUBLIC_URL', 'SCOPE_CLI_PUBLIC_URL'],

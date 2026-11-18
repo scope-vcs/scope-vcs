@@ -14,7 +14,6 @@ use_slot() {
   local offset=$((SLOT * 10))
   WEB_PORT=$((3000 + offset))
   API_PORT=$((8080 + offset))
-  WORKER_PORT=$((8081 + offset))
   MEDIA_PORT=$((8083 + offset))
   MEDIA_WORKER_PORT=$((8084 + offset))
   LOCAL_WEB_ORIGIN="http://localhost:$WEB_PORT"
@@ -150,7 +149,7 @@ claim_is_live() {
 }
 
 slot_ports_free() {
-  local port ports=("$API_PORT" "$WORKER_PORT")
+  local port ports=("$API_PORT")
   if (( WITH_MEDIA )); then
     ports+=("$MEDIA_PORT" "$MEDIA_WORKER_PORT")
   fi

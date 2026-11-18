@@ -54,37 +54,21 @@ pub fn link_all<'a>(span: &tracing::Span, traces: impl IntoIterator<Item = &'a Q
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::{JOB_TRACING, JobTracing};
-    use std::{future::Future, sync::Mutex};
+    use std::future::Future;
 
     tokio::task_local! {
         static QUEUING_TRACE: String;
     }
 
-    static LINKED: Mutex<Vec<String>> = Mutex::new(Vec::new());
-
     fn install_recording() {
         JOB_TRACING.get_or_init(|| JobTracing {
             current_traceparent: || QUEUING_TRACE.try_with(Clone::clone).ok(),
-            link_queued_traces: |_, traceparents| {
-                LINKED.lock().unwrap().extend(
-                    traceparents
-                        .iter()
-                        .map(|traceparent| traceparent.to_string()),
-                )
-            },
+            link_queued_traces: |_, _| {},
         });
     }
 
     pub(crate) async fn queued_by<F: Future>(traceparent: &str, work: F) -> F::Output {
         install_recording();
         QUEUING_TRACE.scope(traceparent.to_owned(), work).await
-    }
-
-    pub(crate) fn linked(traceparent: &str) -> bool {
-        LINKED
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|linked| linked == traceparent)
     }
 }

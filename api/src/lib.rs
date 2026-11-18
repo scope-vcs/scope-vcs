@@ -10,12 +10,14 @@ pub(crate) mod config;
 #[cfg(any(test, feature = "local-dev"))]
 #[path = "dev/seed.rs"]
 pub(crate) mod demo_seed;
+pub(crate) mod dependency_analysis;
 #[cfg(feature = "local-dev")]
 pub mod dev;
 #[cfg(any(feature = "local-dev", feature = "smoke-seed"))]
 mod env_guard;
 pub(crate) mod error;
 pub(crate) mod git;
+pub(crate) mod git_compaction;
 pub(crate) mod git_segment_recovery;
 pub(crate) mod github;
 pub(crate) mod http;
@@ -34,6 +36,7 @@ pub(crate) mod runtime_budgets;
 pub(crate) mod seed_user;
 #[cfg(feature = "smoke-seed")]
 pub mod smoke_seed;
+pub(crate) mod source_blob_cleanup;
 mod storage_runtime;
 pub(crate) mod use_cases;
 

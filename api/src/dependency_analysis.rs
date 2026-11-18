@@ -1,23 +1,20 @@
 mod snapshot;
 
 use crate::{
-    health::{WorkerHealth, WorkerLoop},
-    settings::{CONTROL_POLL_BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
+    background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness, StopSignal},
+    error::ApiError,
+    state::AppState,
 };
-use scope_api_contract::{RepoChangeEvent, RepoChangeKind, RepoChangeNotification};
+use scope_api_contract::{RepoChangeEvent, RepoChangeKind};
 use scope_dependency_analyzer::{ANALYZE_COMMAND, MAX_OUTPUT_BYTES};
 use scope_domain::dependency_analysis::{AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION};
 use scope_git_process::{ProcessCancellation, ProcessLimits, run_cancellable};
-use scope_postgres::db::{DependencyAnalysisClaim, DependencyCompletion, MetadataStore};
-use scope_storage::GitSegmentStore;
-use scope_storage::ObjectStore;
+use scope_postgres::db::{DependencyAnalysisClaim, DependencyCompletion};
+use scope_service_runtime::unix_now;
 use std::{
-    path::PathBuf,
     process::Command,
-    sync::Arc,
     time::{Duration, Instant},
 };
-
 use tracing::Instrument as _;
 
 const LEASE_SECONDS: u64 = 60;
@@ -25,6 +22,10 @@ const HEARTBEAT: Duration = Duration::from_secs(5);
 const ANALYZER_TIMEOUT: Duration = Duration::from_secs(120);
 const ANALYSIS_TIMEOUT: Duration = Duration::from_secs(300);
 const BACKFILL_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const BACKFILL_BATCH_SIZE: usize = 10;
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
+const PUBLIC_FAILURE: &str = "Dependency check could not finish. It will retry automatically.";
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PollOutcome {
     Idle,
@@ -32,48 +33,43 @@ enum PollOutcome {
     Shutdown,
 }
 
-const PUBLIC_FAILURE: &str = "Dependency check could not finish. It will retry automatically.";
-
-pub(crate) async fn run(
-    metadata: MetadataStore,
-    objects: Arc<dyn ObjectStore>,
-    segments: Arc<GitSegmentStore>,
-    settings: WorkerSettings,
-    health: WorkerHealth,
-) -> anyhow::Result<()> {
-    let mut backfill = BackfillSchedule::default();
-    loop {
-        if !crate::schema_ready_or_wait(&metadata, &health).await {
-            return Ok(());
-        }
-        let result = process_next(
-            &metadata,
-            objects.clone(),
-            segments.clone(),
-            &settings,
-            &health,
-            &mut backfill,
-        )
-        .await;
-        match result {
-            Ok(PollOutcome::Shutdown) => return Ok(()),
-            Ok(outcome) => {
-                health.mark_poll_succeeded(WorkerLoop::Dependencies, crate::unix_now()?);
-                if outcome == PollOutcome::Worked {
-                    continue;
+impl BackgroundWork {
+    pub(crate) fn start_dependency_analysis(&mut self) {
+        let stop = self.stopping();
+        self.spawn_with_progress(
+            BackgroundLoop {
+                name: "dependency analysis",
+                cadence: Cadence::AfterPass {
+                    delay: POLL_INTERVAL,
+                    wakeup: None,
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            BackfillSchedule::default(),
+            move |state, mut backfill| {
+                let stop = stop.clone();
+                async move {
+                    let result = analyze_until_idle(&state, &mut backfill, &stop).await;
+                    (
+                        backfill,
+                        result.map_err(|error| ApiError::internal_message(format!("{error:#}"))),
+                    )
                 }
-            }
-            Err(error) => {
-                tracing::error!(%error, "dependency analysis scheduling failed; retrying");
-            }
-        }
-        if crate::wait_or_shutdown(POLL_INTERVAL).await {
-            return Ok(());
-        }
+            },
+        );
     }
 }
 
-#[derive(Default)]
+async fn analyze_until_idle(
+    state: &AppState,
+    backfill: &mut BackfillSchedule,
+    stop: &StopSignal,
+) -> anyhow::Result<()> {
+    while !stop.is_set() && process_next(state, backfill, stop).await? == PollOutcome::Worked {}
+    Ok(())
+}
+
+#[derive(Clone, Default)]
 struct BackfillSchedule {
     last_started: Option<Instant>,
     more_candidates: bool,
@@ -94,14 +90,12 @@ impl BackfillSchedule {
 }
 
 async fn process_next(
-    metadata: &MetadataStore,
-    objects: Arc<dyn ObjectStore>,
-    segments: Arc<GitSegmentStore>,
-    settings: &WorkerSettings,
-    health: &WorkerHealth,
+    state: &AppState,
     backfill: &mut BackfillSchedule,
+    stop: &StopSignal,
 ) -> anyhow::Result<PollOutcome> {
-    let now = crate::unix_now()?;
+    let metadata = &state.metadata;
+    let now = unix_now()?;
     let started = Instant::now();
     if backfill.is_due(started) {
         let enqueued = metadata
@@ -109,15 +103,15 @@ async fn process_next(
             .enqueue_dependency_analysis_backfill(
                 DEPENDENCY_ANALYZER_VERSION,
                 now,
-                CONTROL_POLL_BATCH_SIZE,
+                BACKFILL_BATCH_SIZE,
             )
             .await?;
-        backfill.record(started, enqueued, CONTROL_POLL_BATCH_SIZE);
+        backfill.record(started, enqueued, BACKFILL_BATCH_SIZE);
     }
     let Some(claim) = metadata
         .jobs()
         .claim_dependency_analysis(
-            &settings.worker_id,
+            state.repo_events.origin_id(),
             DEPENDENCY_ANALYZER_VERSION,
             now,
             LEASE_SECONDS,
@@ -134,36 +128,33 @@ async fn process_next(
         scope.job.id = %claim.lease_generation,
     );
     claim.queued_trace.link(&span);
-    analyze_claimed(metadata, objects, segments, settings, health, claim)
+    analyze_claimed(state, claim, stop.clone())
         .instrument(span)
         .await
 }
 
 async fn analyze_claimed(
-    metadata: &MetadataStore,
-    objects: Arc<dyn ObjectStore>,
-    segments: Arc<GitSegmentStore>,
-    settings: &WorkerSettings,
-    health: &WorkerHealth,
+    state: &AppState,
     claim: DependencyAnalysisClaim,
+    mut stop: StopSignal,
 ) -> anyhow::Result<PollOutcome> {
+    let metadata = &state.metadata;
     if claim.reusable_analysis.is_some() {
         let completed = metadata
             .jobs()
-            .complete_reused_dependency_analysis_claim(&claim, crate::unix_now()?)
+            .complete_reused_dependency_analysis_claim(&claim, unix_now()?)
             .await?;
         if completed == DependencyCompletion::Completed {
-            publish_change(metadata, &settings.worker_id, &claim).await;
+            publish_change(state, &claim);
         }
         return Ok(PollOutcome::Worked);
     }
     let task_claim = claim.clone();
-    let data_dir = settings.data_dir.clone();
+    let task_state = state.clone();
     let cancellation = ProcessCancellation::new();
     let task_cancellation = cancellation.clone();
     let mut task = tokio::spawn(
-        async move { analyze(&task_claim, objects, segments, data_dir, task_cancellation).await }
-            .in_current_span(),
+        async move { analyze(&task_state, &task_claim, task_cancellation).await }.in_current_span(),
     );
     let deadline = tokio::time::sleep(ANALYSIS_TIMEOUT);
     tokio::pin!(deadline);
@@ -175,7 +166,7 @@ async fn analyze_claimed(
                 break result.map_err(anyhow::Error::from).and_then(|result| result);
             }
             _ = interval.tick() => {
-                let now = crate::unix_now()?;
+                let now = unix_now()?;
                 let renewed = match metadata.jobs().renew_dependency_analysis_claim(&claim, now, LEASE_SECONDS).await {
                     Ok(renewed) => renewed,
                     Err(error) => { cancel_analysis(&cancellation, task).await; return Err(error.into()); }
@@ -185,13 +176,12 @@ async fn analyze_claimed(
                     tracing::debug!(repo_id = claim.incarnation.repository_id(), "dependency analysis claim superseded");
                     return Ok(PollOutcome::Worked);
                 }
-                health.mark_poll_succeeded(WorkerLoop::Dependencies, now);
             }
             _ = &mut deadline => {
                 cancel_analysis(&cancellation, task).await;
                 break Err(anyhow::anyhow!("dependency analysis exceeded its total deadline"));
             }
-            _ = scope_service_runtime::shutdown_signal() => {
+            () = stop.set() => {
                 cancel_analysis(&cancellation, task).await;
                 return Ok(PollOutcome::Shutdown);
             }
@@ -200,7 +190,7 @@ async fn analyze_claimed(
     let completion = match result {
         Ok(output) => metadata
             .jobs()
-            .complete_dependency_analysis_claim(&claim, output, crate::unix_now()?)
+            .complete_dependency_analysis_claim(&claim, output, unix_now()?)
             .await
             .map_err(anyhow::Error::from),
         Err(error) => Err(error),
@@ -211,12 +201,12 @@ async fn analyze_claimed(
             tracing::warn!(repo_id = claim.incarnation.repository_id(), %error, "dependency analysis failed");
             metadata
                 .jobs()
-                .fail_dependency_analysis_claim(&claim, PUBLIC_FAILURE, crate::unix_now()?)
+                .fail_dependency_analysis_claim(&claim, PUBLIC_FAILURE, unix_now()?)
                 .await?
         }
     };
     if changed {
-        publish_change(metadata, &settings.worker_id, &claim).await;
+        publish_change(state, &claim);
     }
     Ok(PollOutcome::Worked)
 }
@@ -232,14 +222,11 @@ async fn cancel_analysis(
 }
 
 async fn analyze(
+    state: &AppState,
     claim: &DependencyAnalysisClaim,
-    objects: Arc<dyn ObjectStore>,
-    segments: Arc<GitSegmentStore>,
-    data_dir: PathBuf,
     cancellation: ProcessCancellation,
 ) -> anyhow::Result<AnalyzerOutput> {
-    let snapshot =
-        snapshot::materialize(claim, objects, segments, &data_dir, cancellation.clone()).await?;
+    let snapshot = snapshot::materialize(state, claim, cancellation.clone()).await?;
     tokio::task::spawn_blocking(move || {
         let mut command = Command::new(std::env::current_exe()?);
         command
@@ -264,37 +251,25 @@ async fn analyze(
     .await?
 }
 
-async fn publish_change(
-    metadata: &MetadataStore,
-    worker_id: &str,
-    claim: &DependencyAnalysisClaim,
-) {
-    let notification = RepoChangeNotification {
-        event: RepoChangeEvent {
+fn publish_change(state: &AppState, claim: &DependencyAnalysisClaim) {
+    state.publish_repo_event(
+        RepoChangeEvent {
             repo_id: claim.incarnation.repository_id().to_string(),
             incarnation_id: claim.incarnation.incarnation_id().to_string(),
             version: claim.change_version,
             kind: RepoChangeKind::DependenciesChanged,
         },
-        origin_id: worker_id.to_string(),
-    };
-    let result = async {
-        let payload = serde_json::to_string(&notification)?;
-        metadata
-            .repositories()
-            .queue_repo_change_notification(payload)?;
-        Ok::<_, anyhow::Error>(())
-    }
-    .await;
-    if let Err(error) = result {
-        tracing::warn!(repo_id = claim.incarnation.repository_id(), %error, "failed to publish dependency report change");
-    }
+        "dependency report change",
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
 
     #[test]
     fn backfill_runs_at_startup_on_an_interval_and_while_candidates_remain() {

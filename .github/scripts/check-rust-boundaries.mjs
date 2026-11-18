@@ -5,7 +5,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const execFileAsync = promisify(execFile)
-const applicationPackages = new Set(['api', 'scope-cli-downloads', 'worker'])
+const applicationPackages = new Set(['api', 'scope-cli-downloads'])
 const leafPackages = new Set(['scope-domain', 'scope-git-process'])
 const contractDependencies = new Map([
   ['scope-api-contract', new Set(['scope-domain'])],
@@ -63,14 +63,6 @@ export function validateRustBoundaries(mainMetadata, cliMetadata, expectedCliRoo
     if (forbidden.length > 0) errors.push(`${name}: reusable package depends on application ${forbidden.join(', ')}`)
   }
 
-  const lifecycleConsumers = [...dependencies]
-    .filter(([, actual]) => actual.includes('scope-content-lifecycle'))
-    .map(([name]) => name)
-    .sort()
-  if (lifecycleConsumers.length < 2 || !lifecycleConsumers.includes('api') || !lifecycleConsumers.includes('worker')) {
-    errors.push(`scope-content-lifecycle: expected API and worker consumers, found ${lifecycleConsumers.join(', ') || 'none'}`)
-  }
-
   const cliPackages = workspacePackages(cliMetadata)
   if (path.resolve(cliMetadata.workspace_root) !== path.resolve(expectedCliRoot)) {
     errors.push(`scope-cli: workspace root must remain ${path.resolve(expectedCliRoot)}`)
@@ -86,7 +78,7 @@ export function validateRustBoundaries(mainMetadata, cliMetadata, expectedCliRoo
     if (forbidden.length > 0) errors.push(`scope-cli: unexpected local dependency ${forbidden.join(', ')}`)
   }
 
-  return { dependencies, errors, lifecycleConsumers }
+  return { dependencies, errors }
 }
 
 export function validateStandaloneManifests(manifests) {
@@ -156,7 +148,7 @@ async function main() {
     process.exitCode = 1
     return
   }
-  console.log(`Rust dependency boundaries pass; scope-content-lifecycle consumers: ${result.lifecycleConsumers.join(', ')}.`)
+  console.log("Rust dependency boundaries pass.")
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

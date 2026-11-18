@@ -36,7 +36,6 @@ async fn open_request_with_revision(
             .await
             .unwrap();
     }
-    drain_outbox(&state, "request-auto-merge-test").await;
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
@@ -210,9 +209,6 @@ async fn pushed_request(
 ) -> (AppState, TempGitRepo, String, String, String, TestServer) {
     let (state, source, _main_head) =
         super::push_intent_completion::published_git_fixture(label).await;
-    if view == ViewId::public() {
-        drain_outbox(&state, &format!("{label}-initial-public-projection")).await;
-    }
     let app = router(state.clone());
     let bearer = bearer_header();
     let started = expect_json(
@@ -459,7 +455,6 @@ async fn successful_reconciliation_merges_the_authorized_head_once() {
 async fn public_main_advance_stops_authorization_as_needing_a_main_update() {
     let (state, source, remote, request_id, request_head, _server) =
         pushed_request("request-auto-merge-public-main-advance", ViewId::public()).await;
-    drain_outbox(&state, "request-auto-merge-public-ready").await;
     let app = router(state.clone());
     let bearer = bearer_header();
     let (ready, active) = current_authorization(app.clone(), &request_id, &request_head).await;
@@ -475,7 +470,6 @@ async fn public_main_advance_stops_authorization_as_needing_a_main_update() {
         DEFAULT_GIT_BRANCH,
         "advance public main after auto merge authorization",
     );
-    drain_outbox(&state, "request-auto-merge-public-main-advanced").await;
 
     let attempt_time = unix_now();
     assert_eq!(reconcile(&state, attempt_time).await, 1);

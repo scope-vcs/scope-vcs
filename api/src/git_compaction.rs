@@ -1,24 +1,24 @@
-use crate::git_repo::{CompactionPackMetrics, build_compacted_pack};
+mod pack;
+
+use crate::{
+    background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness, StopSignal},
+    error::ApiError,
+    state::AppState,
+};
+use pack::{CompactionPackMetrics, build_compacted_pack};
 use scope_domain::repository::git::GitPoolPack;
-use scope_git::GitStorageLimits;
 use scope_git_process::ProcessError;
 use scope_postgres::db::{GitCompactionClaim, MetadataStore};
+use scope_service_runtime::unix_now;
 use scope_storage::{
     ENCODING_VERSION, GitSegmentIngestTimings, GitSegmentReservation, GitSegmentStore,
     StagedGitSegment,
 };
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
-use crate::{
-    elapsed_ms,
-    health::{WorkerHealth, WorkerLoop},
-    settings::{GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings},
-};
+use std::time::{Duration, Instant};
 use tracing::Instrument as _;
 
+const GIT_COMPACTION_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const GIT_COMPACTION_TIMEOUT: Duration = Duration::from_secs(120);
 const LEASE_SECONDS: u64 = GIT_COMPACTION_TIMEOUT.as_secs().saturating_add(30);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -30,82 +30,63 @@ pub(crate) enum CompactionOutcome {
     Refused(String),
 }
 
-pub(crate) async fn run(
-    metadata: MetadataStore,
-    segment_store: Arc<GitSegmentStore>,
-    settings: WorkerSettings,
-    health: WorkerHealth,
-) -> anyhow::Result<()> {
-    let mut compactors = tokio::task::JoinSet::new();
-    for _ in 0..settings.git_compaction_concurrency {
-        compactors.spawn(compact_until_shutdown(
-            metadata.clone(),
-            Arc::clone(&segment_store),
-            settings.clone(),
-            health.clone(),
-        ));
+impl BackgroundWork {
+    pub(crate) fn start_git_compaction(&mut self, concurrency: usize) {
+        for _ in 0..concurrency {
+            let stop = self.stopping();
+            self.spawn(
+                BackgroundLoop {
+                    name: "Git compaction",
+                    cadence: Cadence::AfterPass {
+                        delay: GIT_COMPACTION_POLL_INTERVAL,
+                        wakeup: None,
+                    },
+                    readiness: Readiness::SchemaRequired,
+                },
+                move |state| {
+                    let stop = stop.clone();
+                    async move { compact_until_idle(&state, &stop).await }
+                },
+            );
+        }
     }
-    while let Some(compactor) = compactors.join_next().await {
-        compactor??;
+}
+
+async fn compact_until_idle(state: &AppState, stop: &StopSignal) -> Result<(), ApiError> {
+    while !stop.is_set() {
+        match compact_one_git_repository(state).await {
+            Ok(
+                CompactionOutcome::Applied | CompactionOutcome::Stale | CompactionOutcome::Drained,
+            ) => {}
+            Ok(CompactionOutcome::NoJob) => return Ok(()),
+            Ok(CompactionOutcome::Refused(reason)) => {
+                tracing::warn!(reason, "Git compaction refused bounded replacement");
+                return Ok(());
+            }
+            Err(error) => return Err(ApiError::internal_message(format!("{error:#}"))),
+        }
     }
     Ok(())
 }
 
-async fn compact_until_shutdown(
-    metadata: MetadataStore,
-    segment_store: Arc<GitSegmentStore>,
-    settings: WorkerSettings,
-    health: WorkerHealth,
-) -> anyhow::Result<()> {
-    loop {
-        if !super::schema_ready_or_wait(&metadata, &health).await {
-            return Ok(());
-        }
-        let made_progress = match compact_one_git_repository(
-            &metadata,
-            Arc::clone(&segment_store),
-            &settings,
-            &health,
-        )
-        .await
-        {
-            Ok(
-                CompactionOutcome::Applied | CompactionOutcome::Stale | CompactionOutcome::Drained,
-            ) => true,
-            Ok(CompactionOutcome::NoJob) => false,
-            Ok(CompactionOutcome::Refused(reason)) => {
-                tracing::warn!(reason, "Git compaction refused bounded replacement");
-                false
-            }
-            Err(error) => {
-                tracing::error!(error = %error, "Git compaction failed; retry is scheduled");
-                false
-            }
-        };
-        health.mark_poll_succeeded(WorkerLoop::Compaction, super::unix_now()?);
-        if made_progress {
-            continue;
-        }
-        if super::wait_or_shutdown(POLL_INTERVAL).await {
-            return Ok(());
-        }
-    }
-}
-
 pub(crate) async fn compact_one_git_repository(
-    metadata: &MetadataStore,
-    segment_store: Arc<GitSegmentStore>,
-    settings: &WorkerSettings,
-    health: &WorkerHealth,
+    state: &AppState,
 ) -> anyhow::Result<CompactionOutcome> {
+    let metadata = &state.metadata;
     let attempt_started = Instant::now();
-    let claim_now_unix = super::unix_now()?;
+    let claim_now_unix = unix_now()?;
     let candidate_started = Instant::now();
     let Some(claim) = metadata
         .jobs()
         .claim_git_compaction(
-            &settings.worker_id,
-            u64::try_from(settings.git_storage_limits.max_object_bytes()).unwrap_or(u64::MAX),
+            state.repo_events.origin_id(),
+            u64::try_from(
+                state
+                    .runtime_budgets
+                    .git_storage_limits()
+                    .max_object_bytes(),
+            )
+            .unwrap_or(u64::MAX),
             claim_now_unix,
             LEASE_SECONDS,
         )
@@ -127,7 +108,7 @@ pub(crate) async fn compact_one_git_repository(
         attempt: attempt_started,
         candidate: candidate_started,
     };
-    compact_claimed(metadata, segment_store, settings, health, claim, started)
+    compact_claimed(state, claim, started)
         .instrument(span)
         .await
 }
@@ -138,26 +119,20 @@ struct ClaimTimings {
 }
 
 async fn compact_claimed(
-    metadata: &MetadataStore,
-    segment_store: Arc<GitSegmentStore>,
-    settings: &WorkerSettings,
-    health: &WorkerHealth,
+    state: &AppState,
     claim: GitCompactionClaim,
     started: ClaimTimings,
 ) -> anyhow::Result<CompactionOutcome> {
+    let metadata = &state.metadata;
+    let segment_store = &state.git_segment_store;
     let timeout = GIT_COMPACTION_TIMEOUT;
     let lease_seconds = LEASE_SECONDS;
     let attempt_started = started.attempt;
     let candidate_started = started.candidate;
-    health.mark_work_progress(
-        WorkerLoop::Compaction,
-        super::unix_now()?,
-        Duration::from_secs(lease_seconds),
-    );
     let Some(candidate) = claim.candidate.as_ref() else {
         metadata
             .jobs()
-            .complete_git_compaction_claim(&claim, super::unix_now()?)
+            .complete_git_compaction_claim(&claim, unix_now()?)
             .await
             .map_err(|error| anyhow::anyhow!(error.message))?;
         return Ok(CompactionOutcome::Drained);
@@ -174,26 +149,16 @@ async fn compact_claimed(
             &reservation.segment_id,
             &reservation.object_key,
             ENCODING_VERSION,
-            super::unix_now()?,
+            unix_now()?,
         )
         .await
         .map_err(|error| anyhow::anyhow!(error.message))?;
     let build_candidate = candidate.clone();
-    let build_store = Arc::clone(&segment_store);
+    let build_state = state.clone();
     let build_reservation = reservation.clone();
-    let storage_limits = settings.git_storage_limits;
-    let data_dir = settings.data_dir.clone();
     let mut build = tokio::spawn(
         async move {
-            build_replacement(
-                build_store,
-                &build_candidate,
-                build_reservation,
-                storage_limits,
-                timeout,
-                data_dir,
-            )
-            .await
+            build_replacement(&build_state, &build_candidate, build_reservation, timeout).await
         }
         .in_current_span(),
     );
@@ -217,10 +182,10 @@ async fn compact_claimed(
             _ = renewal.tick() => {
                 match metadata.jobs().renew_git_compaction_claim(
                     &claim,
-                    super::unix_now()?,
+                    unix_now()?,
                     lease_seconds,
                 ).await {
-                    Ok(true) => health.mark_work_progress(WorkerLoop::Compaction, super::unix_now()?, Duration::from_secs(lease_seconds)),
+                    Ok(true) => {}
                     Ok(false) => tracing::warn!(
                         target_sequence = claim.target_sequence,
                         "Git compaction lease was lost while external work was still running"
@@ -235,7 +200,7 @@ async fn compact_claimed(
             _ = upload_heartbeat.tick() => {
                 if let Err(error) = metadata
                     .repositories()
-                    .touch_git_segment_upload(&reservation.segment_id, super::unix_now()?)
+                    .touch_git_segment_upload(&reservation.segment_id, unix_now()?)
                     .await
                 {
                     tracing::warn!(
@@ -250,13 +215,13 @@ async fn compact_claimed(
     let built = match built {
         Ok(compaction) => compaction,
         Err(failure) => {
-            let failure_now_unix = super::unix_now()?;
+            let failure_now_unix = unix_now()?;
             let attempt_remote_cleanup = !failure
                 .downcast_ref::<ProcessError>()
                 .is_some_and(ProcessError::is_timeout);
             if let Err(cleanup_error) = abandon_upload(
                 metadata,
-                segment_store.as_ref(),
+                segment_store,
                 repository_id,
                 &reservation,
                 failure_now_unix,
@@ -288,13 +253,13 @@ async fn compact_claimed(
     };
     let final_renewal = metadata
         .jobs()
-        .renew_git_compaction_claim(&claim, super::unix_now()?, lease_seconds)
+        .renew_git_compaction_claim(&claim, unix_now()?, lease_seconds)
         .await;
     if !matches!(final_renewal, Ok(true)) {
-        let cleanup_now_unix = super::unix_now()?;
+        let cleanup_now_unix = unix_now()?;
         if let Err(cleanup_error) = abandon_upload(
             metadata,
-            segment_store.as_ref(),
+            segment_store,
             repository_id,
             &reservation,
             cleanup_now_unix,
@@ -321,14 +286,14 @@ async fn compact_claimed(
         .mark_git_segment_upload_ready(
             &built.staged.segment,
             built.staged.encrypted_bytes,
-            super::unix_now()?,
+            unix_now()?,
         )
         .await
     {
-        let cleanup_now_unix = super::unix_now()?;
+        let cleanup_now_unix = unix_now()?;
         if let Err(cleanup_error) = abandon_upload(
             metadata,
-            segment_store.as_ref(),
+            segment_store,
             repository_id,
             &reservation,
             cleanup_now_unix,
@@ -352,7 +317,7 @@ async fn compact_claimed(
             error.message
         ));
     }
-    let persist_now_unix = super::unix_now()?;
+    let persist_now_unix = unix_now()?;
     let persist_started = Instant::now();
     let persisted = metadata
         .jobs()
@@ -384,19 +349,18 @@ async fn compact_claimed(
                         );
                     }
                 }
-                trim_verified_cache(segment_store.as_ref(), storage_limits);
                 cleanup_retired_local_segments(
-                    segment_store.as_ref(),
+                    segment_store,
                     repository_id,
                     candidate.plan.selected_packs(),
                 )
                 .await;
             } else if let Err(error) = discard_upload(
                 metadata,
-                segment_store.as_ref(),
+                segment_store,
                 repository_id,
                 &reservation,
-                super::unix_now()?,
+                unix_now()?,
                 true,
             )
             .await
@@ -409,7 +373,7 @@ async fn compact_claimed(
             }
             metadata
                 .jobs()
-                .continue_git_compaction_claim(&claim, super::unix_now()?)
+                .continue_git_compaction_claim(&claim, unix_now()?)
                 .await
                 .map_err(|error| anyhow::anyhow!(error.message))?;
             let outcome = if applied { "applied" } else { "stale" };
@@ -429,7 +393,7 @@ async fn compact_claimed(
             })
         }
         Err(error) => {
-            let failure_now_unix = super::unix_now()?;
+            let failure_now_unix = unix_now()?;
             metadata
                 .jobs()
                 .fail_git_compaction_claim(&claim, &error.message, failure_now_unix)
@@ -437,7 +401,7 @@ async fn compact_claimed(
                 .map_err(|claim_error| anyhow::anyhow!(claim_error.message))?;
             if let Err(cleanup_error) = abandon_upload(
                 metadata,
-                segment_store.as_ref(),
+                segment_store,
                 repository_id,
                 &reservation,
                 failure_now_unix,
@@ -604,25 +568,19 @@ async fn cleanup_retired_local_segments(
 }
 
 async fn build_replacement(
-    segment_store: Arc<GitSegmentStore>,
+    state: &AppState,
     candidate: &scope_postgres::db::GitCompactionCandidate,
     reservation: GitSegmentReservation,
-    storage_limits: GitStorageLimits,
     timeout: Duration,
-    data_dir: std::path::PathBuf,
 ) -> anyhow::Result<BuiltCompaction> {
     let pack = build_compacted_pack(
-        Arc::clone(&segment_store),
+        state,
         &candidate.incarnation,
         &candidate.plan,
         reservation,
-        storage_limits,
         timeout,
-        data_dir,
     )
-    .await;
-    trim_verified_cache(segment_store.as_ref(), storage_limits);
-    let pack = pack?;
+    .await?;
     let replacement = candidate.plan.replacement(pack.staged.segment.clone())?;
     Ok(BuiltCompaction {
         replacement,
@@ -634,17 +592,14 @@ async fn build_replacement(
     })
 }
 
-fn trim_verified_cache(segment_store: &GitSegmentStore, storage_limits: GitStorageLimits) {
-    let target_bytes = u64::try_from(storage_limits.max_object_bytes()).unwrap_or(u64::MAX);
-    if let Err(error) = segment_store.evict_verified_cache(target_bytes) {
-        tracing::warn!(error = %error, "failed to trim the worker verified Git pack cache");
-    }
-}
-
 fn is_bounded_refusal(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<ProcessError>()
         .is_some_and(|error| error.is_timeout() || error.is_stdout_limit())
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

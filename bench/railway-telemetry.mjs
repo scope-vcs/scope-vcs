@@ -16,7 +16,7 @@ async function main() {
   const since = process.env.SCOPE_RAILWAY_SINCE || '1h';
   const until = process.env.SCOPE_RAILWAY_UNTIL?.trim() || null;
   const manifest = JSON.parse(await readFile(new URL('../.github/deployment-services.json', import.meta.url), 'utf8'));
-  const services = (process.env.SCOPE_RAILWAY_SERVICES || ['api', 'run-worker'].map((key) => manifest.services[key].name).join(','))
+  const services = (process.env.SCOPE_RAILWAY_SERVICES || ['api'].map((key) => manifest.services[key].name).join(','))
     .split(',')
     .map((service) => service.trim())
     .filter(Boolean);

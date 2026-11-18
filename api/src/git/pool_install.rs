@@ -3,7 +3,10 @@ pub(crate) use locking::write_shelf;
 
 use crate::{
     error::ApiError,
-    git::{command::git_command_output, restore::install_verified_git_pack},
+    git::{
+        command::{cancellable_git_command_output, git_command_output},
+        restore::install_verified_git_pack,
+    },
     state::AppState,
 };
 use futures_util::{StreamExt as _, stream};
@@ -11,7 +14,9 @@ use scope_domain::repository::{
     RepositoryIncarnation,
     git::{GitHead, GitPoolPack, GitPoolPackStorage},
 };
+use scope_git_process::ProcessCancellation;
 use scope_postgres::db::ListedMainPoolPack;
+use scope_storage::GitSegmentStore;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path as FsPath,
@@ -117,7 +122,7 @@ pub(crate) async fn install_chain(
             break;
         }
         let mut batches = stream::iter(installable.into_iter().map(|pack| async move {
-            let fetched = fetch_pack(state, incarnation, &pack).await;
+            let fetched = fetch_pack(&state.git_segment_store, incarnation, &pack).await;
             (pack, fetched)
         }))
         .buffered(CONCURRENT_POOL_FETCHES)
@@ -215,7 +220,8 @@ fn index_missing(
             let outcome = if present.contains(&pack.head_oid) {
                 Ok(PackInstall::AlreadyPresent)
             } else {
-                index_fetched(objects_repo, fetched, timeout).map(|()| PackInstall::Indexed)
+                index_fetched(objects_repo, fetched, timeout, &ProcessCancellation::new())
+                    .map(|()| PackInstall::Indexed)
             };
             (pack, outcome)
         })
@@ -228,7 +234,7 @@ pub(crate) enum FetchedPack {
 }
 
 pub(crate) async fn fetch_pack(
-    state: &AppState,
+    store: &GitSegmentStore,
     incarnation: &RepositoryIncarnation,
     pack: &GitPoolPack,
 ) -> Result<FetchedPack, ApiError> {
@@ -236,14 +242,12 @@ pub(crate) async fn fetch_pack(
         ApiError::infrastructure_unavailable(error.to_string())
     };
     match &pack.storage {
-        GitPoolPackStorage::Inline { sealed } => state
-            .git_segment_store
+        GitPoolPackStorage::Inline { sealed } => store
             .open_inline_pack(incarnation.repository_id(), &pack.id, sealed)
             .await
             .map(FetchedPack::Bytes)
             .map_err(unavailable),
-        GitPoolPackStorage::Segment(segment) => state
-            .git_segment_store
+        GitPoolPackStorage::Segment(segment) => store
             .get_verified_pack(incarnation, segment)
             .await
             .map(FetchedPack::Verified)
@@ -252,15 +256,16 @@ pub(crate) async fn fetch_pack(
 }
 
 pub(crate) async fn install_fetched(
-    state: &AppState,
     objects_repo: &FsPath,
     fetched: FetchedPack,
+    timeout: std::time::Duration,
+    cancellation: &ProcessCancellation,
 ) -> Result<(), ApiError> {
     let objects_repo = objects_repo.to_path_buf();
-    let timeout = state.runtime_budgets.git_transfer_limits().pack_processing;
     let target = objects_repo.clone();
+    let cancellation = cancellation.clone();
     write_shelf(&target, move || {
-        index_fetched(&objects_repo, fetched, timeout)
+        index_fetched(&objects_repo, fetched, timeout, &cancellation)
     })
     .await
 }
@@ -269,18 +274,21 @@ fn index_fetched(
     objects_repo: &FsPath,
     fetched: FetchedPack,
     timeout: std::time::Duration,
+    cancellation: &ProcessCancellation,
 ) -> Result<(), ApiError> {
     match fetched {
-        FetchedPack::Bytes(pack) => git_command_output(
+        FetchedPack::Bytes(pack) => cancellable_git_command_output(
             Command::new("git")
                 .arg("-C")
                 .arg(objects_repo)
                 .args(["index-pack", "--stdin"]),
-            Some(&pack),
+            Some(pack),
+            timeout,
+            cancellation,
         )
         .map(drop),
         FetchedPack::Verified(verified) => {
-            install_verified_git_pack(objects_repo, verified.path(), timeout)
+            install_verified_git_pack(objects_repo, verified.path(), timeout, cancellation)
         }
     }
 }

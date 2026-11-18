@@ -23,6 +23,7 @@ const DEFAULT_UPLOAD_PACK_CONCURRENCY: usize = 8;
 const DEFAULT_GIT_MATERIALIZATION_CONCURRENCY: usize = 2;
 const DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY: usize = 4;
 const DEFAULT_OBJECT_STORE_CONCURRENCY: usize = 16;
+const DEFAULT_GIT_COMPACTION_CONCURRENCY: usize = 1;
 const DEFAULT_GIT_COMMAND_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_GIT_TRANSFER_IDLE_TIMEOUT_SECS: u64 = 120;
 const SLOWEST_COMPLETING_TRANSFER_BYTES_PER_SEC: usize = 150 * 1024;
@@ -38,6 +39,7 @@ const UPLOAD_PACK_CONCURRENCY_ENV: &str = "SCOPE_GIT_UPLOAD_PACK_CONCURRENCY";
 const GIT_MATERIALIZATION_CONCURRENCY_ENV: &str = "SCOPE_GIT_MATERIALIZATION_CONCURRENCY";
 const GIT_SEGMENT_INGEST_CONCURRENCY_ENV: &str = "SCOPE_GIT_SEGMENT_INGEST_CONCURRENCY";
 const OBJECT_STORE_CONCURRENCY_ENV: &str = "SCOPE_OBJECT_STORE_CONCURRENCY";
+const GIT_COMPACTION_CONCURRENCY_ENV: &str = "SCOPE_GIT_COMPACTION_CONCURRENCY";
 const GIT_COMMAND_TIMEOUT_SECS_ENV: &str = "SCOPE_GIT_COMMAND_TIMEOUT_SECS";
 const GIT_TRANSFER_IDLE_TIMEOUT_SECS_ENV: &str = "SCOPE_GIT_TRANSFER_IDLE_TIMEOUT_SECS";
 const GIT_TRANSFER_TIMEOUT_SECS_ENV: &str = "SCOPE_GIT_TRANSFER_TIMEOUT_SECS";
@@ -51,6 +53,7 @@ pub(crate) struct RuntimeBudgetConfig {
     pub(crate) git_materialization_concurrency: usize,
     pub(crate) git_segment_ingest_concurrency: usize,
     pub(crate) object_store_concurrency: usize,
+    pub(crate) git_compaction_concurrency: usize,
     pub(crate) git_command_timeout: Duration,
     pub(crate) git_transfer_limits: GitTransferLimits,
     pub(crate) git_admission_wait: Duration,
@@ -79,6 +82,10 @@ impl RuntimeBudgetConfig {
             object_store_concurrency: parse_positive_usize_env(
                 OBJECT_STORE_CONCURRENCY_ENV,
                 DEFAULT_OBJECT_STORE_CONCURRENCY,
+            )?,
+            git_compaction_concurrency: parse_positive_usize_env(
+                GIT_COMPACTION_CONCURRENCY_ENV,
+                DEFAULT_GIT_COMPACTION_CONCURRENCY,
             )?,
             git_command_timeout: Duration::from_secs(parse_positive_usize_env(
                 GIT_COMMAND_TIMEOUT_SECS_ENV,
@@ -115,6 +122,7 @@ impl Default for RuntimeBudgetConfig {
             git_materialization_concurrency: DEFAULT_GIT_MATERIALIZATION_CONCURRENCY,
             git_segment_ingest_concurrency: DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY,
             object_store_concurrency: DEFAULT_OBJECT_STORE_CONCURRENCY,
+            git_compaction_concurrency: DEFAULT_GIT_COMPACTION_CONCURRENCY,
             git_command_timeout: Duration::from_secs(DEFAULT_GIT_COMMAND_TIMEOUT_SECS),
             git_transfer_limits: GitTransferLimits {
                 idle: Duration::from_secs(DEFAULT_GIT_TRANSFER_IDLE_TIMEOUT_SECS),
@@ -133,6 +141,7 @@ pub(crate) struct RuntimeBudgets {
     git_materialization: Arc<Semaphore>,
     git_segment_ingest: Arc<Semaphore>,
     object_store: Arc<Semaphore>,
+    git_compaction_concurrency: usize,
     git_command_timeout: Duration,
     git_transfer_limits: GitTransferLimits,
     git_admission_wait: Duration,
@@ -151,6 +160,7 @@ impl RuntimeBudgets {
             git_materialization: Arc::new(Semaphore::new(config.git_materialization_concurrency)),
             git_segment_ingest: Arc::new(Semaphore::new(config.git_segment_ingest_concurrency)),
             object_store: Arc::new(Semaphore::new(config.object_store_concurrency)),
+            git_compaction_concurrency: config.git_compaction_concurrency,
             git_command_timeout: config.git_command_timeout,
             git_transfer_limits: config.git_transfer_limits,
             git_admission_wait: config.git_admission_wait,
@@ -190,6 +200,10 @@ impl RuntimeBudgets {
 
     pub(crate) fn try_object_store(&self, operation: &str) -> Result<RuntimePermit, ApiError> {
         try_acquire(&self.object_store, operation)
+    }
+
+    pub(crate) fn git_compaction_concurrency(&self) -> usize {
+        self.git_compaction_concurrency
     }
 
     pub(crate) fn git_command_timeout(&self) -> Duration {

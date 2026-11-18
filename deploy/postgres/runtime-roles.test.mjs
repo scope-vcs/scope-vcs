@@ -122,18 +122,6 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
       query('SELECT * FROM scope_request_revision_context_receipts;', role, false);
       query('INSERT INTO scope_request_revision_context_receipts SELECT * FROM scope_request_revision_context_receipts WHERE false;', role, false);
     }
-    query('SELECT * FROM scope_cli_sessions;', 'scope_run_worker', false);
-    query('UPDATE scope_repository_members SET repo_id = repo_id;', 'scope_run_worker', false);
-    query('UPDATE scope_repositories SET owner_user_id = owner_user_id;', 'scope_run_worker', false);
-    query(`SELECT * FROM scope_request_check_evaluations;
-      SELECT * FROM scope_request_auto_merge_intents FOR UPDATE;
-      UPDATE scope_request_auto_merge_intents SET status = status;
-      UPDATE scope_requests SET activity_version = activity_version;
-      INSERT INTO scope_request_events SELECT * FROM scope_request_events WHERE false RETURNING *;`, 'scope_run_worker');
-    query('UPDATE scope_request_check_evaluations SET state = state;', 'scope_run_worker', false);
-    query('DELETE FROM scope_request_auto_merge_intents;', 'scope_run_worker', false);
-    query('DELETE FROM scope_requests;', 'scope_run_worker', false);
-    query('UPDATE scope_request_events SET id = id;', 'scope_run_worker', false);
     const roleUrl = (role) => `postgres://${role}@localhost/postgres?host=${encodeURIComponent(dir)}`;
     function runRoleTest(name, env) {
       const result = spawnSync('cargo', ['test', '-p', 'scope-postgres', '--lib', name, '--', '--exact', '--nocapture'], {
@@ -144,15 +132,10 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.match(result.stdout, new RegExp(`test ${name} \\.\\.\\. ok`));
     }
-    runRoleTest('db::outbox::tests::worker_role_rebuilds_repository_history', {
-      SCOPE_WORKER_ROLE_TEST_ADMIN_URL: roleUrl('postgres'),
-      SCOPE_WORKER_ROLE_TEST_WORKER_URL: roleUrl('scope_run_worker'),
-    });
     runRoleTest('db::request_media::tests::media_api_role::media_api_role_authorizes_stores_and_serves_an_upload', {
       SCOPE_MEDIA_ROLE_TEST_ADMIN_URL: roleUrl('postgres'),
       SCOPE_MEDIA_ROLE_TEST_MEDIA_API_URL: roleUrl('scope_media_api'),
     });
-    query('DELETE FROM scope_repository_history_entries;', 'scope_run_worker', false);
     query("SELECT 1 AS present FROM scope_request_discussions WHERE id = 'missing' AND request_id = 'missing';", 'scope_media_api');
     query('SELECT * FROM scope_auth_identities;', 'scope_media_api', false);
     query("INSERT INTO scope_metadata_locks(key) VALUES ('role-canary') ON CONFLICT DO NOTHING; SELECT * FROM scope_metadata_locks FOR SHARE;", 'scope_media_worker');

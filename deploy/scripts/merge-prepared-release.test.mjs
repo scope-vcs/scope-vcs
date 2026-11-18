@@ -22,11 +22,11 @@ function fragment(component, overrides = {}) {
     ...overrides,
   };
 }
-const options = { sourceSha, components: ['api', 'run-worker'], services };
+const options = { sourceSha, components: ['api', 'media-api'], services };
 
 test('merges verified singleton fragments with exact digest and release metadata', () => {
   const api = fragment('api');
-  const worker = fragment('run-worker');
+  const worker = fragment('media-api');
   const result = mergePreparedReleaseFragments([api, worker], options);
   assert.deepEqual(result.components, { ...api.components, ...worker.components });
   assert.equal(result.preparationRunId, '1234');
@@ -37,18 +37,18 @@ test('rejects omitted, duplicate, and multi-component fragments', () => {
   assert.throws(() => mergePreparedReleaseFragments([fragment('api')], options), /one prepared fragment/);
   assert.throws(() => mergePreparedReleaseFragments([fragment('api'), fragment('api')], options), /duplicate/);
   assert.throws(() => mergePreparedReleaseFragments([
-    { ...fragment('api'), components: { ...fragment('api').components, ...fragment('run-worker').components } },
-    fragment('run-worker'),
+    { ...fragment('api'), components: { ...fragment('api').components, ...fragment('media-api').components } },
+    fragment('media-api'),
   ], options), /exactly one/);
 });
 
 test('rejects mismatched provenance and release metadata before publishing aggregate', () => {
   const api = fragment('api');
-  const worker = fragment('run-worker');
+  const worker = fragment('media-api');
   assert.throws(() => mergePreparedReleaseFragments([api, { ...worker, sourceSha: 'd'.repeat(40) }], options), /revision/);
   assert.throws(() => mergePreparedReleaseFragments([api, { ...worker, preparationRunId: '9999' }], options), /disagree/);
   assert.throws(() => mergePreparedReleaseFragments([api, { ...worker, maintenanceSha256: 'd'.repeat(64) }], options), /disagree/);
-  assert.throws(() => mergePreparedReleaseFragments([api, fragment('run-worker', { components: { 'run-worker': { ...worker.components['run-worker'], serviceId: 'wrong' } } })], options), /wrong service/);
+  assert.throws(() => mergePreparedReleaseFragments([api, fragment('media-api', { components: { 'media-api': { ...worker.components['media-api'], serviceId: 'wrong' } } })], options), /wrong service/);
   assert.throws(() => mergePreparedReleaseFragments([{ ...api, maintenanceSha256: undefined }, { ...worker, maintenanceSha256: undefined }], options), /maintenance binary digest/);
 });
 
@@ -57,11 +57,11 @@ test('CLI publishes one aggregate only for the current preparation run', () => {
   try {
     const output = join(directory, 'prepared-release.json');
     const api = join(directory, 'api.json');
-    const worker = join(directory, 'run-worker.json');
+    const worker = join(directory, 'media-api.json');
     writeFileSync(api, JSON.stringify(fragment('api')));
-    writeFileSync(worker, JSON.stringify(fragment('run-worker')));
+    writeFileSync(worker, JSON.stringify(fragment('media-api')));
     const command = new URL('./merge-prepared-release.mjs', import.meta.url).pathname;
-    const args = [command, output, sourceSha, 'api run-worker', api, worker];
+    const args = [command, output, sourceSha, 'api media-api', api, worker];
     const run = runId => spawnSync(process.execPath, args, {
       env: { ...process.env, GITHUB_RUN_ID: runId }, encoding: 'utf8',
     });

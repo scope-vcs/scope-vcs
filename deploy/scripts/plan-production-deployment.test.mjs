@@ -19,7 +19,6 @@ function repositoryJson(path) {
 
 function deploymentSelection(overrides = {}) {
   return {
-    "run-worker": false,
     "media-worker": false,
     "media-api": false,
     api: false,
@@ -32,7 +31,6 @@ function deploymentSelection(overrides = {}) {
 
 test("changes select the required deployment lanes", () => {
   const allLanes = {
-    "run-worker": true,
     "media-worker": true,
     "media-api": true,
     api: true,
@@ -49,7 +47,6 @@ test("changes select the required deployment lanes", () => {
       "toolchain changes rebuild Rust services",
       ["rust-toolchain.toml"],
       {
-        "run-worker": true,
         "media-worker": true,
         "media-api": true,
         api: true,
@@ -71,20 +68,15 @@ test("changes select the required deployment lanes", () => {
     [
       "shared runtime image selects backend services and CLI downloads",
       ["deploy/railway/prebuilt.Dockerfile"],
-      { "run-worker": true, api: true, "cli-downloads": true },
+      { api: true, "cli-downloads": true },
     ],
     [
       "dependency analyzer crate changes rebuild crate consumers and the CLI bundle",
       ["crates/scope-dependency-analyzer/src/lib.rs"],
       {
-        "run-worker": true, "media-api": true, "media-worker": true,
+        "media-api": true, "media-worker": true,
         api: true, web: true, "cli-downloads": true, "cli-distribution": true,
       },
-    ],
-    [
-      "worker runtime image selects only the worker",
-      ["deploy/railway/worker.Dockerfile"],
-      { "run-worker": true },
     ],
     [
       "web runtime image selects the web service",
@@ -120,7 +112,6 @@ test("changes select the required deployment lanes", () => {
       "unrelated shared crates retain broad CLI validation without rebuilding targets",
       ["crates/scope-postgres/src/lib.rs"],
       {
-        "run-worker": true,
         "media-worker": true,
         "media-api": true,
         api: true,
@@ -151,7 +142,7 @@ test("changes select the required deployment lanes", () => {
     [
       "release preparation scripts rebuild every prepared image",
       ["deploy/scripts/prepare-railway-artifact.sh", "deploy/scripts/deployment-components.mjs"],
-      { "run-worker": true, "media-api": true, api: true, web: true, "cli-downloads": true },
+      { "media-api": true, api: true, web: true, "cli-downloads": true },
     ],
     [
       "check entrypoints select the lane they gate",
@@ -240,7 +231,6 @@ test("an unseeded production ledger deploys every component", () => {
 
 test("skipped components remain selected across a later backend-only change", () => {
   const selection = planFromDeploymentProgress(manifest, {
-    "run-worker": [],
     "media-worker": [],
     "media-api": ["media-service/src/main.rs"],
     api: [],
@@ -249,7 +239,6 @@ test("skipped components remain selected across a later backend-only change", ()
   });
 
   assert.deepEqual(selection, {
-    "run-worker": false,
     "media-worker": false,
     "media-api": true,
     api: false,
@@ -261,7 +250,6 @@ test("skipped components remain selected across a later backend-only change", ()
 
 test("CLI deployment progress selects distribution builds only for binary inputs", () => {
   const broadOnly = planFromDeploymentProgress(manifest, {
-    "run-worker": [],
     "media-worker": [],
     "media-api": [],
     api: [],
@@ -269,7 +257,6 @@ test("CLI deployment progress selects distribution builds only for binary inputs
     "cli-downloads": ["api/src/main.rs"],
   });
   const binaryChange = planFromDeploymentProgress(manifest, {
-    "run-worker": [],
     "media-worker": [],
     "media-api": [],
     api: [],
@@ -295,7 +282,6 @@ test("release orchestration changes redeploy every component without selecting p
 
 test("manual scopes ignore pending production components", () => {
   assert.deepEqual(planFromDeploymentProgress(manifest, {}, "web"), {
-    "run-worker": false,
     "media-worker": false,
     "media-api": false,
     api: false,
@@ -306,7 +292,7 @@ test("manual scopes ignore pending production components", () => {
 });
 
 test("deployment manifest is a single coherent production graph", () => {
-  const order = ["run-worker", "media-api", "media-worker", "api", "web", "cli-downloads"];
+  const order = ["media-api", "media-worker", "api", "web", "cli-downloads"];
   const serviceIds = order.map((service) => manifest.services[service].id).filter(Boolean);
 
   assert.equal(new Set(serviceIds).size, serviceIds.length);
@@ -325,7 +311,6 @@ test("deployment manifest is a single coherent production graph", () => {
 test("service config does not override Railway scaling or restart defaults", () => {
   const configs = {
     "api/railway.json": "/readyz",
-    "worker/railway.json": "/readyz",
     "media-service/railway.json": "/readyz",
     "media-worker/railway.json": "/readyz",
     "cli-downloads/railway.json": "/readyz",
@@ -351,6 +336,6 @@ test("migration changes promote every application participant", () => {
   assert.deepEqual(includeMigrationParticipants(apiOnly, ["api/src/main.rs"]), apiOnly);
   const webOnly = deploymentSelection({ web: true });
   assert.deepEqual(includeMigrationParticipants(webOnly, null), webOnly);
-  assert.equal(planFromDeploymentProgress(manifest, { api: ["crates/scope-postgres/src/migrations/999_next.rs"] }, "run-worker").web, true);
-  assert.deepEqual(planFromDeploymentProgress(manifest, { api: [] }, "run-worker"), deploymentSelection({ "run-worker": true }));
+  assert.equal(planFromDeploymentProgress(manifest, { api: ["crates/scope-postgres/src/migrations/999_next.rs"] }, "media-api").web, true);
+  assert.deepEqual(planFromDeploymentProgress(manifest, { api: [] }, "media-api"), deploymentSelection({ "media-api": true }));
 });

@@ -11,7 +11,7 @@ use crate::{
 };
 use scope_domain::repository::{RepositoryIncarnation, git::GitHead};
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_git_process::{ProcessLimits, run as run_process};
+use scope_git_process::{ProcessCancellation, ProcessLimits, run_cancellable};
 use std::{
     fs,
     io::{Read as _, Seek as _, SeekFrom},
@@ -134,6 +134,7 @@ pub(crate) fn install_verified_git_pack(
     repo_root: &Path,
     pack: &Path,
     timeout: Duration,
+    cancellation: &ProcessCancellation,
 ) -> Result<(), ApiError> {
     let index = pack.with_extension("idx");
     if !index.is_file() {
@@ -155,11 +156,12 @@ pub(crate) fn install_verified_git_pack(
             .arg(pack);
         let span = prepare_git_subprocess(&mut command)?;
         let _entered = span.enter();
-        let output = run_process(
+        let output = run_cancellable(
             &mut command,
             None,
             ProcessLimits::new(timeout),
             "indexing verified Git pack",
+            cancellation,
         )
         .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
         record_git_exit(&span, output.status);

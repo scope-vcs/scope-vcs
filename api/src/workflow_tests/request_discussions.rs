@@ -4,7 +4,6 @@ use tokio_stream::StreamExt;
 #[tokio::test]
 async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts() {
     let mut state = test_state_with_readme().await;
-    drain_outbox(&state, "request-read-test").await;
     cache_test_jwks(&state);
     let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
     state.product_analytics = analytics;
@@ -408,7 +407,6 @@ async fn request_activity_clamps_latest_and_after_pages_to_fifty_events() {
 #[tokio::test]
 async fn timeline_cursor_is_stable_during_concurrent_thread_creation_and_changes() {
     let state = test_state_with_readme().await;
-    drain_outbox(&state, "request-read-test").await;
     cache_test_jwks(&state);
     let app = router(state);
     let bearer = bearer_header();
@@ -547,7 +545,6 @@ async fn timeline_cursor_is_stable_during_concurrent_thread_creation_and_changes
 #[tokio::test]
 async fn discussion_changes_report_complete_pages_without_skipping_the_extra_row() {
     let state = test_state_with_readme().await;
-    drain_outbox(&state, "request-read-test").await;
     cache_test_jwks(&state);
     let app = router(state);
     let bearer = bearer_header();

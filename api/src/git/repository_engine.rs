@@ -383,6 +383,7 @@ impl RepositoryEngine {
                     repo,
                     local_pack,
                     crate::runtime_budgets::RuntimeBudgets::default_git_pack_processing_timeout(),
+                    &scope_git_process::ProcessCancellation::new(),
                 )?;
                 run_timed_git_restore_phase(
                     repository_id,

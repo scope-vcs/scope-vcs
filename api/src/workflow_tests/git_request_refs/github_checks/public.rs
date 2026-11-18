@@ -72,7 +72,6 @@ async fn push_main_change(
         "push main change",
     )
     .unwrap();
-    drain_outbox(state, "github-public-main-change").await;
 }
 
 async fn approved_contribution(

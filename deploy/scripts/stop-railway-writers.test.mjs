@@ -28,7 +28,6 @@ async function fixture() {
       api: { id: 'api' },
       'media-api': { id: 'media' },
       'media-worker': { id: 'media-worker' },
-      'run-worker': { id: 'worker' },
     },
   }))
   await writeFile(join(root, 'railway'), `#!/usr/bin/env bash
@@ -62,7 +61,7 @@ elif [[ "$*" == *"service list"* ]]; then
     printf '%s\\n' "$SCOPE_TEST_REPLICA_STATE"
     exit 0
   fi
-  printf '%s\\n' '[{"id":"api","replicas":{"running":0,"crashed":0}},{"id":"worker","replicas":{"running":0,"crashed":0}},{"id":"media","replicas":{"running":0,"crashed":0}},{"id":"media-worker","replicas":{"running":0,"crashed":0}}]'
+  printf '%s\\n' '[{"id":"api","replicas":{"running":0,"crashed":0}},{"id":"media","replicas":{"running":0,"crashed":0}},{"id":"media-worker","replicas":{"running":0,"crashed":0}}]'
 else
   exit 2
 fi
@@ -80,10 +79,10 @@ if [[ "\${SCOPE_TEST_SCENARIO:-}" == "concurrent-removal" ]]; then
   node -e '
     const fs = require("node:fs");
     const path = process.env.SCOPE_TEST_REMOVALS;
-    const guard = setTimeout(() => { throw new Error("All four removals must be in flight"); }, 30_000);
+    const guard = setTimeout(() => { throw new Error("All three removals must be in flight"); }, 30_000);
     const watcher = fs.watch(require("node:path").dirname(path), check);
     function check() {
-      if (fs.readFileSync(path, "utf8").trim().split("\\n").length < 4) return;
+      if (fs.readFileSync(path, "utf8").trim().split("\\n").length < 3) return;
       watcher.close();
       clearTimeout(guard);
     }
@@ -131,7 +130,6 @@ test('stops every reviewed staging writer with all removals in flight', async ()
     'api-deployment',
     'media-deployment',
     'media-worker-deployment',
-    'worker-deployment',
   ])
 })
 
@@ -195,7 +193,7 @@ test('staging shutdown rejects a writer without replica evidence', async () => {
 
 test('already removed staging writers allow baseline capture without another removal', async () => {
   const { manifest, removals, root } = await fixture()
-  const services = ['api', 'worker', 'media', 'media-worker'].map(id => ({
+  const services = ['api', 'media', 'media-worker'].map(id => ({
     id, status: null, deploymentId: null, latestDeployment: null, replicas: null,
   }))
   const result = spawnSync('bash', ['-c', 'bash deploy/scripts/stop-railway-writers.sh && echo capture-baseline'], {
@@ -233,7 +231,7 @@ test('stops writers in a named preview environment', async () => {
 
   assert.equal(result.status, 0, result.stderr)
   const requests = (await readFile(removals, 'utf8')).trim().split('\n').map(JSON.parse)
-  assert.equal(requests.length, 4)
+  assert.equal(requests.length, 3)
 })
 
 for (const preview of ['production', 'staging']) {

@@ -59,7 +59,6 @@ COPY media-service ./media-service
 COPY media-worker/Cargo.toml ./media-worker/Cargo.toml
 COPY media-worker/src ./media-worker/src
 COPY media-worker/tests ./media-worker/tests
-COPY worker ./worker
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build

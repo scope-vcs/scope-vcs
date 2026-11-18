@@ -305,18 +305,8 @@ async fn change_version(store: &MetadataStore) -> u64 {
         .change_version as u64
 }
 
-async fn derived_work(store: &MetadataStore) -> (Vec<i64>, Option<i64>) {
-    let mut projection = entities::outbox_job::Entity::find()
-        .filter(entities::outbox_job::Column::RepoId.eq(REPO_ID))
-        .filter(entities::outbox_job::Column::Kind.eq("projection_read_model_rebuild"))
-        .all(store.db.as_ref())
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|job| job.repo_version)
-        .collect::<Vec<_>>();
-    projection.sort_unstable();
-    let dependency = store
+async fn queued_dependency_analysis(store: &MetadataStore) -> Option<i64> {
+    store
         .db
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -325,8 +315,7 @@ async fn derived_work(store: &MetadataStore) -> (Vec<i64>, Option<i64>) {
         ))
         .await
         .unwrap()
-        .map(|row| row.try_get::<i64>("", "repo_version").unwrap());
-    (projection, dependency)
+        .map(|row| row.try_get::<i64>("", "repo_version").unwrap())
 }
 
 async fn email_row(store: &MetadataStore, id: &str) -> entities::repository_invite_email::Model {
@@ -343,7 +332,7 @@ async fn collaboration_mutations_touch_no_history_or_main_packs() {
     let repositories = store.repositories();
     let owner = user("owner");
     let version = change_version(&store).await;
-    let derived = derived_work(&store).await;
+    let derived = queued_dependency_analysis(&store).await;
 
     let created = without_history(
         &store,
@@ -579,5 +568,5 @@ async fn collaboration_mutations_touch_no_history_or_main_packs() {
             .unwrap()
             .is_empty()
     );
-    assert_eq!(derived_work(&store).await, derived);
+    assert_eq!(queued_dependency_analysis(&store).await, derived);
 }

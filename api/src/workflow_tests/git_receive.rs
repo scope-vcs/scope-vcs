@@ -121,10 +121,6 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         .await
         .unwrap();
 
-    let initial_rebuild = drain_outbox(&state, "content-push-test").await;
-    assert_eq!(initial_rebuild.failed, 0);
-    assert_eq!(initial_rebuild.completed, 1);
-
     let mut previous_head_oid = base_head_oid;
     for (index, expected_content) in ["second version", "third version"].into_iter().enumerate() {
         let sequence = u64::try_from(index + 2).unwrap();
@@ -157,8 +153,6 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         assert_eq!(stored.record.change_version, sequence);
         assert_eq!(stored.git_head.unwrap().change_version, sequence);
 
-        let deferred = drain_outbox(&state, "content-push-test").await;
-        assert_eq!(deferred.claimed, 0);
         let projected = state
             .metadata
             .repositories()
@@ -184,15 +178,6 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         previous_head_oid = head_oid;
         previous_frontier = next_frontier;
     }
-
-    let jobs = state
-        .metadata
-        .jobs()
-        .outbox_job_counts_for_tests()
-        .await
-        .unwrap();
-    assert_eq!(jobs.succeeded, 1);
-    assert_eq!(jobs.total, 1);
 
     let now_unix = crate::persistence::unix_now().unwrap();
     let compaction = state

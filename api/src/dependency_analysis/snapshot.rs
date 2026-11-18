@@ -1,19 +1,21 @@
+use crate::{
+    git::pool_install::{fetch_pack, install_fetched},
+    state::AppState,
+};
 use scope_domain::{
     content::{SYMLINK_GIT_FILE_MODE, SourceBlob, is_supported_git_file_mode},
     content_ref::ContentRef,
     dependency_analysis::is_analyzer_input,
-    repository::git::{GitPoolPack, GitPoolPackStorage},
+    repository::{RepositoryIncarnation, git::GitPoolPack},
 };
 use scope_git_process::{ProcessCancellation, ProcessLimits, run_cancellable};
 use scope_postgres::db::{DependencyAnalysisClaim, DependencySnapshotFile};
-use scope_storage::GitSegmentStore;
-use scope_storage::{ObjectStore, write_source_blob_to};
+use scope_storage::{GitSegmentStore, ObjectStore, write_source_blob_to};
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::Arc,
     time::{Duration, Instant},
 };
 use tempfile::TempDir;
@@ -39,16 +41,14 @@ impl Drop for Snapshot {
 }
 
 pub(super) async fn materialize(
+    state: &AppState,
     claim: &DependencyAnalysisClaim,
-    objects: Arc<dyn ObjectStore>,
-    segments: Arc<GitSegmentStore>,
-    data_dir: &Path,
     cancellation: ProcessCancellation,
 ) -> anyhow::Result<Snapshot> {
     check_cancellation(&cancellation)?;
     let files = files_without_symlinks(&claim.files);
     validate_files(&files)?;
-    let scratch = data_dir.join("dependency-checks");
+    let scratch = state.data_dir.join("dependency-checks");
     fs::create_dir_all(&scratch)?;
     let directory = tempfile::Builder::new()
         .prefix("snapshot-")
@@ -59,22 +59,32 @@ pub(super) async fn materialize(
     let bare = snapshot.directory.path().join("git");
     if validate_git_restore(&files, &claim.main_packs)? {
         let deadline = Instant::now() + GIT_TIMEOUT;
-        git(
-            None,
-            &["init", "--bare", "--template=", &bare.to_string_lossy()],
-            None,
-            64 * 1024,
-            remaining_git_time(deadline)?,
-            &cancellation,
-        )?;
+        let init_bare = bare.clone();
+        let init_cancellation = cancellation.clone();
+        let init_timeout = remaining_git_time(deadline)?;
+        tokio::task::spawn_blocking(move || {
+            git(
+                None,
+                &[
+                    "init",
+                    "--bare",
+                    "--template=",
+                    &init_bare.to_string_lossy(),
+                ],
+                None,
+                64 * 1024,
+                init_timeout,
+                &init_cancellation,
+            )
+        })
+        .await??;
         for pack in &claim.main_packs {
-            check_cancellation(&cancellation)?;
-            index_main_pack(
-                segments.as_ref(),
-                claim.incarnation.repository_id(),
+            restore_pack(
+                &state.git_segment_store,
+                &claim.incarnation,
                 pack,
                 &bare,
-                remaining_git_time(deadline)?,
+                deadline,
                 &cancellation,
             )
             .await?;
@@ -86,12 +96,36 @@ pub(super) async fn materialize(
         anyhow::Ok((snapshot, stored))
     })
     .await??;
-    write_stored_files(objects.as_ref(), stored, &cancellation).await?;
+    write_stored_files(state.object_store.as_ref(), stored, &cancellation).await?;
     tokio::task::spawn_blocking(move || {
         freeze_tree(&snapshot.source)?;
         Ok(snapshot)
     })
     .await?
+}
+
+async fn restore_pack(
+    store: &GitSegmentStore,
+    incarnation: &RepositoryIncarnation,
+    pack: &GitPoolPack,
+    bare: &Path,
+    deadline: Instant,
+    cancellation: &ProcessCancellation,
+) -> anyhow::Result<()> {
+    check_cancellation(cancellation)?;
+    let fetch_budget = remaining_git_time(deadline)?;
+    let fetched = tokio::select! {
+        fetched = fetch_pack(store, incarnation, pack) => {
+            fetched.map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?
+        }
+        () = cancellation.cancelled() => anyhow::bail!("dependency snapshot was canceled"),
+        () = tokio::time::sleep(fetch_budget) => {
+            anyhow::bail!("dependency snapshot Git restoration timed out")
+        }
+    };
+    install_fetched(bare, fetched, remaining_git_time(deadline)?, cancellation)
+        .await
+        .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))
 }
 
 async fn write_stored_files(
@@ -113,40 +147,6 @@ async fn write_stored_files(
 fn check_cancellation(cancellation: &ProcessCancellation) -> anyhow::Result<()> {
     if cancellation.is_cancelled() {
         anyhow::bail!("dependency snapshot was canceled");
-    }
-    Ok(())
-}
-
-async fn index_main_pack(
-    segments: &GitSegmentStore,
-    repository_id: &str,
-    pack: &GitPoolPack,
-    bare: &Path,
-    timeout: Duration,
-    cancellation: &ProcessCancellation,
-) -> anyhow::Result<()> {
-    match &pack.storage {
-        GitPoolPackStorage::Segment(segment) => {
-            crate::git_repo::index_git_segment(
-                segments,
-                repository_id,
-                segment,
-                bare,
-                timeout,
-                Some(cancellation),
-            )
-            .await?;
-        }
-        GitPoolPackStorage::Inline { sealed } => {
-            let bytes = segments
-                .open_inline_pack(repository_id, &pack.id, sealed)
-                .await?;
-            let bare = bare.to_path_buf();
-            tokio::task::spawn_blocking(move || {
-                crate::git_repo::index_pack_bytes(&bare, bytes, timeout, 64 * 1024)
-            })
-            .await??;
-        }
     }
     Ok(())
 }
@@ -387,14 +387,18 @@ fn set_tree_writable(path: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(test)]
+mod restore_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use scope_domain::{
         content::SourceBlob,
         policy::ScopePath,
-        repository::git::{GitPoolPackOwner, GitSegmentRef},
+        repository::git::{GitPoolPackOwner, GitPoolPackStorage, GitSegmentRef},
     };
     use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend, put_source_blob};
+    use std::sync::Arc;
 
     fn snapshot_file(path: &str, size_bytes: u64, git_file_mode: &str) -> DependencySnapshotFile {
         DependencySnapshotFile {
