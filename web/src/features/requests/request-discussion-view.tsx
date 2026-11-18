@@ -3,7 +3,7 @@ import type {
   RequestActorSummaryResponse,
   RequestDetailResponse,
 } from '@/api/types.generated'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import type {
   CreateDiscussionInput,
@@ -32,9 +32,9 @@ type RequestDiscussionViewProps = {
   createReply: (input: CreateReplyInput) => Promise<RequestDiscussionReplyMutation>
   detail: RequestDetailResponse
   focusedDiscussionId?: string
-  initialPage: RequestDiscussionPage
   live: RepoLiveState
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
+  loadDiscussionFirstPage: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage | null>
   loadDiscussionChanges: (input: {
     after: number
     owner: string
@@ -44,8 +44,10 @@ type RequestDiscussionViewProps = {
   loadReplies: (input: LoadRepliesInput) => Promise<RequestDiscussionRepliesPage>
   markDiscussionRead: (input: MarkDiscussionReadInput) => Promise<unknown>
   params: RepoParams
+  pending: ReactNode
   reopenAndReply: (input: CreateReplyInput) => Promise<RequestDiscussionReplyMutation>
   resolveDiscussion: (input: RequestDiscussionActionInput) => Promise<RequestDiscussionMutation>
+  unavailable: ReactNode
 }
 
 export function RequestDiscussionView({
@@ -55,15 +57,17 @@ export function RequestDiscussionView({
   createReply,
   detail,
   focusedDiscussionId,
-  initialPage,
   live,
   loadDiscussions,
+  loadDiscussionFirstPage,
   loadDiscussionChanges,
   loadReplies,
   markDiscussionRead,
   params,
+  pending,
   reopenAndReply,
   resolveDiscussion,
+  unavailable,
 }: RequestDiscussionViewProps) {
   const { request } = detail
   const actor = useMemo(() => ({
@@ -78,6 +82,7 @@ export function RequestDiscussionView({
   const actions: RequestDiscussionActions = useMemo(() => ({
     create: createDiscussion,
     load: loadDiscussions,
+    loadFirstPage: loadDiscussionFirstPage,
     loadChanges: loadDiscussionChanges,
     markRead: markDiscussionRead,
     resolve: resolveDiscussion,
@@ -85,6 +90,7 @@ export function RequestDiscussionView({
     createDiscussion,
     loadDiscussionChanges,
     loadDiscussions,
+    loadDiscussionFirstPage,
     markDiscussionRead,
     resolveDiscussion,
   ])
@@ -108,8 +114,8 @@ export function RequestDiscussionView({
       actor={actor}
       canResolve={canResolve}
       focusedDiscussionId={focusedDiscussionId}
-      initialPage={initialPage}
       params={requestParams}
+      pending={pending}
       permissions={{
         canOpenDiscussion: request.permissions.can_open_discussion,
         canReply: request.permissions.can_reply_to_discussion,
@@ -119,6 +125,7 @@ export function RequestDiscussionView({
       viewerId={viewerId ?? 'anonymous'}
       request={request}
       threadActions={threadActions}
+      unavailable={unavailable}
     />
   )
 }

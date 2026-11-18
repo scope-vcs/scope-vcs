@@ -10,7 +10,7 @@ import { loadRepoSummary, repoSummaryIdentity } from '@/features/repo-detail/rep
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { getCurrentViewerId } from '@/lib/viewer-state'
 import { loadRequestChildrenForViewer, loadRequestState, loadRequestStateForViewer } from '@/routes/-request-state-actions'
-import { loadRequestDiscussionRoutePage } from '@/routes/-request-discussion-loader'
+import { loadRequestDiscussionRoute } from '@/routes/-request-discussion-loader'
 import { loadRepoSummaryState } from '@/routes/-repo-summary-actions'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useMemo } from 'react'
@@ -33,9 +33,9 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
     const answered = activeViewerId === undefined ? await loadRequestState({ data }) : null
     const viewerId = answered ? answered.viewerId : activeViewerId ?? null
     const scope = repoResourceScope(live.repo, viewerId)
-    const discussionPage = location.pathname.endsWith('/changes')
+    const discussionAvailable = location.pathname.endsWith('/changes')
       ? undefined
-      : loadRequestDiscussionRoutePage(data, scope, viewerId, deps.discussion)
+      : loadRequestDiscussionRoute(data, scope, viewerId, deps.discussion)
     await loadRequestStateValue(
       requestStateIdentity(scope, data.request_id),
       answered
@@ -43,7 +43,7 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
         : (signal) => loadRequestStateForViewer(data, viewerId, signal),
       (cursor, signal) => loadRequestChildrenForViewer({ ...data, cursor }, viewerId, signal),
     )
-    return { scope, viewerId, discussionPage }
+    return { scope, viewerId, discussionAvailable }
   },
   pendingComponent: RequestRoutePending,
   component: RequestRoute,

@@ -68,7 +68,6 @@ test('stale refresh merges safe rows without changing order or cursor', () => {
   const refreshed = mergeRefreshedDiscussionPage(
     { ...current, order: ['one', 'two'] },
     discussionPage([discussion('one', 9), discussion('older', 8)], 9, 'stale-cursor'),
-    false,
   )
 
   assert.equal(refreshed.byId.get('one')?.last_activity_position, 11)
@@ -77,78 +76,15 @@ test('stale refresh merges safe rows without changing order or cursor', () => {
   assert.deepEqual(refreshed.order, ['older', 'one', 'two'])
 })
 
-test('non-authoritative refresh does not advance past unseen changes', () => {
+test('a refreshed page does not advance past unseen changes', () => {
   const current = collectionFromPage(discussionPage([discussion('one', 10)], 10))
   const refreshed = mergeRefreshedDiscussionPage(
     current,
     discussionPage([discussion('new-root', 12)], 12),
-    false,
   )
 
   assert.equal(refreshed.byId.get('new-root')?.last_activity_position, 12)
   assert.equal(refreshed.snapshotVersion, 10)
-})
-
-test('authoritative refresh restores page order and preserves active UI rows', () => {
-  const initial = collectionFromPage(discussionPage([discussion('one', 5), discussion('two', 4)], 5, 'old-cursor'))
-  const expanded = mergeDiscussion(initial, {
-    ...discussion('one', 5),
-    expanded: true,
-  })
-  const pending = insertOptimisticDiscussion(expanded, {
-    ...discussion('client-1', Number.MAX_SAFE_INTEGER),
-    pending: 'failed',
-  })
-  const refreshed = mergeRefreshedDiscussionPage(
-    { ...pending, order: ['one', 'two', 'client-1'] },
-    discussionPage([discussion('one', 6), discussion('two', 4)], 6, 'fresh-cursor'),
-    true,
-  )
-
-  assert.deepEqual(refreshed.order, ['two', 'one', 'client-1'])
-  assert.equal(refreshed.byId.get('one')?.expanded, true)
-  assert.equal(refreshed.byId.get('client-1')?.pending, 'failed')
-  assert.equal(refreshed.nextCursor, 'fresh-cursor')
-  assert.equal(refreshed.snapshotVersion, 6)
-})
-
-test('authoritative refresh replaces an accepted optimistic discussion', () => {
-  const initial = collectionFromPage(discussionPage([], 5))
-  const pending = insertOptimisticDiscussion(initial, {
-    ...discussion('client-1', Number.MAX_SAFE_INTEGER),
-    pending: 'failed',
-  })
-  const accepted = {
-    ...discussion('server-1', 6),
-    client_discussion_id: 'client-1',
-  }
-
-  const refreshed = mergeRefreshedDiscussionPage(
-    pending,
-    discussionPage([accepted], 6),
-    true,
-  )
-
-  assert.equal(refreshed.byId.has('client-1'), false)
-  assert.equal(refreshed.byId.get('server-1')?.pending, undefined)
-  assert.deepEqual(refreshed.order, ['server-1'])
-})
-
-test('authoritative refresh drops expanded rows outside the refreshed page', () => {
-  const initial = collectionFromPage(discussionPage([discussion('visible', 6), discussion('older', 5)], 6))
-  const expanded = mergeDiscussion(initial, {
-    ...discussion('older', 5),
-    expanded: true,
-  })
-  const refreshed = mergeRefreshedDiscussionPage(
-    expanded,
-    discussionPage([discussion('visible', 7)], 7, 'older-page'),
-    true,
-  )
-
-  assert.equal(refreshed.byId.has('older'), false)
-  assert.deepEqual(refreshed.order, ['visible'])
-  assert.equal(refreshed.snapshotVersion, 7)
 })
 
 test('changes never move an entity or the collection snapshot backward', () => {

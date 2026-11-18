@@ -2,18 +2,21 @@ import { runRequestContentSubmission } from './request-attachment-drafts'
 import type { RequestParams } from '@/api/types'
 import type { RepoChangeEvent, RequestActorSummaryResponse } from '@/api/types.generated'
 import { useRepoChangeSubscription } from '@/features/repo-detail/repo-layout-context'
-import { resourceErrorMessage } from '../../lib/use-cached-resource'
+import { resourceErrorMessage, useCachedResource } from '../../lib/use-cached-resource'
 import {
   useCallback,
   useEffect,
-  useMemo,
-  useSyncExternalStore,
+  useRef,
 } from 'react'
 import {
-  openRequestDiscussion,
-  requestDiscussionCacheKey,
+  loadRequestDiscussionState,
   requestDiscussionResource,
+  syncRequestDiscussionProjections,
+  updateRequestDiscussion,
+  updateRequestDiscussionCollection,
+  type RequestDiscussionState,
 } from './request-discussion-cache'
+import { createRequestDiscussionSync } from './request-discussion-sync'
 import {
   insertOptimisticDiscussion,
   markDiscussionFailed,
@@ -21,6 +24,7 @@ import {
   mergeDiscussion,
   orderedDiscussions,
   reconcileDiscussionMutation,
+  type DiscussionCollection,
 } from './request-discussion-model'
 import type {
   CreateDiscussionInput,
@@ -36,9 +40,12 @@ import type {
   RequestDiscussionView,
 } from './request-discussion-types'
 
+type RequestDiscussionSync = ReturnType<typeof createRequestDiscussionSync>
+
 export type RequestDiscussionActions = {
   create: (input: CreateDiscussionInput) => Promise<RequestDiscussionMutation>
   load: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
+  loadFirstPage: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage | null>
   loadChanges: (
     input: RequestParams & { after: number },
   ) => Promise<RequestDiscussionChanges>
@@ -48,46 +55,83 @@ export type RequestDiscussionActions = {
   ) => Promise<RequestDiscussionMutation>
 }
 
+export function useRequestDiscussionState(key: string, loadFirstPage: () => Promise<RequestDiscussionPage | null>) {
+  const load = useCallback(() => loadRequestDiscussionState(loadFirstPage), [loadFirstPage])
+  return useCachedResource({
+    fallbackError: 'Discussion is unavailable.',
+    identity: key,
+    load,
+    resource: requestDiscussionResource,
+  })
+}
+
 export function useRequestDiscussionStore({
   actions,
   actor,
-  initialPage,
+  cacheKey: key,
   params,
-  repoId,
   requestHead,
-  viewerId,
+  state,
 }: {
   actions: RequestDiscussionActions
   actor: RequestActorSummaryResponse
-  initialPage: RequestDiscussionPage
+  cacheKey: string
   params: RequestParams
-  repoId: string
   requestHead: string
-  viewerId: string
+  state: RequestDiscussionState
 }) {
-  const key = requestDiscussionCacheKey({
-    repoId,
-    requestId: params.request_id,
-    viewerId,
-  })
-  const session = useMemo(
-    () => openRequestDiscussion(key, initialPage, (after) => actions.loadChanges({ ...params, after })),
-    [actions, initialPage, key, params],
+  const { collection, epoch, error, loadingMore } = state
+  const read = useCallback(() => {
+    const current = requestDiscussionResource.peek(key)
+    return current?.epoch === epoch ? current : null
+  }, [epoch, key])
+  const updateCollection = useCallback(
+    (transform: (current: DiscussionCollection) => DiscussionCollection) =>
+      updateRequestDiscussionCollection(key, epoch, transform),
+    [epoch, key],
   )
-  const subscribe = useCallback((listener: () => void) => requestDiscussionResource.subscribe(key, listener), [key])
-  const read = useCallback(() => requestDiscussionResource.peek(key) ?? session, [key, session])
-  const { collection, error, loadingMore } = useSyncExternalStore(subscribe, read, () => session)
-  const { sync, syncProjections, updateCollection, setError, setLoadingMore } = session
+  const setError = useCallback((next: string | null) => { updateRequestDiscussion(key, epoch, { error: next }) }, [epoch, key])
+  const setLoadingMore = useCallback((next: boolean) => { updateRequestDiscussion(key, epoch, { loadingMore: next }) }, [epoch, key])
 
-  useEffect(() => { void session.refresh(initialPage) }, [initialPage, session])
+  const syncRef = useRef<RequestDiscussionSync | null>(null)
+  const loadChangesRef = useRef((after: number) => actions.loadChanges({ ...params, after }))
   useEffect(() => {
-    void syncProjections(requestHead, (page) => actions.load({ ...params, ...page }))
-  }, [actions, params, requestHead, syncProjections])
+    loadChangesRef.current = (after) => actions.loadChanges({ ...params, after })
+  }, [actions, params])
+  const catchUp = useCallback((input?: { lagged?: boolean; target?: number }) => {
+    void syncRef.current?.catchUp(input)
+  }, [])
+  useEffect(() => {
+    const retained = requestDiscussionResource.peek(key)
+    if (retained?.epoch !== epoch) return
+    const empty = { ...retained.collection, byId: new Map(), nextCursor: null, order: [] }
+    const sync = createRequestDiscussionSync({
+      getCollection: () => read()?.collection ?? empty,
+      loadChanges: (after) => {
+        if (read()) return loadChangesRef.current(after)
+        sync.stop()
+        return Promise.resolve({ discussions: [], through_position: after, has_more: false })
+      },
+      onCatchUpError: (failure) => setError(resourceErrorMessage(failure, 'New discussion activity could not be loaded.')),
+      setCollection: (next) => updateCollection(() => next),
+    })
+    sync.reset(key)
+    syncRef.current = sync
+    void sync.catchUp()
+    return () => {
+      sync.stop()
+      syncRef.current = null
+      setLoadingMore(false)
+    }
+  }, [epoch, key, read, setError, setLoadingMore, updateCollection])
+  useEffect(() => {
+    void syncRequestDiscussionProjections(key, epoch, requestHead, (page) => actions.load({ ...params, ...page }))
+  }, [actions, epoch, key, params, requestHead])
 
   const onRepoChange = useCallback(
     (event: RepoChangeEvent) => {
       if (event.kind === 'Lagged') {
-        void sync.catchUp({ lagged: true })
+        catchUp({ lagged: true })
         return
       }
       if (
@@ -95,21 +139,20 @@ export function useRequestDiscussionStore({
         'RequestTimelineChanged' in event.kind &&
         event.kind.RequestTimelineChanged.request_id === params.request_id &&
         event.kind.RequestTimelineChanged.through_position >
-          read().collection.snapshotVersion
+          (read()?.collection.snapshotVersion ?? 0)
       ) {
-        void sync.catchUp({
-          target: event.kind.RequestTimelineChanged.through_position,
-        })
+        catchUp({ target: event.kind.RequestTimelineChanged.through_position })
       }
     },
-    [params.request_id, read, sync],
+    [catchUp, params.request_id, read],
   )
   useRepoChangeSubscription(onRepoChange)
 
   const loadMore = useCallback(async () => {
-    const { collection: current, loadingMore: pending } = read()
-    const cursor = current.nextCursor
-    if (!cursor || pending) return
+    const current = read()
+    const sync = syncRef.current
+    const cursor = current?.collection.nextCursor
+    if (!current || !sync || !cursor || current.loadingMore) return
     setLoadingMore(true)
     setError(null)
     try {
@@ -117,7 +160,7 @@ export function useRequestDiscussionStore({
     } catch (requestError) {
       setError(resourceErrorMessage(requestError, 'Older discussions could not be loaded.'))
     } finally {
-      setLoadingMore(false)
+      if (syncRef.current === sync) setLoadingMore(false)
     }
   }, [
     actions,
@@ -125,7 +168,6 @@ export function useRequestDiscussionStore({
     params,
     setError,
     setLoadingMore,
-    sync,
   ])
 
   const create = useCallback(
@@ -157,9 +199,7 @@ export function useRequestDiscussionStore({
             clientDiscussionId,
           ),
         )
-        void sync.catchUp({
-          target: result.discussion.last_activity_position,
-        })
+        catchUp({ target: result.discussion.last_activity_position })
         return true
       } catch (requestError) {
         updateCollection((current) => markDiscussionFailed(current, clientDiscussionId))
@@ -167,7 +207,7 @@ export function useRequestDiscussionStore({
         return false
       }
     }),
-    [actions, actor, params, setError, sync, updateCollection],
+    [actions, actor, catchUp, params, setError, updateCollection],
   )
 
   const retry = useCallback(
@@ -184,9 +224,9 @@ export function useRequestDiscussionStore({
         return
       }
       updateCollection((current) => mergeDiscussion(current, discussion))
-      void sync.catchUp({ target: discussion.last_activity_position })
+      catchUp({ target: discussion.last_activity_position })
     },
-    [params.request_id, sync, updateCollection],
+    [catchUp, params.request_id, updateCollection],
   )
 
   const markRead = useCallback(
@@ -244,7 +284,7 @@ export function useRequestDiscussionStore({
         return discussion
           ? mergeDiscussion(current, { ...discussion, expanded })
           : current
-      }, false)
+      })
     },
     [updateCollection],
   )

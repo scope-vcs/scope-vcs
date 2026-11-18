@@ -1,7 +1,6 @@
 import {
   appendDiscussionPage,
   applyDiscussionChanges,
-  mergeRefreshedDiscussionPage,
   type DiscussionCollection,
 } from './request-discussion-model'
 import type {
@@ -11,7 +10,6 @@ import type {
 
 type RequestDiscussionSyncOptions = {
   getCollection: () => DiscussionCollection
-  getDataGeneration: () => number
   loadChanges: (after: number) => Promise<RequestDiscussionChanges>
   onCatchUpError: (error: unknown) => void
   setCollection: (collection: DiscussionCollection) => void
@@ -52,34 +50,6 @@ export function createRequestDiscussionSync(
     target = 0
     lagged = false
     inFlight = null
-  }
-
-  async function refresh(load: () => Promise<RequestDiscussionPage>) {
-    const issuedGeneration = generation
-    const baseDataGeneration = options.getDataGeneration()
-    let page: RequestDiscussionPage
-    try {
-      page = await load()
-    } catch (error) {
-      if (isActive(issuedGeneration)) throw error
-      return false
-    }
-    if (!isActive(issuedGeneration)) return false
-
-    const current = options.getCollection()
-    const authoritative =
-      options.getDataGeneration() === baseDataGeneration &&
-      page.snapshot_version >= current.snapshotVersion
-    options.setCollection(
-      mergeRefreshedDiscussionPage(current, page, authoritative),
-    )
-    if (
-      !authoritative &&
-      page.snapshot_version > current.snapshotVersion
-    ) {
-      await catchUp({ target: page.snapshot_version })
-    }
-    return authoritative
   }
 
   async function paginate(
@@ -146,5 +116,5 @@ export function createRequestDiscussionSync(
     }
   }
 
-  return { catchUp, paginate, refresh, reset, stop }
+  return { catchUp, paginate, reset, stop }
 }

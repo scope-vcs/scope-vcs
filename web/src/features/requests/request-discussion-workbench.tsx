@@ -4,42 +4,29 @@ import { EmptyState } from '@/components/empty-state'
 import { mainScrollContainer } from '@/components/main-content'
 import { Button } from '@/components/ui/button'
 import { CircleAlert, LoaderCircle, MessageSquare } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
   readRequestDiscussionScroll,
+  requestDiscussionCacheKey,
   writeRequestDiscussionScroll,
+  type RequestDiscussionState,
 } from './request-discussion-cache'
 import { RequestDiscussionComposer } from './request-discussion-composer'
 import type { RequestDiscussionActions } from './request-discussion-store'
-import { useRequestDiscussionStore } from './request-discussion-store'
+import { useRequestDiscussionState, useRequestDiscussionStore } from './request-discussion-store'
 import { RequestDiscussionThread } from './request-discussion-thread'
-import type {
-  RequestDiscussion,
-  RequestDiscussionPage,
-} from './request-discussion-types'
+import type { RequestDiscussion } from './request-discussion-types'
 import type {
   RequestDiscussionThreadActions,
 } from './use-request-discussion-replies'
 
-export function RequestDiscussionWorkbench({
-  actions,
-  actor,
-  canResolve,
-  focusedDiscussionId,
-  initialPage,
-  params,
-  permissions,
-  repoId,
-  viewerId,
-  request,
-  threadActions,
-}: {
+type RequestDiscussionWorkbenchProps = {
   actions: RequestDiscussionActions
   actor: RequestActorSummaryResponse
   canResolve: (discussion: RequestDiscussion) => boolean
   focusedDiscussionId?: string
-  initialPage: RequestDiscussionPage
   params: RequestParams
+  pending: ReactNode
   permissions: {
     canOpenDiscussion: boolean
     canReply: boolean
@@ -49,15 +36,44 @@ export function RequestDiscussionWorkbench({
   viewerId: string
   request: RequestSummaryResponse
   threadActions: RequestDiscussionThreadActions
-}) {
+  unavailable: ReactNode
+}
+
+export function RequestDiscussionWorkbench(props: RequestDiscussionWorkbenchProps) {
+  const cacheKey = requestDiscussionCacheKey({
+    repoId: props.repoId,
+    requestId: props.params.request_id,
+    viewerId: props.viewerId,
+  })
+  const { actions, focusedDiscussionId, params } = props
+  const loadFirstPage = useCallback(
+    () => actions.loadFirstPage({ ...params, discussion_id: focusedDiscussionId }),
+    [actions, focusedDiscussionId, params],
+  )
+  const discussion = useRequestDiscussionState(cacheKey, loadFirstPage)
+  if (discussion.value) return <RetainedRequestDiscussion {...props} cacheKey={cacheKey} state={discussion.value} />
+  return discussion.status === 'failed' ? props.unavailable : props.pending
+}
+
+function RetainedRequestDiscussion({
+  actions,
+  actor,
+  cacheKey,
+  canResolve,
+  focusedDiscussionId,
+  params,
+  permissions,
+  request,
+  state,
+  threadActions,
+}: RequestDiscussionWorkbenchProps & { cacheKey: string; state: RequestDiscussionState }) {
   const store = useRequestDiscussionStore({
     actions,
     actor,
-    initialPage,
+    cacheKey,
     params,
-    repoId,
     requestHead: request.head_oid,
-    viewerId,
+    state,
   })
   const [activeComposer, setActiveComposer] = useState<string | null>(null)
   const closeComposer = useCallback(() => setActiveComposer(null), [])
