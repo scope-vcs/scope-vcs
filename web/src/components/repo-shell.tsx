@@ -14,7 +14,7 @@ import {
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { RepositorySearch } from '@/features/repo-search/repository-search'
 import { RepositorySearchProvider } from '@/features/repo-search/repository-search-context'
-import { useRequestReturnLocation } from '@/features/requests/use-request-return-location'
+import { useRequestReturnLocation } from '@/features/requests/detail/use-request-return-location'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import type { ReactNode } from 'react'

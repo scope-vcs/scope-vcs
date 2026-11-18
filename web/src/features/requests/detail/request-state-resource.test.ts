@@ -1,0 +1,140 @@
+import assert from 'node:assert/strict'
+import test, { mock } from 'node:test'
+import type { RepoChangeEvent, RequestStateResponse } from '@/api/types.generated'
+import { invalidateRepoResources, topicsOf } from '../../repo-detail/repo-resource'
+import { resetViewerState } from '../../../lib/viewer-state'
+import { deferred } from '../discussion/request-discussion-test-fixtures'
+import { loadMoreRequestChildren, loadRequestStateValue, reconcileRequestState, requestStateIdentity, requestStateResource } from './request-state-resource'
+
+const identity = requestStateIdentity('viewer-access', 'request')
+const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
+test.beforeEach(() => requestStateResource.clear())
+
+test('navigation and reopening share the complete request snapshot in the viewer access scope', async () => {
+  const load = mock.fn(async () => ({ state: state() }))
+  await Promise.all([loadRequestStateValue(identity, load), loadRequestStateValue(identity, load)])
+  await loadRequestStateValue(identity, load)
+  assert.equal(load.mock.callCount(), 1)
+  assert.equal(requestStateResource.peek(identity)?.state?.checks.head_oid, 'head')
+  assert.equal(requestStateResource.peek(requestStateIdentity('other-access', 'request')), null)
+  requestStateResource.invalidate(identity)
+  const retained = await loadRequestStateValue(identity, async () => { throw new Error('offline') })
+  assert.equal(retained.state?.detail.request.head_oid, 'head')
+  assert.equal((requestStateResource.getSnapshot(identity).error as Error).message, 'offline')
+})
+
+for (const kind of [
+  { RequestStateChanged: { request_id: 'request', view: 'public' } },
+  { RequestTimelineChanged: { request_id: 'request', view: 'public', discussion_id: 'discussion', through_position: 2 } },
+] satisfies RepoChangeEvent['kind'][]) {
+  test(`a request event refreshes its retained snapshot only: ${JSON.stringify(kind)}`, () => {
+    const other = requestStateIdentity('viewer-access', 'other')
+    requestStateResource.write(identity, { state: state() })
+    requestStateResource.write(other, { state: state() })
+    invalidateRepoResources('viewer-access', topicsOf(event(kind)))
+    assert.equal(requestStateResource.getSnapshot(identity).stale, true)
+    assert.equal(requestStateResource.peek(identity)?.state?.auto_merge.can_cancel, true)
+    assert.equal(requestStateResource.getSnapshot(other).stale, false)
+  })
+}
+
+test('a workflow run association arriving after check results refreshes embedded check links', () => {
+  requestStateResource.write(identity, { state: state() })
+  invalidateRepoResources('viewer-access', topicsOf(event('GitHubWorkflowRunsChanged')))
+  assert.equal(requestStateResource.getSnapshot(identity).stale, true)
+  assert.equal(requestStateResource.peek(identity)?.state?.checks.checks[0]?.name, 'checks')
+})
+
+test('a mutation receipt cannot mix requests or heads or replace an event-triggered snapshot', async () => {
+  requestStateResource.write(identity, { state: state() })
+  const receipt = requestStateResource.getSnapshot(identity)
+  assert.equal(reconcileRequestState(identity, receipt, (current) => ({ ...current, auto_merge: { ...current.auto_merge, head_oid: 'other' } })), false)
+  assert.equal(reconcileRequestState(identity, receipt, (current) => ({ ...current, auto_merge: { ...current.auto_merge, request_id: 'other' } })), false)
+  invalidateRepoResources('viewer-access', topicsOf(event({ RequestStateChanged: { request_id: 'request', view: 'public' } })))
+  await loadRequestStateValue(identity, async () => ({ state: state('new-head') }))
+  assert.equal(reconcileRequestState(identity, receipt, (current) => ({ ...current, auto_merge: { ...current.auto_merge, can_cancel: false } })), false)
+  assert.equal(requestStateResource.peek(identity)?.state?.detail.request.head_oid, 'new-head')
+})
+
+test('viewer reset prevents a late navigation response from publishing retained data', async () => {
+  const response = deferred<{ state: RequestStateResponse }>()
+  const load = loadRequestStateValue(identity, () => response.promise)
+  await Promise.resolve()
+  resetViewerState()
+  response.resolve({ state: state() })
+  await assert.rejects(load, /Resource is no longer available/)
+  assert.equal(requestStateResource.peek(identity), null)
+})
+
+function state(head = 'head'): RequestStateResponse {
+  const mergeability = { status: 'ChecksPending' as const, current_main_oid: 'main', request_head_oid: head, reason: 'checks have not finished' }
+  return {
+    detail: { request: { id: 'request', head_oid: head, mergeability } },
+    checks: {
+      request_id: 'request', head_oid: head, state: 'started', outcome: 'pending', message: null,
+      checks: [{ name: 'checks', status: 'in_progress', conclusion: null, details_url: null, run: null }],
+      can_approve: false, changes_github_workflows: false, private_request_on_public_github: false, github_push: null, github_pull_request: null, review_bots: [] as RequestStateResponse['checks']['review_bots'], review_bots_enforced: false, mergeability,
+    },
+    auto_merge: { request_id: 'request', revision_id: 'revision', head_oid: head, intent: { id: 'intent', actor: { id: 'user', handle: 'adam' }, revision_id: 'revision', head_oid: head, status: 'Active', reason: null, created_at_unix: 1, updated_at_unix: 1 }, waiting_reason: 'Checks are running.', can_enable: false, can_cancel: true },
+  } as RequestStateResponse
+}
+
+
+test('related stack events refresh retained navigation without crossing viewer access scopes', () => {
+  const related = state()
+  related.detail.stack_navigation = { parent: null, ancestors: [stackNode('parent')], ancestors_unavailable: false, children: { requests: [stackNode('child')], next_cursor: null } }
+  requestStateResource.write(identity, { state: related })
+  const unrelated = requestStateIdentity('viewer-access', 'unrelated')
+  requestStateResource.write(unrelated, { state: state() })
+  const otherAccess = requestStateIdentity('other-access', 'request')
+  requestStateResource.write(otherAccess, { state: related })
+  for (const requestId of ['parent', 'child']) {
+    requestStateResource.write(identity, { state: related })
+    invalidateRepoResources('viewer-access', topicsOf(event({ RequestStateChanged: { request_id: requestId, view: 'public' } })))
+    assert.equal(requestStateResource.getSnapshot(identity).stale, true)
+    assert.equal(requestStateResource.peek(identity)?.state?.detail.stack_navigation.ancestors[0]?.title, 'parent')
+    assert.equal(requestStateResource.getSnapshot(unrelated).stale, false)
+    assert.equal(requestStateResource.getSnapshot(otherAccess).stale, false)
+  }
+})
+
+test('child pagination survives reopening and refresh refills loaded depth while rejecting late access results', async () => {
+  const initial = state()
+  initial.detail.stack_navigation = { parent: null, ancestors: [], ancestors_unavailable: false, children: { requests: [stackNode('first')], next_cursor: 'next' } }
+  requestStateResource.write(identity, { state: initial })
+  await loadMoreRequestChildren(identity, async () => ({ requests: [stackNode('second')], next_cursor: null }))
+  const reopen = mock.fn(async () => ({ state: initial }))
+  assert.deepEqual((await loadRequestStateValue(identity, reopen)).state?.detail.stack_navigation.children.requests.map((node) => node.id), ['first', 'second'])
+  assert.equal(reopen.mock.callCount(), 0)
+  requestStateResource.invalidate(identity)
+  const refill = mock.fn(async () => ({ requests: [stackNode('third')], next_cursor: null }))
+  const refreshed = await loadRequestStateValue(identity, async () => ({ state: initial }), refill)
+  assert.deepEqual(refreshed.state?.detail.stack_navigation.children.requests.map((node) => node.id), ['first', 'third'])
+  assert.equal(refill.mock.callCount(), 1)
+  requestStateResource.invalidate(identity)
+  const updated = state('updated-head')
+  updated.detail.stack_navigation = initial.detail.stack_navigation
+  updated.detail.request.mergeability = { ...updated.detail.request.mergeability, status: 'Ready' }
+  updated.checks.mergeability = updated.detail.request.mergeability
+  const failedRefill = mock.fn(async () => { throw new Error('Children are offline.') })
+  const updatedValue = await loadRequestStateValue(identity, async () => ({ state: updated }), failedRefill)
+  assert.equal(updatedValue.state?.detail.request.head_oid, 'updated-head')
+  assert.equal(updatedValue.state.checks.head_oid, 'updated-head')
+  assert.equal(updatedValue.state.detail.request.mergeability.status, 'Ready')
+  assert.equal(updatedValue.childrenError, 'Children are offline.')
+  assert.equal(failedRefill.mock.callCount(), 1)
+  await loadMoreRequestChildren(identity, async () => ({ requests: [stackNode('retry-child')], next_cursor: null }))
+  assert.equal(requestStateResource.peek(identity)?.childrenError, null)
+  assert.deepEqual(requestStateResource.peek(identity)?.state?.detail.stack_navigation.children.requests.map((node) => node.id), ['first', 'retry-child'])
+  requestStateResource.write(identity, { state: initial })
+  const response = deferred<{ requests: ReturnType<typeof stackNode>[]; next_cursor: null }>()
+  const pending = loadMoreRequestChildren(identity, () => response.promise)
+  resetViewerState()
+  response.resolve({ requests: [stackNode('private-child')], next_cursor: null })
+  await pending
+  assert.equal(requestStateResource.peek(identity), null)
+})
+
+function stackNode(id: string) {
+  return { id, name: id, title: id, state: 'Open' as const, stack_status: 'main' as const, stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
+}

@@ -7,13 +7,13 @@ import { useCallback, useMemo } from 'react'
 import { appendHistoryPage } from '../history/history-pagination'
 import { historyFeedResource } from '../history/history-resource-cache'
 import { repoResourceKey } from '../repo-detail/repo-resource'
-import { REQUEST_QUEUE_SECTION_ORDER } from '../requests/request-list-model'
+import { REQUEST_QUEUE_SECTION_ORDER } from '../requests/workspace/request-list-model'
 import {
   loadMoreRequestQueue,
   requestQueueIdentity,
   type LoadRequestQueuePage,
-} from '../requests/request-queue-cache'
-import { useRequestQueue } from '../requests/use-request-queue'
+} from '../requests/workspace/request-queue-cache'
+import { useRequestQueue } from '../requests/workspace/use-request-queue'
 import type { RepositorySearchResults } from './repository-search-model'
 
 export function useRepositorySearchResults({

@@ -1,9 +1,9 @@
 import type { RepoLiveState } from '@/api/types'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
-import { RequestAttachmentProvider } from '@/features/requests/request-attachment-context'
-import type { CreateReplyInput } from '@/features/requests/request-discussion-api'
-import { RequestDiscussionThread } from '@/features/requests/request-discussion-thread'
-import type { RequestDiscussionReply, RequestDiscussionView } from '@/features/requests/request-discussion-types'
+import { RequestAttachmentProvider } from '@/features/requests/attachments/request-attachment-context'
+import type { CreateReplyInput } from '@/features/requests/discussion/request-discussion-api'
+import { RequestDiscussionThread } from '@/features/requests/discussion/request-discussion-thread'
+import type { RequestDiscussionReply, RequestDiscussionView } from '@/features/requests/discussion/request-discussion-types'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 

@@ -1,0 +1,432 @@
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { mainScrollContainer } from '@/components/main-content'
+import {
+  Check,
+  ChevronDown,
+  CircleAlert,
+  LoaderCircle,
+  Reply,
+  RotateCcw,
+} from 'lucide-react'
+import { memo, useEffect, useRef } from 'react'
+import { compactDiscussionSummary } from './discussion-preview-text'
+import { RequestDiscussionAnchor } from './request-discussion-anchor'
+import { RequestDiscussionAuthorAvatar } from './request-discussion-avatar'
+import { RequestDiscussionByline } from './request-discussion-byline'
+import { RequestReplyComposer } from './request-discussion-composer'
+import { RequestDiscussionMarkdown } from './request-discussion-markdown'
+import { REQUEST_DISCUSSION_CONTENT_CLASS } from '../detail/request-content-layout'
+import { discussionRepliesAreCollapsed } from './request-discussion-model'
+import { replyTargetFromFragment } from './request-discussion-reply-presentation'
+import {
+  RequestDiscussionReplyList,
+  RequestDiscussionUnreadBoundary,
+} from './request-discussion-reply-list'
+import { RelativeTimestamp } from '@/components/timestamp'
+import type {
+  RequestDiscussion,
+  RequestDiscussionReplyView,
+  RequestDiscussionView,
+} from './request-discussion-types'
+import { useRequestDiscussionReadMarker } from './use-request-discussion-read-marker'
+import {
+  useRequestDiscussionReplies,
+  type RequestDiscussionThreadActions,
+} from './use-request-discussion-replies'
+import {
+  discussionAuthorName,
+  discussionResolverName,
+  isSameDiscussionAuthor,
+  type DiscussionAuthor,
+} from './request-discussion-author'
+
+export const RequestDiscussionThread = memo(function RequestDiscussionThread({
+  actions,
+  actor,
+  canReply,
+  canResolve,
+  canWaitAfterReply,
+  composerOpen,
+  discussion,
+  onExpandedChange,
+  onMarkRead,
+  onOpenComposer,
+  onCloseComposer,
+  onPatch,
+  onRetryRoot,
+  onResolve,
+  params,
+}: {
+  actions: RequestDiscussionThreadActions
+  actor: { handle: string; id: string }
+  canReply: boolean
+  canResolve: boolean
+  canWaitAfterReply: boolean
+  composerOpen: boolean
+  discussion: RequestDiscussionView
+  onExpandedChange: (discussionId: string, expanded: boolean) => void
+  onMarkRead: (discussion: RequestDiscussion) => Promise<void>
+  onOpenComposer: () => void
+  onCloseComposer: () => void
+  onPatch: (discussion: RequestDiscussion) => void
+  onRetryRoot: (discussion: RequestDiscussionView) => Promise<boolean>
+  onResolve: (discussion: RequestDiscussion) => Promise<void>
+  params: { owner: string; repo: string; request_id: string }
+}) {
+  const collapsed = discussionRepliesAreCollapsed(discussion)
+  const {
+    availableReplies,
+    canPostReply,
+    hasOlderReplies,
+    loadOlderReplies,
+    loadReplyTarget,
+    loadingReplies,
+    olderReplyCount,
+    postReply,
+    quotedReply,
+    replyError,
+    setQuoteId,
+    unreadContentFullyExposed,
+  } = useRequestDiscussionReplies({
+    actions,
+    actor,
+    canReply,
+    canResolve,
+    discussion,
+    onExpandedChange,
+    onPatch,
+    params,
+  })
+
+  async function submitReply(body: string, submissionId: string, waitAfterReply = false) {
+    const posted = await postReply(body, submissionId, { waitAfterReply })
+    if (posted) onCloseComposer()
+    return posted
+  }
+
+  const readMarkerRef = useRequestDiscussionReadMarker({
+    collapsed,
+    contentFullyExposed: unreadContentFullyExposed,
+    discussion,
+    onMarkRead,
+  })
+  const observedReplyHashRef = useRef<string | null>(null)
+  const attemptedReplyHashRef = useRef<string | null>(null)
+  const handledReplyHashRef = useRef<string | null>(null)
+  const disclosureRef = useRef<HTMLButtonElement>(null)
+  const replyRegionRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let active = true
+    function resolveReplyHash() {
+      const hash = window.location.hash
+      if (observedReplyHashRef.current !== hash) {
+        observedReplyHashRef.current = hash
+        attemptedReplyHashRef.current = null
+        handledReplyHashRef.current = null
+      }
+      const replyTarget = replyTargetFromFragment(hash)
+      if (!replyTarget || replyTarget.discussionId !== discussion.id) return
+      if (handledReplyHashRef.current === hash) return
+      const hashHandled = attemptedReplyHashRef.current === hash
+      if (collapsed && !hashHandled) {
+        onExpandedChange(discussion.id, true)
+        return
+      }
+      const { replyId } = replyTarget
+      const target = document.getElementById(`reply-${replyId}`)
+      if (target) {
+        target.scrollIntoView({ block: 'center' })
+        target.focus({ preventScroll: true })
+        attemptedReplyHashRef.current = hash
+        handledReplyHashRef.current = hash
+        return
+      }
+      if (hashHandled) return
+      attemptedReplyHashRef.current = hash
+      void loadReplyTarget(replyId).then(() => {
+        if (!active) return
+        requestAnimationFrame(resolveReplyHash)
+      })
+    }
+
+    resolveReplyHash()
+    window.addEventListener('hashchange', resolveReplyHash)
+    return () => {
+      active = false
+      window.removeEventListener('hashchange', resolveReplyHash)
+    }
+  }, [availableReplies, collapsed, discussion.id, loadReplyTarget, onExpandedChange])
+
+  useEffect(() => {
+    if (!composerOpen) setQuoteId(null)
+  }, [composerOpen, setQuoteId])
+
+  useEffect(() => {
+    if (!collapsed || !replyRegionRef.current?.contains(document.activeElement)) return
+    disclosureRef.current?.focus()
+  }, [collapsed])
+
+  useEffect(() => {
+    if (!collapsed || !composerOpen) return
+    const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180
+    const timer = window.setTimeout(onCloseComposer, delay)
+    return () => window.clearTimeout(timer)
+  }, [collapsed, composerOpen, onCloseComposer])
+
+  function openComposer() {
+    onExpandedChange(discussion.id, true)
+    onOpenComposer()
+  }
+
+  function toggleReplies() {
+    onExpandedChange(discussion.id, collapsed)
+  }
+
+  async function loadOlderWithoutJump() {
+    const firstReplyId = availableReplies.at(0)?.id
+    const firstReply = firstReplyId
+      ? document.querySelector<HTMLElement>(`#reply-${CSS.escape(firstReplyId)}`)
+      : null
+    const topBefore = firstReply?.getBoundingClientRect().top
+    const loading = loadOlderReplies()
+    if (!firstReply || topBefore === undefined) return loading
+    await loading
+    requestAnimationFrame(() => {
+      const topAfter = firstReply.getBoundingClientRect().top
+      const scrollContainer = mainScrollContainer()
+      if (scrollContainer) scrollContainer.scrollTop += topAfter - topBefore
+    })
+  }
+
+  const rootUnread =
+    discussion.unread_count > 0 && discussion.opened_position > discussion.read_through_position
+  const replyCount = Math.max(discussion.reply_count, availableReplies.length)
+  const hasReplies = replyCount > 0
+  const latestReply = availableReplies.at(-1)
+  const participants = latestParticipants(availableReplies)
+  const replyRegionId = `discussion-${discussion.id}-replies`
+
+  return (
+    <article
+      className="request-discussion-thread group/thread relative grid scroll-mt-32 grid-cols-[2rem_minmax(0,1fr)] gap-x-3 px-(--app-inset) py-5 before:pointer-events-none before:absolute before:inset-x-(--app-inset) before:top-0 before:border-t before:border-border before:content-[''] first:before:hidden"
+      id={`discussion-${discussion.id}`}
+    >
+      {rootUnread ? (
+        <div className="col-span-2">
+          <RequestDiscussionUnreadBoundary />
+        </div>
+      ) : null}
+
+      <div>
+        <RequestDiscussionAuthorAvatar author={discussion.author} />
+      </div>
+
+      <div className="min-w-0">
+        <RequestDiscussionByline
+          author={discussion.author}
+          createdAtUnix={discussion.created_at_unix}
+        >
+          {discussion.anchor ? (
+            <RequestDiscussionAnchor anchor={discussion.anchor} params={params} />
+          ) : null}
+          {discussion.unread_count > 0 ? (
+            <Badge variant="info">{discussion.unread_count} new</Badge>
+          ) : null}
+          {discussion.status === 'Resolved' ? (
+            <Badge variant="success">
+              <Check />
+              {discussion.resolved_by
+                ? `Resolved by ${discussionResolverName(discussion.resolved_by)}`
+                : 'Resolved'}
+            </Badge>
+          ) : null}
+          {discussion.pending === 'sending' ? (
+            <span className="text-xs text-muted-foreground">Posting…</span>
+          ) : null}
+          {discussion.pending === 'failed' ? <Badge variant="danger">Failed to post</Badge> : null}
+        </RequestDiscussionByline>
+
+        <RequestDiscussionMarkdown
+          className={`mt-2 ${REQUEST_DISCUSSION_CONTENT_CLASS}`}
+          source={discussion.body_markdown}
+        />
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {canPostReply ? (
+            <Button onClick={openComposer} size="sm" type="button" variant="ghost">
+              {discussion.status === 'Resolved' ? (
+                <RotateCcw className="size-3.5" />
+              ) : (
+                <Reply className="size-3.5" />
+              )}
+              {discussion.status === 'Resolved' ? 'Reopen and reply' : 'Reply'}
+            </Button>
+          ) : null}
+          {canResolve && discussion.status === 'Open' && !discussion.pending ? (
+            <Button
+              onClick={() => void onResolve(discussion)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <Check className="size-3.5" />
+              Resolve
+            </Button>
+          ) : null}
+          {discussion.pending === 'failed' ? (
+            <Button
+              onClick={() => void onRetryRoot(discussion)}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              <RotateCcw className="size-3.5" />
+              Retry
+            </Button>
+          ) : null}
+        </div>
+
+        {hasReplies ? (
+          <button
+            aria-controls={replyRegionId}
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? 'Show' : 'Hide'} ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
+            className="-ml-2 mt-1 flex min-h-11 max-w-full items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/35 hover:text-foreground"
+            onClick={toggleReplies}
+            ref={disclosureRef}
+            type="button"
+          >
+            <ChevronDown
+              aria-hidden="true"
+              className={`size-3.5 shrink-0 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
+            />
+            <span className="shrink-0 font-medium text-foreground">
+              {collapsed ? '' : 'Hide '}
+              {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+            </span>
+            {participants.length > 0 ? (
+              <span aria-hidden="true" className="flex -space-x-1">
+                {participants.map((author) => (
+                  <RequestDiscussionAuthorAvatar
+                    author={author}
+                    key={discussionAuthorName(author)}
+                    small
+                  />
+                ))}
+              </span>
+            ) : null}
+            {latestReply ? (
+              <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:inline">
+                Last reply <RelativeTimestamp value={latestReply.created_at_unix} />
+              </span>
+            ) : null}
+          </button>
+        ) : null}
+
+        <div
+          aria-hidden={collapsed}
+          className={`grid [overflow-anchor:none] transition-[grid-template-rows,opacity,transform] duration-180 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:duration-0 ${collapsed ? 'grid-rows-[0fr] -translate-y-1 opacity-0' : 'grid-rows-[1fr] translate-y-0 opacity-100'}`}
+          id={replyRegionId}
+          inert={collapsed}
+          ref={replyRegionRef}
+        >
+          <div className="min-h-0 overflow-hidden">
+            {availableReplies.length > 0 || hasOlderReplies ? (
+              <div className="mt-1 ml-0 border-l border-border pb-3 pl-3 min-[701px]:pl-4">
+                {hasOlderReplies ? (
+                  <button
+                    className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-70"
+                    aria-busy={loadingReplies}
+                    disabled={loadingReplies}
+                    onClick={() => void loadOlderWithoutJump()}
+                    type="button"
+                  >
+                    {`${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
+                    {loadingReplies ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                  </button>
+                ) : null}
+                <RequestDiscussionReplyList
+                  canReply={canPostReply}
+                  discussionCreatedAtUnix={discussion.created_at_unix}
+                  onQuote={(quoted) => {
+                    setQuoteId(quoted.id)
+                    openComposer()
+                  }}
+                  onRetry={(failedReply) =>
+                    void postReply(failedReply.body_markdown, failedReply.id, {
+                      replyToReplyId:
+                        failedReply.reply_to?.id ?? failedReply.optimistic_reply_to_reply_id ?? null,
+                      retryReference: failedReply.reply_to,
+                      waitAfterReply: failedReply.optimistic_wait_after_reply,
+                    })
+                  }
+                  readThroughPosition={discussion.read_through_position}
+                  replies={availableReplies}
+                  showUnreadBoundary={
+                    discussion.unread_count > 0 && !rootUnread && unreadContentFullyExposed
+                  }
+                />
+              </div>
+            ) : null}
+
+            {replyError ? (
+              <p className="mt-3 flex items-center gap-2 text-sm text-destructive" role="alert">
+                <CircleAlert className="size-4" />
+                {replyError}
+              </p>
+            ) : null}
+
+            {canPostReply && composerOpen ? (
+              <div className="mt-4 border-t border-border pt-3">
+                <RequestReplyComposer
+                  discussionId={discussion.id}
+                  onCancel={() => {
+                    setQuoteId(null)
+                    onCloseComposer()
+                  }}
+                  onCancelQuote={() => setQuoteId(null)}
+                  onSubmit={submitReply}
+                  quote={
+                    quotedReply
+                      ? {
+                          author: discussionAuthorName(quotedReply.author),
+                          body: compactDiscussionSummary(quotedReply.body_markdown),
+                          id: quotedReply.id,
+                        }
+                      : null
+                  }
+                  reopen={discussion.status === 'Resolved'}
+                  waitAfterReply={canWaitAfterReply ? (body, submissionId) => submitReply(body, submissionId, true) : undefined}
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <span aria-hidden="true" className="block h-px" ref={readMarkerRef} />
+      </div>
+    </article>
+  )
+})
+
+function latestParticipants(replies: RequestDiscussionReplyView[]) {
+  const participants: DiscussionAuthor[] = []
+  for (let index = replies.length - 1; index >= 0 && participants.length < 2; index -= 1) {
+    const reply = replies[index]
+    if (!reply) continue
+    const author = reply.author
+    if (
+      participants.some(
+        (seen) =>
+          isSameDiscussionAuthor(seen, author) ||
+          discussionAuthorName(seen) === discussionAuthorName(author),
+      )
+    ) {
+      continue
+    }
+    participants.push(author)
+  }
+  return participants
+}

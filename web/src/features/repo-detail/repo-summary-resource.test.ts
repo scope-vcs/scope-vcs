@@ -4,7 +4,7 @@ import { HttpError, InvalidApiResponseError } from '../../api/http'
 import type { RepoLiveState } from '../../api/types'
 import type { RepoChangeEvent } from '../../api/types.generated'
 import { STALE_BUILD_HEADER, StaleBuildError } from '../../lib/stale-build'
-import { requestQueueIdentity, requestQueueResource } from '../requests/request-queue-cache'
+import { requestQueueIdentity, requestQueueResource } from '../requests/workspace/request-queue-cache'
 import { invalidateRepoResources, resyncTopics, topicsOf } from './repo-resource'
 import { repoResourceScope } from './repo-resource-scope'
 import {

@@ -4,11 +4,11 @@ import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } fr
 import type { RepoLiveState } from '@/api/types'
 import type { RequestDiscussionAnchor as AnchorResponse, RequestRevisionListResponse } from '@/api/types.generated'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
-import { RequestAttachmentProvider } from '@/features/requests/request-attachment-context'
-import { RequestChangesWorkbench, type RequestChangesSearch } from '@/features/requests/request-changes-workbench'
-import { RequestDiscussionAnchor } from '@/features/requests/request-discussion-anchor'
-import type { CreateDiscussionInput } from '@/features/requests/request-discussion-api'
-import { discussion } from '@/features/requests/request-discussion-test-fixtures'
+import { RequestAttachmentProvider } from '@/features/requests/attachments/request-attachment-context'
+import { RequestChangesWorkbench, type RequestChangesSearch } from '@/features/requests/changes/request-changes-workbench'
+import { RequestDiscussionAnchor } from '@/features/requests/discussion/request-discussion-anchor'
+import type { CreateDiscussionInput } from '@/features/requests/discussion/request-discussion-api'
+import { discussion } from '@/features/requests/discussion/request-discussion-test-fixtures'
 import '../shared/styles.css'
 
 declare global {

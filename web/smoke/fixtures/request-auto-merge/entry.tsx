@@ -2,9 +2,9 @@ import type {
   RequestAutoMergeResponse,
   RequestSummaryResponse,
 } from '@/api/types.generated'
-import { RequestLifecycleActions } from '@/features/requests/request-lifecycle-actions'
-import type { RequestActionController } from '@/features/requests/use-request-actions'
-import type { RequestAutoMergeController } from '@/features/requests/use-request-auto-merge'
+import { RequestLifecycleActions } from '@/features/requests/detail/request-lifecycle-actions'
+import type { RequestActionController } from '@/features/requests/detail/use-request-actions'
+import type { RequestAutoMergeController } from '@/features/requests/checks/use-request-auto-merge'
 import { createRoot } from 'react-dom/client'
 import { useState } from 'react'
 import '../shared/styles.css'
