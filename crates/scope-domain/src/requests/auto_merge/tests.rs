@@ -54,7 +54,10 @@ fn open_request() -> Request {
         head_oid: HEAD.into(),
         pushed_at_unix: Some(1),
         activity_version: 2,
-        submitted_at_unix: Some(2),
+        lifecycle: crate::requests::RequestLifecycle {
+            submitted_at_unix: Some(2),
+            ..fixtures::open_request().lifecycle
+        },
         created_at_unix: 1,
         updated_at_unix: 2,
         ..fixtures::open_request()
@@ -214,10 +217,10 @@ fn fulfillment_requires_the_authorized_merge_to_be_committed() {
         .is_err()
     );
 
-    request.merged_at_unix = Some(4);
-    request.merged_by_user_id = Some(intent.actor_user_id.clone());
-    request.merged_head_oid = Some(intent.head_oid.clone());
-    request.merged_main_oid = Some(OTHER_HEAD.into());
+    request.lifecycle.merged_at_unix = Some(4);
+    request.lifecycle.merged_by_user_id = Some(intent.actor_user_id.clone());
+    request.lifecycle.merged_head_oid = Some(intent.head_oid.clone());
+    request.lifecycle.merged_main_oid = Some(OTHER_HEAD.into());
     request.updated_at_unix = 4;
     let fulfilled = fulfill_request_auto_merge(
         &request,
@@ -337,8 +340,8 @@ fn only_open_requests_with_a_current_revision_and_maintainer_can_enable() {
         fixtures::public_viewer("maintainer"),
         fixtures::actor_views(),
     ));
-    request.closed_at_unix = Some(3);
-    request.closed_by_user_id = Some("maintainer".into());
+    request.lifecycle.closed_at_unix = Some(3);
+    request.lifecycle.closed_by_user_id = Some("maintainer".into());
     request.updated_at_unix = 3;
     assert!(!request_auto_merge_can_enable(
         &request,

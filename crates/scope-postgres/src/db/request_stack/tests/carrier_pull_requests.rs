@@ -163,8 +163,15 @@ async fn a_child_push_that_waited_for_its_parents_end_targets_main() {
     let store = crate::db::requests::tests::postgres_store();
     let (mut parent, [child]) = carried_stack(&store, ["child"]).await;
     let ending = store.db.begin().await.unwrap();
-    parent.closed_at_unix = Some(15);
-    parent.updated_at_unix = 15;
+    parent = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            closed_at_unix: Some(15),
+            ..parent.lifecycle().clone()
+        },
+        updated_at_unix: 15,
+        ..parent.stored()
+    })
+    .unwrap();
     persist_lifecycle_mutation(&ending, &parent, &[])
         .await
         .unwrap();
@@ -274,8 +281,15 @@ async fn an_ending_parent_takes_its_childs_carrier_before_its_own() {
         &parent.head_oid,
     );
 
-    parent.closed_at_unix = Some(15);
-    parent.updated_at_unix = 15;
+    parent = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            closed_at_unix: Some(15),
+            ..parent.lifecycle().clone()
+        },
+        updated_at_unix: 15,
+        ..parent.stored()
+    })
+    .unwrap();
     let closing = store.db.begin().await.unwrap();
     waiting_for_its_childs_carrier_without_holding_its_own(
         &store,

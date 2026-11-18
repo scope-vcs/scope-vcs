@@ -395,9 +395,9 @@ fn reply_wait_capability_requires_a_maintainer_and_an_open_request() {
         RequestState::Merged,
     ] {
         let mut request = open_request();
-        request.submitted_at_unix = (state != RequestState::Draft).then_some(1);
-        request.closed_at_unix = (state == RequestState::Closed).then_some(2);
-        request.merged_at_unix = (state == RequestState::Merged).then_some(2);
+        request.lifecycle.submitted_at_unix = (state != RequestState::Draft).then_some(1);
+        request.lifecycle.closed_at_unix = (state == RequestState::Closed).then_some(2);
+        request.lifecycle.merged_at_unix = (state == RequestState::Merged).then_some(2);
         for actor in [
             RepositoryActor::Owner,
             RepositoryActor::Member,

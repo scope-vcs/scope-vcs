@@ -21,7 +21,7 @@ use super::{
 use scope_domain::{
     content::SourceBlob,
     repo_actions::RepoStorageCleanup,
-    requests::{Request, RequestEvent},
+    requests::{Request, RequestEvent, StoredRequest},
 };
 use sea_orm::{ActiveModelTrait, ConnectionTrait, IntoActiveModel, TransactionTrait};
 #[cfg(any(test, feature = "test-support"))]
@@ -495,13 +495,14 @@ impl RequestStore {
     pub async fn mutate_request_for_tests(
         &self,
         request_id: &str,
-        op: impl FnOnce(&mut Request),
+        op: impl FnOnce(&mut StoredRequest),
     ) -> Result<(), PostgresError> {
         let mut request = request_by_id(self.db.as_ref(), request_id)
             .await?
-            .ok_or_else(|| PostgresError::not_found("test request not found"))?;
+            .ok_or_else(|| PostgresError::not_found("test request not found"))?
+            .stored();
         op(&mut request);
-        save_request_row(self.db.as_ref(), &request).await
+        save_request_row(self.db.as_ref(), &Request::restore(request)?).await
     }
 
     pub async fn request_for_tests(

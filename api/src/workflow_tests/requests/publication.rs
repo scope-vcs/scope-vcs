@@ -34,7 +34,10 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
         .metadata
         .requests()
         .mutate_request_for_tests("req_publication_public", |request| {
-            request.submitted_at_unix = Some(4);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(4),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 4;
         })
         .await

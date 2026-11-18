@@ -385,7 +385,7 @@ pub fn retarget_request_after_parent_merge(
         || parent.repo_id != child.repo_id
         || parent.view != child.view
         || parent.state() != RequestState::Merged
-        || parent.merged_head_oid.as_deref() != Some(input.parent_head_oid.as_str())
+        || parent.lifecycle.merged_head_oid.as_deref() != Some(input.parent_head_oid.as_str())
         || !input.parent_contains_pin
     {
         return Err(DomainError::conflict(
@@ -404,10 +404,12 @@ pub fn retarget_request_after_parent_merge(
             || !input.contained_main_descends_from_ancestor
     };
     let landed_head_oid = parent
+        .lifecycle
         .merged_head_oid
         .clone()
         .ok_or_else(|| DomainError::conflict("parent merge head is missing"))?;
     let main_oid = parent
+        .lifecycle
         .merged_main_oid
         .clone()
         .ok_or_else(|| DomainError::conflict("parent merge main is missing"))?;
@@ -436,7 +438,7 @@ pub fn retarget_request_after_parent_merge(
     let event = RequestEvent {
         id: input.event_id,
         request_id: child.id.clone(),
-        actor_user_id: parent.merged_by_user_id.clone(),
+        actor_user_id: parent.lifecycle.merged_by_user_id.clone(),
         kind: RequestEventKind::BaseRetargeted,
         position,
         payload: RequestEventPayload::BaseRetargeted {

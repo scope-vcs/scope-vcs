@@ -138,15 +138,21 @@ async fn retained_requests_recheck_revoked_invites_and_anonymous_access() {
 
     requests
         .mutate_request_for_tests(REQUEST_ID, |request| {
-            request.submitted_at_unix = Some(request.updated_at_unix);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(request.updated_at_unix),
+                ..request.lifecycle.clone()
+            };
         })
         .await
         .unwrap();
     advertise_request(&state, None, &head).await;
     requests
         .mutate_request_for_tests(REQUEST_ID, |request| {
-            request.closed_at_unix = Some(request.updated_at_unix);
-            request.closed_by_user_id = Some(public_user_id());
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                closed_at_unix: Some(request.updated_at_unix),
+                closed_by_user_id: Some(public_user_id()),
+                ..request.lifecycle.clone()
+            };
         })
         .await
         .unwrap();

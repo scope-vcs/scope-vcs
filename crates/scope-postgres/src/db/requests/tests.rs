@@ -361,8 +361,15 @@ async fn close_open_request_persists_exact_closer() {
         .await
         .unwrap()
         .request;
-    request.submitted_at_unix = Some(3);
-    request.updated_at_unix = 3;
+    request = scope_domain::requests::Request::restore(scope_domain::requests::StoredRequest {
+        lifecycle: scope_domain::requests::RequestLifecycle {
+            submitted_at_unix: Some(3),
+            ..request.lifecycle().clone()
+        },
+        updated_at_unix: 3,
+        ..request.stored()
+    })
+    .unwrap();
     save_request_row(store.db.as_ref(), &request).await.unwrap();
     seed_terminal_effects(&store).await;
 
@@ -386,8 +393,8 @@ async fn close_open_request_persists_exact_closer() {
         .unwrap()
         .unwrap();
     assert_eq!(stored.state(), RequestState::Closed);
-    assert_eq!(stored.closed_at_unix, Some(4));
-    assert_eq!(stored.closed_by_user_id.as_deref(), Some("user_public"));
+    assert_eq!(stored.closed_at_unix(), Some(4));
+    assert_eq!(stored.closed_by_user_id(), Some("user_public"));
     assert_terminal_effects(&store, "event_closed").await;
 }
 

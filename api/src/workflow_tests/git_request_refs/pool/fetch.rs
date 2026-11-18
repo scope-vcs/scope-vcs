@@ -35,17 +35,26 @@ async fn cold_fetch_advertises_and_installs_only_active_request_heads() {
             .metadata
             .requests()
             .mutate_request_for_tests(&id, |request| {
-                request.submitted_at_unix = Some(request.updated_at_unix);
+                request.lifecycle = scope_domain::requests::RequestLifecycle {
+                    submitted_at_unix: Some(request.updated_at_unix),
+                    ..request.lifecycle.clone()
+                };
                 match terminal {
                     Some(false) => {
-                        request.closed_at_unix = Some(request.updated_at_unix);
-                        request.closed_by_user_id = Some(test_owner_id());
+                        request.lifecycle = scope_domain::requests::RequestLifecycle {
+                            closed_at_unix: Some(request.updated_at_unix),
+                            closed_by_user_id: Some(test_owner_id()),
+                            ..request.lifecycle.clone()
+                        };
                     }
                     Some(true) => {
-                        request.merged_at_unix = Some(request.updated_at_unix);
-                        request.merged_by_user_id = Some(test_owner_id());
-                        request.merged_head_oid = Some(head.clone());
-                        request.merged_main_oid = Some(request.main_ancestor_oid.clone());
+                        request.lifecycle = scope_domain::requests::RequestLifecycle {
+                            merged_at_unix: Some(request.updated_at_unix),
+                            merged_by_user_id: Some(test_owner_id()),
+                            merged_head_oid: Some(head.clone()),
+                            merged_main_oid: Some(request.main_ancestor_oid.clone()),
+                            ..request.lifecycle.clone()
+                        };
                     }
                     None => {}
                 }
@@ -210,7 +219,10 @@ async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents(
     let requests = state.metadata.requests();
     requests
         .mutate_request_for_tests(&parent_id, |request| {
-            request.submitted_at_unix = Some(request.updated_at_unix);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(request.updated_at_unix),
+                ..request.lifecycle.clone()
+            };
         })
         .await
         .unwrap();

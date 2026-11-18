@@ -111,9 +111,12 @@ async fn fetch_omits_an_unreadable_pool_pack() {
         .metadata
         .requests()
         .mutate_request_for_tests(REQUEST_ID, |request| {
-            request.submitted_at_unix = Some(request.updated_at_unix);
-            request.closed_at_unix = Some(request.updated_at_unix);
-            request.closed_by_user_id = Some(test_owner_id());
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(request.updated_at_unix),
+                closed_at_unix: Some(request.updated_at_unix),
+                closed_by_user_id: Some(test_owner_id()),
+                ..request.lifecycle.clone()
+            };
         })
         .await
         .unwrap();

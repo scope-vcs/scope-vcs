@@ -112,7 +112,10 @@ pub fn main_publication_contains_merge<E>(
     request: &Request,
     published_main_contains: impl FnOnce(&str) -> Result<bool, E>,
 ) -> Result<bool, E> {
-    match (request.state(), request.merged_main_oid.as_deref()) {
+    match (
+        request.state(),
+        request.lifecycle.merged_main_oid.as_deref(),
+    ) {
         (RequestState::Merged, Some(merged_main_oid)) => published_main_contains(merged_main_oid),
         _ => Ok(false),
     }

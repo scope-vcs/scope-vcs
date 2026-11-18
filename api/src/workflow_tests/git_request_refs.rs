@@ -167,35 +167,32 @@ async fn insert_private_request_for_public_user(state: &AppState) {
     state
         .metadata
         .requests()
-        .insert_request_for_tests(Request {
-            stack_status: scope_domain::requests::RequestStackStatus::Main,
-            stack_depth: 1,
-            id: PRIVATE_REQUEST_ID.to_string(),
-            repo_id: TEST_REPO_ID.to_string(),
-            name: "private-request".to_string(),
-            author_user_id: Some(public_user_id()),
-            author_role: RequestActorRole::Member,
-            view: ViewId::private(),
-            base: scope_domain::requests::RequestBase::Main {
-                review_base_oid: "a".repeat(40),
-            },
-            base_version: 1,
-            main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-            head_oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
-            pushed_at_unix: None,
-            title: "Former member request".to_string(),
-            description_markdown: String::new(),
-            activity_version: 0,
-            submitted_at_unix: None,
-            closed_at_unix: None,
-            closed_by_user_id: None,
-            merged_at_unix: None,
-            merged_by_user_id: None,
-            merged_head_oid: None,
-            merged_main_oid: None,
-            created_at_unix: 2,
-            updated_at_unix: 2,
-        })
+        .insert_request_for_tests(
+            Request::restore(scope_domain::requests::StoredRequest {
+                stack_status: scope_domain::requests::RequestStackStatus::Main,
+                stack_depth: 1,
+                id: PRIVATE_REQUEST_ID.to_string(),
+                repo_id: TEST_REPO_ID.to_string(),
+                name: "private-request".to_string(),
+                author_user_id: Some(public_user_id()),
+                author_role: RequestActorRole::Member,
+                view: ViewId::private(),
+                base: scope_domain::requests::RequestBase::Main {
+                    review_base_oid: "a".repeat(40),
+                },
+                base_version: 1,
+                main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                head_oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                pushed_at_unix: None,
+                title: "Former member request".to_string(),
+                description_markdown: String::new(),
+                activity_version: 0,
+                lifecycle: scope_domain::requests::RequestLifecycle::default(),
+                created_at_unix: 2,
+                updated_at_unix: 2,
+            })
+            .unwrap(),
+        )
         .await
         .unwrap();
 }

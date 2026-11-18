@@ -410,7 +410,7 @@ async fn a_squash_merged_parent_lands_and_its_child_waits_on_main_for_a_restack(
 
         let landed = stored_request(state, &parent.request_id).await;
         assert_eq!(landed.state(), RequestState::Merged);
-        assert_eq!(landed.merged_main_oid.as_deref(), Some(squash.as_str()));
+        assert_eq!(landed.merged_main_oid(), Some(squash.as_str()));
         let waiting = stack.child().await;
         assert_eq!(waiting.state(), RequestState::Open);
         assert_eq!(waiting.head_oid, stack.child_head);

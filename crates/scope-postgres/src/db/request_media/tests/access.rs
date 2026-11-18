@@ -18,7 +18,10 @@ async fn bind_and_submit(fixture: &Fixture, request_id: &str, attachment_id: &st
         .store
         .requests()
         .mutate_request_for_tests(request_id, |request| {
-            request.submitted_at_unix = Some(31);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(31),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 31;
         })
         .await
@@ -66,7 +69,10 @@ async fn attachment_lists_show_unbound_drafts_only_to_their_uploader() {
         .store
         .requests()
         .mutate_request_for_tests("list_request", |request| {
-            request.submitted_at_unix = Some(31);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(31),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 31;
         })
         .await

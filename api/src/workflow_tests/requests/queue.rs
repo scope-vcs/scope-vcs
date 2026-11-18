@@ -333,7 +333,10 @@ async fn open_fixture(
         .mutate_request_for_tests(request_id, |request| {
             request.title = title.to_string();
             request.description_markdown = description.to_string();
-            request.submitted_at_unix = Some(submitted_at_unix);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(submitted_at_unix),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = submitted_at_unix;
         })
         .await
@@ -354,9 +357,12 @@ async fn closed_fixture(
         .mutate_request_for_tests(request_id, |request| {
             request.title = title.to_string();
             request.description_markdown = description.to_string();
-            request.submitted_at_unix = Some(submitted_at_unix);
-            request.closed_at_unix = Some(closed_at_unix);
-            request.closed_by_user_id = Some(test_owner_id());
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(submitted_at_unix),
+                closed_at_unix: Some(closed_at_unix),
+                closed_by_user_id: Some(test_owner_id()),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = closed_at_unix;
         })
         .await
@@ -379,11 +385,14 @@ async fn done_queue_cursor_keeps_closed_and_merged_timestamp_ties() {
                 .metadata
                 .requests()
                 .mutate_request_for_tests(id, |request| {
-                    request.submitted_at_unix = Some(10);
-                    request.merged_at_unix = Some(time);
-                    request.merged_by_user_id = Some(test_owner_id());
-                    request.merged_head_oid = Some(REQUEST_HEAD.to_string());
-                    request.merged_main_oid = Some(REQUEST_HEAD.to_string());
+                    request.lifecycle = scope_domain::requests::RequestLifecycle {
+                        submitted_at_unix: Some(10),
+                        merged_at_unix: Some(time),
+                        merged_by_user_id: Some(test_owner_id()),
+                        merged_head_oid: Some(REQUEST_HEAD.to_string()),
+                        merged_main_oid: Some(REQUEST_HEAD.to_string()),
+                        ..request.lifecycle.clone()
+                    };
                     request.updated_at_unix = time;
                 })
                 .await

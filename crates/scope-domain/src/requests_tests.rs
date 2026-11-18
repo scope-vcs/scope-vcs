@@ -18,7 +18,7 @@ fn new_request_is_an_unsubmitted_draft() {
     assert_eq!(mutation.request.state(), RequestState::Draft);
     assert!(!mutation.request.is_submitted());
     assert!(!policy_for(&mutation.request, ViewerKind::Anonymous).counts_as_open);
-    assert_eq!(mutation.request.closed_at_unix, None);
+    assert_eq!(mutation.request.closed_at_unix(), None);
     mutation.request.validate_facts().unwrap();
 }
 
@@ -82,24 +82,47 @@ fn request_name_rules_and_repository_uniqueness_remain_domain_owned() {
 #[test]
 fn terminal_facts_require_submission_and_are_mutually_exclusive() {
     let mut request = open_request();
-    request.closed_at_unix = Some(30);
-    request.closed_by_user_id = Some("author".to_string());
-    request.updated_at_unix = 30;
+    request = crate::requests::Request::restore(crate::requests::StoredRequest {
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_at_unix: Some(30),
+            closed_by_user_id: Some("author".to_string()),
+            ..request.lifecycle().clone()
+        },
+        updated_at_unix: 30,
+        ..request.stored()
+    })
+    .unwrap();
     request.validate_facts().unwrap();
     assert_eq!(request.state(), RequestState::Closed);
 
-    request.merged_at_unix = Some(31);
-    request.merged_by_user_id = Some("maintainer".to_string());
-    request.merged_head_oid = Some("head".to_string());
-    request.merged_main_oid = Some("main-after".to_string());
-    request.updated_at_unix = 31;
-    assert!(request.validate_facts().is_err());
+    assert!(
+        crate::requests::Request::restore(crate::requests::StoredRequest {
+            lifecycle: crate::requests::RequestLifecycle {
+                merged_at_unix: Some(31),
+                merged_by_user_id: Some("maintainer".to_string()),
+                merged_head_oid: Some("head".to_string()),
+                merged_main_oid: Some("main-after".to_string()),
+                ..request.lifecycle().clone()
+            },
+            updated_at_unix: 31,
+            ..request.stored()
+        })
+        .is_err()
+    );
 
-    let mut invalid = pushed_draft();
-    invalid.closed_at_unix = Some(30);
-    invalid.closed_by_user_id = Some("author".to_string());
-    invalid.updated_at_unix = 30;
-    assert!(invalid.validate_facts().is_err());
+    let draft = pushed_draft();
+    assert!(
+        crate::requests::Request::restore(crate::requests::StoredRequest {
+            lifecycle: crate::requests::RequestLifecycle {
+                closed_at_unix: Some(30),
+                closed_by_user_id: Some("author".to_string()),
+                ..draft.lifecycle().clone()
+            },
+            updated_at_unix: 30,
+            ..draft.stored()
+        })
+        .is_err()
+    );
 }
 
 #[test]
@@ -129,7 +152,7 @@ fn open_request_edits_and_revisions_stay_open() {
     .unwrap();
 
     assert_eq!(revised.request.state(), RequestState::Open);
-    assert_eq!(revised.request.submitted_at_unix, Some(20));
+    assert_eq!(revised.request.submitted_at_unix(), Some(20));
 }
 
 #[test]
@@ -191,7 +214,7 @@ fn draft_close_deletes_and_open_close_preserves_exact_actor() {
         panic!("submitted request must remain as closed history");
     };
     assert_eq!(request.state(), RequestState::Closed);
-    assert_eq!(request.closed_by_user_id.as_deref(), Some("maintainer"));
+    assert_eq!(request.closed_by_user_id(), Some("maintainer"));
     assert_eq!(event.actor_user_id.as_deref(), Some("maintainer"));
 }
 
@@ -200,15 +223,29 @@ fn close_permission_and_mutation_agree_for_roles_and_terminal_states() {
     let draft = pushed_draft();
     let open = open_request();
     let mut closed = open.clone();
-    closed.closed_at_unix = Some(30);
-    closed.closed_by_user_id = Some("author".to_string());
-    closed.updated_at_unix = 30;
+    closed = crate::requests::Request::restore(crate::requests::StoredRequest {
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_at_unix: Some(30),
+            closed_by_user_id: Some("author".to_string()),
+            ..closed.lifecycle().clone()
+        },
+        updated_at_unix: 30,
+        ..closed.stored()
+    })
+    .unwrap();
     let mut merged = open.clone();
-    merged.merged_at_unix = Some(30);
-    merged.merged_by_user_id = Some("maintainer".to_string());
-    merged.merged_head_oid = Some(merged.head_oid.clone());
-    merged.merged_main_oid = Some("main-after".to_string());
-    merged.updated_at_unix = 30;
+    merged = crate::requests::Request::restore(crate::requests::StoredRequest {
+        lifecycle: crate::requests::RequestLifecycle {
+            merged_at_unix: Some(30),
+            merged_by_user_id: Some("maintainer".to_string()),
+            merged_head_oid: Some(merged.head_oid.clone()),
+            merged_main_oid: Some("main-after".to_string()),
+            ..merged.lifecycle().clone()
+        },
+        updated_at_unix: 30,
+        ..merged.stored()
+    })
+    .unwrap();
     closed.validate_facts().unwrap();
     merged.validate_facts().unwrap();
 
@@ -358,9 +395,16 @@ fn completed_request_discussions(
     )
     .unwrap();
     let mut request = resolved.request;
-    request.closed_at_unix = Some(30);
-    request.closed_by_user_id = Some("maintainer".to_string());
-    request.updated_at_unix = 30;
+    request = crate::requests::Request::restore(crate::requests::StoredRequest {
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_at_unix: Some(30),
+            closed_by_user_id: Some("maintainer".to_string()),
+            ..request.lifecycle().clone()
+        },
+        updated_at_unix: 30,
+        ..request.stored()
+    })
+    .unwrap();
     request.validate_facts().unwrap();
     (request, open.discussion, resolved.discussion)
 }

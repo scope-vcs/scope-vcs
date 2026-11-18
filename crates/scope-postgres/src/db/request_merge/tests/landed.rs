@@ -174,7 +174,7 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
                 .unwrap()
                 .unwrap();
             assert_eq!(request.state(), RequestState::Merged);
-            assert_eq!(request.merged_main_oid.as_deref(), Some(MERGED_HEAD));
+            assert_eq!(request.merged_main_oid(), Some(MERGED_HEAD));
         }
         assert!(
             !store

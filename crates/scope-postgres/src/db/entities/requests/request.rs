@@ -1,5 +1,6 @@
 pub(crate) use super::base::BaseColumns;
 use super::*;
+use scope_domain::requests::{RequestLifecycle, StoredRequest};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "scope_requests")]
@@ -72,22 +73,22 @@ impl Model {
             description_markdown: request.description_markdown.clone(),
             activity_version: u64_to_i64(request.activity_version, "request activity version")?,
             submitted_at_unix: optional_u64_to_i64(
-                request.submitted_at_unix,
+                request.submitted_at_unix(),
                 "request submission time",
             )?,
-            closed_at_unix: optional_u64_to_i64(request.closed_at_unix, "request close time")?,
-            closed_by_user_id: request.closed_by_user_id.clone(),
-            merged_at_unix: optional_u64_to_i64(request.merged_at_unix, "request merge time")?,
-            merged_by_user_id: request.merged_by_user_id.clone(),
-            merged_head_oid: request.merged_head_oid.clone(),
-            merged_main_oid: request.merged_main_oid.clone(),
+            closed_at_unix: optional_u64_to_i64(request.closed_at_unix(), "request close time")?,
+            closed_by_user_id: request.closed_by_user_id().map(str::to_string),
+            merged_at_unix: optional_u64_to_i64(request.merged_at_unix(), "request merge time")?,
+            merged_by_user_id: request.merged_by_user_id().map(str::to_string),
+            merged_head_oid: request.merged_head_oid().map(str::to_string),
+            merged_main_oid: request.merged_main_oid().map(str::to_string),
             created_at_unix: u64_to_i64(request.created_at_unix, "request creation time")?,
             updated_at_unix: u64_to_i64(request.updated_at_unix, "request update time")?,
         })
     }
 
     pub(crate) fn try_into_domain(self) -> Result<Request, PostgresError> {
-        let request = Request {
+        Ok(Request::restore(StoredRequest {
             id: self.id,
             repo_id: self.repo_id,
             name: self.name,
@@ -114,20 +115,20 @@ impl Model {
             title: self.title,
             description_markdown: self.description_markdown,
             activity_version: i64_to_u64(self.activity_version, "request activity version")?,
-            submitted_at_unix: optional_i64_to_u64(
-                self.submitted_at_unix,
-                "request submission time",
-            )?,
-            closed_at_unix: optional_i64_to_u64(self.closed_at_unix, "request close time")?,
-            closed_by_user_id: self.closed_by_user_id,
-            merged_at_unix: optional_i64_to_u64(self.merged_at_unix, "request merge time")?,
-            merged_by_user_id: self.merged_by_user_id,
-            merged_head_oid: self.merged_head_oid,
-            merged_main_oid: self.merged_main_oid,
+            lifecycle: RequestLifecycle {
+                submitted_at_unix: optional_i64_to_u64(
+                    self.submitted_at_unix,
+                    "request submission time",
+                )?,
+                closed_at_unix: optional_i64_to_u64(self.closed_at_unix, "request close time")?,
+                closed_by_user_id: self.closed_by_user_id,
+                merged_at_unix: optional_i64_to_u64(self.merged_at_unix, "request merge time")?,
+                merged_by_user_id: self.merged_by_user_id,
+                merged_head_oid: self.merged_head_oid,
+                merged_main_oid: self.merged_main_oid,
+            },
             created_at_unix: i64_to_u64(self.created_at_unix, "request creation time")?,
             updated_at_unix: i64_to_u64(self.updated_at_unix, "request update time")?,
-        };
-        request.validate_facts()?;
-        Ok(request)
+        })?)
     }
 }

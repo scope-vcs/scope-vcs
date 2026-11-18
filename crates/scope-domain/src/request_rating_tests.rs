@@ -19,15 +19,21 @@ fn reputation_accepts_only_possible_rating_totals() {
 }
 
 fn terminal_request(merged: bool) -> Request {
-    Request {
-        closed_at_unix: (!merged).then_some(30),
-        closed_by_user_id: (!merged).then(|| "maintainer".to_string()),
-        merged_at_unix: merged.then_some(30),
-        merged_by_user_id: merged.then(|| "maintainer".to_string()),
-        merged_head_oid: merged.then(|| "head".to_string()),
-        merged_main_oid: merged.then(|| "main".to_string()),
-        ..open_request()
-    }
+    let open = open_request();
+    Request::restore(crate::requests::StoredRequest {
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_at_unix: (!merged).then_some(30),
+            closed_by_user_id: (!merged).then(|| "maintainer".to_string()),
+            merged_at_unix: merged.then_some(30),
+            merged_by_user_id: merged.then(|| "maintainer".to_string()),
+            merged_head_oid: merged.then(|| "head".to_string()),
+            merged_main_oid: merged.then(|| "main".to_string()),
+            ..open.lifecycle().clone()
+        },
+        updated_at_unix: 30,
+        ..open.stored()
+    })
+    .unwrap()
 }
 
 fn input(actor: &str, score: u8, reason: &str) -> CreateRequestRatingInput {
@@ -67,11 +73,25 @@ fn ratings_reject_nonparticipants_nonterminal_self_and_invalid_content() {
     assert!(create_request_rating(&request, &[], input("author", 5, &"x".repeat(1025))).is_err());
 
     let mut open = request.clone();
-    open.closed_at_unix = None;
-    open.closed_by_user_id = None;
+    open = crate::requests::Request::restore(crate::requests::StoredRequest {
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_at_unix: None,
+            closed_by_user_id: None,
+            ..open.lifecycle().clone()
+        },
+        ..open.stored()
+    })
+    .unwrap();
     assert!(create_request_rating(&open, &[], input("author", 5, "Fine")).is_err());
 
     let mut self_closed = request;
-    self_closed.closed_by_user_id = Some("author".to_string());
+    self_closed = crate::requests::Request::restore(crate::requests::StoredRequest {
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_by_user_id: Some("author".to_string()),
+            ..self_closed.lifecycle().clone()
+        },
+        ..self_closed.stored()
+    })
+    .unwrap();
     assert!(create_request_rating(&self_closed, &[], input("author", 5, "Fine")).is_err());
 }

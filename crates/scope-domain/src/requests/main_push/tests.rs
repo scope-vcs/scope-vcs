@@ -292,8 +292,11 @@ fn only_the_pushers_own_open_request_for_the_same_head_makes_a_push_a_retry() {
     assert_eq!(classify(&open), MainPushRequestName::AlreadyOpen);
     for taken in [
         Request {
-            closed_at_unix: Some(50),
-            closed_by_user_id: Some("pusher".into()),
+            lifecycle: crate::requests::RequestLifecycle {
+                closed_at_unix: Some(50),
+                closed_by_user_id: Some("pusher".into()),
+                ..open.lifecycle.clone()
+            },
             ..open.clone()
         },
         Request {

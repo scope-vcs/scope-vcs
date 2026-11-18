@@ -443,7 +443,10 @@ async fn public_attachment_requires_a_published_binding_and_exact_repository_pat
         .metadata
         .requests()
         .mutate_request_for_tests("req_media", |request| {
-            request.submitted_at_unix = Some(4);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(4),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 4;
         })
         .await

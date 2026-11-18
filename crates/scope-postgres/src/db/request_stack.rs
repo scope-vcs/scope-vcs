@@ -404,7 +404,7 @@ pub(super) async fn retarget_children(
                 "request child changed during preparation",
             ));
         }
-        if parent.merged_head_oid.as_deref() != Some(fact.parent_head_oid.as_str()) {
+        if parent.merged_head_oid() != Some(fact.parent_head_oid.as_str()) {
             return Err(PostgresError::conflict(
                 "landed parent ancestry changed during preparation",
             ));
@@ -417,8 +417,7 @@ pub(super) async fn retarget_children(
                 tx,
                 &child.repo_id,
                 parent
-                    .merged_by_user_id
-                    .as_deref()
+                    .merged_by_user_id()
                     .ok_or_else(|| PostgresError::conflict("parent merger is missing"))?,
             )
             .await?;

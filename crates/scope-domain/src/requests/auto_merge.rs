@@ -422,8 +422,8 @@ pub fn fulfill_request_auto_merge(
     validate_active_transition(request, intent, &event_id, now_unix)?;
     validate_required("merged main oid", &main_oid)?;
     if request.state() != RequestState::Merged
-        || request.merged_head_oid.as_deref() != Some(intent.head_oid.as_str())
-        || request.merged_main_oid.as_deref() != Some(main_oid.as_str())
+        || request.lifecycle.merged_head_oid.as_deref() != Some(intent.head_oid.as_str())
+        || request.lifecycle.merged_main_oid.as_deref() != Some(main_oid.as_str())
     {
         return Err(DomainError::conflict(
             "auto-merge can only be fulfilled by its committed request merge",

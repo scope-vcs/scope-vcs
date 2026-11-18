@@ -227,10 +227,10 @@ fn only_open_full_view_requests_accept_github_reviews() {
     public.view = crate::views::ViewId::public();
     assert!(!accepts_github_reviews(&public, &views));
     let mut draft = request.clone();
-    draft.submitted_at_unix = None;
+    draft.lifecycle.submitted_at_unix = None;
     assert!(!accepts_github_reviews(&draft, &views));
     let mut closed = request;
-    closed.closed_at_unix = Some(70);
+    closed.lifecycle.closed_at_unix = Some(70);
     assert!(!accepts_github_reviews(&closed, &views));
     assert_eq!(
         import_github_discussion(&mut draft, &views, discussion_input("discussion_1"))

@@ -30,11 +30,17 @@ fn restorable(request: &Request) -> bool {
 fn only_requests_that_can_no_longer_change_accept_restored_packs() {
     let open = fixtures::open_request();
     let closed = Request {
-        closed_at_unix: Some(30),
+        lifecycle: crate::requests::RequestLifecycle {
+            closed_at_unix: Some(30),
+            ..open.lifecycle.clone()
+        },
         ..open.clone()
     };
     let merged = Request {
-        merged_at_unix: Some(30),
+        lifecycle: crate::requests::RequestLifecycle {
+            merged_at_unix: Some(30),
+            ..open.lifecycle.clone()
+        },
         ..open.clone()
     };
     assert!(!restorable(&fixtures::pushed_draft(

@@ -49,7 +49,10 @@ async fn discussion_transactions_are_idempotent_atomic_and_self_read() {
     store
         .requests()
         .mutate_request_for_tests("req_1", |request| {
-            request.submitted_at_unix = Some(11);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(11),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 11;
         })
         .await
@@ -350,9 +353,9 @@ async fn transitions_on_a_closed_private_request_persist_nothing() {
         .unwrap();
     requests
         .mutate_request_for_tests("req_1", |request| {
-            request.submitted_at_unix = Some(7);
-            request.closed_at_unix = Some(8);
-            request.closed_by_user_id = Some("user_owner".into());
+            request.lifecycle.submitted_at_unix = Some(7);
+            request.lifecycle.closed_at_unix = Some(8);
+            request.lifecycle.closed_by_user_id = Some("user_owner".into());
             request.updated_at_unix = 8;
         })
         .await
@@ -473,9 +476,12 @@ async fn visible_private_discussion_replays_survive_terminal_transition() {
     store
         .requests()
         .mutate_request_for_tests("req_1", |request| {
-            request.submitted_at_unix = Some(5);
-            request.closed_at_unix = Some(6);
-            request.closed_by_user_id = Some("user_owner".into());
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(5),
+                closed_at_unix: Some(6),
+                closed_by_user_id: Some("user_owner".into()),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 6;
         })
         .await

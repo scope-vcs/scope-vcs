@@ -168,8 +168,8 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(merged.merged_by_user_id, None);
-    assert!(merged.merged_at_unix.is_some());
+    assert_eq!(merged.merged_by_user_id(), None);
+    assert!(merged.merged_at_unix().is_some());
     let cleanups = store
         .cleanup()
         .pending_repo_storage_cleanups_for_tests()

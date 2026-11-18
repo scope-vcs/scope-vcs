@@ -61,9 +61,10 @@ pub fn eligible_rating_subject_user_id<'a>(
         return None;
     }
     let terminal_actor = request
+        .lifecycle
         .merged_by_user_id
         .as_deref()
-        .or(request.closed_by_user_id.as_deref())?;
+        .or(request.lifecycle.closed_by_user_id.as_deref())?;
     let author = request.author_user_id.as_deref()?;
     if author == terminal_actor {
         return None;

@@ -20,22 +20,23 @@ async fn open_request_counts_group_unfinished_requests_by_view() {
         ("public-merged", ViewId::public(), Some("merged")),
         ("full-closed", ViewId::private(), Some("closed")),
     ] {
-        let mut request = initial.clone();
+        let mut request = initial.stored();
         request.id = format!("count_{name}");
         request.name = name.to_string();
         request.view = view;
-        request.submitted_at_unix = finish.map(|_| 3);
+        request.lifecycle.submitted_at_unix = finish.map(|_| 3);
         if finish == Some("closed") {
-            request.closed_at_unix = Some(4);
-            request.closed_by_user_id = Some("user_owner".into());
+            request.lifecycle.closed_at_unix = Some(4);
+            request.lifecycle.closed_by_user_id = Some("user_owner".into());
         }
         if finish == Some("merged") {
-            request.merged_at_unix = Some(4);
-            request.merged_by_user_id = Some("user_owner".into());
-            request.merged_head_oid = Some("merged-head".into());
-            request.merged_main_oid = Some("merged-main".into());
+            request.lifecycle.merged_at_unix = Some(4);
+            request.lifecycle.merged_by_user_id = Some("user_owner".into());
+            request.lifecycle.merged_head_oid = Some("merged-head".into());
+            request.lifecycle.merged_main_oid = Some("merged-main".into());
         }
         request.updated_at_unix = 4;
+        let request = scope_domain::requests::Request::restore(request).unwrap();
         crate::db::request_rows::insert_request_row(store.db.as_ref(), &request)
             .await
             .unwrap();

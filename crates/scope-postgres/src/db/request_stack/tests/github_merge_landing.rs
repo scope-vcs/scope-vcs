@@ -140,7 +140,7 @@ async fn a_parent_merged_on_github_lands_with_every_child_moved_to_main_or_not_a
     assert_eq!(landed.unwrap(), GitHubPullRequestFinish::RecordedAndLanded);
     let parent = load(store, &parent.id).await;
     assert_eq!(parent.state(), RequestState::Merged);
-    assert_eq!(parent.merged_main_oid, Some(oid(MAIN)));
+    assert_eq!(parent.merged_main_oid(), Some(oid(MAIN).as_str()));
     for child in [&first, &second] {
         let on_main = load(store, &child.id).await;
         assert_eq!(

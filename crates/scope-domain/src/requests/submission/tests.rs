@@ -101,11 +101,11 @@ fn containing_main_lands_conflicted_child_after_parent_retarget_without_changing
     assert_eq!(merged.request.state(), RequestState::Merged);
     assert_eq!(merged.request.base.review_base_oid(), review_pin);
     assert_eq!(
-        merged.request.merged_head_oid.as_deref(),
+        merged.request.lifecycle.merged_head_oid.as_deref(),
         Some("child-head")
     );
     assert_eq!(
-        merged.request.merged_main_oid.as_deref(),
+        merged.request.lifecycle.merged_main_oid.as_deref(),
         Some("containing-main")
     );
     assert_eq!(merged.request.stack_status, RequestStackStatus::Main);

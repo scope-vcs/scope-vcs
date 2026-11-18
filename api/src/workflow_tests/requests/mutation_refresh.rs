@@ -50,7 +50,7 @@ async fn committed_submission_refreshes_other_viewers_when_response_projection_f
         .await
         .unwrap()
         .unwrap();
-    assert!(committed.submitted_at_unix.is_some());
+    assert!(committed.submitted_at_unix().is_some());
 
     let event = tokio::time::timeout(Duration::from_secs(1), stream.next())
         .await

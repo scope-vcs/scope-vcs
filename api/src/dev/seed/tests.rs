@@ -109,12 +109,12 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
         .map(|event| event.created_at_unix)
         .max()
         .unwrap();
-    assert!(ready.submitted_at_unix.unwrap() > last_request_event_at);
-    assert_eq!(ready.updated_at_unix, ready.submitted_at_unix.unwrap());
+    assert!(ready.submitted_at_unix().unwrap() > last_request_event_at);
+    assert_eq!(ready.updated_at_unix, ready.submitted_at_unix().unwrap());
     let accepted = catalog.requests.get("req_demo_accepted").unwrap();
-    assert_eq!(accepted.merged_main_oid, accepted.merged_head_oid);
+    assert_eq!(accepted.merged_main_oid(), accepted.merged_head_oid());
     assert_ne!(
-        accepted.merged_main_oid,
-        Some(accepted.main_ancestor_oid.clone())
+        accepted.merged_main_oid(),
+        Some(accepted.main_ancestor_oid.as_str())
     );
 }

@@ -47,7 +47,10 @@ async fn open_public_request(store: &MetadataStore) -> scope_domain::requests::R
     store
         .requests()
         .mutate_request_for_tests("req_1", |request| {
-            request.submitted_at_unix = Some(3);
+            request.lifecycle = scope_domain::requests::RequestLifecycle {
+                submitted_at_unix: Some(3),
+                ..request.lifecycle.clone()
+            };
             request.updated_at_unix = 3;
         })
         .await
