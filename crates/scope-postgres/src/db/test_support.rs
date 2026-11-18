@@ -36,6 +36,9 @@ use {
     scope_domain::{account::UserAccount, repository::Repository},
 };
 
+#[cfg(any(test, feature = "test-support"))]
+mod locks;
+
 #[cfg(test)]
 pub(super) mod fixtures;
 #[cfg(test)]
@@ -214,55 +217,6 @@ pub(super) async fn connect_isolated_test_database(
 }
 
 impl AdminStore {
-    #[cfg(any(test, feature = "test-support"))]
-    pub async fn lock_repository_history_for_tests(
-        &self,
-    ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
-        self.lock_tables_for_tests(&[
-            "scope_logical_commits",
-            "scope_file_changes",
-            "scope_visibility_change_sets",
-            "scope_visibility_changes",
-        ])
-        .await
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub async fn lock_aggregates_for_tests(
-        &self,
-    ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
-        self.lock_tables_for_tests(&["scope_metadata_locks"]).await
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub async fn lock_waiters_for_tests(&self) -> Result<i64, PostgresError> {
-        Ok(self
-            .db
-            .query_one_raw(Statement::from_string(
-                sea_orm::DatabaseBackend::Postgres,
-                "SELECT count(*) AS waiting FROM pg_locks
-                 WHERE NOT granted
-                   AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
-            ))
-            .await?
-            .ok_or_else(|| PostgresError::internal_message("lock waiter count missing"))?
-            .try_get::<i64>("", "waiting")?)
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    async fn lock_tables_for_tests(
-        &self,
-        tables: &[&str],
-    ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
-        let tx = self.db.begin().await?;
-        tx.execute_unprepared(&format!(
-            "LOCK TABLE {} IN ACCESS EXCLUSIVE MODE",
-            tables.join(", ")
-        ))
-        .await?;
-        Ok(tx)
-    }
-
     #[cfg(feature = "local-dev")]
     pub async fn replace_catalog_for_seed(
         &self,
