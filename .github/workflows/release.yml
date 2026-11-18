@@ -269,7 +269,5 @@ jobs:
             await reportIssue({
               github, ...context.repo,
               title: 'Scheduled release failed',
-              body: `The scheduled release of ${context.sha} failed: ${runUrl}
-
-Run the Release workflow again once main is fixed.`,
+              body: `The scheduled release of ${context.sha} failed: ${runUrl}. Run Release again once main is fixed.`,
             });
