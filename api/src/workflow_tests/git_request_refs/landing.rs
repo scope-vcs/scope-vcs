@@ -281,8 +281,11 @@ async fn a_merge_arriving_while_a_batch_commits_is_prepared_before_it_commits() 
     let held = admin.lock_aggregates_for_tests().await.unwrap();
 
     let mut merges = vec![
-        commit_blocked_behind_held_lock(&landing.state, landing.merge(&landing.request_ids[0]))
-            .await,
+        commit_blocked_behind_held_lock(
+            admin.wait_for_aggregate_lock_waiter_for_tests(&held),
+            landing.merge(&landing.request_ids[0]),
+        )
+        .await,
     ];
     merges.extend(
         taken_while_committing(&landing.state, vec![landing.merge(&landing.request_ids[1])]).await,
@@ -303,9 +306,11 @@ async fn a_merge_prepared_on_a_batch_that_fails_to_land_lands_on_the_committed_m
     let admin = landing.state.metadata.admin();
     let held = admin.lock_aggregates_for_tests().await.unwrap();
 
-    let first =
-        commit_blocked_behind_held_lock(&landing.state, landing.merge(&landing.request_ids[0]))
-            .await;
+    let first = commit_blocked_behind_held_lock(
+        admin.wait_for_aggregate_lock_waiter_for_tests(&held),
+        landing.merge(&landing.request_ids[0]),
+    )
+    .await;
     let second =
         taken_while_committing(&landing.state, vec![landing.merge(&landing.request_ids[1])])
             .await
@@ -343,9 +348,11 @@ async fn a_replica_with_queued_merges_yields_the_merge_turn_to_a_waiting_replica
     let admin = landing.state.metadata.admin();
     let held = admin.lock_aggregates_for_tests().await.unwrap();
 
-    let first =
-        commit_blocked_behind_held_lock(&landing.state, landing.merge(&landing.request_ids[0]))
-            .await;
+    let first = commit_blocked_behind_held_lock(
+        admin.wait_for_aggregate_lock_waiter_for_tests(&held),
+        landing.merge(&landing.request_ids[0]),
+    )
+    .await;
     let second = tokio::spawn(landing.merge(&landing.request_ids[1]));
     let other_replica = tokio::spawn({
         let repositories = landing.state.metadata.repositories();
@@ -379,9 +386,13 @@ async fn a_merge_on_another_api_instance_waits_for_the_instance_that_is_committi
     let admin = landing.state.metadata.admin();
     let held = admin.lock_aggregates_for_tests().await.unwrap();
 
-    let at_home =
-        commit_blocked_behind_held_lock(&landing.state, landing.merge(&landing.request_ids[0]))
-            .await;
+    let at_home = commit_blocked_behind_held_lock(
+        admin.wait_for_aggregate_lock_waiter_for_tests(&held),
+        landing.merge(&landing.request_ids[0]),
+    )
+    .await;
+    assert_eq!(landing.state.merge_committer.submitted(TEST_REPO_ID), 1);
+    assert_eq!(other_instance.merge_committer.submitted(TEST_REPO_ID), 0);
     let elsewhere =
         tokio::spawn(landing.merge_on(router(other_instance.clone()), &landing.request_ids[1]));
     tokio::time::timeout(Duration::from_secs(60), async {

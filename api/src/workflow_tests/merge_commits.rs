@@ -3,18 +3,29 @@ use std::{future::Future, time::Duration};
 use tokio::task::JoinHandle;
 
 pub(super) async fn commit_blocked_behind_held_lock(
-    state: &AppState,
+    waiting: impl Future<Output = Result<(), scope_postgres::error::PostgresError>>,
     merge: impl Future<Output = Response> + Send + 'static,
 ) -> JoinHandle<Response> {
-    let admin = state.metadata.admin();
-    let merge = tokio::spawn(merge);
-    tokio::time::timeout(Duration::from_secs(60), async {
-        while admin.lock_waiters_for_tests().await.unwrap() < 1 {
-            tokio::time::sleep(Duration::from_millis(20)).await;
+    let mut merge = tokio::spawn(merge);
+    tokio::select! {
+        biased;
+        finished = &mut merge => {
+            let response = finished.expect("merge task failed before waiting for the commit lock");
+            let status = response.status();
+            let body = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("read early merge response");
+            panic!(
+                "merge finished before waiting for the commit lock: {status}: {}",
+                String::from_utf8_lossy(&body)
+            );
         }
-    })
-    .await
-    .expect("the first merge must reach its commit");
+        waiting = tokio::time::timeout(Duration::from_secs(60), waiting) => {
+            waiting
+                .expect("the first merge must reach its commit")
+                .expect("observe the held metadata lock's waiter");
+        }
+    }
     merge
 }
 
@@ -36,4 +47,28 @@ where
     .await
     .expect("merges arriving during a commit must be taken for preparation");
     merges
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_early_merge_response_is_reported_without_waiting_for_the_lock() {
+    let started = tokio::time::Instant::now();
+    let response = Response::builder()
+        .status(StatusCode::TOO_MANY_REQUESTS)
+        .body(Body::from("injected Git materialization capacity error"))
+        .unwrap();
+    let helper = tokio::spawn(commit_blocked_behind_held_lock(
+        std::future::pending(),
+        std::future::ready(response),
+    ));
+    let failure = match helper.await {
+        Err(failure) => failure.into_panic(),
+        Ok(_) => panic!("an early merge response must fail the lock wait"),
+    };
+    let message = failure.downcast_ref::<String>().unwrap();
+    assert!(message.contains("429 Too Many Requests"), "{message}");
+    assert!(
+        message.contains("injected Git materialization capacity error"),
+        "{message}"
+    );
+    assert_eq!(tokio::time::Instant::now(), started);
 }

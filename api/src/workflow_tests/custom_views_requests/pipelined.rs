@@ -71,14 +71,14 @@ async fn an_agent_merge_prepared_on_an_uncommitted_owner_merge_lands_after_it() 
         String::from_utf8_lossy(&pushed.stderr)
     );
     submit_request(router(state.clone()), &agent_request, &member_bearer()).await;
-    let held = state
-        .metadata
-        .admin()
-        .lock_aggregates_for_tests()
-        .await
-        .unwrap();
+    let admin = state.metadata.admin();
+    let held = admin.lock_aggregates_for_tests().await.unwrap();
 
-    let owner = commit_blocked_behind_held_lock(&state, merge(&state, &owner_request)).await;
+    let owner = commit_blocked_behind_held_lock(
+        admin.wait_for_aggregate_lock_waiter_for_tests(&held),
+        merge(&state, &owner_request),
+    )
+    .await;
     let agent = taken_while_committing(&state, vec![merge(&state, &agent_request)])
         .await
         .pop()
