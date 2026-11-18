@@ -7,7 +7,7 @@ period.
 
 Location analytics update prepared October 21, 2026, for a future release. This
 inventory describes the planned data flow below; it does not record production
-activation. The current privacy policy took effect October 13, 2026. Before
+activation. The current privacy policy took effect November 18, 2026. Before
 activation, verify PostHog's IP discard and location filtering settings, deliver
 advance notice to account holders by email or in the product, and publish the
 release's effective date in the privacy policy. Merging this change does not
@@ -23,8 +23,8 @@ activate collection.
 | Requests, revisions, discussions, replies, ratings | Postgres | Until repository deletion; authored work in other people's repositories remains with a null author after account deletion | Repository deletion; account deletion |
 | Media attachments | Railway media bucket `scope-request-media` (US East) | Until repository deletion | Media cleanup |
 | Repository invitations, invited email | `scope_repository_invites`, invite email delivery rows; sent through Resend | 30 days after acceptance, revocation or expiry | Invite retention pass |
-| Workflow runs and logs | Postgres, repository object storage; executed on AWS runners | 30 days after the run finishes | `api/src/run_retention.rs` |
-| Database recovery sets | AWS S3 `scope-recovery-*`, SSE-S3 encrypted | 42 days | S3 lifecycle on the recovery bucket |
+| Workflow runs and logs | Postgres, repository object storage | 30 days after the run finishes | `api/src/run_retention.rs` |
+| Database backups | Railway volume backups of production Postgres: daily kept 6 days, weekly kept 27 days | 42 days | Railway backup expiry |
 | Product analytics events, including country, region and city after location analytics activation | PostHog US project, through the web `/e` proxy and backend transport | PostHog project retention, including retained approximate location | PostHog; signed-in events use opaque `scope_usr_…` IDs associated with Scope accounts; account deletion removes the user row but does not itself delete retained PostHog events |
 | Browser visitor IP for planned approximate location enrichment | Passed temporarily through the web `/e` proxy from trusted hosting proxy headers to PostHog US; not retained as an analytics event property | Only for location enrichment; raw IP discarded from stored events, with latitude, longitude and postal codes removed | PostHog ingestion settings and location filtering, verified before activation |
 | Server logs: request method, path, timing, errors; Railway HTTP logs also record client IP addresses | Railway logs | Railway log retention | Railway |
@@ -61,8 +61,7 @@ Adding any analytics or tracking storage requires a consent mechanism first.
 | Provider | Purpose | Region |
 | --- | --- | --- |
 | Clerk | Authentication | US |
-| Railway | Hosting, Postgres, object storage, logs | US |
-| Amazon Web Services | Workflow runners, recovery backups, audit logs | us-east-1 |
+| Railway | Hosting, Postgres and its backups, object storage, logs | US |
 | PostHog | Product analytics, planned approximate location enrichment, application logs and traces | US |
 | Resend | Invitation email | US |
 
