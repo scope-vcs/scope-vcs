@@ -486,6 +486,16 @@ test('CI runs on pull requests and Scope request branches', () => {
   assert.match(ci, /base="\$\(git merge-base origin\/main HEAD\)"/);
   assert.match(ci, /BASE_SHA: \$\{\{ steps\.base\.outputs\.sha \}\}/);
   assert.doesNotMatch(ci, /github\.event\.before/);
+  const plan = ci.split('\n  plan:\n')[1].split('\n  policy:\n')[0];
+  assert.match(plan, /timeout-minutes: 5/);
+  assert.doesNotMatch(plan, /fetch-depth: 0/);
+  assert.match(plan, /name: Checkout revision\n        timeout-minutes: 1\n/);
+  assert.match(plan, /fetch-depth: 1/);
+  assert.match(plan, /run: bash \.github\/scripts\/fetch-ci-history\.sh/);
+  for (const caller of [ci, release]) {
+    const ops = caller.split('\n  ops:\n')[1].split(/\n  [\w-]+:\n/)[0];
+    assert.match(ops, /fetch-depth: 1/);
+  }
   for (const caller of [ci, release]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);
 });
 

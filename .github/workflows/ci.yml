@@ -66,9 +66,17 @@ jobs:
       media_smoke: ${{ steps.plan.outputs.api == 'true' || steps.plan.outputs.media == 'true' || steps.plan.outputs.media_worker == 'true' }}
     steps:
       - name: Checkout revision
+        timeout-minutes: 1
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+
+      - name: Fetch comparison history
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash .github/scripts/fetch-ci-history.sh
 
       - name: Find comparison base
         id: base
@@ -124,7 +132,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
           toolchain: 1.100.0
