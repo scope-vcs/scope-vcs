@@ -196,13 +196,6 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
         .replace_repository_for_tests(repo.clone())
         .await
         .unwrap();
-    let rebuilt = store
-        .jobs()
-        .run_ready_outbox_jobs("history-regression", 10, &|| Ok(1_700_000_000))
-        .await
-        .unwrap();
-    assert!(rebuilt.completed > 0);
-    assert_eq!(rebuilt.failed, 0);
     assert!(
         live_projection_read_model(
             store.db.as_ref(),
@@ -719,11 +712,6 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
 #[tokio::test]
 async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
     let (store, mut repo) = fixture(300);
-    store
-        .jobs()
-        .run_ready_outbox_jobs("history-fold", 10, &|| Ok(1_700_000_000))
-        .await
-        .unwrap();
     let mut pushed =
         fixtures::canonical_commit("history_owner", 300, "/file-0.txt", ViewId::public());
     pushed.occurred_at_unix = Some(1_700_000_001);
@@ -744,12 +732,13 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
         .execute_unprepared("DELETE FROM scope_file_changes WHERE commit_id <> 'logical_300'")
         .await
         .unwrap();
-    let rebuilt = store
-        .jobs()
-        .run_ready_outbox_jobs("history-fold", 10, &|| Ok(1_700_000_002))
-        .await
-        .unwrap();
-    assert_eq!(rebuilt.failed, 0, "{rebuilt:?}");
+    crate::db::projection_read_models::fold_live_projection_read_models(
+        store.db.as_ref(),
+        &repo.record.id,
+        repo.record.content_version,
+    )
+    .await
+    .unwrap();
 
     for view_key in [ViewId::private(), ViewId::public()] {
         let expected = history_view(&repo.graph, &repo.visibility_change_sets, view_key.clone());

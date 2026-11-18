@@ -14,7 +14,6 @@ async fn state_with_docs() -> AppState {
     });
     repo.live_files.insert(path, content);
     replace_test_repo(&state, repo).await;
-    drain_outbox(&state, "repo-route-reads").await;
     state
 }
 
@@ -121,7 +120,6 @@ async fn git_backed_file_content_reads_no_commit_history() {
         "push git-backed files",
     )
     .unwrap();
-    drain_outbox(&state, "git-backed-file-content").await;
     let stored = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();

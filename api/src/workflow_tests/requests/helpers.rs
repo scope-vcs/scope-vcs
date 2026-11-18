@@ -64,7 +64,6 @@ async fn create_request(
     } else {
         (RequestActorRole::Public, "Public request")
     };
-    drain_outbox(state, "request-read-test").await;
     let requests = state.metadata.requests();
     requests
         .start_request(StartRequestInput {

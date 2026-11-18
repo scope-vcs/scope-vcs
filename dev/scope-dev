@@ -10,7 +10,7 @@ Supported local-development entrypoint.
 
 commands:
   doctor  validate required tools, local environment, and Clerk development keys
-  up      migrate and seed Postgres, then start API, workers, media, and web
+  up      migrate and seed Postgres, then start API, media, and web
   down    stop processes started by this script and release an isolated stack
   status  show which checkout, revision, and sign-in mode each port serves, the
           private preview URLs, and the actor to use (default)
@@ -64,7 +64,6 @@ since GitHub must reach it:
 local services of the primary stack; isolated slot N adds 10*N to each port:
   web  http://localhost:3000
   API  http://localhost:8080
-  worker health  http://localhost:8081
   media gateway  http://localhost:8083
   media worker health  http://localhost:8084
 Isolated stacks ignore these origins, and GitHub setup callbacks and webhooks
@@ -131,7 +130,7 @@ MEDIA_PRIVATE_KEY_FILE="$DATA_DIR/media-grant-private.pem"
 MEDIA_PUBLIC_KEY_FILE="$DATA_DIR/media-grant-public.pem"
 MEDIA_OBJECT_DIR="$DATA_DIR/media-objects"
 LOCAL_CARGO_TARGET_DIR=""
-SERVICES=(media-worker media worker api web expiry)
+SERVICES=(media-worker media api web expiry)
 source "$ROOT/dev/local-stack.sh"
 
 case "$COMMAND" in
@@ -401,30 +400,6 @@ EOF
   chmod +x "$runner"
 }
 
-write_worker_runner() {
-  local database_url object_key runner
-  database_url="$(stack_database_url)"
-  object_key="$(get_object_key)"
-  runner="$STATE_DIR/worker.sh"
-  if [[ -z "$database_url" ]]; then
-    echo "DATABASE_URL is required for the worker" >&2
-    exit 1
-  fi
-
-  write_runner_preamble "$runner" "$ROOT"
-  cat >> "$runner" <<EOF
-export SCOPE_WORKER_ID="local-dev-worker"
-export PORT="$WORKER_PORT"
-export SCOPE_OBJECT_STORE="filesystem"
-export SCOPE_DATA_DIR="$DATA_DIR"
-export SCOPE_OBJECT_STORE_DIR="$OBJECT_DIR"
-export SCOPE_OBJECT_ENCRYPTION_KEY="$object_key"
-EOF
-  printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
-  printf 'exec %q\n' "$LOCAL_CARGO_TARGET_DIR/debug/worker" >> "$runner"
-  chmod +x "$runner"
-}
-
 write_web_runner() {
   local runner="$STATE_DIR/web.sh" tailnet_api_origin tailnet_web_origin tailnet_web_host
   tailnet_api_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_API_ORIGIN)"
@@ -464,7 +439,7 @@ prepare_local_schema() {
 }
 
 build_local_services() {
-  local packages=(-p api -p worker) binaries=(api scope-maintenance worker)
+  local packages=(-p api) binaries=(api scope-maintenance)
   if (( WITH_MEDIA )); then
     packages+=(-p scope-media-service -p scope-media-worker)
     binaries+=(scope-media-service scope-media-worker)
@@ -482,7 +457,7 @@ build_local_services() {
       exit 1
     fi
   done
-  local services=("api=$LOCAL_CARGO_TARGET_DIR/debug/api" "worker=$LOCAL_CARGO_TARGET_DIR/debug/worker")
+  local services=("api=$LOCAL_CARGO_TARGET_DIR/debug/api")
   if (( WITH_MEDIA )); then
     services+=("media=$LOCAL_CARGO_TARGET_DIR/debug/scope-media-service"
       "media-worker=$LOCAL_CARGO_TARGET_DIR/debug/scope-media-worker")
@@ -599,7 +574,6 @@ up() {
     claim_isolated_slot
   fi
   assert_port_free "$API_PORT" "api"
-  assert_port_free "$WORKER_PORT" "worker health"
   if (( WITH_MEDIA )); then
     assert_port_free "$MEDIA_PORT" "media gateway"
     assert_port_free "$MEDIA_WORKER_PORT" "media worker health"
@@ -610,7 +584,7 @@ up() {
   mkdir -p "$STATE_DIR" "$DATA_DIR" "$MEDIA_OBJECT_DIR"
   ensure_media_keys
   local service
-  for service in api web worker media media-worker; do
+  for service in api web media media-worker; do
     rm -f "$STATE_DIR/$service.out.log" "$STATE_DIR/$service.err.log"
   done
   build_local_services
@@ -619,8 +593,6 @@ up() {
   fi
   prepare_local_schema
   start_service api "$LOCAL_API_ORIGIN/readyz" 45
-  write_worker_runner
-  start_service worker
   if (( WITH_MEDIA )); then
     write_media_runner
     start_service media "http://localhost:$MEDIA_PORT/healthz" 90
@@ -643,7 +615,7 @@ up() {
 
 identity_arguments() {
   printf '%s\n' --root "$ROOT" --state "$STATE_DIR" \
-    --port "api=$API_PORT" --port "worker=$WORKER_PORT" --port "media=$MEDIA_PORT" \
+    --port "api=$API_PORT" --port "media=$MEDIA_PORT" \
     --port "media-worker=$MEDIA_WORKER_PORT" --port "web=$WEB_PORT" \
     --private "web=$(get_tailnet_origin SCOPE_DEV_TAILNET_WEB_ORIGIN)" \
     --private "api=$(get_tailnet_origin SCOPE_DEV_TAILNET_API_ORIGIN)" \

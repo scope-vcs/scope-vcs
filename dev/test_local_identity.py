@@ -49,7 +49,7 @@ class LocalIdentityTests(unittest.TestCase):
         self.state = self.root / ".tmp/local-dev"
         self.binary = self.path / "target/debug/api"
         self.build_binary()
-        self.ports = {name: free_port() for name in ("api", "worker", "media", "media-worker", "web")}
+        self.ports = {name: free_port() for name in ("api", "media", "media-worker", "web")}
         (self.path / "bin").mkdir()
         self.serve_config = self.path / "serve.json"
         (self.path / "bin/tailscale").write_text(f'#!/bin/sh\ncat "{self.serve_config}"\n')

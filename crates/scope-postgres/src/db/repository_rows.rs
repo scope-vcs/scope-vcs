@@ -10,7 +10,6 @@ use super::{
         RepositoryHistoryDelta, insert_repository_history, insert_repository_live_files,
         load_repository_histories, save_repository_history_delta,
     },
-    outbox::enqueue_projection_read_model_rebuild,
     projection_read_models::fold_live_projection_read_models,
 };
 use sea_orm::{
@@ -20,11 +19,7 @@ use sea_orm::{
 use std::collections::BTreeMap;
 use {crate::error::PostgresError, scope_domain::repository::Repository};
 
-pub(super) async fn insert_repository<C>(
-    conn: &C,
-    repo: &Repository,
-    now_unix: u64,
-) -> Result<(), PostgresError>
+pub(super) async fn insert_repository<C>(conn: &C, repo: &Repository) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -37,13 +32,6 @@ where
     insert_repository_live_files(conn, &repo.record.id, &repo.live_files, &repo.policy).await?;
     insert_repository_collaboration(conn, &repo.collaboration).await?;
     fold_live_projection_read_models(conn, &repo.record.id, repo.record.content_version).await?;
-    enqueue_projection_read_model_rebuild(
-        conn,
-        &repo.record.id,
-        repo.record.content_version,
-        now_unix,
-    )
-    .await?;
     Ok(())
 }
 
@@ -160,13 +148,6 @@ where
     C: ConnectionTrait,
 {
     fold_live_projection_read_models(conn, &repo.record.id, repo.record.content_version).await?;
-    enqueue_projection_read_model_rebuild(
-        conn,
-        &repo.record.id,
-        repo.record.content_version,
-        now_unix,
-    )
-    .await?;
     enqueue_dependency_analysis_for_repository(conn, repo, now_unix).await
 }
 

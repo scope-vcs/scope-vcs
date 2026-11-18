@@ -73,8 +73,7 @@ pub(super) use history::{
     visibility_change_set,
 };
 pub(super) use jobs::{
-    git_compaction_job, metadata_lock, outbox_job, repo_storage_cleanup_job,
-    source_blob_cleanup_job,
+    git_compaction_job, metadata_lock, repo_storage_cleanup_job, source_blob_cleanup_job,
 };
 pub(super) use read_models::{projection_file, projection_read_model};
 pub(super) use repositories::{

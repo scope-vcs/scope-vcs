@@ -19,9 +19,6 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
     let bare = clone_test_repo(&source, "landing-file-direct-read-bare", true);
     apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
 
-    let rebuilt = drain_outbox(&state, "landing-file-test").await;
-    assert_eq!(rebuilt.failed, 0);
-
     let path = ScopePath::parse("/README.html").unwrap();
     let captured = state
         .metadata
@@ -93,12 +90,6 @@ async fn landing_snapshot_failure_rolls_back_the_repository_transaction() {
         .await
         .unwrap();
     let main_packs_before = main_pool_packs(&state).await;
-    let jobs_before = state
-        .metadata
-        .jobs()
-        .outbox_job_counts_for_tests()
-        .await
-        .unwrap();
     let mut update = receive_pack_update(&state, vec![("/notes.md", Some("must roll back"))]);
     update.landing_file_mutation = RepositoryLandingFileMutation::Upsert(RepositoryLandingFile {
         oid: "invalid-landing-oid".to_string(),
@@ -121,14 +112,5 @@ async fn landing_snapshot_failure_rolls_back_the_repository_transaction() {
         !after
             .live_files
             .contains_key(&ScopePath::parse("/notes.md").unwrap())
-    );
-    assert_eq!(
-        state
-            .metadata
-            .jobs()
-            .outbox_job_counts_for_tests()
-            .await
-            .unwrap(),
-        jobs_before
     );
 }

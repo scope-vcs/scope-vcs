@@ -46,6 +46,19 @@ pub(crate) struct BackgroundLoop {
     pub(crate) readiness: Readiness,
 }
 
+#[derive(Clone)]
+pub(crate) struct StopSignal(watch::Receiver<bool>);
+
+impl StopSignal {
+    pub(crate) fn is_set(&self) -> bool {
+        *self.0.borrow()
+    }
+
+    pub(crate) async fn set(&mut self) {
+        drop(self.0.wait_for(|stopped| *stopped).await);
+    }
+}
+
 pub struct BackgroundWork {
     state: AppState,
     stop: watch::Sender<bool>,
@@ -76,6 +89,9 @@ impl AppState {
         work.start_request_check_recovery();
         work.start_request_auto_merge();
         work.start_request_diff_stat_backfill();
+        work.start_git_compaction(self.runtime_budgets.git_compaction_concurrency());
+        work.start_dependency_analysis();
+        work.start_source_blob_cleanup();
         work
     }
 }
@@ -83,6 +99,10 @@ impl AppState {
 impl BackgroundWork {
     pub fn stop_signal(&self) -> watch::Sender<bool> {
         self.stop.clone()
+    }
+
+    pub(crate) fn stopping(&self) -> StopSignal {
+        StopSignal(self.stop.subscribe())
     }
 
     pub async fn shutdown(self) {

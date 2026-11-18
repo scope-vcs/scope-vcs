@@ -52,7 +52,7 @@ test('default Railway transport retries a failed source read without repeating e
 
 test('release rejects mutable tags, missing components, wrong revision and wrong service before activation', () => {
   assert.throws(() => validatePreparedRelease(release(), { sourceSha: 'c'.repeat(40) }), /revision/);
-  assert.throws(() => validatePreparedRelease(release(), { components: ['run-worker'] }), /missing run-worker/);
+  assert.throws(() => validatePreparedRelease(release(), { components: ['media-api'] }), /missing media-api/);
   assert.throws(() => validatePreparedRelease(release(), { services: { api: { id: 'wrong' } } }), /wrong service/);
   const mutable = release(); mutable.components.api.image = 'ghcr.io/owner/repo/railway-private-api:latest';
   assert.throws(() => validatePreparedRelease(mutable), /immutable/);
@@ -139,7 +139,7 @@ test('checked-in Railway string durations become GraphQL integers', () => {
   const input = artifactDeploymentInput('api', release().components.api, { deploy: { ...config.deploy, overlapSeconds: '45', drainingSeconds: '15' } });
   assert.equal(input.overlapSeconds, 45);
   assert.equal(input.drainingSeconds, 15);
-  for (const [component, directory] of [['api', 'api'], ['run-worker', 'worker'], ['media-api', 'media-service'], ['web', 'web']]) {
+  for (const [component, directory] of [['api', 'api'], ['media-api', 'media-service'], ['web', 'web']]) {
     const actualConfig = JSON.parse(readFileSync(new URL(`../../${directory}/railway.json`, import.meta.url), 'utf8'));
     const actual = artifactDeploymentInput(component, release().components.api, actualConfig);
     assert.ok(Number.isSafeInteger(actual.overlapSeconds));
@@ -154,7 +154,6 @@ test('release package naming has one validated manifest owner', () => {
   const manifest = JSON.parse(readFileSync(new URL('../../.github/deployment-services.json', import.meta.url), 'utf8'));
   assert.equal(releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', 'api'), 'ghcr.io/scope-vcs/scope-vcs/railway-private-api');
   for (const [component, imageSuffix, binary] of [
-    ['run-worker', 'worker', 'scope-worker'],
     ['media-api', 'media', 'scope-media-service'],
   ]) {
     assert.equal(releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', component), `ghcr.io/scope-vcs/scope-vcs/railway-private-${imageSuffix}`);

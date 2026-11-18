@@ -1,17 +1,23 @@
 use anyhow::Context;
 use api::{AppState, router};
 use scope_service_runtime::{init_telemetry, shutdown_signal};
-use std::net::{Ipv6Addr, SocketAddr};
+use std::{
+    net::{Ipv6Addr, SocketAddr},
+    process::ExitCode,
+};
 
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<ExitCode> {
+    if let Some(code) = scope_dependency_analyzer::run_requested_analysis(std::env::args_os()) {
+        return Ok(code);
+    }
     scope_git_process::install_pid1_reaper_if_needed()?;
     let telemetry = init_telemetry("api", "api=info,scope_postgres=info")?;
     let result = run();
     telemetry.shutdown();
-    result
+    result.map(|()| ExitCode::SUCCESS)
 }
 
 #[tokio::main]

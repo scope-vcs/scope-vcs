@@ -145,7 +145,7 @@ test("records an ordered Railway evidence stream", async () => {
   const evidencePath = join(directory, "evidence.ndjson");
   writeFileSync(evidencePath, [
     JSON.stringify({ component: "media-api", sourceSha: SOURCE_SHA, provider: "railway", evidenceId: "media-1" }),
-    JSON.stringify({ component: "run-worker", sourceSha: SOURCE_SHA, provider: "railway", evidenceId: "worker-1" }),
+    JSON.stringify({ component: "api", sourceSha: SOURCE_SHA, provider: "railway", evidenceId: "api-1" }),
     "",
   ].join("\n"));
   const requests = [];
@@ -161,7 +161,7 @@ test("records an ordered Railway evidence stream", async () => {
     assert.deepEqual(
       requests.filter(({ url }) => new URL(url).pathname.endsWith("/deployments"))
         .map(({ body }) => body.payload.component),
-      ["media-api", "run-worker"],
+      ["media-api", "api"],
     );
   } finally {
     rmSync(directory, { recursive: true });

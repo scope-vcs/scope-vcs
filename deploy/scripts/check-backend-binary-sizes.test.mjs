@@ -88,13 +88,12 @@ test('each backend component builds in its own cargo selection so shared crates 
   };
   for (const component of backendPrebuiltComponents()) buildBackendComponent(component, join(root, 'bin'), { run, root });
   assert.deepEqual(builds.map(args => args.filter(arg => arg !== '--bin').slice(4)), [
-    ['worker/Cargo.toml', 'worker'],
     ['media-service/Cargo.toml', 'scope-media-service'],
     ['api/Cargo.toml', 'api', 'scope-maintenance'],
   ]);
   assert.ok(builds.every(args => !args.includes('-p') && !args.includes('--workspace')));
   assert.equal(readFileSync(join(root, 'bin/scope-vcs'), 'utf8'), 'api');
-  assert.equal(statSync(join(root, 'bin/scope-worker')).mode & 0o777, 0o755);
+  assert.equal(statSync(join(root, 'bin/scope-vcs')).mode & 0o777, 0o755);
   assert.deepEqual(readdirSync(join(root, 'bin')).sort(), backendBinaryCaps().map(({ binary }) => binary).sort());
 });
 

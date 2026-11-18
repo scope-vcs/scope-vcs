@@ -15,7 +15,6 @@ members = [
     "crates/scope-product-analytics",
     "crates/scope-git-process",
     "crates/scope-service-runtime",
-    "worker",
 ]
 exclude = ["cli"]
 resolver = "3"

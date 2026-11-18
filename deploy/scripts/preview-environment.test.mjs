@@ -31,7 +31,6 @@ function stagingCopy() {
     SCOPE_GIT_COMMAND_TIMEOUT_SECS: '60',
   });
   Object.assign(variables[ids.web], { PAGENT_SOURCE_TOKEN: 'pagent-staging-token', PAGENT_ENABLED: 'false' });
-  Object.assign(variables[ids['run-worker']], { SCOPE_ANALYTICS_DSN: 'postgresql://reader:staging-pw@${{scope-postgres.RAILWAY_PRIVATE_DOMAIN}}/x' });
   Object.assign(variables[ids['media-api']], { SCOPE_MEDIA_GRANT_PUBLIC_KEY: 'staging-public-key' });
   Object.assign(variables[ids.maintenance], { SCOPE_BUCKET_NAME: 'scope-blobs-staging' });
   return { services, variables };
@@ -152,12 +151,11 @@ test('first provisioning points every service at preview domains, buckets, and f
   assert.equal(variables[ids.api].CLERK_ISSUER, 'https://happy-otter-12.clerk.accounts.dev');
   assert.equal(variables[ids.api].CLERK_JWKS_URL, 'https://happy-otter-12.clerk.accounts.dev/.well-known/jwks.json');
   assert.equal(variables[ids.web].SCOPE_API_HOST, 'a.up.railway.app');
-  assert.equal(variables[ids['run-worker']].SCOPE_PUBLIC_API_URL, 'https://a.up.railway.app');
   assert.equal(variables[ids['media-api']].SCOPE_MEDIA_ALLOWED_ORIGIN, 'https://w.up.railway.app');
   assert.equal(variables[ids.maintenance].SCOPE_BUCKET_NAME, '${{scope-blobs.BUCKET}}');
   assert.equal(variables[ids.maintenance].DATABASE_URL, '${{scope-postgres.DATABASE_URL}}');
   assert.equal(variables[ids['media-api']].SCOPE_MEDIA_GRANT_PUBLIC_KEY, secrets.mediaGrant.publicKey);
-  for (const component of ['api', 'run-worker', 'maintenance']) {
+  for (const component of ['api', 'maintenance']) {
     assert.equal(variables[ids[component]].SCOPE_OBJECT_ENCRYPTION_KEY, secrets.objectEncryptionKey);
   }
   for (const [component, role] of Object.entries(RUNTIME_ROLES)) {
@@ -249,7 +247,6 @@ test('previews keep only reviewed staging settings and their own variables', () 
   const removed = unreviewedStagingVariables(manifest, managed, current);
   assert.deepEqual(removed[ids.api].sort(), ['SCOPE_FUTURE_SETTING', 'SCOPE_RESEND_API_KEY']);
   assert.deepEqual(removed[ids.web], ['PAGENT_SOURCE_TOKEN']);
-  assert.deepEqual(removed[ids['run-worker']], ['SCOPE_ANALYTICS_DSN']);
   assert.equal(removed[ids.maintenance], undefined);
   for (const names of Object.values(KEPT_STAGING_SETTINGS)) {
     assert.ok(names.every((name) => !/SECRET|TOKEN|PASSWORD|PRIVATE/.test(name)), names.join(','));

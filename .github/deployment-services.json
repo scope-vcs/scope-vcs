@@ -14,25 +14,6 @@
     "nativeAutodeploy": false
   },
   "services": {
-    "run-worker": {
-      "name": "scope-run-worker",
-      "id": "a474a0d1-3000-4a95-9ca3-cd3a7f3ef669",
-      "dependsOn": [],
-      "deployment": {
-        "backend": true,
-        "runtimeConfig": "worker/railway.json",
-        "verifyTransitionConfig": true,
-        "artifact": {
-          "kind": "binary",
-          "binary": "scope-worker",
-          "imageName": "worker",
-          "dockerfile": "deploy/railway/worker.Dockerfile",
-          "installGit": true,
-          "sourceBinary": "worker",
-          "maxBytes": 34603008
-        }
-      }
-    },
     "media-api": {
       "name": "scope-media-api",
       "id": "6d7b48da-e52e-47bb-b4af-d6fc2d03aec3",
@@ -82,7 +63,6 @@
       "name": "scope-api",
       "id": "9456cd8d-40bd-489a-a181-72b7f777c4a8",
       "dependsOn": [
-        "run-worker",
         "media-api",
         "media-worker"
       ],
@@ -184,32 +164,6 @@
         ".github/workflows/warm-ci-caches.yml"
       ],
       "prefixes": []
-    },
-    "run-worker": {
-      "files": [
-        "Cargo.lock",
-        "Cargo.toml",
-        "rust-toolchain.toml",
-        "dev/tool-versions.json",
-        "dev/install-git.sh",
-        "deploy/railway/prebuilt.Dockerfile",
-        "deploy/railway/worker.Dockerfile",
-        ".github/workflows/scope-api-ci.yml",
-        ".github/workflows/rust-workspace-checks.yml",
-        "dev/checks/backend",
-        "dev/checks/advisories",
-        "deny.toml",
-        "dev/install-cargo-tools.sh",
-        "deploy/scripts/deployment-components.mjs",
-        "deploy/scripts/check-backend-binary-sizes.mjs",
-        "deploy/scripts/prepare-railway-artifact.sh",
-        "deploy/scripts/extract-railway-release.py",
-        "deploy/scripts/railway-artifact.mjs"
-      ],
-      "prefixes": [
-        "crates/",
-        "worker/"
-      ]
     },
     "media-worker": {
       "files": [
@@ -336,8 +290,7 @@
       "prefixes": [
         "api/",
         "crates/",
-        "web/",
-        "worker/"
+        "web/"
       ]
     },
     "cli-downloads": {
@@ -380,8 +333,7 @@
         "api/",
         "cli/",
         "cli-downloads/",
-        "crates/",
-        "worker/"
+        "crates/"
       ]
     },
     "cli-distribution": {

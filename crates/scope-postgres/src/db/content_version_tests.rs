@@ -17,7 +17,7 @@ fn owner() -> UserAccount {
     fixtures::user("owner", "owner")
 }
 
-async fn fixture() -> (MetadataStore, Repository) {
+fn fixture() -> (MetadataStore, Repository) {
     let owner = owner();
     let mut repo = fixtures::repository(&owner, "repo", ViewId::public());
     let commit = fixtures::canonical_commit(&owner.id, 0, "/README.md", ViewId::public());
@@ -30,13 +30,7 @@ async fn fixture() -> (MetadataStore, Repository) {
     catalog
         .repositories
         .insert(repo.record.id.clone(), repo.clone());
-    let store = fixtures::seeded_store(catalog);
-    store
-        .jobs()
-        .run_ready_outbox_jobs("content-version", 10, &|| Ok(NOW))
-        .await
-        .unwrap();
-    (store, repo)
+    (fixtures::seeded_store(catalog), repo)
 }
 
 async fn live_projection_count(store: &MetadataStore, repo_id: &str, version: u64) -> i64 {
@@ -57,7 +51,7 @@ async fn live_projection_count(store: &MetadataStore, repo_id: &str, version: u6
 
 #[tokio::test]
 async fn invites_and_metadata_edits_keep_projections_and_history_current() {
-    let (store, repo) = fixture().await;
+    let (store, repo) = fixture();
     let content_version = repo.record.content_version;
     assert_eq!(
         live_projection_count(&store, &repo.record.id, content_version).await,
@@ -98,12 +92,6 @@ async fn invites_and_metadata_edits_keep_projections_and_history_current() {
         repo.record.change_version + 2
     );
     assert_eq!(current.record.content_version, content_version);
-    let rebuilt = store
-        .jobs()
-        .run_ready_outbox_jobs("content-version", 10, &|| Ok(NOW + 1))
-        .await
-        .unwrap();
-    assert_eq!(rebuilt.claimed, 0, "nothing needs rebuilding");
     assert_eq!(
         live_projection_count(&store, &repo.record.id, content_version).await,
         2
@@ -125,7 +113,7 @@ async fn invites_and_metadata_edits_keep_projections_and_history_current() {
 
 #[tokio::test]
 async fn content_changes_must_advance_the_content_version() {
-    let (store, repo) = fixture().await;
+    let (store, repo) = fixture();
     let error = store
         .repositories()
         .mutate_repository_for_tests(&repo.record.id, |repo| {
@@ -148,12 +136,6 @@ async fn content_changes_must_advance_the_content_version() {
         })
         .await
         .unwrap();
-    let rebuilt = store
-        .jobs()
-        .run_ready_outbox_jobs("content-version", 10, &|| Ok(NOW + 1))
-        .await
-        .unwrap();
-    assert_eq!(rebuilt.completed, 1);
     assert_eq!(
         live_projection_count(&store, &repo.record.id, repo.record.content_version + 1).await,
         2

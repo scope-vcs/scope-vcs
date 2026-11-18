@@ -1,6 +1,5 @@
 use super::*;
-use scope_domain::repository::git::GitPoolPackOwner;
-use scope_storage::{EncryptionKey, GitSegmentStoreConfig, MemoryBackend};
+use scope_domain::repository::git::{GitPoolPack, GitPoolPackOwner, GitPoolPackStorage};
 use std::io::Cursor;
 
 fn oid(bytes: Vec<u8>) -> String {
@@ -150,20 +149,6 @@ fn main_pack(
     }
 }
 
-fn segment_store(local_root: &Path) -> Arc<GitSegmentStore> {
-    let mut config = GitSegmentStoreConfig::new(local_root);
-    config.chunk_bytes = 1024;
-    config.multipart_part_bytes = 1024;
-    Arc::new(
-        GitSegmentStore::new(
-            Arc::new(MemoryBackend::default()),
-            EncryptionKey::new("test", [7_u8; 32]).unwrap(),
-            config,
-        )
-        .unwrap(),
-    )
-}
-
 #[tokio::test]
 async fn compaction_preserves_the_selected_packs_exact_object_set() {
     let temp = tempfile::tempdir().unwrap();
@@ -232,7 +217,8 @@ async fn compaction_preserves_the_selected_packs_exact_object_set() {
 
     let repository_id = "owner/repo";
     let incarnation = RepositoryIncarnation::new(repository_id, "repoi_compaction").unwrap();
-    let store = segment_store(&temp.path().join("segments"));
+    let state = AppState::test_state();
+    let store = Arc::clone(&state.git_segment_store);
     let predecessor = segment_pack(
         store.as_ref(),
         repository_id,
@@ -267,13 +253,11 @@ async fn compaction_preserves_the_selected_packs_exact_object_set() {
 
     let reservation = store.reserve(repository_id).unwrap();
     let compacted = build_compacted_pack(
-        Arc::clone(&store),
+        &state,
         &incarnation,
         &plan,
         reservation,
-        GitStorageLimits::new(1024 * 1024).unwrap(),
         Duration::from_secs(2),
-        temp.path().to_path_buf(),
     )
     .await
     .unwrap();
@@ -309,7 +293,7 @@ async fn compaction_preserves_the_selected_packs_exact_object_set() {
 }
 
 #[test]
-fn temporary_git_repositories_stay_under_the_worker_data_directory() {
+fn temporary_git_repositories_stay_under_the_data_directory() {
     let temp = tempfile::tempdir().unwrap();
     let repo = TemporaryGitRepo::new(temp.path()).unwrap();
 

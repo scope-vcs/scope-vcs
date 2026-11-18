@@ -60,12 +60,6 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
             .main_pool_packs("owner/repo")
             .await
             .unwrap();
-        let before_jobs = store
-            .jobs()
-            .outbox_job_counts_for_tests()
-            .await
-            .unwrap()
-            .total;
         let before_events = store.requests().request_events_for_tests().await.unwrap();
         store.db.execute_unprepared("CREATE FUNCTION reject_second_landed_request() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
@@ -112,15 +106,6 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
         );
         assert_eq!(after_repo.graph, before_repo.graph);
         assert_eq!(after_repo.live_files, before_repo.live_files);
-        assert_eq!(
-            store
-                .jobs()
-                .outbox_job_counts_for_tests()
-                .await
-                .unwrap()
-                .total,
-            before_jobs
-        );
         assert_eq!(
             store
                 .requests()

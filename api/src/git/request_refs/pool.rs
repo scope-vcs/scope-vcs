@@ -464,7 +464,13 @@ async fn install_staged_pool_pack(
                 .promote_verified_pack(incarnation, &staged.staged_segment)
                 .await
                 .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
-            install_fetched(state, &objects_repo, FetchedPack::Verified(verified)).await
+            install_fetched(
+                &objects_repo,
+                FetchedPack::Verified(verified),
+                state.runtime_budgets.git_transfer_limits().pack_processing,
+                &scope_git_process::ProcessCancellation::new(),
+            )
+            .await
         }
     };
     if installed.is_ok() {

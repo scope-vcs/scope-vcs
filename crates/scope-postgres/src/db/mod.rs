@@ -59,7 +59,6 @@ mod merge_turns;
 #[cfg(test)]
 mod migration_tests;
 mod object_references;
-mod outbox;
 mod projection_read_models;
 mod repo_change_notifications;
 mod repo_collaboration;
@@ -157,7 +156,6 @@ pub use maintenance::{
     apply_maintenance_migrations, migration_plan, migration_preflight, verify_schema,
 };
 pub use merge_turns::RepositoryMergeTurn;
-pub use outbox::{OutboxJobCounts, OutboxRunSummary};
 pub use repo_change_notifications::RepoChangeListener;
 pub use repo_collaboration::{
     CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,

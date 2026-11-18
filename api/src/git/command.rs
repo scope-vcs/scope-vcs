@@ -1,7 +1,7 @@
 use crate::{error::ApiError, runtime_budgets::RuntimeBudgets};
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{
-    ProcessLimits, STDERR_DIAGNOSTIC_BYTES, run as run_process, truncated_stderr,
+    ProcessCancellation, ProcessLimits, STDERR_DIAGNOSTIC_BYTES, run_cancellable, truncated_stderr,
 };
 use std::{
     path::Path as FsPath,
@@ -14,9 +14,18 @@ pub(crate) fn git_process_output(
     stdin: Option<Vec<u8>>,
     limits: ProcessLimits,
 ) -> Result<Output, ApiError> {
+    cancellable_git_process_output(command, stdin, limits, &ProcessCancellation::new())
+}
+
+pub(crate) fn cancellable_git_process_output(
+    command: &mut Command,
+    stdin: Option<Vec<u8>>,
+    limits: ProcessLimits,
+    cancellation: &ProcessCancellation,
+) -> Result<Output, ApiError> {
     let span = prepare_git_subprocess(command)?;
     let _entered = span.enter();
-    run_process(command, stdin, limits, "Git command")
+    run_cancellable(command, stdin, limits, "Git command", cancellation)
         .inspect(|output| record_git_exit(&span, output.status))
         .map_err(|error| {
             if error.is_stdout_limit() {
@@ -151,7 +160,17 @@ pub(crate) fn git_command_output_with_timeout(
     stdin: Option<Vec<u8>>,
     timeout: Duration,
 ) -> Result<Vec<u8>, ApiError> {
-    let output = git_process_output(command, stdin, ProcessLimits::new(timeout))?;
+    cancellable_git_command_output(command, stdin, timeout, &ProcessCancellation::new())
+}
+
+pub(crate) fn cancellable_git_command_output(
+    command: &mut Command,
+    stdin: Option<Vec<u8>>,
+    timeout: Duration,
+    cancellation: &ProcessCancellation,
+) -> Result<Vec<u8>, ApiError> {
+    let output =
+        cancellable_git_process_output(command, stdin, ProcessLimits::new(timeout), cancellation)?;
     if output.status.success() {
         return Ok(output.stdout);
     }

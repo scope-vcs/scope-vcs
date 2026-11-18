@@ -456,7 +456,6 @@ fn has_commit(repo: &FsPath, oid: &str) -> bool {
 async fn a_draft_revision_is_pooled_only_for_its_author() {
     let (state, _main_source, _) =
         super::super::push_intent_completion::published_git_fixture("request-pool-draft").await;
-    drain_outbox(&state, "request-pool-draft-public-projection").await;
     let bearer = bearer_header();
     let started = api_request(
         router(state.clone()),

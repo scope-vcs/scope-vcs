@@ -10,7 +10,7 @@ test('telemetry CLI uses the deployment services, explicit overrides, and exact 
   const root = await mkdtemp(join(tmpdir(), 'scope-telemetry-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const manifest = JSON.parse(await readFile(new URL('../.github/deployment-services.json', import.meta.url), 'utf8'));
-  const names = ['api', 'run-worker'].map((key) => manifest.services[key].name);
+  const names = ['api'].map((key) => manifest.services[key].name);
   const executable = join(root, 'railway');
   await writeFile(executable, `#!${process.execPath}
 const args = process.argv.slice(2);

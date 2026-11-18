@@ -889,16 +889,3 @@ async fn submit_request(app: axum::Router, request_id: &str, bearer: &str) {
     .await;
     assert_eq!(submitted.status(), StatusCode::OK);
 }
-
-async fn drain_outbox(state: &AppState, label: &str) -> scope_postgres::db::OutboxRunSummary {
-    let report = state
-        .metadata
-        .jobs()
-        .run_ready_outbox_jobs(label, 10, &|| {
-            crate::persistence::unix_now().map_err(crate::error::ApiError::into_operator_diagnostic)
-        })
-        .await
-        .unwrap();
-    assert_eq!(report.failed, 0);
-    report
-}

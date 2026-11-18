@@ -346,7 +346,7 @@ impl crate::state::AppState {
         self.publish_repo_event(event, "GitHub workflow job");
     }
 
-    fn publish_repo_event(&self, event: RepoChangeEvent, description: &'static str) {
+    pub(crate) fn publish_repo_event(&self, event: RepoChangeEvent, description: &'static str) {
         self.repo_events.publish_event(event.clone());
         let payload = match self.repo_events.notification_payload(&event) {
             Ok(payload) => payload,

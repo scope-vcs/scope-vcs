@@ -19,7 +19,7 @@ spec.loader.exec_module(local_process)
 
 BUILD_FILE = "build.json"
 SOURCE_FILE = "build-source.json"
-SERVICES = ("api", "worker", "media", "media-worker", "web")
+SERVICES = ("api", "media", "media-worker", "web")
 PROBES = {"api": "/readyz", "media": "/healthz", "media-worker": "/readyz", "web": "/"}
 PRIVATE_PROBES = {"web": "/", "api": "/readyz", "media": "/healthz"}
 

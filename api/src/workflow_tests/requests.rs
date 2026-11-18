@@ -31,7 +31,6 @@ async fn request_reads_do_not_consume_git_projection_capacity() {
         assert!(request_ids(&response_json(response).await).is_empty());
     }
 
-    drain_outbox(&state, "request-read-test").await;
     create_owner_request(&state, "req_metadata_head", REQUEST_HEAD).await;
     let submitted = api_request(
         app.clone(),
