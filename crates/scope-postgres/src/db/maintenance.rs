@@ -1,4 +1,4 @@
-use super::{AdminStore, ExclusiveWriterFence};
+use super::AdminStore;
 use crate::error::PostgresError;
 use crate::migrations::{MigrationLimits, MigrationPlan};
 use sea_orm::Database;
@@ -35,11 +35,7 @@ pub async fn apply_maintenance_migrations(
     database_url: String,
     limits: MigrationLimits,
 ) -> anyhow::Result<()> {
-    let fence = ExclusiveWriterFence::acquire(&database_url).await?;
     let db = Database::connect(database_url).await?;
-    let migration_result = crate::migrations::apply_in_maintenance(&db, limits).await;
-    let release_result = fence.release().await;
-    migration_result?;
-    release_result?;
+    crate::migrations::apply_in_maintenance(&db, limits).await?;
     Ok(())
 }

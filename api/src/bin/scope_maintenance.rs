@@ -12,16 +12,15 @@ commands:
   verify                      require the exact migration ledger (read-only)
   fence                       probe the exclusive writer fence (read-only)
   drain-writers               terminate sessions holding the shared writer fence
-  apply                       apply all pending migrations behind the writer fence
+  apply                       apply all pending migrations
   help                        show this help
 
 Migration operation limits (positive seconds; independent of downtime warnings):
   SCOPE_MIGRATION_LOCK_TIMEOUT_SECONDS       default 120
   SCOPE_MIGRATION_STATEMENT_TIMEOUT_SECONDS  default 3600
 
-Production cutovers are owned by the release workflow. If apply may
-have committed and recovery cannot prove the old ledger is unchanged, keep API
-and worker writers closed and rerun the same revision to finish forward."#;
+The release workflow applies migrations while the previous release keeps
+serving. If apply fails, rerun the release."#;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
