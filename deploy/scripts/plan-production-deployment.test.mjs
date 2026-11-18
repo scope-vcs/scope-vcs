@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
+  COMPONENTS,
   classifyChanges,
   includeMigrationParticipants,
   planFromDeploymentProgress,
@@ -215,6 +216,27 @@ test("planner emits backend and CLI distribution workflow outputs", () => {
     });
     for (const line of expected) assert.ok(output.split("\n").includes(line), line);
   }
+});
+
+test("a release with nothing new since every component's last deployment selects nothing", () => {
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const output = execFileSync(process.execPath, [
+    fileURLToPath(new URL("./plan-production-deployment.mjs", import.meta.url)),
+    "--manifest",
+    fileURLToPath(new URL("../../.github/deployment-services.json", import.meta.url)),
+    "--head",
+    head,
+    "--scope",
+    "changed",
+    "--deployed-revisions",
+    JSON.stringify(Object.fromEntries(COMPONENTS.map((component) => [component, head]))),
+  ], {
+    encoding: "utf8",
+    env: { ...process.env, GITHUB_OUTPUT: "", GITHUB_STEP_SUMMARY: "" },
+  });
+  const lines = output.trim().split("\n");
+  assert.ok(lines.includes("selected=[]"), output);
+  assert.deepEqual(lines.filter((line) => line.endsWith("=true")), []);
 });
 
 test("an unseeded production ledger deploys every component", () => {

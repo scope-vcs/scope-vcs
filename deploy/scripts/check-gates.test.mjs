@@ -317,26 +317,38 @@ test('bundle packaging rejects missing and stale release identities after all bu
 });
 
 function releaseJobs() {
-  const workflow = read('.github/workflows/release.yml');
-  return Object.fromEntries([...workflow.matchAll(/^  ([\w-]+):\n([\s\S]*?)(?=^  [\w-]+:|$(?![\s\S]))/gm)]
-    .map(([, name, body]) => [name, { if: body.match(/^    if: >-\n((?:      .*\n)+)/m)?.[1].trim() }]));
+  const jobs = read('.github/workflows/release.yml').split('\njobs:\n')[1];
+  return Object.fromEntries([...jobs.matchAll(/^  ([\w-]+):\n([\s\S]*?)(?=^  [\w-]+:|$(?![\s\S]))/gm)]
+    .map(([, name, body]) => [name, {
+      if: (body.match(/^    if: >-\n((?:      .*\n)+)/m)?.[1] ?? body.match(/^    if: \$\{\{ (.*) \}\}\n/m)?.[1])?.trim(),
+    }]));
 }
 
-function releasePath(selected, { failure = '', cancelled = false, ref = 'refs/heads/main' } = {}) {
+const releaseJobOrder = ['policy', 'ops', 'validation', 'server-validation', 'release-preparation', 'production-deploy', 'cli-deploy', 'scheduled-failure-report'];
+const releaseChecksAndDeploys = releaseJobOrder.slice(0, -1);
+
+function releasePath(selected, { failure = '', cancelled = false, ref = 'refs/heads/main', event = 'workflow_dispatch' } = {}) {
   const jobs = releaseJobs();
   const outputs = Object.fromEntries(['backend_selected', 'web', 'cli'].map((key) => [key, String(selected.includes(key))]));
-  const needs = { plan: { result: 'success', outputs }, ...Object.fromEntries(['policy', 'ops', 'validation', 'server-validation'].map(key => [key, { result: key === failure ? 'failure' : 'success' }])) };
-  for (const key of ['release-preparation', 'production-deploy', 'cli-deploy']) {
+  outputs.selected = JSON.stringify(selected);
+  const needs = { plan: { result: 'success', outputs } };
+  const failed = () => Object.values(needs).some(({ result }) => result === 'failure');
+  for (const key of releaseJobOrder) {
     const expression = jobs[key].if.replace(/needs\.([\w-]+)/g, 'needs["$1"]');
-    const enabled = Function('needs', 'github', 'cancelled', `return (${expression});`)(needs, { ref }, () => cancelled);
+    const enabled = Function('needs', 'github', 'cancelled', 'failure', `return (${expression});`)(needs, { ref, event_name: event }, () => cancelled, failed);
     needs[key] = { result: enabled ? key === failure ? 'failure' : 'success' : 'skipped' };
   }
   return needs;
 }
 
+test('a release with nothing to deploy skips every check and deploys nothing', () => {
+  for (const event of ['schedule', 'workflow_dispatch']) {
+    const empty = releasePath([], { event });
+    for (const key of releaseJobOrder) assert.equal(empty[key].result, 'skipped', `${event}: ${key}`);
+  }
+});
+
 test('a release deploys the selected application once and publishes the CLI only after it', () => {
-  const empty = releasePath([]);
-  for (const key of ['release-preparation', 'production-deploy', 'cli-deploy']) assert.equal(empty[key].result, 'skipped', key);
   for (const selected of [['web'], ['backend_selected'], ['backend_selected', 'web', 'cli']]) {
     const path = releasePath(selected);
     assert.equal(path['production-deploy'].result, 'success', selected.join());
@@ -357,6 +369,20 @@ test('a failed check, build or deploy leaves production and the CLI unpublished'
     const result = releasePath(['backend_selected', 'web', 'cli'], options);
     for (const key of ['release-preparation', 'production-deploy', 'cli-deploy']) assert.equal(result[key].result, 'skipped', key);
   }
+});
+
+test('only a failed scheduled release opens or updates the release failure issue', () => {
+  const report = read('.github/workflows/release.yml').split('\n  scheduled-failure-report:\n')[1];
+  assert.deepEqual(report.match(/needs: \[(.+)\]/)[1].split(', '), ['plan', ...releaseChecksAndDeploys]);
+  assert.match(report, /issues: write/);
+  assert.match(report, /\.github\/scripts\/report-issue\.mjs/);
+  assert.match(report, /title: 'Scheduled release failed'/);
+  const all = ['backend_selected', 'web', 'cli'];
+  for (const failure of releaseChecksAndDeploys) {
+    assert.equal(releasePath(all, { failure, event: 'schedule' })['scheduled-failure-report'].result, 'success', failure);
+    assert.equal(releasePath(all, { failure })['scheduled-failure-report'].result, 'skipped', failure);
+  }
+  assert.equal(releasePath(all, { event: 'schedule' })['scheduled-failure-report'].result, 'skipped');
 });
 
 test('production and CLI jobs deploy prepared images without building', () => {
@@ -411,17 +437,30 @@ test('every external action and reusable workflow is pinned to a full commit SHA
   assert.deepEqual(unpinned, []);
 });
 
-test('a release is dispatched by hand from main and reads the repository without write access', () => {
+test('a release runs main each weekday afternoon or by hand and reads the repository without write access', () => {
   const release = read('.github/workflows/release.yml');
   const triggers = release.split('\nconcurrency:')[0];
-  assert.match(triggers, /^on:\n  workflow_dispatch:\n/m);
-  assert.doesNotMatch(triggers, /schedule:|cron:|pull_request:|push:|workflow_run:/);
+  assert.match(triggers, /^on:\n  schedule:\n    - cron: '0 15 \* \* 1-5'\n  workflow_dispatch:\n    inputs:\n      scope:\n/m);
+  assert.match(triggers, /        default: changed\n        options:\n          - changed\n          - all\n/);
+  assert.equal(triggers.match(/cron:/g).length, 1);
+  assert.doesNotMatch(triggers, /pull_request:|push:|workflow_run:/);
+  const scope = release.match(/REQUESTED_SCOPE: \$\{\{ (.+) \}\}/)[1];
+  const requestedScope = (inputs) => Function('inputs', `return (${scope});`)(inputs);
+  assert.equal(requestedScope({}), 'changed', 'a scheduled run has no inputs');
+  assert.equal(requestedScope({ scope: 'all' }), 'all');
+  assert.doesNotMatch(release, /^\s+ref:/m, 'every checkout releases the triggering main revision');
   const requireMain = release.indexOf('- name: Require main for releases');
   const selection = release.indexOf('run: node deploy/scripts/production-deployment-progress.mjs read');
   assert(requireMain >= 0 && selection > requireMain);
   assert.match(release.slice(requireMain, selection), /test "\$GITHUB_REF" = refs\/heads\/main/);
   assert.match(release.split('\njobs:')[0], /deployments: read/);
   assert.doesNotMatch(release.split('\njobs:')[0], /: write/);
+});
+
+test('scheduled and manual releases share one queue that never cancels a running release', () => {
+  const release = read('.github/workflows/release.yml');
+  assert.match(release, /\nconcurrency:\n  group: scope-release\n  cancel-in-progress: false\n/);
+  assert.equal(release.match(/concurrency:/g).length, 1);
 });
 
 test('CI runs on pull requests and Scope request branches', () => {
@@ -572,7 +611,7 @@ test('preparation overlaps validation while production waits for every check', (
   assert.deepEqual(needs('production-deploy'), ['plan', 'policy', 'ops', 'validation', 'release-preparation']);
   assert.deepEqual(needs('cli-deploy'), ['plan', 'policy', 'ops', 'validation', 'production-deploy']);
   assert.doesNotMatch(section('plan'), /dev\/checks\/(policy|ops)/);
-  for (const job of ['policy', 'ops']) assert.doesNotMatch(section(job), /needs:/);
+  for (const job of ['policy', 'ops']) assert.match(section(job), /\n    needs: plan\n/);
 });
 
 test('server readiness rejects each failed selected build before packaging', () => {

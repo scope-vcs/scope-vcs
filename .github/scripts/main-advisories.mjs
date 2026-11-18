@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { reportIssue } from './report-issue.mjs';
 import { actionableFindings } from './scan-report.mjs';
 
 const lockfiles = { workspace: ['--format', 'json'], cli: ['--format', 'json'], web: [] };
@@ -55,17 +56,12 @@ export function advisoryIssueBody({ checks, runUrl, sha }) {
   return lines.join('\n');
 }
 
-export async function reportMainAdvisories({ github, owner, repo, checks, runUrl, sha }) {
-  const title = 'New dependency advisory on main';
-  const body = advisoryIssueBody({ checks, runUrl, sha });
-  const issues = await github.paginate(github.rest.issues.listForRepo, {
-    owner, repo, state: 'open', per_page: 100,
+export function reportMainAdvisories({ github, owner, repo, checks, runUrl, sha }) {
+  return reportIssue({
+    github, owner, repo,
+    title: 'New dependency advisory on main',
+    body: advisoryIssueBody({ checks, runUrl, sha }),
   });
-  const existing = issues.find(issue => !issue.pull_request && issue.title === title);
-  if (existing) {
-    return github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
-  }
-  return github.rest.issues.create({ owner, repo, title, body, labels: ['bug'] });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

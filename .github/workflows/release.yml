@@ -1,6 +1,8 @@
 name: Release
 
 on:
+  schedule:
+    - cron: '0 15 * * 1-5'
   workflow_dispatch:
     inputs:
       scope:
@@ -49,7 +51,7 @@ jobs:
         id: plan
         shell: bash
         env:
-          REQUESTED_SCOPE: ${{ inputs.scope }}
+          REQUESTED_SCOPE: ${{ inputs.scope || 'changed' }}
           DEPLOYED_REVISIONS: ${{ steps.progress.outputs.revisions }}
         run: >-
           node deploy/scripts/plan-production-deployment.mjs
@@ -60,6 +62,8 @@ jobs:
 
   policy:
     name: Check repository policy
+    needs: plan
+    if: ${{ needs.plan.outputs.selected != '[]' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -75,6 +79,8 @@ jobs:
 
   ops:
     name: Check operations
+    needs: plan
+    if: ${{ needs.plan.outputs.selected != '[]' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -96,6 +102,7 @@ jobs:
   validation:
     name: Validate selected components
     needs: plan
+    if: ${{ needs.plan.outputs.selected != '[]' }}
     permissions:
       contents: read
       packages: write
@@ -112,6 +119,7 @@ jobs:
   server-validation:
     name: Validate server components
     needs: plan
+    if: ${{ needs.plan.outputs.selected != '[]' }}
     permissions:
       contents: read
       packages: write
@@ -235,3 +243,33 @@ jobs:
       packages: write
     uses: ./.github/workflows/publish-cli.yml
     secrets: inherit
+
+  scheduled-failure-report:
+    name: Report a failed scheduled release
+    needs: [plan, policy, ops, validation, server-validation, release-preparation, production-deploy, cli-deploy]
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report failure without duplicate issues
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          retries: 3
+          script: |
+            const { reportIssue } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/report-issue.mjs`);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await reportIssue({
+              github, ...context.repo,
+              title: 'Scheduled release failed',
+              body: `The scheduled release of ${context.sha} failed: ${runUrl}
+
+Run the Release workflow again once main is fixed.`,
+            });
