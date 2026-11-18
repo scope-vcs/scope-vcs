@@ -5,7 +5,7 @@ on:
     workflows: [Preview cleanup signal]
     types: [completed]
   schedule:
-    - cron: "23 * * * *"
+    - cron: "23 7 * * *"
   workflow_dispatch:
 
 permissions:

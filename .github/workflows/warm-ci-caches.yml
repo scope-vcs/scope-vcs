@@ -5,8 +5,15 @@ on:
     branches: [main]
     paths:
       - .github/actions/install-test-postgres/**
+      - .github/actions/install-media-codecs/**
+      - .github/actions/install-playwright-chromium/**
+      - .github/actions/install-reviewed-git/**
+      - .github/scripts/use-ubuntu-apt-sources.sh
       - dev/install-test-postgres.sh
       - dev/install-test-postgres.asc
+      - dev/install-git.sh
+      - dev/tool-versions.json
+      - web/pnpm-lock.yaml
       - Cargo.lock
       - '**/Cargo.toml'
       - cli/Cargo.lock
@@ -22,20 +29,45 @@ on:
       - .github/workflows/scope-media-worker-image.yml
       - deploy/scripts/deployment-components.mjs
       - .github/scripts/select-cli-distribution-targets.mjs
-
   schedule:
     - cron: '43 6 * * *'
-
-concurrency:
-  group: warm-ci-caches
-  cancel-in-progress: true
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  changed:
+    name: Select build caches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      builds: ${{ steps.select.outputs.builds }}
+    steps:
+      - name: Find pushed files that change a build cache
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          builds=false
+          if [[ "$EVENT_NAME" == push ]]; then
+            builds=true
+            if [[ "$BEFORE" =~ ^[0-9a-f]{40}$ && ! "$BEFORE" =~ ^0+$ ]] &&
+              files="$(gh api "repos/$REPOSITORY/compare/$BEFORE...$GITHUB_SHA" --jq '.files[].filename')" &&
+              ! grep -Eq '(^|/)Cargo\.(lock|toml)$|^cli/distribution/targets\.json$|^rust-toolchain\.toml$|^media-worker/Dockerfile$|^dev/checks/(backend|cli)$|^\.github/workflows/(warm-ci-caches|rust-workspace-checks|scope-api-ci|scope-cli-build|scope-media-worker-image)\.yml$|^deploy/scripts/deployment-components\.mjs$|^\.github/scripts/select-cli-distribution-targets\.mjs$' <<< "$files"; then
+              builds=false
+            fi
+          fi
+          echo "builds=$builds" >> "$GITHUB_OUTPUT"
+
   postgres:
     name: PostgreSQL test package cache
+    concurrency:
+      group: warm-ci-caches-postgres
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -45,24 +77,94 @@ jobs:
       - name: Install PostgreSQL test server
         uses: ./.github/actions/install-test-postgres
 
+  media-codecs:
+    name: Save media codec packages on main
+    concurrency:
+      group: warm-ci-caches-media-codecs
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install media codecs
+        uses: ./.github/actions/install-media-codecs
+
+  playwright:
+    name: Save Playwright Chromium and packages on main
+    concurrency:
+      group: warm-ci-caches-playwright
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 11.1.0
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        uses: ./.github/actions/install-playwright-chromium
+
+  reviewed-git:
+    name: Save the reviewed Git build on main
+    concurrency:
+      group: warm-ci-caches-reviewed-git
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install reviewed Git
+        uses: ./.github/actions/install-reviewed-git
+
   backend:
-    if: github.event_name != 'schedule'
+    needs: changed
+    if: needs.changed.outputs.builds == 'true'
     name: Backend caches
+    concurrency:
+      group: warm-ci-caches-backend-${{ needs.changed.outputs.builds == 'true' && 'selected' || github.run_id }}
+      cancel-in-progress: true
     uses: ./.github/workflows/scope-api-ci.yml
     with:
       warm_cache: true
 
   cli:
-    if: github.event_name != 'schedule'
+    needs: changed
+    if: needs.changed.outputs.builds == 'true'
     name: CLI caches
+    concurrency:
+      group: warm-ci-caches-cli-${{ needs.changed.outputs.builds == 'true' && 'selected' || github.run_id }}
+      cancel-in-progress: true
     uses: ./.github/workflows/scope-cli-build.yml
     with:
       validate_targets: true
       distribution_mode: pull-request
 
   media-worker-image:
-    if: github.event_name != 'schedule'
+    needs: changed
+    if: needs.changed.outputs.builds == 'true'
     name: Media worker image cache
+    concurrency:
+      group: warm-ci-caches-media-worker-image-${{ needs.changed.outputs.builds == 'true' && 'selected' || github.run_id }}
+      cancel-in-progress: true
     permissions:
       contents: read
       packages: write

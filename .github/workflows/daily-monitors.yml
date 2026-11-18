@@ -1,25 +1,40 @@
-name: Pull request CI duration
+name: Daily monitors
 
 on:
   schedule:
-    - cron: '17 9 * * *'
+    - cron: '7 18 * * *'
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
-  issues: write
 
 concurrency:
-  group: ci-duration
+  group: daily-monitors
   cancel-in-progress: false
 
 jobs:
-  duration:
+  production-backup:
+    name: Check the latest production backup
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check schedules and latest completed production backup
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: node deploy/scripts/check-production-backups.mjs
+
+  ci-duration:
     name: Check pull request CI duration
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
     steps:
       - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

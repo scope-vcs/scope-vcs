@@ -41,7 +41,7 @@ test('query uses project token and rejects API errors without echoing sensitive 
 })
 
 test('the backup check runs daily on main with only the production Railway token', () => {
-  const workflow = readFileSync(new URL('../../.github/workflows/backup-monitor.yml', import.meta.url), 'utf8')
+  const workflow = readFileSync(new URL('../../.github/workflows/daily-monitors.yml', import.meta.url), 'utf8')
   assert.match(workflow, /schedule:\n    - cron: '\d+ \d+ \* \* \*'/)
   assert.match(workflow, /if: github.ref == 'refs\/heads\/main'/)
   assert.match(workflow, /run: node deploy\/scripts\/check-production-backups.mjs/)
