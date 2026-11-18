@@ -139,7 +139,7 @@ const logs: Record<string, GitHubWorkflowJobLogResponse> = {
   103: { state: 'kept', text: `${stamp(35)}Build finished.\n`, truncated: false, fetched: false },
 }
 runDetail = { ...runDetail, opening_job_log: logs[102]! }
-const longLogDetail: GitHubWorkflowRunDetailResponse = {
+let longLogDetail: GitHubWorkflowRunDetailResponse = {
   run: initialRuns.workflow_runs[2]!,
   jobs: [job(301, 'package', { steps: [setUp, step(2, 'Package every artifact', { completed_at_unix: now - 200 })] })],
   jobs_not_read_yet: false,
@@ -170,6 +170,13 @@ Object.assign(window, {
         ? { ...listed, status: 'in_progress' as const, started_at_unix: now - 290, steps: [setUp, deploying] }
         : listed),
     }
+  },
+  expireRuns: () => {
+    longLogDetail = { ...longLogDetail, opening_job_log: { state: 'expired' } }
+    logs[301] = { state: 'expired' }
+    invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), topicsOf({
+      repo_id: 'octo/demo', incarnation_id: 'incarnation', version: 0, kind: 'GitHubWorkflowRunsExpired',
+    }))
   },
   emitRunChanged: (githubRunId: number) => invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), topicsOf({
     repo_id: 'octo/demo', incarnation_id: 'incarnation', version: 0, kind: { GitHubWorkflowRunChanged: { github_run_id: githubRunId } },

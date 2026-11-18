@@ -129,7 +129,9 @@ pub use github::review_imports::{
 };
 pub use github::skipped_reviews::{GitHubUnlistedReviewBot, SkipGitHubReview};
 pub use github::workflow_job_log_reads::GitHubJobLogReadJob;
-pub use github::workflow_retention::{GitHubWorkflowRetentionPass, GitHubWorkflowRunKey};
+pub use github::workflow_retention::{
+    GitHubWorkflowRetentionCursor, GitHubWorkflowRetentionPage, GitHubWorkflowRunKey,
+};
 pub use github::workflow_runs::{
     GitHubWorkflowRunCursor, GitHubWorkflowRunDetailRead, GitHubWorkflowRunPageQuery,
     GitHubWorkflowRunRead, GitHubWorkflowRunReadJob, GitHubWorkflowRunReference,

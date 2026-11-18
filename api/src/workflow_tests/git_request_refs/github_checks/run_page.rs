@@ -4,7 +4,7 @@ use super::super::super::fake_github::{
 use super::public::private_file_repository;
 use super::public_repositories::make_github_repository_public;
 use super::*;
-use crate::retention::apply_github_workflow_retention;
+use crate::retention::apply_github_workflow_retention_page;
 use crate::use_cases::github::job_logs::{JOB_LOG_WAIT, read_due_github_job_logs_once};
 use crate::use_cases::github::workflow_jobs::retry_github_workflow_job_reads_once;
 use scope_domain::{
@@ -222,18 +222,28 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
 
     let checks = request.checks().await;
     let mut expiry_events = state.repo_events.subscribe(TEST_REPO_ID);
-    let pass = apply_github_workflow_retention(
-        state,
-        unix_now() + GITHUB_WORKFLOW_RUN_LIMIT_SECS + GITHUB_WORKFLOW_RETENTION_SECS,
-    )
-    .await
-    .unwrap();
-    assert_eq!(pass.expired_runs.len(), 1);
-    assert!(pass.deleted_runs.is_empty());
+    let expiry = unix_now() + GITHUB_WORKFLOW_RUN_LIMIT_SECS + GITHUB_WORKFLOW_RETENTION_SECS;
+    let page = apply_github_workflow_retention_page(state, expiry, None, 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        page.expired_runs
+            .iter()
+            .map(|run| run.github_run_id)
+            .collect::<Vec<_>>(),
+        [RUN_ID]
+    );
+    assert!(page.deleted_runs.is_empty());
     assert!(
         std::iter::from_fn(|| expiry_events.try_recv().ok()).any(
             |event| event.kind == crate::repo_events::RepoChangeKind::GitHubWorkflowRunsExpired
         )
+    );
+    assert_eq!(
+        apply_github_workflow_retention_page(state, expiry, page.next, 1)
+            .await
+            .unwrap(),
+        scope_postgres::db::GitHubWorkflowRetentionPage::default()
     );
     assert_eq!(request.checks().await, checks);
     let expired = opened_run(state).await;

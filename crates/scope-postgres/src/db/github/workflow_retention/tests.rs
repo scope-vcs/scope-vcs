@@ -17,6 +17,7 @@ use sea_orm::ConnectionTrait;
 
 const REPO: &str = "owner/repo";
 const GITHUB_REPOSITORY: u64 = 42;
+const OTHER_GITHUB_REPOSITORY: u64 = 43;
 const FINISHED: u64 = 1_000_000;
 const NOW: u64 = FINISHED + GITHUB_WORKFLOW_RETENTION_SECS;
 const TESTED: &str = "2222222222222222222222222222222222222222";
@@ -79,8 +80,39 @@ fn kept_log(id: u64) -> GitHubJobLogState {
 fn key(github_run_id: u64) -> GitHubWorkflowRunKey {
     GitHubWorkflowRunKey {
         repo_id: REPO.into(),
+        github_repository_id: GITHUB_REPOSITORY,
         github_run_id,
     }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Retained {
+    deleted_runs: Vec<GitHubWorkflowRunKey>,
+    expired_runs: Vec<GitHubWorkflowRunKey>,
+    deleted_jobs_without_run: usize,
+}
+
+async fn retain(store: &MetadataStore, page_size: u64) -> Retained {
+    let repositories = store.repositories();
+    let mut retained = Retained::default();
+    let mut after = None;
+    loop {
+        let page = repositories
+            .apply_github_workflow_retention_page(NOW, after, page_size)
+            .await
+            .unwrap();
+        retained.deleted_runs.extend(page.deleted_runs);
+        retained.expired_runs.extend(page.expired_runs);
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    retained.deleted_jobs_without_run = repositories
+        .delete_github_workflow_jobs_without_run(NOW, page_size)
+        .await
+        .unwrap();
+    retained
 }
 
 async fn seed(store: &MetadataStore, runs: &[GitHubWorkflowRun], jobs: &[GitHubWorkflowJob]) {
@@ -165,6 +197,15 @@ async fn retention_deletes_runs_thirty_days_after_they_finish_and_keeps_an_open_
         ],
     )
     .await;
+    repositories
+        .save_github_workflow_jobs(
+            REPO,
+            OTHER_GITHUB_REPOSITORY,
+            &[job(61, 1, NOW, true)],
+            FINISHED,
+        )
+        .await
+        .unwrap();
     for id in [11, 21, 31, 51] {
         repositories
             .save_github_workflow_job_log(id, &kept_log(id), FINISHED)
@@ -172,14 +213,9 @@ async fn retention_deletes_runs_thirty_days_after_they_finish_and_keeps_an_open_
             .unwrap();
     }
 
-    let pass = repositories
-        .apply_github_workflow_retention(NOW, 1)
-        .await
-        .unwrap();
-
     assert_eq!(
-        pass,
-        GitHubWorkflowRetentionPass {
+        retain(&store, 1).await,
+        Retained {
             deleted_runs: vec![key(1)],
             expired_runs: vec![key(3)],
             deleted_jobs_without_run: 1,
@@ -188,6 +224,13 @@ async fn retention_deletes_runs_thirty_days_after_they_finish_and_keeps_an_open_
     assert!(!stored_run(&store, 1).await);
     assert_eq!(stored_job(&store, 1, 11).await, None);
     assert_eq!(stored_log(&store, 11).await, None);
+    assert!(
+        repositories
+            .github_workflow_job(REPO, OTHER_GITHUB_REPOSITORY, 1, 61)
+            .await
+            .unwrap()
+            .is_some()
+    );
     assert!(stored_run(&store, 2).await);
     assert_eq!(stored_log(&store, 21).await, Some(kept_log(21)));
     assert!(stored_run(&store, 4).await);
@@ -215,13 +258,7 @@ async fn retention_deletes_runs_thirty_days_after_they_finish_and_keeps_an_open_
     assert_eq!(stored_job(&store, 5, 51).await, None);
     assert!(stored_job(&store, 5, 52).await.is_some());
 
-    assert_eq!(
-        repositories
-            .apply_github_workflow_retention(NOW, 100)
-            .await
-            .unwrap(),
-        GitHubWorkflowRetentionPass::default()
-    );
+    assert_eq!(retain(&store, 100).await, Retained::default());
 
     request_fixtures::closed(
         &store.requests(),
@@ -234,14 +271,7 @@ async fn retention_deletes_runs_thirty_days_after_they_finish_and_keeps_an_open_
         },
     )
     .await;
-    assert_eq!(
-        repositories
-            .apply_github_workflow_retention(NOW, 100)
-            .await
-            .unwrap()
-            .deleted_runs,
-        [key(3)]
-    );
+    assert_eq!(retain(&store, 100).await.deleted_runs, [key(3)]);
     assert!(!stored_run(&store, 3).await);
     assert_eq!(stored_log(&store, 31).await, None);
 }
