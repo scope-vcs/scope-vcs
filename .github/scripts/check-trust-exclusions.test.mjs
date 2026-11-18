@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { expiredTrustExclusions, trustExclusions } from './check-trust-exclusions.mjs'
+import { expiredTrustExclusions, lapsedAdvisoryExceptions, trustExclusions } from './check-trust-exclusions.mjs'
 
 const workspaceYaml = [
   'trustPolicy: no-downgrade',
@@ -41,4 +41,40 @@ test('an exclusion list the check cannot read fails instead of passing', () => {
   assert.throws(() => trustExclusions('trustPolicyExclude: ["@pierre/theme@2.0.0"]\n'), /block list/)
   assert.throws(() => trustExclusions('trustPolicyExclude:\n  - semver@6.3.1\n  - name: "@pierre/theme@2.0.0"\n'),
     /cannot read/)
+})
+
+const auditYaml = [
+  'blockExoticSubdeps: true',
+  'auditConfig:',
+  '  ignoreGhsas:',
+  '    - GHSA-fc5q-39xc-vjpf',
+  'supportedArchitectures:',
+  '  os:',
+  '    - linux',
+].join('\n')
+const advisoryExceptions = new Map([
+  ['GHSA-fc5q-39xc-vjpf', { expiry: '2026-12-09', approver: 'Adam Blumoff', reason: 'build tooling only' }],
+])
+
+test('an ignored advisory fails from its expiry date and passes before it', () => {
+  assert.deepEqual(lapsedAdvisoryExceptions(auditYaml, '2026-12-08', advisoryExceptions), [])
+  assert.deepEqual(lapsedAdvisoryExceptions(auditYaml, '2026-12-09', advisoryExceptions),
+    ['GHSA-fc5q-39xc-vjpf (build tooling only; approved by Adam Blumoff) expired on 2026-12-09'])
+})
+
+test('an ignored advisory without a recorded approval fails', () => {
+  const unrecorded = auditYaml.replace('    - GHSA-fc5q-39xc-vjpf', '    - GHSA-fc5q-39xc-vjpf\n    - GHSA-xxxx-yyyy-zzzz')
+  assert.deepEqual(lapsedAdvisoryExceptions(unrecorded, '2026-11-18', advisoryExceptions),
+    ['GHSA-xxxx-yyyy-zzzz has no recorded reason, expiry, and approver'])
+  const unapproved = new Map([['GHSA-fc5q-39xc-vjpf', { expiry: '2026-12-09', reason: 'build tooling only' }]])
+  assert.deepEqual(lapsedAdvisoryExceptions(auditYaml, '2026-11-18', unapproved),
+    ['GHSA-fc5q-39xc-vjpf has no recorded reason, expiry, and approver'])
+})
+
+test('an advisory ignore list the check cannot read fails instead of passing', () => {
+  assert.deepEqual(lapsedAdvisoryExceptions('auditConfig:\n  auditLevel: high\n', '2026-11-18', advisoryExceptions), [])
+  assert.throws(() => lapsedAdvisoryExceptions('auditConfig:\n  ignoreGhsas: [GHSA-xxxx-yyyy-zzzz]\n', '2026-11-18'),
+    /block list/)
+  assert.throws(() => lapsedAdvisoryExceptions('auditConfig: { ignoreGhsas: [GHSA-xxxx-yyyy-zzzz] }\n', '2026-11-18'),
+    /block list/)
 })
