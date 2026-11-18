@@ -380,6 +380,11 @@ pub(super) async fn repo_a() -> RepoA {
         ("token", UNHELD_CAPABILITY.to_string()),
         ("user_code", UNHELD_CAPABILITY.to_string()),
         ("device_code", UNHELD_CAPABILITY.to_string()),
+        ("release", "cli-0123456789ab".to_string()),
+        (
+            "artifact",
+            "scope-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+        ),
     ]);
     let unvaried = [
         "view",

@@ -53,7 +53,6 @@ WORKDIR /scope
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY api ./api
-COPY cli-downloads ./cli-downloads
 COPY crates ./crates
 COPY media-service ./media-service
 COPY media-worker/Cargo.toml ./media-worker/Cargo.toml

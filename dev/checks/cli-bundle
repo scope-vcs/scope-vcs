@@ -3,7 +3,6 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 cargo build --manifest-path cli/Cargo.toml --profile release-check --locked --bin scope
-cargo build -p scope-cli-downloads --release --locked
 
 host="$(rustc -vV | sed -n 's/^host: //p')"
 target="$(jq -c --arg host "$host" '.targets[] | select(.triple == $host)' cli/distribution/targets.json)"
@@ -15,7 +14,5 @@ SCOPE_BINARY="$scope_binary" \
 SCOPE_ARTIFACT="$artifact" \
   bash cli/distribution/package-bundle.sh
 
-service_binary="$(./dev/cargo-target-dir Cargo.toml)/release/scope-cli-service"
-[[ "$host" == *windows* ]] && service_binary+=.exe
-SCOPE_TEST_BINARY="$scope_binary" SCOPE_TEST_ARTIFACT="$artifact" SCOPE_TEST_SERVICE="$service_binary" \
+SCOPE_TEST_BINARY="$scope_binary" SCOPE_TEST_ARTIFACT="$artifact" \
   node --test cli/distribution/install-smoke.test.mjs

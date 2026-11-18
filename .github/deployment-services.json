@@ -102,25 +102,6 @@
           "installGit": false
         }
       }
-    },
-    "cli-downloads": {
-      "name": "scope-cli-downloads",
-      "id": "a212bccb-ed1a-4574-a031-2b0183e08a2d",
-      "dependsOn": [
-        "api"
-      ],
-      "deployment": {
-        "backend": false,
-        "runtimeConfig": "cli-downloads/railway.json",
-        "verifyTransitionConfig": false,
-        "artifact": {
-          "kind": "binary",
-          "binary": "scope-cli-service",
-          "imageName": "cli",
-          "dockerfile": "deploy/railway/prebuilt.Dockerfile",
-          "installGit": false
-        }
-      }
     }
   },
   "mediaResources": {
@@ -221,7 +202,8 @@
         "deploy/scripts/prepare-railway-artifact.sh",
         "deploy/scripts/extract-railway-release.py",
         "deploy/scripts/railway-artifact.mjs",
-        "dev/checks/contract"
+        "dev/checks/contract",
+        "cli/distribution/targets.json"
       ],
       "prefixes": [
         "api/",
@@ -285,7 +267,8 @@
         "dev/dotenv.sh",
         "deploy/scripts/deployment-components.mjs",
         ".github/actions/install-reviewed-git/action.yml",
-        ".github/workflows/warm-ci-caches.yml"
+        ".github/workflows/warm-ci-caches.yml",
+        "cli/distribution/targets.json"
       ],
       "prefixes": [
         "api/",
@@ -293,16 +276,12 @@
         "web/"
       ]
     },
-    "cli-downloads": {
+    "cli-release": {
       "files": [
         "dev/tool-versions.json",
         "dev/check-git-version.mjs",
         "dev/install-git.sh",
         ".github/scripts/use-ubuntu-apt-sources.sh",
-        "deploy/railway/prebuilt.Dockerfile",
-        "deploy/scripts/prepare-railway-artifact.sh",
-        "deploy/scripts/railway-artifact.mjs",
-        "deploy/scripts/deployment-components.mjs",
         "Cargo.lock",
         "Cargo.toml",
         "Cross.toml",
@@ -319,7 +298,6 @@
         "dev/checks/cli-bundle",
         "dev/checks/integration",
         ".github/scripts/select-cli-distribution-targets.mjs",
-        "deploy/scripts/deploy-railway.sh",
         "dev/local-stack.sh",
         "dev/scope-dev",
         "dev/cargo-target-dir",
@@ -327,12 +305,12 @@
         "dev/local-identity.py",
         "dev/dotenv.sh",
         ".github/actions/install-reviewed-git/action.yml",
-        ".github/workflows/warm-ci-caches.yml"
+        ".github/workflows/warm-ci-caches.yml",
+        "deploy/scripts/cli-release-manifest.mjs"
       ],
       "prefixes": [
         "api/",
         "cli/",
-        "cli-downloads/",
         "crates/"
       ]
     },
@@ -360,7 +338,6 @@
       "prefixes": [
         "cli/distribution/",
         "cli/src/",
-        "cli-downloads/",
         "crates/scope-dependency-analyzer/"
       ]
     }

@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
+import { posixInstallScript, windowsInstallScript } from '../../web/src/server/cli-installer-scripts.ts';
 
 const execute = promisify(execFile);
 
@@ -21,41 +22,40 @@ const windows = process.platform === 'win32';
 const executable = windows ? 'scope.exe' : 'scope';
 const binary = resolve(requiredEnv('SCOPE_TEST_BINARY'));
 const artifact = resolve(requiredEnv('SCOPE_TEST_ARTIFACT'));
-const service = resolve(requiredEnv('SCOPE_TEST_SERVICE'));
 const configuration = JSON.parse(await readFile(new URL('./targets.json', import.meta.url), 'utf8'));
 const platform = { linux: 'linux', darwin: 'macos', win32: 'windows' }[process.platform];
 const target = configuration.targets.find(({ os, arch }) => os === platform && arch === process.arch);
 
-async function availablePort() {
-  const listener = createServer();
-  listener.listen(0, '127.0.0.1');
-  await once(listener, 'listening');
-  const port = listener.address().port;
-  await new Promise((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
-  return port;
-}
+const release = 'cli-0123456789ab';
 
-async function waitForService(url, child) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    assert.equal(child.exitCode, null, 'installer service exited before becoming ready');
+async function serveDownloads(artifacts) {
+  const server = createServer(async (request, response) => {
+    const { pathname } = new URL(request.url, 'http://127.0.0.1');
+    const tracked = pathname.match(/^\/cli\/downloads\/([^/]+)\/([^/]+)$/);
+    if (tracked?.[1] === release) {
+      response.writeHead(302, { location: `/release-assets/${tracked[2]}` }).end();
+      return;
+    }
     try {
-      const response = await fetch(`${url}/readyz`);
-      if (response.ok) return;
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error('installer service did not become ready');
+      const asset = pathname.match(/^\/release-assets\/([^/]+)$/);
+      response.writeHead(200).end(await readFile(join(artifacts, asset[1])));
+    } catch {
+      response.writeHead(404).end();
+    }
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  return server;
 }
 
 test('native installer installs the CLI and preserves it on failed updates', { timeout: 300_000 }, async (t) => {
   assert.ok(target, `No native distribution target for ${process.platform}/${process.arch}`);
   const workspace = await mkdtemp(join(tmpdir(), 'scope installer '));
-  let child;
+  let server;
   t.after(async () => {
-    if (child?.exitCode === null && child.pid) {
-      const exited = once(child, 'exit');
-      child.kill();
-      await exited;
+    if (server) {
+      server.closeAllConnections();
+      await new Promise((close) => server.close(close));
     }
     await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
@@ -66,29 +66,16 @@ test('native installer installs the CLI and preserves it on failed updates', { t
   assert.ok(process.env.SCOPE_TEST_ARTIFACT, 'SCOPE_TEST_ARTIFACT must name the packaged bundle');
   const binaryBytes = await readFile(binary);
   const artifactBytes = await readFile(artifact);
-  const checksum = createHash('sha256').update(artifactBytes).digest('hex');
-  for (const item of configuration.targets) {
-    await writeFile(join(artifacts, item.artifact), artifactBytes);
-    await writeFile(join(artifacts, `${item.artifact}.sha256`), `${checksum}  ${item.artifact}\n`);
-  }
-  const port = await availablePort();
-  const url = `http://127.0.0.1:${port}`;
-  child = spawn(service, [], {
-    env: { ...process.env, PORT: String(port), SCOPE_CLI_ARTIFACT_DIR: artifacts, SCOPE_CLI_PUBLIC_URL: url },
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-  let serviceError = '';
-  child.stderr.on('data', (chunk) => { serviceError += chunk; });
-  child.on('error', (error) => { serviceError += error.message; });
-  try {
-    await waitForService(url, child);
-  } catch (error) {
-    throw new Error(`${error.message}\n${serviceError}`);
-  }
-  const scriptResponse = await fetch(`${url}/${windows ? 'install.ps1' : 'install.sh'}`);
-  assert.ok(scriptResponse.ok);
+  for (const item of configuration.targets) await writeFile(join(artifacts, item.artifact), artifactBytes);
+  server = await serveDownloads(artifacts);
+  const url = `http://127.0.0.1:${server.address().port}`;
   const script = join(workspace, windows ? 'install.ps1' : 'install.sh');
-  await writeFile(script, await scriptResponse.text());
+  async function pinInstaller(bytes) {
+    const checksum = createHash('sha256').update(bytes).digest('hex');
+    const pinned = { tag: release, artifacts: Object.fromEntries(configuration.targets.map((item) => [item.artifact, checksum])) };
+    await writeFile(script, (windows ? windowsInstallScript : posixInstallScript)(url, pinned, configuration.targets));
+  }
+  await pinInstaller(artifactBytes);
   const destination = join(installDir, executable);
   const env = { ...process.env, SCOPE_INSTALL_DIR: installDir };
   if (!windows) env.PATH = `${installDir}${delimiter}${process.env.PATH}`;
@@ -185,11 +172,7 @@ test('native installer installs the CLI and preserves it on failed updates', { t
   await execute('tar', [
     '-czf', join(artifacts, target.artifact), '-C', incompleteBundle, '.',
   ]);
-  const incompleteBytes = await readFile(join(artifacts, target.artifact));
-  await writeFile(
-    join(artifacts, `${target.artifact}.sha256`),
-    `${createHash('sha256').update(incompleteBytes).digest('hex')}  ${target.artifact}\n`,
-  );
+  await pinInstaller(await readFile(join(artifacts, target.artifact)));
   await assert.rejects(install());
   assert.equal(createHash('sha256').update(await readFile(destination)).digest('hex'), installedChecksum);
 

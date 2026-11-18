@@ -5,7 +5,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { RAILWAY_COMPONENTS, backendSelected } from "./deployment-components.mjs";
 
-export const COMPONENTS = RAILWAY_COMPONENTS;
+export const COMPONENTS = [...RAILWAY_COMPONENTS, "cli-release"];
 const SELECTIONS = [...COMPONENTS, "cli-distribution"];
 
 function matchesScope(path, scope) {
@@ -23,7 +23,7 @@ export function classifyChanges(manifest, paths, requestedScope = "changed") {
       throw new Error(`Unknown deployment scope: ${requestedScope}`);
     }
     selection[requestedScope] = true;
-    if (requestedScope === "cli-downloads") selection["cli-distribution"] = true;
+    if (requestedScope === "cli-release") selection["cli-distribution"] = true;
     return selection;
   }
 
@@ -50,18 +50,24 @@ export function includeMigrationParticipants(selection, apiChanges) {
   return Object.fromEntries(SELECTIONS.map((component) => [component, true]));
 }
 
+function includeInstallerHost(selection) {
+  return selection["cli-release"] ? { ...selection, web: true } : selection;
+}
+
 export function planFromDeploymentProgress(manifest, pathsByComponent, requestedScope = "changed") {
-  if (requestedScope !== "changed") return includeMigrationParticipants(classifyChanges(manifest, [], requestedScope), pathsByComponent.api);
+  if (requestedScope !== "changed") {
+    return includeInstallerHost(includeMigrationParticipants(classifyChanges(manifest, [], requestedScope), pathsByComponent.api));
+  }
 
   const selection = Object.fromEntries(COMPONENTS.map((component) => {
     const paths = pathsByComponent[component];
     if (!Array.isArray(paths)) return [component, true];
     return [component, classifyDeploymentChanges(manifest, paths)[component]];
   }));
-  const cliPaths = pathsByComponent["cli-downloads"];
+  const cliPaths = pathsByComponent["cli-release"];
   selection["cli-distribution"] = !Array.isArray(cliPaths)
     || classifyDeploymentChanges(manifest, cliPaths)["cli-distribution"];
-  return includeMigrationParticipants(selection, pathsByComponent.api);
+  return includeInstallerHost(includeMigrationParticipants(selection, pathsByComponent.api));
 }
 
 function changedPaths(base, head, useMergeBase = true) {
@@ -120,7 +126,7 @@ function main() {
     if (!SELECTIONS.includes(component) || typeof selected !== "boolean") throw new Error(`Invalid deployment selection for ${component}`);
     const outputName = {
       "media-api": "media",
-      "cli-downloads": "cli",
+      "cli-release": "cli",
       "cli-distribution": "cli_distribution",
       "media-worker": "media_worker",
     }[component] ?? component;

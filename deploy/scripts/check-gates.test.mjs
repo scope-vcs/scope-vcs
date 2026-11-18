@@ -117,11 +117,9 @@ test('web gate includes resource, Hooks and convention checks; backend owns the 
   assert.ok(cliCommands.includes('cargo shear --locked --deny-warnings cli'));
   assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
   assert.ok(cliCommands.includes('cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings'));
-  assert.ok(cliCommands.includes('cargo test -p scope-cli-downloads --locked'));
   assert.ok(!cliCommands.some((command) => command.includes('--release')), cliCommands.join('\n'));
   const bundleCommands = commands('cli-bundle');
   assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --profile release-check --locked --bin scope'));
-  assert.ok(bundleCommands.includes('cargo build -p scope-cli-downloads --release --locked'));
   assert.ok(bundleCommands.includes('bash cli/distribution/package-bundle.sh'));
   assert.ok(bundleCommands.includes('node --test cli/distribution/install-smoke.test.mjs'));
   assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture']);
@@ -265,16 +263,40 @@ test('policy rejects oversized non-web source in a complete checkout', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('the CLI checks avoid release builds and publication downloads the service artifact the build uploads', () => {
+test('the CLI checks avoid release builds and publication attests the artifacts the build uploads', () => {
   const workflow = read('.github/workflows/scope-cli-build.yml');
   const checks = workflow.slice(workflow.indexOf('\n  checks:\n'), workflow.indexOf('\n  build:\n'));
-  const upload = workflow.slice(workflow.indexOf('      - name: Upload service'));
   assert.doesNotMatch(checks, /--release/);
-  assert.match(upload, /name: cli-service-release-\$\{\{ github\.sha \}\}/);
-  assert.match(upload, /path: artifacts\/scope-cli-service\.tar\.gz/);
+  assert.match(workflow, /name: \$\{\{ matrix\.artifact \}\}\n\s+path: cli\/dist\/\$\{\{ matrix\.artifact \}\}/);
   const publish = read('.github/workflows/publish-cli.yml');
-  assert.match(publish, /name: cli-service-release-\$\{\{ github\.sha \}\}/);
-  assert.match(publish, /--file artifacts\/scope-cli-service\.tar\.gz[\s\\]+--directory \.railway-cli\/bin/);
+  assert.match(publish, /pattern: scope-\*\n\s+path: cli\/dist/);
+  const attest = publish.indexOf('actions/attest-build-provenance@');
+  assert.ok(attest > 0 && attest < publish.indexOf('gh release create'), 'artifacts must be attested before they are published');
+  assert.ok(publish.indexOf('gh release create') < publish.indexOf('SCOPE_CLI_RELEASE='), 'installers must be pinned only to a published release');
+  assert.doesNotMatch(publish, /cargo build/);
+  const steps = publish.split('\n      - ').slice(1);
+  const reuse = steps.findIndex((step) => step.includes('reuse-cli-release.sh'));
+  assert.ok(reuse >= 0, 'a rerun must look for the release this revision already published');
+  for (const [index, step] of steps.entries()) {
+    const buildsOrPublishes = /download-artifact|cli-release-manifest\.mjs "\$GITHUB_SHA" cli\/dist|attest-build-provenance|gh release create/.test(step);
+    if (index > reuse && buildsOrPublishes) {
+      assert.match(step, /if: steps\.published\.outputs\.exists != 'true'/, step.split('\n')[0]);
+    }
+  }
+  assert.doesNotMatch(steps.find((step) => step.includes('SCOPE_CLI_RELEASE=')), /if: steps\.published/);
+});
+
+test('the CLI release is recorded only after the web deployment that serves it is verified', () => {
+  assert.doesNotMatch(read('.github/workflows/publish-cli.yml'), /production-deployment-progress/);
+  const release = read('.github/workflows/release.yml');
+  const deploy = release.split('\n  production-deploy:\n')[1].split(/\n  [\w-]+:\n/)[0];
+  const deployed = deploy.indexOf('run: bash deploy/scripts/deploy-production-railway.sh');
+  const added = deploy.indexOf('{component: "cli-release"');
+  const recorded = deploy.indexOf('production-deployment-progress.mjs record-file');
+  assert.ok(deployed > 0 && deployed < added && added < recorded, 'the CLI receipt must follow the verified web deployment');
+  const step = deploy.slice(deploy.lastIndexOf('\n      - name:', added), deploy.indexOf('\n      - name:', added));
+  assert.match(step, /\n        if: needs\.cli-release\.result == 'success'\n/);
+  assert.equal(release.split('{component: "cli-release"').length, 2);
 });
 
 test('bundle packaging rejects missing and stale release identities after all builds', () => {
@@ -282,11 +304,8 @@ test('bundle packaging rejects missing and stale release identities after all bu
   const identityStep = workflow.split('      - name: Verify release identity\n')[1]
     .split('      - name: Package CLI\n')[0];
   const script = identityStep.split('        run: |\n')[1].replace(/^          /gm, '');
-  const buildStep = workflow.split('      - name: Build scope and the native installer service\n')[1]
-    .split('      - name: Verify release identity\n')[0];
-  assert.match(
-    buildStep,
-    /cargo build -p scope-cli-downloads [^\n]*&\n[\s\S]*\bwait "\$service"\n/,
+  assert.ok(
+    workflow.indexOf('      - name: Build scope\n') < workflow.indexOf('      - name: Verify release identity\n'),
     'identity must be checked after Cargo finishes building release binaries',
   );
   assert.ok(
@@ -324,7 +343,7 @@ function releaseJobs() {
     }]));
 }
 
-const releaseJobOrder = ['policy', 'ops', 'validation', 'server-validation', 'release-preparation', 'production-deploy', 'cli-deploy', 'scheduled-failure-report'];
+const releaseJobOrder = ['policy', 'ops', 'validation', 'server-validation', 'release-preparation', 'cli-release', 'production-deploy', 'scheduled-failure-report'];
 const releaseChecksAndDeploys = releaseJobOrder.slice(0, -1);
 
 function releasePath(selected, { failure = '', cancelled = false, ref = 'refs/heads/main', event = 'workflow_dispatch' } = {}) {
@@ -348,26 +367,23 @@ test('a release with nothing to deploy skips every check and deploys nothing', (
   }
 });
 
-test('a release deploys the selected application once and publishes the CLI only after it', () => {
-  for (const selected of [['web'], ['backend_selected'], ['backend_selected', 'web', 'cli']]) {
+test('a release publishes the CLI before deploying the web that serves it', () => {
+  for (const selected of [['web'], ['backend_selected'], ['backend_selected', 'web', 'cli'], ['web', 'cli']]) {
     const path = releasePath(selected);
     assert.equal(path['production-deploy'].result, 'success', selected.join());
-    assert.equal(path['cli-deploy'].result, selected.includes('cli') ? 'success' : 'skipped', selected.join());
+    assert.equal(path['cli-release'].result, selected.includes('cli') ? 'success' : 'skipped', selected.join());
   }
-  const cli = releasePath(['cli']);
-  assert.equal(cli['production-deploy'].result, 'skipped');
-  assert.equal(cli['cli-deploy'].result, 'success');
 });
 
-test('a failed check, build or deploy leaves production and the CLI unpublished', () => {
-  for (const failure of ['policy', 'ops', 'validation', 'server-validation', 'release-preparation', 'production-deploy']) {
+test('a failed check, build or CLI release leaves production undeployed', () => {
+  for (const failure of ['policy', 'ops', 'validation', 'server-validation', 'release-preparation', 'cli-release']) {
     const result = releasePath(['backend_selected', 'web', 'cli'], { failure });
-    if (failure !== 'production-deploy') assert.equal(result['production-deploy'].result, 'skipped', failure);
-    assert.equal(result['cli-deploy'].result, 'skipped', failure);
+    assert.equal(result['production-deploy'].result, 'skipped', failure);
+    if (['policy', 'ops', 'validation'].includes(failure)) assert.equal(result['cli-release'].result, 'skipped', failure);
   }
   for (const options of [{ cancelled: true }, { ref: 'refs/heads/feature' }]) {
     const result = releasePath(['backend_selected', 'web', 'cli'], options);
-    for (const key of ['release-preparation', 'production-deploy', 'cli-deploy']) assert.equal(result[key].result, 'skipped', key);
+    for (const key of ['release-preparation', 'cli-release', 'production-deploy']) assert.equal(result[key].result, 'skipped', key);
   }
 });
 
@@ -394,36 +410,33 @@ test('production and CLI jobs deploy prepared images without building', () => {
   assert.doesNotMatch(deploy, /cargo build|docker build|railway up|pnpm build|RAILWAY_API_TOKEN/);
   assert.match(read('.github/workflows/prepare-release.yml'), /name: prepared-release-\$\{\{ inputs\.source_sha \}\}/);
   const cliDeploy = read('.github/workflows/publish-cli.yml');
-  assert.match(cliDeploy, /SCOPE_PREPARED_RELEASE_PATH: prepared-cli-release\.json/);
-  assert.match(cliDeploy, /prepare-railway-artifact\.sh cli-downloads \.railway-cli prepared-cli-release\.json/);
   assert.doesNotMatch(cliDeploy, /cargo build/);
 });
 
-test('CLI publication configures the advertised installer origin before deployment', (t) => {
+test('CLI publication pins the web installers to the published release without deploying', (t) => {
   const workflow = read('.github/workflows/publish-cli.yml');
-  const block = workflow.match(/      - name: Deploy artifacts to Railway\n[\s\S]*?        run: \|\n((?:          .*\n)+)/)?.[1];
-  assert.ok(block, 'CLI deployment shell step must be present');
+  const block = workflow.match(/      - name: Pin the web installers to this release\n[\s\S]*?        run: \|\n((?:          .*\n)+)/)?.[1];
+  assert.ok(block, 'the installer pin step must be present');
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-cli-publication-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  mkdirSync(resolve(dir, 'deploy/scripts'), { recursive: true });
   mkdirSync(resolve(dir, '.github'));
+  mkdirSync(resolve(dir, 'cli/dist'), { recursive: true });
   mkdirSync(resolve(dir, 'bin'));
   writeFileSync(resolve(dir, '.github/deployment-services.json'), JSON.stringify(manifest));
+  const artifacts = { 'scope-x86_64-unknown-linux-musl': 'a'.repeat(64) };
+  writeFileSync(resolve(dir, 'cli/dist/cli-release.json'), JSON.stringify({ tag: 'cli-1', sourceSha: 'b'.repeat(40), artifacts }));
   writeFileSync(resolve(dir, 'bin/railway'), '#!/bin/sh\nprintf "%s\\n" "$@" >> events\n', { mode: 0o755 });
-  writeFileSync(resolve(dir, 'deploy/scripts/deploy-railway.sh'), '#!/bin/sh\nprintf "deploy %s\\n" "$1" >> events\n');
   const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-euo', 'pipefail', '-c', block.replace(/^          /gm, '')], {
     cwd: dir,
     encoding: 'utf8',
     env: { PATH: `${resolve(dir, 'bin')}:${process.env.PATH}` },
   });
   assert.equal(result.status, 0, result.stderr);
-  const events = readFileSync(resolve(dir, 'events'), 'utf8').trim().split('\n');
-  assert.deepEqual(events, [
+  assert.deepEqual(readFileSync(resolve(dir, 'events'), 'utf8').trim().split('\n'), [
     'variable', 'set', '--project', manifest.railway.projectId,
     '--environment', manifest.environments.production.environmentId,
-    '--service', manifest.services['cli-downloads'].id, '--skip-deploys',
-    `SCOPE_CLI_PUBLIC_URL=${manifest.environments.production.cliPublicOrigin}`,
-    `deploy ${manifest.services['cli-downloads'].id}`,
+    '--service', manifest.services.web.id, '--skip-deploys',
+    `SCOPE_CLI_RELEASE=${JSON.stringify({ tag: 'cli-1', artifacts })}`,
   ]);
 });
 
@@ -608,8 +621,8 @@ test('preparation overlaps validation while production waits for every check', (
   const section = (name) => release.split(`\n  ${name}:\n`)[1].split(/\n  [\w-]+:\n/)[0];
   const needs = (name) => section(name).match(/needs: \[(.+)\]/)[1].split(', ');
   assert.deepEqual(needs('release-preparation'), ['plan', 'server-validation']);
-  assert.deepEqual(needs('production-deploy'), ['plan', 'policy', 'ops', 'validation', 'release-preparation']);
-  assert.deepEqual(needs('cli-deploy'), ['plan', 'policy', 'ops', 'validation', 'production-deploy']);
+  assert.deepEqual(needs('cli-release'), ['plan', 'policy', 'ops', 'validation']);
+  assert.deepEqual(needs('production-deploy'), ['plan', 'policy', 'ops', 'validation', 'release-preparation', 'cli-release']);
   assert.doesNotMatch(section('plan'), /dev\/checks\/(policy|ops)/);
   for (const job of ['policy', 'ops']) assert.match(section(job), /\n    needs: plan\n/);
 });

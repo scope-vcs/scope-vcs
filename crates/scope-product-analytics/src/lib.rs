@@ -54,11 +54,15 @@ impl ProductEvent {
         event
     }
 
-    pub fn cli_artifact_downloaded(target_triple: &str, os: &str, arch: &str) -> Self {
-        let mut event = Self::new("cli:artifact_download", ProductActor::System);
-        event.insert_string("target", target_triple);
-        event.insert_string("os", os);
-        event.insert_string("arch", arch);
+    pub fn cli_artifact_downloaded(download: CliArtifactDownload<'_>) -> Self {
+        let mut event = Self::new("cli:artifact_download", ProductActor::System)
+            .with_source(EventSource::CliDownloads);
+        event.insert_string("version", download.version);
+        event.insert_string("artifact", download.artifact);
+        event.insert_string("target", download.target_triple);
+        event.insert_string("os", download.os);
+        event.insert_string("arch", download.arch);
+        event.insert_string("installer", download.installer.as_str());
         event
     }
 
@@ -389,6 +393,41 @@ impl EventSource {
             Self::Cli => "cli",
             Self::CliDownloads => "cli_downloads",
             Self::Git => "git",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CliArtifactDownload<'a> {
+    pub version: &'a str,
+    pub artifact: &'a str,
+    pub target_triple: &'a str,
+    pub os: &'a str,
+    pub arch: &'a str,
+    pub installer: CliInstaller,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CliInstaller {
+    Shell,
+    PowerShell,
+    Direct,
+}
+
+impl CliInstaller {
+    pub fn from_query(value: Option<&str>) -> Self {
+        match value {
+            Some("sh") => Self::Shell,
+            Some("ps1") => Self::PowerShell,
+            _ => Self::Direct,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Shell => "sh",
+            Self::PowerShell => "ps1",
+            Self::Direct => "direct",
         }
     }
 }

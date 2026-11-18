@@ -23,7 +23,7 @@ function deploymentSelection(overrides = {}) {
     "media-api": false,
     api: false,
     web: false,
-    "cli-downloads": false,
+    "cli-release": false,
     "cli-distribution": false,
     ...overrides,
   };
@@ -35,7 +35,7 @@ test("changes select the required deployment lanes", () => {
     "media-api": true,
     api: true,
     web: true,
-    "cli-downloads": true,
+    "cli-release": true,
     "cli-distribution": true,
   };
   const cases = [
@@ -50,7 +50,7 @@ test("changes select the required deployment lanes", () => {
         "media-worker": true,
         "media-api": true,
         api: true,
-        "cli-downloads": true,
+        "cli-release": true,
         "cli-distribution": true,
       },
     ],
@@ -58,7 +58,7 @@ test("changes select the required deployment lanes", () => {
     [
       "API implementation changes validate CLI without rebuilding distribution targets",
       ["api/src/main.rs"],
-      { api: true, web: true, "cli-downloads": true },
+      { api: true, web: true, "cli-release": true },
     ],
     [
       "contract generator inputs and generated artifacts run the backend contract gate",
@@ -66,16 +66,16 @@ test("changes select the required deployment lanes", () => {
       { api: true, web: true },
     ],
     [
-      "shared runtime image selects backend services and CLI downloads",
+      "shared runtime image selects backend services",
       ["deploy/railway/prebuilt.Dockerfile"],
-      { api: true, "cli-downloads": true },
+      { api: true },
     ],
     [
       "dependency analyzer crate changes rebuild crate consumers and the CLI bundle",
       ["crates/scope-dependency-analyzer/src/lib.rs"],
       {
         "media-api": true, "media-worker": true,
-        api: true, web: true, "cli-downloads": true, "cli-distribution": true,
+        api: true, web: true, "cli-release": true, "cli-distribution": true,
       },
     ],
     [
@@ -86,22 +86,22 @@ test("changes select the required deployment lanes", () => {
     [
       "CLI publishing selects CLI without rebuilding distributions",
       [".github/workflows/publish-cli.yml"],
-      { "cli-downloads": true },
+      { "cli-release": true },
     ],
     [
       "CLI tests validate CLI without rebuilding distribution targets",
       ["cli/tests/request.rs"],
-      { "cli-downloads": true },
+      { "cli-release": true },
     ],
     [
       "CLI source changes rebuild distribution targets",
       ["cli/src/request.rs"],
-      { "cli-downloads": true, "cli-distribution": true },
+      { "cli-release": true, "cli-distribution": true },
     ],
     [
       "distribution config changes rebuild distribution targets",
       ["cli/distribution/targets.json"],
-      { "cli-downloads": true, "cli-distribution": true },
+      { api: true, web: true, "cli-release": true, "cli-distribution": true },
     ],
     [
       "shared process lifecycle changes rebuild every Rust consumer",
@@ -116,7 +116,7 @@ test("changes select the required deployment lanes", () => {
         "media-api": true,
         api: true,
         web: true,
-        "cli-downloads": true,
+        "cli-release": true,
       },
     ],
     [
@@ -132,17 +132,17 @@ test("changes select the required deployment lanes", () => {
     [
       "component workflow changes exercise only their lane",
       [".github/workflows/scope-cli-build.yml"],
-      { "cli-downloads": true, "cli-distribution": true },
+      { "cli-release": true, "cli-distribution": true },
     ],
     [
       "artifact-shaping scripts select the lanes they package",
       [".github/scripts/select-cli-distribution-targets.mjs"],
-      { "cli-downloads": true, "cli-distribution": true },
+      { "cli-release": true, "cli-distribution": true },
     ],
     [
       "release preparation scripts rebuild every prepared image",
       ["deploy/scripts/prepare-railway-artifact.sh", "deploy/scripts/deployment-components.mjs"],
-      { "media-api": true, api: true, web: true, "cli-downloads": true },
+      { "media-api": true, api: true, web: true },
     ],
     [
       "check entrypoints select the lane they gate",
@@ -157,7 +157,7 @@ test("changes select the required deployment lanes", () => {
     [
       "local stack tooling reruns the integration consumers",
       ["dev/scope-dev"],
-      { "media-worker": true, "media-api": true, web: true, "cli-downloads": true },
+      { "media-worker": true, "media-api": true, web: true, "cli-release": true },
     ],
     [
       "deploy-time and operations scripts are gated by the always-on operations checks",
@@ -174,8 +174,8 @@ test("changes select the required deployment lanes", () => {
 test("manual component and all scopes are explicit", () => {
   assert.deepEqual(classifyChanges(manifest, [], "web"), deploymentSelection({ web: true }));
   assert.deepEqual(
-    classifyChanges(manifest, [], "cli-downloads"),
-    deploymentSelection({ "cli-downloads": true, "cli-distribution": true }),
+    classifyChanges(manifest, [], "cli-release"),
+    deploymentSelection({ "cli-release": true, "cli-distribution": true }),
   );
   assert.ok(Object.values(classifyChanges(manifest, [], "all")).every(Boolean));
   assert.throws(
@@ -187,7 +187,7 @@ test("manual component and all scopes are explicit", () => {
 
 test("planner emits backend and CLI distribution workflow outputs", () => {
   for (const [scope, expected] of [
-    ["cli-downloads", ["cli=true", "cli_distribution=true", "backend_selected=false"]],
+    ["cli-release", ["cli=true", "cli_distribution=true", "backend_selected=false"]],
     ["api", ["api=true", "backend_selected=true", 'selected=["api"]']],
   ]) {
     const output = execFileSync(process.execPath, [
@@ -235,7 +235,7 @@ test("skipped components remain selected across a later backend-only change", ()
     "media-api": ["media-service/src/main.rs"],
     api: [],
     web: ["web/src/routes/+page.svelte", "media-service/src/main.rs"],
-    "cli-downloads": [],
+    "cli-release": [],
   });
 
   assert.deepEqual(selection, {
@@ -243,7 +243,7 @@ test("skipped components remain selected across a later backend-only change", ()
     "media-api": true,
     api: false,
     web: true,
-    "cli-downloads": false,
+    "cli-release": false,
     "cli-distribution": false,
   });
 });
@@ -254,20 +254,20 @@ test("CLI deployment progress selects distribution builds only for binary inputs
     "media-api": [],
     api: [],
     web: [],
-    "cli-downloads": ["api/src/main.rs"],
+    "cli-release": ["api/src/main.rs"],
   });
   const binaryChange = planFromDeploymentProgress(manifest, {
     "media-worker": [],
     "media-api": [],
     api: [],
     web: [],
-    "cli-downloads": ["cli/src/main.rs"],
+    "cli-release": ["cli/src/main.rs"],
   });
 
-  assert.deepEqual(broadOnly, deploymentSelection({ "cli-downloads": true }));
+  assert.deepEqual(broadOnly, deploymentSelection({ "cli-release": true, web: true }));
   assert.deepEqual(
     binaryChange,
-    deploymentSelection({ "cli-downloads": true, "cli-distribution": true }),
+    deploymentSelection({ "cli-release": true, "cli-distribution": true, web: true }),
   );
 });
 
@@ -286,13 +286,13 @@ test("manual scopes ignore pending production components", () => {
     "media-api": false,
     api: false,
     web: true,
-    "cli-downloads": false,
+    "cli-release": false,
     "cli-distribution": false,
   });
 });
 
 test("deployment manifest is a single coherent production graph", () => {
-  const order = ["media-api", "media-worker", "api", "web", "cli-downloads"];
+  const order = ["media-api", "media-worker", "api", "web"];
   const serviceIds = order.map((service) => manifest.services[service].id).filter(Boolean);
 
   assert.equal(new Set(serviceIds).size, serviceIds.length);
@@ -313,7 +313,6 @@ test("service config does not override Railway scaling or restart defaults", () 
     "api/railway.json": "/readyz",
     "media-service/railway.json": "/readyz",
     "media-worker/railway.json": "/readyz",
-    "cli-downloads/railway.json": "/readyz",
     "web/railway.json": "/readyz",
   };
   for (const [path, healthcheckPath] of Object.entries(configs)) {

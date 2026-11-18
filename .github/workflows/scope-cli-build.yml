@@ -6,9 +6,6 @@ on:
       validate_targets:
         type: boolean
         default: false
-      validate_service_release:
-        type: boolean
-        default: false
       distribution_mode:
         type: string
         default: pull-request
@@ -46,12 +43,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Require the distribution matrix for a service release
-        if: inputs.validate_service_release && !inputs.validate_targets
-        run: |
-          echo 'A service release needs validate_targets; the matrix uploads it.' >&2
-          exit 1
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -187,21 +178,13 @@ jobs:
           CARGO_TARGET_DIR: target/cargo-install
         run: cargo install cross --version 0.2.5 --locked
 
-      - name: Build scope and the native installer service
+      - name: Build scope
         shell: bash
         run: |
-          service=
-          if [ "${{ matrix.smoke }}" = "true" ]; then
-            cargo build -p scope-cli-downloads --release --locked --target "${{ matrix.target }}" &
-            service=$!
-          fi
           if [ "${{ matrix.builder }}" = "cross" ]; then
             cross build --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked --target "${{ matrix.target }}" --bin scope
           else
             cargo build --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked --target "${{ matrix.target }}" --bin scope
-          fi
-          if [ -n "$service" ]; then
-            wait "$service"
           fi
 
       - name: Build native test binaries
@@ -224,12 +207,6 @@ jobs:
         run: >
           cargo test --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked
           --target "${{ matrix.target }}" --lib -- auth::tests git_credential::tests login::tests progress::
-
-      - name: Test Windows installer quoting
-        if: matrix.smoke && runner.os == 'Windows'
-        shell: bash
-        run: |
-          cargo test -p scope-cli-downloads --release --locked --target "${{ matrix.target }}" --bin scope-cli-service installers::tests::powershell_origin_assignment_is_literal_data -- --exact
 
       - name: Verify release identity
         working-directory: cli
@@ -267,7 +244,6 @@ jobs:
         env:
           SCOPE_TEST_BINARY: cli/${{ matrix.binary }}
           SCOPE_TEST_ARTIFACT: cli/dist/${{ matrix.artifact }}
-          SCOPE_TEST_SERVICE: target/${{ matrix.target }}/release/scope-cli-service${{ runner.os == 'Windows' && '.exe' || '' }}
         run: node --test cli/distribution/install-smoke.test.mjs
 
       - name: Upload artifact
@@ -275,24 +251,4 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: cli/dist/${{ matrix.artifact }}
-          if-no-files-found: error
-
-      - name: Pack service
-        if: inputs.validate_service_release && matrix.target == 'x86_64-unknown-linux-gnu'
-        shell: bash
-        run: |
-          mkdir -p artifacts
-          release=target/${{ matrix.target }}/release
-          cp LICENSE NOTICE legal/third-party-rust.txt "$release/"
-          tar --create --gzip \
-            --file artifacts/scope-cli-service.tar.gz \
-            --directory "$release" \
-            scope-cli-service LICENSE NOTICE third-party-rust.txt
-
-      - name: Upload service
-        if: inputs.validate_service_release && matrix.target == 'x86_64-unknown-linux-gnu'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: cli-service-release-${{ github.sha }}
-          path: artifacts/scope-cli-service.tar.gz
           if-no-files-found: error

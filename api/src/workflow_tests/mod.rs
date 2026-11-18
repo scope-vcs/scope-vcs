@@ -52,6 +52,7 @@ mod account_deletion;
 mod auth;
 mod auth_fixtures;
 mod cli_auth;
+mod cli_downloads;
 mod clone_access;
 mod cross_repo_isolation;
 mod custom_views;

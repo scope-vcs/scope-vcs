@@ -152,14 +152,31 @@ jobs:
       media_worker_image: ${{ needs.server-validation.outputs.media_worker_image || '' }}
     secrets: inherit
 
-  production-deploy:
-    name: Deploy production
-    needs: [plan, policy, ops, validation, release-preparation]
+  cli-release:
+    name: CLI release
+    needs: [plan, policy, ops, validation]
     if: >-
       !cancelled() && github.ref == 'refs/heads/main' &&
       needs.policy.result == 'success' && needs.ops.result == 'success' &&
       needs.validation.result == 'success' &&
-      needs.release-preparation.result == 'success'
+      needs.plan.outputs.cli == 'true'
+    permissions:
+      actions: read
+      attestations: write
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/publish-cli.yml
+    secrets: inherit
+
+  production-deploy:
+    name: Deploy production
+    needs: [plan, policy, ops, validation, release-preparation, cli-release]
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' &&
+      needs.policy.result == 'success' && needs.ops.result == 'success' &&
+      needs.validation.result == 'success' &&
+      needs.release-preparation.result == 'success' &&
+      (needs.cli-release.result == 'success' || needs.cli-release.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     environment: production
@@ -214,6 +231,15 @@ jobs:
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
         run: bash deploy/scripts/deploy-production-railway.sh
 
+      - name: Add the CLI release once the web that serves it is verified
+        if: needs.cli-release.result == 'success'
+        env:
+          TAG: ${{ needs.cli-release.outputs.tag }}
+        run: >-
+          jq -cn --arg sourceSha "$GITHUB_SHA" --arg evidenceId "$TAG"
+          '{component: "cli-release", sourceSha: $sourceSha, provider: "github-release", evidenceId: $evidenceId}'
+          >> production-deployments.ndjson
+
       - name: Record each service that deployed
         if: always()
         env:
@@ -224,28 +250,9 @@ jobs:
             --file production-deployments.ndjson \
             --log-url "$LOG_URL"
 
-  cli-deploy:
-    name: CLI deploy
-    needs: [plan, policy, ops, validation, production-deploy]
-    if: >-
-      !cancelled() && github.ref == 'refs/heads/main' &&
-      needs.policy.result == 'success' && needs.ops.result == 'success' &&
-      needs.validation.result == 'success' &&
-      needs.plan.outputs.cli == 'true' &&
-      (needs.production-deploy.result == 'success' ||
-      (needs.production-deploy.result == 'skipped' &&
-      needs.plan.outputs.backend_selected != 'true' && needs.plan.outputs.web != 'true'))
-    permissions:
-      actions: read
-      contents: read
-      deployments: write
-      packages: write
-    uses: ./.github/workflows/publish-cli.yml
-    secrets: inherit
-
   scheduled-failure-report:
     name: Report a failed scheduled release
-    needs: [plan, policy, ops, validation, server-validation, release-preparation, production-deploy, cli-deploy]
+    needs: [plan, policy, ops, validation, server-validation, release-preparation, cli-release, production-deploy]
     if: ${{ failure() && github.event_name == 'schedule' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
