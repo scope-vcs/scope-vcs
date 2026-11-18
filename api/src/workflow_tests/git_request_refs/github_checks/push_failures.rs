@@ -45,8 +45,10 @@ async fn a_rate_limited_push_waits_for_the_reset_and_keeps_its_attempts() {
         waiting.last_error.as_deref(),
         Some(crate::github::RATE_LIMIT_MESSAGE)
     );
+    fake.client_clock_unix.store(reset - 1, Ordering::SeqCst);
     assert_eq!(push_pass(state, reset - 1).await, 0);
 
+    fake.client_clock_unix.store(reset, Ordering::SeqCst);
     assert_eq!(push_pass(state, reset).await, 1);
     assert_eq!(fake.branch_head(&request.branch()), Some(request.head()));
     let sent = latest_push(&request).await;
