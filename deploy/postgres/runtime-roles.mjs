@@ -8,7 +8,7 @@ export const mediaTables = names(`request_media_abandoned_objects request_media_
   request_media_upload_parts`);
 const repositoryTables = names(`file_changes git_compaction_jobs git_fetch_advertisements git_heads git_pool_packs
   git_segment_uploads live_files logical_commits metadata_locks object_references
-  orphan_object_jobs outbox_jobs projection_files projection_read_models
+  orphan_object_jobs projection_files projection_read_models
   repo_storage_cleanup_jobs repositories repository_first_push_tokens repository_git_push_tokens
   repository_history_entries repository_history_payloads repository_invites repository_invite_links
   repository_invite_emails repository_landing_files repository_members visibility_change_sets
@@ -44,6 +44,7 @@ export const grants = {
     names('metadata_locks')), scope_request_media_attachments: ['SELECT', 'UPDATE'] },
   scope_media_worker: policy(mediaTables, names('repositories requests'), names('metadata_locks')),
 };
+export const retiredRoles = ['scope_run_worker'];
 const literal = (value) => `'${value.replaceAll("'", "''")}'`;
 const identifier = (value) => `"${value.replaceAll('"', '""')}"`;
 
@@ -120,6 +121,20 @@ END $attributes$;`,
     `ALTER DEFAULT PRIVILEGES FOR ROLE scope_migrator IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC, ${roles.join(', ')};`,
     `ALTER DEFAULT PRIVILEGES FOR ROLE scope_migrator IN SCHEMA public REVOKE ALL ON SEQUENCES FROM PUBLIC, ${roles.join(', ')};`,
     `ALTER DEFAULT PRIVILEGES FOR ROLE scope_migrator IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC, ${roles.join(', ')};`);
+  sql.push(`DO $retire$
+DECLARE retired text;
+BEGIN
+  FOREACH retired IN ARRAY ARRAY[${retiredRoles.map(literal).join(', ')}]::text[] LOOP
+    CONTINUE WHEN NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = retired);
+    EXECUTE format('REVOKE ALL ON DATABASE %I FROM %I', current_database(), retired);
+    EXECUTE format('REVOKE ALL ON SCHEMA public FROM %I', retired);
+    EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', retired);
+    EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM %I', retired);
+    PERFORM pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = retired;${grantsOnly ? '' : `
+    EXECUTE format('DROP OWNED BY %I', retired);
+    EXECUTE format('DROP ROLE %I', retired);`}
+  END LOOP;
+END $retire$;`);
   if (mode !== 'roles') {
     for (const [role, policy] of Object.entries(grants)) {
       for (const [table, privileges] of Object.entries(policy)) {

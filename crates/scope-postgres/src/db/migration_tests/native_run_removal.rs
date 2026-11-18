@@ -191,16 +191,8 @@ async fn removing_native_runs_releases_their_sources_and_reevaluates_their_reque
             .unwrap()
             .is_empty()
     );
-    let outbox = db
-        .query_one_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT count(*) AS count FROM scope_outbox_jobs",
-        ))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(outbox.try_get::<i64>("", "count").unwrap(), 0);
     for dropped in [
+        "scope_outbox_jobs",
         "scope_runs",
         "scope_run_logs",
         "scope_workflow_revisions",

@@ -99,10 +99,6 @@ async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
                     SELECT jsonb_agg(to_jsonb(item) ORDER BY id)
                     FROM scope_requests item
                 ),
-                'outbox', (
-                    SELECT jsonb_agg(to_jsonb(item) ORDER BY id)
-                    FROM scope_outbox_jobs item
-                ),
                 'projections', (
                     SELECT jsonb_agg(to_jsonb(item) ORDER BY repo_id, audience)
                     FROM scope_projection_read_models item

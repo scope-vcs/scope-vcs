@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { grants, renderPolicy, tables } from './runtime-roles.mjs';
+import { grants, renderPolicy, retiredRoles, tables } from './runtime-roles.mjs';
 import { candidateMigrationVersion, renderRuntimeRoleAudit } from './audit-runtime-roles.mjs';
 import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
@@ -25,6 +25,14 @@ function applyProductionMigrations(dir, role) {
   assert.equal(migration.status, 0, `${migration.stdout}\n${migration.stderr}`);
   assert.match(migration.stdout, new RegExp(`test ${migrationTest} \\.\\.\\. ok`));
 }
+
+test('retired roles lose access under every policy and only the administrator policy drops them', () => {
+  assert.deepEqual(retiredRoles.filter((role) => role in grants), []);
+  assert.doesNotMatch(renderPolicy({ mode: 'grants' }), /DROP (OWNED|ROLE)/);
+  for (const mode of ['full', 'roles']) {
+    assert.match(renderPolicy({ mode }), /REVOKE ALL ON DATABASE[\s\S]*pg_terminate_backend[\s\S]*DROP OWNED BY[\s\S]*DROP ROLE/);
+  }
+});
 
 test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClusterSkip }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'scope-role-test-'));
@@ -83,6 +91,30 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query('ALTER TABLE scope_cli_sessions RENAME TO scope_cli_sessions_retired;', 'scope_migrator');
     auditFails(/relation is missing/);
     query('ALTER TABLE scope_cli_sessions_retired RENAME TO scope_cli_sessions;', 'scope_migrator');
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    const roleCount = () => query("SELECT count(*) FROM pg_roles WHERE rolname = 'scope_run_worker'").stdout.trim();
+    query(`CREATE ROLE scope_run_worker LOGIN;
+      GRANT CONNECT ON DATABASE postgres TO scope_run_worker;
+      GRANT USAGE ON SCHEMA public TO scope_run_worker;
+      GRANT SELECT, UPDATE ON scope_repositories TO scope_run_worker;
+      GRANT SELECT (id) ON scope_cli_sessions TO scope_run_worker;`);
+    query('SELECT count(*) FROM scope_repositories;', 'scope_run_worker');
+    auditFails(/Retired production role keeps access/);
+    const retiredSession = spawn(join(pgBin, 'psql'), ['-X', '-qAt', '-h', dir, '-U', 'scope_run_worker', '-d', 'postgres'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    retiredSession.stderr.resume();
+    const retiredSessionClosed = new Promise((resolve) => retiredSession.once('close', resolve));
+    retiredSession.stdin.end('SELECT pg_backend_pid(); SELECT pg_sleep(30);');
+    await new Promise((resolve, reject) => {
+      retiredSession.stdout.once('data', resolve);
+      retiredSession.once('error', reject);
+    });
+    query(renderPolicy({ mode: 'grants' }), 'scope_migrator');
+    await retiredSessionClosed;
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    query('SELECT 1;', 'scope_run_worker', false);
+    assert.equal(roleCount(), '1');
+    query(renderPolicy());
+    assert.equal(roleCount(), '0');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
     const sleeper = spawn(join(pgBin, 'psql'), ['-X', '-qAt', '-h', dir, '-U', 'scope_media_worker', '-d', 'postgres'], { stdio: ['pipe', 'pipe', 'pipe'] });
     sleeper.stderr.resume();

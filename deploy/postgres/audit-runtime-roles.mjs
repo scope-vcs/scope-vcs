@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { grants, tables } from './runtime-roles.mjs';
+import { grants, retiredRoles, tables } from './runtime-roles.mjs';
 
 const runtimeRoles = Object.keys(grants);
 const roles = ['scope_migrator', ...runtimeRoles];
@@ -15,6 +15,7 @@ export function renderRuntimeRoleAudit({ exactPolicy = true } = {}) {
   const expectedTables = tables.map(sqlString).join(', ');
   const roleNames = roles.map(sqlString).join(', ');
   const runtimeNames = runtimeRoles.map(sqlString).join(', ');
+  const retiredNames = retiredRoles.map(sqlString).join(', ');
   return `\\set ON_ERROR_STOP on
 BEGIN READ ONLY;
 SET LOCAL statement_timeout = '60s';
@@ -66,6 +67,18 @@ BEGIN
       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
       AND c.relname NOT IN (${expectedTables})) THEN
     RAISE EXCEPTION 'Unreviewed production relation';
+  END IF;
+  IF exact_policy AND EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname IN (${retiredNames})
+      AND (has_database_privilege(r.oid, current_database(), 'CONNECT')
+        OR has_schema_privilege(r.oid, 'public', 'USAGE')
+        OR EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace
+          AND CASE
+            WHEN c.relkind = 'S' THEN has_sequence_privilege(r.oid, c.oid, 'USAGE,SELECT,UPDATE')
+            WHEN c.relkind IN ('r', 'p') THEN
+              has_table_privilege(r.oid, c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+              OR has_any_column_privilege(r.oid, c.oid, 'SELECT,INSERT,UPDATE,REFERENCES')
+            ELSE false END))) THEN
+    RAISE EXCEPTION 'Retired production role keeps access';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_class WHERE relnamespace = 'public'::regnamespace
       AND relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
