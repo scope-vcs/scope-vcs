@@ -109,6 +109,11 @@ pub struct RequestReviewBotResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct ApproveRequestChecksRequest {
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub expected_head_oid: GitOid,
 }
 
@@ -116,6 +121,11 @@ pub struct ApproveRequestChecksRequest {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestChecksResponse {
     pub request_id: String,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub head_oid: GitOid,
     pub state: Option<RequestCheckEvaluationState>,
     pub outcome: RequestChecksOutcome,

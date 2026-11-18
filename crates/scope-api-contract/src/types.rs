@@ -199,6 +199,11 @@ pub struct CreatePushIntentRequest {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct CreatePushIntentResponse {
     pub token: String,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "Option<crate::git_oid::GitOidSchema>"),
+        ts(as = "Option<crate::git_oid::GitOidSchema>")
+    )]
     pub base_head_oid: Option<GitOid>,
     pub expires_at_unix: u64,
     pub lands_as_request: bool,
@@ -307,7 +312,17 @@ pub struct RequestSummaryResponse {
     pub base_version: u64,
     pub stack_status: RequestStackStatus,
     pub stack_depth: u32,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub main_ancestor_oid: GitOid,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub head_oid: GitOid,
     pub state: RequestState,
     pub activity_version: u64,
@@ -316,7 +331,17 @@ pub struct RequestSummaryResponse {
     pub closed_by_user_id: Option<String>,
     pub merged_at_unix: Option<u64>,
     pub merged_by_user_id: Option<String>,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "Option<crate::git_oid::GitOidSchema>"),
+        ts(as = "Option<crate::git_oid::GitOidSchema>")
+    )]
     pub merged_head_oid: Option<GitOid>,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "Option<crate::git_oid::GitOidSchema>"),
+        ts(as = "Option<crate::git_oid::GitOidSchema>")
+    )]
     pub merged_main_oid: Option<GitOid>,
     pub created_at_unix: u64,
     pub updated_at_unix: u64,
@@ -372,6 +397,11 @@ pub struct RequestListItemResponse {
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub view: ViewId,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub head_oid: GitOid,
     pub state: RequestState,
     pub submitted_at_unix: Option<u64>,
@@ -401,7 +431,17 @@ pub struct RequestPermissionsResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestMergeabilityResponse {
     pub status: RequestMergeabilityStatus,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "Option<crate::git_oid::GitOidSchema>"),
+        ts(as = "Option<crate::git_oid::GitOidSchema>")
+    )]
     pub current_main_oid: Option<GitOid>,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub request_head_oid: GitOid,
     pub reason: Option<String>,
 }
@@ -590,6 +630,11 @@ pub struct SubmitRequestRequest {}
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct MergeRequestRequest {
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub expected_head_oid: GitOid,
 }
 

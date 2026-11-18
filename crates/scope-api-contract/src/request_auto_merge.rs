@@ -30,6 +30,11 @@ wire_enum!(RequestAutoMergeStopReason => DomainRequestAutoMergeStopReason {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct AuthorizeRequestAutoMergeRequest {
     pub expected_revision_id: String,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub expected_head_oid: GitOid,
 }
 
@@ -44,6 +49,11 @@ pub struct CancelRequestAutoMergeRequest {
 pub struct RequestAutoMergeIntentResponse {
     pub id: String,
     pub revision_id: String,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub head_oid: GitOid,
     pub actor: RequestActorSummaryResponse,
     pub status: RequestAutoMergeIntentStatus,
@@ -57,6 +67,11 @@ pub struct RequestAutoMergeIntentResponse {
 pub struct RequestAutoMergeResponse {
     pub request_id: String,
     pub revision_id: Option<String>,
+    #[cfg_attr(
+        feature = "ts",
+        schemars(with = "crate::git_oid::GitOidSchema"),
+        ts(as = "crate::git_oid::GitOidSchema")
+    )]
     pub head_oid: GitOid,
     pub intent: Option<RequestAutoMergeIntentResponse>,
     pub waiting_reason: Option<String>,

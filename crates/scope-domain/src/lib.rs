@@ -3,6 +3,7 @@ pub mod content;
 pub mod content_ref;
 pub mod dependency_analysis;
 pub mod error;
+pub mod git_oid;
 pub mod github_account;
 pub mod github_check_catalog;
 pub mod github_connection;
