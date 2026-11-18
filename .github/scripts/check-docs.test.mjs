@@ -7,7 +7,7 @@ test('reports documentation files anywhere in the repository', () => {
     'docs/architecture.md',
     'docs/fixtures/architecture.md',
     'docs/verification/stack.png',
-    'deploy/aws/OPERATIONS.md',
+    'deploy/railway/OPERATIONS.md',
     'bench/README.md',
     'web/README',
     'crates/scope-git/NOTES.MD',

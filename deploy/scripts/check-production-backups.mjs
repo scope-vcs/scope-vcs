@@ -1,7 +1,6 @@
-import { writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 
-export const volumeInstanceId = 'd849de88-290f-4f68-a6bb-33a8bac7c0fd'
+const volumeInstanceId = 'd849de88-290f-4f68-a6bb-33a8bac7c0fd'
 const maximumAgeMs = 30 * 60 * 60 * 1000
 class BackupCheckError extends Error {}
 
@@ -50,8 +49,6 @@ export async function main() {
   } catch (error) {
     result = { healthy: false, failures: [error instanceof BackupCheckError ? error.message : 'Backup query failed; inspect connectivity and Railway API availability'], latestBackupAt: null }
   }
-  const metrics = [{ MetricName: 'Healthy', Dimensions: [{ Name: 'VolumeInstanceId', Value: volumeInstanceId }], Value: result.healthy ? 1 : 0, Unit: 'Count' }]
-  await writeFile(process.env.BACKUP_METRIC_FILE ?? 'backup-health-metric.json', JSON.stringify(metrics))
   console.log(JSON.stringify(result))
   if (!result.healthy) process.exitCode = 1
 }

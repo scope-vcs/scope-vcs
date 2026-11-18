@@ -169,10 +169,7 @@ test('the local check skips operations only in a checkout without deploy/', (t) 
   assert.deepEqual(check('ops').stdout.trim().split('\n'), ['ops']);
 });
 
-const testsOutsideSharedGates = new Map([
-  ['deploy/aws/recovery/tests/test_recovery.py', '.github/workflows/recovery-execute.yml'],
-  ['deploy/railway/test-runtime-containers.sh', null],
-]);
+const testsOutsideSharedGates = new Set(['deploy/railway/test-runtime-containers.sh']);
 
 function runsTest(command, path) {
   const args = command.split(' ');
@@ -194,20 +191,15 @@ test('every deployment, benchmark, and developer tooling test is run by a shared
   for (const path of tests) {
     assert.ok(invoked.some((command) => runsTest(command, path)), `${path} has no test gate`);
   }
-  for (const [path, workflow] of testsOutsideSharedGates) {
-    if (workflow === null) continue;
-    const runs = read(workflow).split('\n').some((line) => runsTest(line.trim(), path));
-    assert.ok(runs, `${workflow} must run ${path}`);
-  }
 });
 
 const alwaysOnGateInputs = [
   /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
-  /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
+  /^bench\//, /^deploy\/postgres\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.(sh|asc))$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
-  /^\.github\/workflows\/(audit-railway-experiments|ci-duration|run-log-budget|main-advisories|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment(?:-cleanup|-signal)?|provision-staging-baseline)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|ci-duration|run-log-budget|main-advisories|backup-monitor|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment(?:-cleanup|-signal)?|provision-staging-baseline)\.yml$/,
   /^deploy\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 

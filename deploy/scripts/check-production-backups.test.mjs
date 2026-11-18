@@ -40,11 +40,10 @@ test('query uses project token and rejects API errors without echoing sensitive 
   await assert.rejects(fetchBackupHealth('', async () => { throw new Error('must not fetch') }), /missing/)
 })
 
-test('scheduled monitor does not inherit repository secrets and publishes unsuccessful backup checks', () => {
-  const caller = readFileSync(new URL('../../.github/workflows/backup-monitor.yml', import.meta.url), 'utf8')
-  const execution = readFileSync(new URL('../../.github/workflows/backup-monitor-execute.yml', import.meta.url), 'utf8')
-  assert.doesNotMatch(caller, /secrets: inherit/)
-  assert.match(execution, /always\(\) && steps.backup.outcome != 'skipped'/)
-  assert.match(execution, /node deploy\/scripts\/check-production-backups.mjs/)
-  assert.match(execution, /cloudwatch put-metric-data --namespace Scope\/Security\/Backup/)
+test('the backup check runs daily on main with only the production Railway token', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/backup-monitor.yml', import.meta.url), 'utf8')
+  assert.match(workflow, /schedule:\n    - cron: '\d+ \d+ \* \* \*'/)
+  assert.match(workflow, /if: github.ref == 'refs\/heads\/main'/)
+  assert.match(workflow, /run: node deploy\/scripts\/check-production-backups.mjs/)
+  assert.deepEqual(workflow.match(/secrets\.\w+/g), ['secrets.RAILWAY_TOKEN'])
 })
