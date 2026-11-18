@@ -221,6 +221,7 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     );
 
     let checks = request.checks().await;
+    let mut expiry_events = state.repo_events.subscribe(TEST_REPO_ID);
     let pass = apply_github_workflow_retention(
         state,
         unix_now() + GITHUB_WORKFLOW_RUN_LIMIT_SECS + GITHUB_WORKFLOW_RETENTION_SECS,
@@ -229,6 +230,11 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     .unwrap();
     assert_eq!(pass.expired_runs.len(), 1);
     assert!(pass.deleted_runs.is_empty());
+    assert!(
+        std::iter::from_fn(|| expiry_events.try_recv().ok()).any(
+            |event| event.kind == crate::repo_events::RepoChangeKind::GitHubWorkflowRunsExpired
+        )
+    );
     assert_eq!(request.checks().await, checks);
     let expired = opened_run(state).await;
     assert_eq!(

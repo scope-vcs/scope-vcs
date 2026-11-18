@@ -3,6 +3,7 @@ import type {
   GitHubWorkflowRunDetailResponse,
   GitHubWorkflowRunResponse,
 } from '@/api/types.generated'
+import { isNotFoundError } from '../../api/http'
 import { useEffect } from 'react'
 import { createRepoResource, repoResourceKey, type RepoChange } from '../repo-detail/repo-resource'
 
@@ -11,6 +12,7 @@ const RECHECK_INTERVAL_MS = 15_000
 export const githubWorkflowRunDetailResource = createRepoResource<GitHubWorkflowRunDetailResponse>({
   invalidatedBy: ['checks', 'workflowRun'],
   affectedBy: affectsRunKey,
+  dropsValueOn: isNotFoundError,
   maxEntries: 16,
   maxWeight: 16 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
@@ -66,8 +68,10 @@ function recheckIfStillPending(identity: string) {
 
 export const githubWorkflowJobLogResource = createRepoResource<GitHubWorkflowJobLogResponse>({
   invalidatedBy: ['checks', 'workflowRun'],
+  dropsValueOn: isNotFoundError,
   affectedBy: (change, key, { identity, snapshot }) => {
     if (!affectsRunKey(change, key)) return false
+    if (change.expired) return true
     if (snapshot.pending) recheckIfStillPending(identity)
     return !snapshot.pending && snapshot.value?.state === 'pending'
   },

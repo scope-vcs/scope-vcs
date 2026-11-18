@@ -1,6 +1,5 @@
 import type { RepoChangeEvent } from '../../api/types.generated'
-import type { BoundedCacheOptions } from '../../lib/bounded-cache'
-import { createCachedResource, type CachedResourceStore } from '../../lib/cached-resource'
+import { createCachedResource, type CachedResourceOptions, type CachedResourceStore } from '../../lib/cached-resource'
 
 const REPO_TOPICS = [
   'summary',
@@ -22,6 +21,7 @@ export type RepoChange = {
   topic: RepoTopic
   requestId?: string
   runId?: number
+  expired?: true
   version?: number
 }
 
@@ -29,13 +29,12 @@ type RepoResync = {
   versioned?: boolean
 }
 
-type RepoResourceOptions<T extends object> = BoundedCacheOptions<T> & {
+type RepoResourceOptions<T extends object> = Omit<CachedResourceOptions<T>, 'retainAcrossViewers'> & {
   invalidatedBy: readonly RepoTopic[]
   affectedBy?: (change: RepoChange, key: string[], entry: RepoResourceEntry<T>) => boolean
   onInvalidate?: (identity: string) => void
   keyIn?: (scope: string, entry: RepoResourceEntry<T>) => string[] | null
   supersedes?: readonly RepoTopic[]
-  coalesceInvalidations?: boolean
 }
 
 type RepoResourceEntry<T extends object> = {
@@ -107,8 +106,9 @@ export function invalidateRepoResources(scope: string, changes: RepoChange[]) {
 }
 
 export function resyncTopics({ versioned = false }: RepoResync = {}): RepoChange[] {
-  return everyTopic().filter(({ topic }) =>
-    !versioned || (topic !== 'content' && topic !== 'dependencies' && topic !== 'requestHead'))
+  return everyTopic()
+    .filter(({ topic }) => !versioned || (topic !== 'content' && topic !== 'dependencies' && topic !== 'requestHead'))
+    .map((change) => change.topic === 'workflowRun' ? { ...change, expired: true } : change)
 }
 
 export function topicsOf(event: RepoChangeEvent, { versioned = false }: RepoResync = {}): RepoChange[] {
@@ -124,6 +124,8 @@ export function topicsOf(event: RepoChangeEvent, { versioned = false }: RepoResy
         return [{ topic: 'dependencies' }, summary]
       case 'GitHubWorkflowRunsChanged':
         return [{ topic: 'checks' }, requestList]
+      case 'GitHubWorkflowRunsExpired':
+        return [{ topic: 'checks' }, requestList, { topic: 'workflowRun', expired: true }]
       default:
         return unhandledKind(kind)
     }

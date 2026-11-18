@@ -51,7 +51,9 @@ impl RepositoryStore {
                     (github_job_id, attempts, next_attempt_at_unix)
                  SELECT queued.github_job_id, 0, $2
                    FROM unnest($1::bigint[]) AS queued(github_job_id)
-                  WHERE NOT EXISTS (SELECT 1 FROM scope_github_workflow_job_logs log
+                  WHERE EXISTS (SELECT 1 FROM scope_github_workflow_jobs job
+                                 WHERE job.github_job_id = queued.github_job_id)
+                    AND NOT EXISTS (SELECT 1 FROM scope_github_workflow_job_logs log
                                      WHERE log.github_job_id = queued.github_job_id)
                  ON CONFLICT DO NOTHING",
                 [

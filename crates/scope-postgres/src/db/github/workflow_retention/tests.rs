@@ -247,7 +247,7 @@ async fn retention_deletes_runs_thirty_days_after_they_finish_and_keeps_an_open_
 }
 
 #[tokio::test]
-async fn a_run_or_job_past_retention_is_not_stored_again_but_a_rerun_is() {
+async fn a_run_or_job_past_retention_is_not_stored_again_but_a_rerun_and_its_jobs_are() {
     let store = postgres_store();
     let repositories = store.repositories();
     let old = run(1, UNTESTED, FINISHED);
@@ -272,9 +272,15 @@ async fn a_run_or_job_past_retention_is_not_stored_again_but_a_rerun_is() {
         .await
         .unwrap();
     repositories
-        .save_github_workflow_jobs(REPO, GITHUB_REPOSITORY, &[job(12, 1, NOW, true)], NOW)
+        .save_github_workflow_jobs(
+            REPO,
+            GITHUB_REPOSITORY,
+            &[job(11, 1, FINISHED, true), job(12, 1, NOW, true)],
+            NOW,
+        )
         .await
         .unwrap();
     assert!(stored_run(&store, 1).await);
+    assert!(stored_job(&store, 1, 11).await.is_some());
     assert!(stored_job(&store, 1, 12).await.is_some());
 }

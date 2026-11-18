@@ -490,6 +490,7 @@ pub enum RepoChangeKind {
     Lagged,
     DependenciesChanged,
     GitHubWorkflowRunsChanged,
+    GitHubWorkflowRunsExpired,
     GitHubWorkflowRunChanged {
         github_run_id: u64,
     },

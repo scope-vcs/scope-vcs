@@ -23,10 +23,13 @@ const emptySnapshot: ResourceSnapshot<never> = {
 
 export type CachedResourceStore<T extends object> = ReturnType<typeof createCachedResource<T>>
 
-export function createCachedResource<T extends object>({ retainAcrossViewers = false, coalesceInvalidations = false, ...options }: BoundedCacheOptions<T> & {
+export type CachedResourceOptions<T extends object> = BoundedCacheOptions<T> & {
   retainAcrossViewers?: boolean
   coalesceInvalidations?: boolean
-}) {
+  dropsValueOn?: (error: unknown) => boolean
+}
+
+export function createCachedResource<T extends object>({ retainAcrossViewers = false, coalesceInvalidations = false, dropsValueOn = () => false, ...options }: CachedResourceOptions<T>) {
   const weights = new WeakMap<T, number>()
   const weightOfValue = (value: T) => {
     const known = weights.get(value)
@@ -95,7 +98,9 @@ export function createCachedResource<T extends object>({ retainAcrossViewers = f
       (error: unknown) => {
         if (attempts.get(identity) !== attempt) return null
         attempts.delete(identity)
-        publish(identity, { ...getSnapshot(identity), error: error ?? {}, stale: attempt.invalidated, pending: false })
+        const snapshot = getSnapshot(identity)
+        const value = dropsValueOn(error) ? null : snapshot.value
+        publish(identity, { ...snapshot, value, error: error ?? {}, stale: attempt.invalidated, pending: false })
         return null
       },
     )

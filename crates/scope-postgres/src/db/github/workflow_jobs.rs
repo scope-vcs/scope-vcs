@@ -2,6 +2,7 @@ use super::super::{
     RepositoryStore,
     entities::{decode_enum, encode_enum},
     github::read_queue::GitHubReadQueue,
+    github::workflow_runs::workflow_runs_by_id,
     integer_columns::{
         i32_to_u32, i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u32_to_i32, u64_to_i64,
     },
@@ -154,7 +155,14 @@ impl RepositoryStore {
         jobs: &[GitHubWorkflowJob],
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        for job in jobs.iter().filter(|job| !job.retention_over(now_unix)) {
+        let mut run_ids = jobs.iter().map(|job| job.github_run_id).collect::<Vec<_>>();
+        run_ids.sort_unstable();
+        run_ids.dedup();
+        let runs = workflow_runs_by_id(self.db.as_ref(), &run_ids).await?;
+        for job in jobs
+            .iter()
+            .filter(|job| !job.retention_over(runs.get(&job.github_run_id), now_unix))
+        {
             save_job(self.db.as_ref(), repo_id, github_repository_id, job).await?;
         }
         Ok(())

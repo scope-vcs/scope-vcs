@@ -11,6 +11,7 @@ use scope_domain::{
     github::workflow_jobs::GitHubJobsRead, github::workflow_runs::GitHubWorkflowRun,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
+use std::collections::HashMap;
 
 pub(super) const SELECT_RUN: &str =
     "run.github_run_id, run.workflow_name, run.head_branch, run.head_oid,
@@ -419,6 +420,35 @@ pub(in crate::db) async fn save_workflow_run<C: ConnectionTrait>(
     ))
     .await?;
     Ok(())
+}
+
+pub(super) async fn workflow_runs_by_id<C: ConnectionTrait>(
+    conn: &C,
+    run_ids: &[u64],
+) -> Result<HashMap<u64, GitHubWorkflowRun>, PostgresError> {
+    if run_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let ids = run_ids
+        .iter()
+        .map(|id| u64_to_i64(*id, "GitHub workflow run id"))
+        .collect::<Result<Vec<_>, _>>()?;
+    WorkflowRunRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "SELECT {SELECT_RUN} FROM scope_github_workflow_runs run
+              WHERE run.github_run_id = ANY($1)"
+        ),
+        [ids.into()],
+    ))
+    .all(conn)
+    .await?
+    .into_iter()
+    .map(|row| {
+        let run = row.into_domain()?;
+        Ok((run.github_run_id, run))
+    })
+    .collect()
 }
 
 impl ListedRow {

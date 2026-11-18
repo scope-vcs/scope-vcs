@@ -46,19 +46,12 @@ pub(crate) async fn apply_github_workflow_retention(
     let repositories = pass
         .deleted_runs
         .iter()
+        .chain(&pass.expired_runs)
         .map(|run| run.repo_id.as_str())
         .collect::<BTreeSet<_>>();
     for repo_id in repositories {
         if let Some(incarnation) = state.repository_incarnation(repo_id).await? {
-            state.after_commit([AfterCommit::github_workflow_runs(&incarnation)]);
-        }
-    }
-    for run in &pass.expired_runs {
-        if let Some(incarnation) = state.repository_incarnation(&run.repo_id).await? {
-            state.after_commit([AfterCommit::github_workflow_run(
-                &incarnation,
-                run.github_run_id,
-            )]);
+            state.after_commit([AfterCommit::github_workflow_runs_expired(&incarnation)]);
         }
     }
     Ok(pass)

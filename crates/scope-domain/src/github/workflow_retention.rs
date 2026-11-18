@@ -50,9 +50,13 @@ impl GitHubWorkflowJob {
         }
     }
 
-    pub fn retention_over(&self, now_unix: u64) -> bool {
-        self.finished_by_unix()
-            .is_some_and(|finished| retention_over(finished, now_unix))
+    pub fn retention_over(&self, run: Option<&GitHubWorkflowRun>, now_unix: u64) -> bool {
+        match run {
+            Some(run) => run.retention_over(now_unix),
+            None => self
+                .finished_by_unix()
+                .is_some_and(|finished| retention_over(finished, now_unix)),
+        }
     }
 
     pub fn expire_content(&mut self) -> Option<GitHubJobLogState> {
@@ -172,21 +176,27 @@ mod tests {
     }
 
     #[test]
-    fn a_job_is_kept_for_thirty_days_after_it_finished_and_an_undated_queued_job_is_kept() {
+    fn a_job_is_kept_while_its_run_is_and_without_a_run_for_thirty_days_after_it_finished() {
         use GitHubCheckStatus::{Completed, InProgress, Queued};
         let completed = job(Completed, Some(GitHubCheckConclusion::Success), 1);
-        assert!(!completed.retention_over(OVER - 1));
-        assert!(completed.retention_over(OVER));
+        assert!(!completed.retention_over(None, OVER - 1));
+        assert!(completed.retention_over(None, OVER));
+        let later_run = GitHubWorkflowRun {
+            updated_at_unix: FINISHED + 1,
+            ..run(GitHubCheckStatus::Completed)
+        };
+        assert!(!completed.retention_over(Some(&later_run), OVER));
+        assert!(completed.retention_over(Some(&later_run), OVER + 1));
         let running = job(InProgress, None, 1);
         let running_over =
             FINISHED - 60 + GITHUB_WORKFLOW_RUN_LIMIT_SECS + GITHUB_WORKFLOW_RETENTION_SECS;
-        assert!(!running.retention_over(running_over - 1));
-        assert!(running.retention_over(running_over));
+        assert!(!running.retention_over(None, running_over - 1));
+        assert!(running.retention_over(None, running_over));
         let queued = GitHubWorkflowJob {
             started_at_unix: None,
             ..job(Queued, None, 0)
         };
-        assert!(!queued.retention_over(u64::MAX));
+        assert!(!queued.retention_over(None, u64::MAX));
     }
 
     #[test]

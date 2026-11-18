@@ -267,7 +267,7 @@ async fn delete_jobs_without_run<C: ConnectionTrait>(
         after = u64_to_i64(last.github_job_id, "GitHub job id")?;
         let over = jobs
             .iter()
-            .filter(|job| job.retention_over(now_unix))
+            .filter(|job| job.retention_over(None, now_unix))
             .map(|job| u64_to_i64(job.github_job_id, "GitHub job id"))
             .collect::<Result<Vec<_>, _>>()?;
         if !over.is_empty() {
