@@ -129,7 +129,12 @@ pub(crate) async fn push_succeeds(store: &MetadataStore, request_id: &str, head:
         .unwrap()
         .remove(0);
     requests
-        .finish_github_push(&push.id, "push_claim", GitHubJobOutcome::Succeeded(()), at)
+        .finish_github_push(
+            &push.id,
+            "push_claim",
+            scope_domain::requests::GitHubPushResult::Succeeded,
+            at,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -747,7 +752,12 @@ async fn a_request_submitted_after_its_head_reached_github_gets_its_carrier_at_s
         .unwrap()
         .remove(0);
     requests
-        .finish_github_push(&push.id, "push_claim", GitHubJobOutcome::Succeeded(()), 15)
+        .finish_github_push(
+            &push.id,
+            "push_claim",
+            scope_domain::requests::GitHubPushResult::Succeeded,
+            15,
+        )
         .await
         .unwrap()
         .unwrap();

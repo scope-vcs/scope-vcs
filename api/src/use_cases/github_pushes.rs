@@ -16,7 +16,8 @@ use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
     requests::{
         GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubBranchDeletion,
-        GitHubPullRequestsBasedOnBranch, GitHubPush, GitHubPushState, github_push_retry_at,
+        GitHubPullRequestsBasedOnBranch, GitHubPush, GitHubPushFailure, GitHubPushResult,
+        GitHubPushState,
     },
 };
 use scope_postgres::db::{GitHubJobOutcome, GitHubPushStanding};
@@ -29,7 +30,7 @@ const LEASE_SECS: u64 = 45 * 60;
 
 pub(super) enum JobFailure {
     Retry(String),
-    RetryAt { error: String, at_unix: u64 },
+    RateLimited { error: String, reset_at_unix: u64 },
     GiveUp(String),
     Deferred,
     Stale,
@@ -37,7 +38,13 @@ pub(super) enum JobFailure {
 
 impl From<ApiError> for JobFailure {
     fn from(error: ApiError) -> Self {
-        Self::Retry(error.into_public_message())
+        match error.retry_at_unix() {
+            Some(reset_at_unix) => Self::RateLimited {
+                error: error.into_public_message(),
+                reset_at_unix,
+            },
+            None => Self::Retry(error.into_public_message()),
+        }
     }
 }
 
@@ -57,9 +64,12 @@ pub(super) fn job_outcome<T>(
             error,
             retry_at_unix,
         }),
-        Err(JobFailure::RetryAt { error, at_unix }) => Some(GitHubJobOutcome::Failed {
+        Err(JobFailure::RateLimited {
             error,
-            retry_at_unix: Some(at_unix),
+            reset_at_unix,
+        }) => Some(GitHubJobOutcome::Failed {
+            error,
+            retry_at_unix: Some(reset_at_unix),
         }),
         Err(JobFailure::GiveUp(error)) => Some(GitHubJobOutcome::Failed {
             error,
@@ -104,22 +114,36 @@ pub(crate) async fn run_claimed_push(
 ) {
     let sent = send(state, push, claim_token, now_unix).await;
     let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
-    let Some(outcome) = job_outcome(sent, github_push_retry_at(push, now_unix)) else {
-        return;
+    let (error, failure) = match sent {
+        Ok(()) => (None, None),
+        Err(JobFailure::Deferred | JobFailure::Stale) => return,
+        Err(JobFailure::Retry(error)) => (Some(error), Some(GitHubPushFailure::Retryable)),
+        Err(JobFailure::RateLimited {
+            error,
+            reset_at_unix,
+        }) => (
+            Some(error),
+            Some(GitHubPushFailure::RateLimited { reset_at_unix }),
+        ),
+        Err(JobFailure::GiveUp(error)) => (Some(error), Some(GitHubPushFailure::Permanent)),
     };
-    if let GitHubJobOutcome::Failed { error, .. } = &outcome {
-        tracing::warn!(
-            push_id = push.id,
-            branch = push.branch.name(),
-            attempts = push.attempts,
-            %error,
-            "sending a branch to GitHub failed"
-        );
-    }
+    let result = match (error, failure) {
+        (Some(error), Some(failure)) => {
+            tracing::warn!(
+                push_id = push.id,
+                branch = push.branch.name(),
+                attempts = push.attempts,
+                %error,
+                "sending a branch to GitHub failed"
+            );
+            GitHubPushResult::failed(push, error, failure, now_unix)
+        }
+        _ => GitHubPushResult::Succeeded,
+    };
     match state
         .metadata
         .requests()
-        .finish_github_push(&push.id, claim_token, outcome, now_unix)
+        .finish_github_push(&push.id, claim_token, result, now_unix)
         .await
     {
         Ok(Some(finished)) => {
@@ -199,7 +223,7 @@ pub(crate) async fn refresh_github_visibility(
 ) -> Result<Option<GitHubConnection>, ApiError> {
     let Some(repository) = state
         .github_app()?
-        .installation_repository(connection.installation_id, connection.github_repository_id)
+        .repository(connection.installation_id, connection.github_repository_id)
         .await?
     else {
         return Ok(None);

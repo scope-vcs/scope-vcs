@@ -31,9 +31,10 @@ pub use github_pull_request::{
     review_request_comment_body, review_request_marker,
 };
 pub use github_push::{
-    GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState,
-    GitHubPushStatus, changes_github_workflows, github_branch_deletion_recheck_at,
-    github_push_retry_at, github_retry_at, main_publication_contains_merge,
+    GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, GitHubPushDestination,
+    GitHubPushFailure, GitHubPushNextAttempt, GitHubPushResult, GitHubPushState, GitHubPushStatus,
+    changes_github_workflows, github_branch_deletion_recheck_at, github_retry_at,
+    main_publication_contains_merge,
 };
 pub use planning::{GitHubRequestChecks, RequestCheckPlan};
 pub use reviewer::RequestCheckReviewer;

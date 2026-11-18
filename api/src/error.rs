@@ -17,6 +17,7 @@ pub(crate) struct ApiError {
     code: ErrorCode,
     fields: Box<ErrorFields>,
     instruction: Option<String>,
+    retry_at_unix: Option<u64>,
 }
 
 macro_rules! message_errors {
@@ -64,6 +65,19 @@ impl ApiError {
         Self::from_diagnostic(ErrorKind::ServiceUnavailable, public_message, diagnostic)
     }
 
+    pub(crate) fn upstream_rate_limited(
+        public_message: impl Into<String>,
+        retry_at_unix: u64,
+    ) -> Self {
+        let mut error = Self::new(ErrorKind::TooManyRequests, public_message);
+        error.retry_at_unix = Some(retry_at_unix);
+        error
+    }
+
+    pub(crate) fn retry_at_unix(&self) -> Option<u64> {
+        self.retry_at_unix
+    }
+
     fn temporarily_unavailable(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::ServiceUnavailable, message)
     }
@@ -84,6 +98,7 @@ impl ApiError {
             code: kind.code(),
             fields: Box::default(),
             instruction: None,
+            retry_at_unix: None,
         }
     }
 

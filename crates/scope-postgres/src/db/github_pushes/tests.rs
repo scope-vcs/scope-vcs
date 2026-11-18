@@ -73,7 +73,7 @@ async fn a_branch_is_pushed_by_one_claim_at_a_time_and_the_newest_push_wins() {
         .finish_github_push(
             &pushed.id,
             "claim_1",
-            GitHubJobOutcome::Succeeded(()),
+            scope_domain::requests::GitHubPushResult::Succeeded,
             t + 2,
         )
         .await
@@ -85,7 +85,7 @@ async fn a_branch_is_pushed_by_one_claim_at_a_time_and_the_newest_push_wins() {
             .finish_github_push(
                 &pushed.id,
                 "claim_1",
-                GitHubJobOutcome::Succeeded(()),
+                scope_domain::requests::GitHubPushResult::Succeeded,
                 t + 2
             )
             .await
@@ -179,7 +179,12 @@ async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed_and_only
     assert_eq!(deletion.destination, destination());
     assert_eq!(deletion.state, GitHubPushState::Queued);
     requests
-        .finish_github_push(&pushing.id, "push", GitHubJobOutcome::Succeeded(()), t + 1)
+        .finish_github_push(
+            &pushing.id,
+            "push",
+            scope_domain::requests::GitHubPushResult::Succeeded,
+            t + 1,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -202,7 +207,7 @@ async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed_and_only
         .finish_github_push(
             &deletion.id,
             "claim",
-            GitHubJobOutcome::Succeeded(()),
+            scope_domain::requests::GitHubPushResult::Succeeded,
             t + 3,
         )
         .await

@@ -5,7 +5,7 @@ use crate::{
     error::ApiError,
     git::command::git_contains_commit,
     github::{
-        GitHubApp,
+        GitHubApp, RATE_LIMIT_MESSAGE,
         pull_requests::{
             GitHubPullRequestRecord, PULL_REQUEST_PERMISSION_MESSAGE, PullRequestCallError,
         },
@@ -552,11 +552,9 @@ pub(super) fn call_failure(error: PullRequestCallError) -> JobFailure {
         PullRequestCallError::Unreachable => JobFailure::Retry(
             "The Scope GitHub App cannot reach this pull request on GitHub.".to_string(),
         ),
-        PullRequestCallError::RateLimited { retry_at_unix } => JobFailure::RetryAt {
-            error: "GitHub's rate limit for the Scope GitHub App was reached; Scope tries again \
-                when it resets."
-                .to_string(),
-            at_unix: retry_at_unix,
+        PullRequestCallError::RateLimited { retry_at_unix } => JobFailure::RateLimited {
+            error: RATE_LIMIT_MESSAGE.to_string(),
+            reset_at_unix: retry_at_unix,
         },
         PullRequestCallError::PermissionMissing | PullRequestCallError::Forbidden => {
             JobFailure::GiveUp(PULL_REQUEST_PERMISSION_MESSAGE.to_string())

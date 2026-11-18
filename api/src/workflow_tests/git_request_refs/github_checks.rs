@@ -14,6 +14,7 @@ use std::sync::atomic::Ordering;
 mod carrier_pull_requests;
 mod public;
 mod public_repositories;
+mod push_failures;
 mod review_bot_gate;
 mod review_imports;
 mod run_page;

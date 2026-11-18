@@ -1,6 +1,6 @@
 use super::*;
 
-mod check_sources;
+pub(super) mod check_sources;
 mod pulls;
 use crate::github::{GitHubApp, config::GitHubAppConfig};
 use axum::{
