@@ -385,6 +385,10 @@ pub fn cancel_request_auto_merge(
     )
 }
 
+pub fn request_auto_merge_event_id(kind: &str, intent_id: &str) -> String {
+    format!("request_auto_merge_{kind}_{intent_id}")
+}
+
 pub fn stop_request_auto_merge(
     request: &Request,
     intent: &RequestAutoMergeIntent,

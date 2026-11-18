@@ -4,7 +4,6 @@ use super::{
     entities,
     generated_ids::generate_id,
     repository_access::repository_access,
-    request_access::ensure_user_exists,
     request_auto_merge::{
         StoredIntent, automatic_event_id, lock_active_intent_for_request,
         persist_existing_auto_merge_mutation,
@@ -22,12 +21,12 @@ use {
     scope_domain::{
         repository::git::GitHead,
         requests::{
-            GitHubMergeLanding, MainAdvanceKind, MergeGateAuthority, MergeGateInput,
-            MergeRequestInput, MergeRequestLanding, RequestAutoMergeReadiness,
-            RequestAutoMergeStopReason, RequestLifecycleMutation, RequestMainPushCompletion,
-            RequestMergeSubject, RequestViewer, evaluate_merge_gate, fulfill_request_auto_merge,
-            lands_with_main, merge_request, request_auto_merge_readiness, request_checks_outcome,
-            request_main_push_completion, stop_request_auto_merge,
+            ExpectedAutoMergeClaim, GitHubMergeLanding, MainAdvanceKind, MergeAutoMerge,
+            MergeCommitFacts, MergeDecision, MergeFacts, MergeGitHead, MergeReadinessFacts,
+            MergeRefusal, MergeRequestInput, MergeRequestLanding, MergeStep, RequestActor,
+            RequestLifecycleMutation, RequestMainPushCompletion, RequestViewer,
+            StoredAutoMergeClaim, decide_merge, fulfill_request_auto_merge, lands_with_main,
+            merge_request, request_checks_outcome, request_main_push_completion,
         },
     },
 };
@@ -190,184 +189,142 @@ async fn merge_one_request(
         .filter(|request| request.repo_id == repo_id)
         .ok_or_else(|| PostgresError::not_found("request not found"))?;
     super::request_stack::lock_graph(tx, &request, None).await?;
-    let locked_auto_merge = if let Some(expected) = &expected_auto_merge {
-        let row = entities::request_auto_merge_intent::Entity::find_by_id(&expected.intent_id)
-            .lock_exclusive()
-            .one(tx)
-            .await?
-            .filter(|row| {
-                row.status == "Active"
-                    && row.request_id == request.id
-                    && row.repo_id == repo_id
-                    && row.revision_id == expected.revision_id
-                    && row.head_oid == expected.head_oid
-                    && row.claim_token.as_deref() == Some(expected.claim_token.as_str())
-                    && row
-                        .claim_expires_at_unix
-                        .is_some_and(|expires| expires >= now_unix as i64)
-            })
-            .ok_or_else(|| PostgresError::conflict("auto-merge claim is no longer current"))?;
-        Some(StoredIntent::from_model(row)?)
-    } else {
-        lock_active_intent_for_request(tx, &request.id).await?
+    let locked_auto_merge = match &expected_auto_merge {
+        Some(expected) => {
+            entities::request_auto_merge_intent::Entity::find_by_id(&expected.intent_id)
+                .lock_exclusive()
+                .one(tx)
+                .await?
+                .map(StoredIntent::from_model)
+                .transpose()?
+        }
+        None => lock_active_intent_for_request(tx, &request.id).await?,
     };
     let latest_revision = latest_revision_for_request(tx, &request.id).await?;
-    let authorized_revision_is_current = locked_auto_merge.as_ref().is_none_or(|locked| {
-        latest_revision.as_ref().is_some_and(|revision| {
-            revision.id == locked.intent.revision_id
-                && revision.new_head_oid == locked.intent.head_oid
-                && request.head_oid == locked.intent.head_oid
-        })
-    });
-    if request.head_oid != expected_request_head_oid || !authorized_revision_is_current {
-        let should_stop_auto_merge = expected_auto_merge.is_some()
-            || locked_auto_merge
-                .as_ref()
-                .is_some_and(|_| !authorized_revision_is_current);
-        if should_stop_auto_merge && let Some(locked) = locked_auto_merge {
-            let mutation = stop_request_auto_merge(
-                &request,
-                &locked.intent,
-                RequestAutoMergeStopReason::RequestChanged,
-                automatic_event_id("stopped", &locked.intent.id),
-                now_unix,
-            )?;
-            persist_existing_auto_merge_mutation(tx, locked.model, &mutation).await?;
-            return Err(RejectedMerge::after_auto_merge_stop(
-                PostgresError::conflict("request changed since merge was prepared; retry merge"),
-            ));
-        }
-        return Err(PostgresError::conflict(
-            "request changed since merge was prepared; retry merge",
-        )
-        .into());
-    }
-    ensure_user_exists(tx, &actor_user_id).await?;
-
+    let actor_exists = entities::user::Entity::find_by_id(&actor_user_id)
+        .one(tx)
+        .await?
+        .is_some();
     let repo_row = entities::repository::Entity::find_by_id(repo_id)
         .one(tx)
         .await?
         .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
-    if locked_auto_merge
-        .as_ref()
-        .is_some_and(|locked| locked.intent.repository_incarnation_id != repo_row.incarnation_id)
-    {
-        return Err(PostgresError::conflict("auto-merge repository incarnation changed").into());
-    }
     let context = repository_access(tx, repo_id, Some(&actor_user_id))
         .await?
         .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
+    let git_frontier = entities::git_head::Entity::find_by_id(repo_id)
+        .one(tx)
+        .await?
+        .map(|head| head.try_into_domain())
+        .transpose()?
+        .map(|head| head.frontier());
     let checks = evidence::locked_merge_checks(
         tx,
         &request,
         &expected_merge_evidence,
         now_unix.saturating_add(started.elapsed().as_secs()),
     )
-    .await?;
-    let viewer = RequestViewer::new(context.access.clone(), Some(&actor_user_id), false);
-    let gate = evaluate_merge_gate(MergeGateInput::RequestMerge {
-        repository_lifecycle: context.record.lifecycle_state,
-        subject: RequestMergeSubject::new(
-            &request,
-            &super::projection_read_models::request_view_mains(
+    .await;
+    let readiness = match &checks {
+        Ok(checks) => Some((
+            super::projection_read_models::request_view_mains(
                 tx,
                 &request.repo_id,
                 context.record.content_version,
             )
             .await?,
-        ),
-        viewer: &viewer,
-        views: &context.views,
-        checks: request_checks_outcome(
-            &request.id,
-            &request.head_oid,
-            checks.evaluation.as_ref(),
-            &checks.results,
-        ),
-        reviews: super::github_review_bot_statuses::reviews_outcome(tx, &request, &context.views)
-            .await?,
-    });
-    if expected_auto_merge.is_some()
-        && let Some(locked) = &locked_auto_merge
-    {
-        if locked.intent.actor_user_id != actor_user_id {
-            return Err(PostgresError::conflict(
-                "auto-merge actor does not match the authorization",
+            request_checks_outcome(
+                &request.id,
+                &request.head_oid,
+                checks.evaluation.as_ref(),
+                &checks.results,
+            ),
+            super::github_review_bot_statuses::reviews_outcome(tx, &request, &context.views)
+                .await?,
+        )),
+        Err(_) => None,
+    };
+    let decision = decide_merge(
+        MergeFacts {
+            request: &request,
+            repository_id: repo_id,
+            repository_lifecycle: context.record.lifecycle_state,
+            actor: RequestActor {
+                access: &context.access,
+                is_invitee: false,
+                views: &context.views,
+            },
+            actor_user_id: &actor_user_id,
+        },
+        MergeStep::Commit(Box::new(MergeCommitFacts {
+            latest_revision: latest_revision.as_ref(),
+            auto_merge: match (&expected_auto_merge, &locked_auto_merge) {
+                (Some(expected), stored) => MergeAutoMerge::Claimed {
+                    expected: ExpectedAutoMergeClaim {
+                        revision_id: &expected.revision_id,
+                        head_oid: &expected.head_oid,
+                        claim_token: &expected.claim_token,
+                        fulfilled_event_id: &expected.fulfilled_event_id,
+                    },
+                    stored: stored.as_ref().map(|stored| StoredAutoMergeClaim {
+                        intent: &stored.intent,
+                        claim_token: stored.model.claim_token.as_deref(),
+                        claim_expires_at_unix: stored
+                            .model
+                            .claim_expires_at_unix
+                            .and_then(|expires| u64::try_from(expires).ok()),
+                    }),
+                },
+                (None, Some(stored)) => MergeAutoMerge::Active(&stored.intent),
+                (None, None) => MergeAutoMerge::None,
+            },
+            actor_exists,
+            repository_incarnation_id: &repo_row.incarnation_id,
+            repository_change_version: context.record.change_version,
+            git_head: MergeGitHead::observed(git_frontier.as_ref(), &expected_git_frontier),
+            readiness: readiness.as_ref().map(|(view_mains, checks, reviews)| {
+                MergeReadinessFacts {
+                    view_mains,
+                    checks: *checks,
+                    reviews: *reviews,
+                }
+            }),
+            prepared_request_head_oid: &expected_request_head_oid,
+            prepared_repository_change_version: expected_repo_change_version,
+            merged_main_oid: &update.git_head.head_oid,
+            merged_event_id,
+            now_unix,
+        })),
+    );
+    let outcome = match decision {
+        Ok(MergeDecision::Merge(outcome)) => *outcome,
+        Ok(MergeDecision::Proceed) => {
+            return Err(PostgresError::internal_message("merge commit was not decided").into());
+        }
+        Err(MergeRefusal::Rejected(error)) => return Err(PostgresError::from(error).into()),
+        Err(MergeRefusal::RepositoryMoved) => {
+            return Err(PostgresError::repository_moved(
+                "repo changed since merge was prepared; retry merge",
             )
             .into());
         }
-        if !context.access.is_maintainer() {
-            let mutation = stop_request_auto_merge(
-                &request,
-                &locked.intent,
-                RequestAutoMergeStopReason::AccessRevoked,
-                automatic_event_id("stopped", &locked.intent.id),
-                now_unix,
-            )?;
-            persist_existing_auto_merge_mutation(tx, locked.model.clone(), &mutation).await?;
-            return Err(RejectedMerge::after_auto_merge_stop(
-                PostgresError::permission_denied("repo maintainer required"),
-            ));
+        Err(MergeRefusal::ReadinessUnavailable) => {
+            return Err(checks
+                .err()
+                .unwrap_or_else(|| {
+                    PostgresError::internal_message("merge readiness was not loaded")
+                })
+                .into());
         }
-        match request_auto_merge_readiness(gate) {
-            RequestAutoMergeReadiness::Ready => {}
-            RequestAutoMergeReadiness::Waiting(_) => {
-                return Err(PostgresError::conflict("auto-merge CI is not ready").into());
-            }
-            RequestAutoMergeReadiness::Stop(reason) => {
-                let mutation = stop_request_auto_merge(
-                    &request,
-                    &locked.intent,
-                    reason,
-                    automatic_event_id("stopped", &locked.intent.id),
-                    now_unix,
-                )?;
-                persist_existing_auto_merge_mutation(tx, locked.model.clone(), &mutation).await?;
-                return Err(RejectedMerge::after_auto_merge_stop(
-                    PostgresError::conflict(reason.message()),
-                ));
-            }
+        Err(MergeRefusal::AutoMergeStopped { error, stop }) => {
+            let locked = locked_auto_merge.ok_or_else(|| {
+                PostgresError::internal_message("stopped an auto-merge that was not locked")
+            })?;
+            persist_existing_auto_merge_mutation(tx, locked.model, &stop).await?;
+            return Err(RejectedMerge::after_auto_merge_stop(error.into()));
         }
-    }
-    if context.record.change_version != expected_repo_change_version {
-        return Err(PostgresError::repository_moved(
-            "repo changed since merge was prepared; retry merge",
-        )
-        .into());
-    }
-    let head = entities::git_head::Entity::find_by_id(repo_id)
-        .one(tx)
-        .await?
-        .ok_or_else(|| PostgresError::conflict("repo has no accepted Git head"))?
-        .try_into_domain()?;
-    if head.frontier() != expected_git_frontier {
-        return Err(PostgresError::repository_moved(
-            "repo changed since merge was prepared; retry merge",
-        )
-        .into());
-    }
-    if gate.authority() != Some(MergeGateAuthority::RequestMerge) {
-        let message = gate.refusal().unwrap_or("request cannot be merged");
-        return Err(if !context.access.is_maintainer() {
-            PostgresError::permission_denied(message)
-        } else {
-            PostgresError::conflict(message)
-        }
-        .into());
-    }
-    let request_mutation = merge_request(
-        &request,
-        MergeRequestInput {
-            request_id,
-            actor_user_id: actor_user_id.clone(),
-            actor_is_maintainer: context.access.is_maintainer(),
-            landing: MergeRequestLanding::NativeMerge,
-            merged_head_oid: expected_request_head_oid,
-            merged_main_oid: update.git_head.head_oid.clone(),
-            merged_event_id,
-            now_unix,
-        },
-    )?;
+    };
+    let checks = checks?;
 
     let persisted = accept_and_persist_request_merge(
         tx,
@@ -380,7 +337,7 @@ async fn merge_one_request(
     .await?;
     let git_head = persisted.git_head;
 
-    persist_lifecycle_mutation(tx, &request_mutation.request, &request_mutation.events).await?;
+    persist_lifecycle_mutation(tx, &outcome.request.request, &outcome.request.events).await?;
     record_main_advance(
         tx,
         repo_id,
@@ -389,29 +346,21 @@ async fn merge_one_request(
         now_unix,
     )
     .await?;
-    let request_mutation = if let Some(locked) = locked_auto_merge {
-        let fulfilled_event_id = expected_auto_merge
-            .as_ref()
-            .map(|expected| expected.fulfilled_event_id.clone())
-            .unwrap_or_else(|| automatic_event_id("fulfilled", &locked.intent.id));
-        let fulfilled = fulfill_request_auto_merge(
-            &request_mutation.request,
-            &locked.intent,
-            git_head.head_oid.clone(),
-            fulfilled_event_id,
-            now_unix,
-        )?;
-        persist_existing_auto_merge_mutation(tx, locked.model, &fulfilled).await?;
-        RequestLifecycleMutation {
-            request: fulfilled.request,
-            events: request_mutation
-                .events
-                .into_iter()
-                .chain(std::iter::once(fulfilled.event))
-                .collect(),
+    let fulfilled = outcome.fulfill_auto_merge(&git_head.head_oid, now_unix)?;
+    let request_mutation = match (fulfilled, locked_auto_merge) {
+        (Some(fulfilled), Some(locked)) => {
+            persist_existing_auto_merge_mutation(tx, locked.model, &fulfilled).await?;
+            RequestLifecycleMutation {
+                request: fulfilled.request,
+                events: outcome
+                    .request
+                    .events
+                    .into_iter()
+                    .chain(std::iter::once(fulfilled.event))
+                    .collect(),
+            }
         }
-    } else {
-        request_mutation
+        _ => outcome.request,
     };
     super::request_stack::retarget_children(
         tx,

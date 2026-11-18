@@ -437,9 +437,7 @@ pub(super) async fn persist_existing_auto_merge_mutation(
     Ok(())
 }
 
-pub(super) fn automatic_event_id(kind: &str, intent_id: &str) -> String {
-    format!("request_auto_merge_{kind}_{intent_id}")
-}
+pub(super) use scope_domain::requests::request_auto_merge_event_id as automatic_event_id;
 
 #[cfg(test)]
 mod tests;

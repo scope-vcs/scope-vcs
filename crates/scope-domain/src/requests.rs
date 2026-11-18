@@ -45,13 +45,19 @@ pub use access::{
     request_visible_to_every_maintainer,
 };
 mod auto_merge;
+mod merge_decision;
 pub use auto_merge::{
     AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
     RequestAutoMergeIntentStatus, RequestAutoMergeMutation, RequestAutoMergeReadiness,
     RequestAutoMergeStopReason, RequestAutoMergeWaitingReason, authorize_request_auto_merge,
     cancel_request_auto_merge, fulfill_request_auto_merge, request_auto_merge_can_cancel,
-    request_auto_merge_can_enable, request_auto_merge_readiness, stop_request_auto_merge,
-    stop_request_auto_merge_for_check_evaluation,
+    request_auto_merge_can_enable, request_auto_merge_event_id, request_auto_merge_readiness,
+    stop_request_auto_merge, stop_request_auto_merge_for_check_evaluation,
+};
+pub use merge_decision::{
+    ExpectedAutoMergeClaim, MergeAutoMerge, MergeCommitFacts, MergeDecision, MergeFacts,
+    MergeGitHead, MergeOutcome, MergeReadinessFacts, MergeRefusal, MergeStep, StoredAutoMergeClaim,
+    decide_merge,
 };
 pub mod attachments;
 mod checks;
