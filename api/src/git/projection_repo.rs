@@ -2,7 +2,10 @@ use crate::{
     error::ApiError,
     git::{
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
-        command::{git_command_output, git_is_ancestor, git_process_output, truncated_git_stderr},
+        command::{
+            git_command_output, git_contains_commit, git_is_ancestor, git_process_output,
+            truncated_git_stderr,
+        },
         content::source_content_bytes_from_repo,
     },
     runtime_budgets::RuntimeBudgets,
@@ -27,10 +30,11 @@ use std::{
 
 mod index;
 mod preflight;
+mod source_blobs;
 use index::ProjectionIndex;
 pub(crate) use preflight::VerifiedProjections;
 
-const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-labels-v4-head-oid-alternates";
+const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-labels-v5-head-oid-own-objects";
 static PROJECTION_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 
 struct ProjectionBuildArtifacts {
@@ -109,11 +113,11 @@ pub(crate) fn projection_bare_repo_with_loader(
         None,
     )?;
     if let Some(source_repo) = native_source_repo {
-        fs::write(
-            temp_path.join("objects/info/alternates"),
-            format!("{}\n", source_repo.join("objects").display()),
-        )
-        .map_err(ApiError::internal)?;
+        source_blobs::copy_generated_git_blobs(
+            source_repo,
+            &temp_path,
+            &projection.commits[reused_commits..],
+        )?;
     }
     let mut index = ProjectionIndex::new(&temp_path, &index_path, parent_commit.as_deref())?;
     index.remember_verified_blobs(
@@ -282,7 +286,7 @@ fn copy_and_verify_native_commit(
         if seen_oids.contains(parent_oid) {
             continue;
         }
-        let parent_is_public = git_is_ancestor(
+        let parent_is_public = git_contains_commit(
             target_repo,
             parent_oid,
             range_base_oid,
@@ -402,10 +406,6 @@ pub(crate) async fn projection_bare_repo_for_state(
         }
         None
     };
-    let canonical_for_build = canonical_repo
-        .as_ref()
-        .map(GitRepoHandle::share)
-        .transpose()?;
     let cache_root = state.repository_engine.cache_root().to_path_buf();
     let labels = view_labels(views, &projection.view_key);
     let cache_key = projection_cache_key(incarnation, &labels, projection)?;
@@ -416,7 +416,7 @@ pub(crate) async fn projection_bare_repo_for_state(
     let incarnation_for_build = incarnation.clone();
     let projection_for_build = projection.clone();
     let cache_root_for_build = cache_root.clone();
-    let repo = state
+    state
         .repository_engine
         .materialize_derived(
             incarnation,
@@ -438,7 +438,7 @@ pub(crate) async fn projection_bare_repo_for_state(
                         &projection_for_build,
                         None,
                     )?;
-                    let canonical_path = canonical_for_build.as_deref();
+                    let canonical_path = canonical_repo.as_deref();
                     projection_bare_repo_with_loader(
                         &cache_root_for_build,
                         &incarnation_for_build,
@@ -458,11 +458,7 @@ pub(crate) async fn projection_bare_repo_for_state(
                 })?
             },
         )
-        .await?;
-    Ok(match canonical_repo {
-        Some(canonical_repo) => repo.with_dependency(canonical_repo),
-        None => repo,
-    })
+        .await
 }
 
 pub(crate) fn cached_projection_repo(
