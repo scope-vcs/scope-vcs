@@ -52,7 +52,7 @@ fn language_of_extension(extension: &str) -> Option<Language> {
     Some(match extension {
         "cjs" | "mjs" => Language::Javascript,
         "cts" | "mts" => Language::Typescript,
-        "cc" | "cxx" | "hh" | "hxx" => Language::CPlusPlus,
+        "cc" | "cxx" | "hxx" => Language::CPlusPlus,
         "m" | "mm" => Language::ObjectiveC,
         "fs" => Language::FSharp,
         "gql" => Language::Graphql,

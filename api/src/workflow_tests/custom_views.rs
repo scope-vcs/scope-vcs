@@ -422,19 +422,25 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
             .collect::<Vec<_>>(),
         ["/README.md", "/src/lib.rs", "/src/main.rs"]
     );
-    for (bearer, expected) in [
-        (member_bearer(), vec![("Rust", 29)]),
-        (bearer_header(), vec![("Rust", 29), ("Shell", 9)]),
+    for (bearer, uri, expected) in [
+        (
+            member_bearer(),
+            "/v1/repos/owner/repo/languages",
+            vec![("Rust", 29)],
+        ),
+        (
+            bearer_header(),
+            "/v1/repos/owner/repo/languages",
+            vec![("Rust", 29), ("Shell", 9)],
+        ),
+        (
+            bearer_header(),
+            "/v1/repos/owner/repo/languages?view=agent",
+            vec![("Rust", 29)],
+        ),
     ] {
         let languages = response_json(
-            api_request(
-                router(state.clone()),
-                "GET",
-                "/v1/repos/owner/repo/languages",
-                Some(&bearer),
-                None,
-            )
-            .await,
+            api_request(router(state.clone()), "GET", uri, Some(&bearer), None).await,
         )
         .await;
         assert_eq!(

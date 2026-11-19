@@ -1,5 +1,5 @@
 import { parseRepoFileInput } from '@/api/request-inputs'
-import { HttpError, isNotFoundError } from '@/api/http'
+import { HttpError, isNotFoundError, loadOptionalResource } from '@/api/http'
 import {
   loadRepoContentForRequest,
   loadRepoFileForRequest,
@@ -18,7 +18,10 @@ export const loadRepoContent = createServerFn({ method: 'GET' })
 
 export const loadRepoLanguages = createServerFn({ method: 'GET' })
   .validator(parseRepoViewInput)
-  .handler(({ data }) => loadRepoLanguagesForRequest(data, getRequest().signal))
+  .handler(async ({ data }) => {
+    const signal = getRequest().signal
+    return (await loadOptionalResource(() => loadRepoLanguagesForRequest(data, signal))) ?? []
+  })
 
 export const loadRepoFile = createServerFn({ method: 'GET' })
   .validator(parseRepoFileInput)

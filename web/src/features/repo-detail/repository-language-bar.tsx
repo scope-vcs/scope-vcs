@@ -5,7 +5,7 @@ import { useState, type CSSProperties } from 'react'
 import { languageSegments, languageSummary, type LanguageSegment } from './repository-languages'
 
 export function RepositoryLanguageBar({ languages }: { languages: readonly RepoLanguageResponse[] | null }) {
-  const [openIndex, setOpenIndex] = useState<number | null>(null)
+  const [openName, setOpenName] = useState<string | null>(null)
   const segments = languageSegments(languages ?? [])
   if (segments.length === 0) return <div className="h-1 border-t border-border" />
   const summary = languageSummary(segments)
@@ -16,8 +16,8 @@ export function RepositoryLanguageBar({ languages }: { languages: readonly RepoL
         {segments.map((segment, index) => (
           <Tooltip
             key={segment.name}
-            onOpenChange={(open) => setOpenIndex((current) => open ? index : current === index ? null : current)}
-            open={openIndex === index}
+            onOpenChange={(open) => setOpenName((current) => open ? segment.name : current === segment.name ? null : current)}
+            open={openName === segment.name}
           >
             <TooltipTrigger
               aria-hidden={index > 0 || undefined}
@@ -29,7 +29,7 @@ export function RepositoryLanguageBar({ languages }: { languages: readonly RepoL
               )}
               onClick={(event) => {
                 event.preventDefault()
-                setOpenIndex(index)
+                setOpenName(segment.name)
               }}
               onPointerDown={(event) => event.preventDefault()}
               style={{ flexGrow: segment.share, ...swatchStyle(segment) }}
@@ -43,17 +43,17 @@ export function RepositoryLanguageBar({ languages }: { languages: readonly RepoL
               sideOffset={8}
             >
               <ul className="min-w-44">
-                {segments.map((row, rowIndex) => (
+                {openName === segment.name && segments.map((row) => (
                   <li
                     className={cn(
                       'grid grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-x-2 leading-[22px]',
-                      rowIndex === index && 'font-semibold',
+                      row.name === openName && 'font-semibold',
                     )}
                     key={row.name}
                   >
                     <span className={cn('size-2 rounded-xs', swatchClass(row))} style={swatchStyle(row)} />
                     <span>{row.name}</span>
-                    <span className={cn('pl-3.5 tabular-nums', rowIndex !== index && 'text-muted-foreground')}>
+                    <span className={cn('pl-3.5 tabular-nums', row.name !== openName && 'text-muted-foreground')}>
                       {row.percent}
                     </span>
                   </li>
