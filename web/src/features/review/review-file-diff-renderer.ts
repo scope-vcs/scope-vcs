@@ -12,29 +12,62 @@ import type {
 import { createHash } from 'node:crypto'
 import { createBoundedCache } from '../../lib/bounded-cache'
 import {
-  REVIEW_FILE_DIFF_RENDER_BUDGETS,
-  REVIEW_FILE_DIFF_RENDERER_LIMITS,
-  type ReviewFileDiffWorkerInput,
-  type ReviewFileDiffWorkerResult,
-  reviewFileTextMetrics,
-} from './review-file-diff-render-contract'
+  codeTextMetrics,
+  type CodeRenderDiffInput,
+  type CodeRenderWorkerResult,
+} from '../code-render/code-render-contract'
+import { CodeRenderTransientError } from '../code-render/code-render-worker-pool'
 
-type ReviewDiffTransientFailure = 'busy' | 'deadline'
+export const REVIEW_FILE_DIFF_MAX_MIXED_TEXT_BYTES = 64 * 1024
 
-export class ReviewDiffTransientError extends Error {
-  constructor(readonly failure: ReviewDiffTransientFailure) {
-    super(failure === 'busy'
-      ? 'The diff renderer is busy. Try again.'
-      : 'Diff rendering took too long. Try again.')
-    this.name = 'ReviewDiffTransientError'
-  }
-}
+type ReviewFileDiffRenderBudget = Readonly<{
+  cachePresentations: boolean
+  deadlineMs: number
+  maxConcurrentRenders: number
+  maxHunks: number
+  maxInputBytes: number
+  maxInputLineBytes: number
+  maxInputLines: number
+  maxOutputBytes: number
+  maxRenderedLines: number
+}>
+
+export const REVIEW_FILE_DIFF_RENDER_BUDGETS: Readonly<Record<
+  ReviewDiffRenderBudget,
+  ReviewFileDiffRenderBudget
+>> = Object.freeze({
+  full: Object.freeze({
+    cachePresentations: false,
+    deadlineMs: 10_000,
+    maxConcurrentRenders: 1,
+    maxHunks: 2_000,
+    maxInputBytes: 2 * 1024 * 1024,
+    maxInputLineBytes: 1024 * 1024,
+    maxInputLines: 200_000,
+    maxOutputBytes: 8 * 1024 * 1024,
+    maxRenderedLines: 20_000,
+  }),
+  standard: Object.freeze({
+    cachePresentations: true,
+    deadlineMs: 1_500,
+    maxConcurrentRenders: 2,
+    maxHunks: 64,
+    maxInputBytes: 256 * 1024,
+    maxInputLineBytes: 16 * 1024,
+    maxInputLines: 4_000,
+    maxOutputBytes: 256 * 1024,
+    maxRenderedLines: 800,
+  }),
+})
+
+export const REVIEW_FILE_DIFF_MAX_CONCURRENT_RENDERS = Object.values(REVIEW_FILE_DIFF_RENDER_BUDGETS)
+  .reduce((renders, budget) => renders + budget.maxConcurrentRenders, 0)
 
 type IsolatedReviewDiffRender = (
-  input: ReviewFileDiffWorkerInput,
+  input: CodeRenderDiffInput,
   deadlineMs: number,
   signal?: AbortSignal,
-) => Promise<ReviewFileDiffWorkerResult>
+) => Promise<CodeRenderWorkerResult>
 
 type ReviewDiffAdmissionState = Record<ReviewDiffRenderBudget, number>
 
@@ -45,7 +78,7 @@ export function createReviewFileDiffRenderer({
   isolatedRender: IsolatedReviewDiffRender
   state?: ReviewDiffAdmissionState
 }) {
-  const presentations = createBoundedCache<string, Exclude<ReviewFileDiffWorkerResult, { kind: 'error' }>>({
+  const presentations = createBoundedCache<string, Exclude<CodeRenderWorkerResult, { kind: 'error' }>>({
     maxEntries: 64,
     maxWeight: 8 * 1024 * 1024,
     weightOf: (result) => result.kind === 'html' ? result.html.length * 2 : 64,
@@ -65,8 +98,8 @@ export function createReviewFileDiffRenderer({
 
     const oldText = textContent(diff.old_content)
     const newText = textContent(diff.new_content)
-    const oldMetrics = reviewFileTextMetrics(oldText)
-    const newMetrics = reviewFileTextMetrics(newText)
+    const oldMetrics = codeTextMetrics(oldText)
+    const newMetrics = codeTextMetrics(newText)
     if (
       oldMetrics.bytes + newMetrics.bytes > budget.maxInputBytes ||
       Math.max(oldMetrics.maxLineBytes, newMetrics.maxLineBytes) >
@@ -87,7 +120,7 @@ export function createReviewFileDiffRenderer({
       return { ...base, presentation: budgetedPresentation(cached, budgetName) }
     }
     if (state[budgetName] >= budget.maxConcurrentRenders) {
-      throw new ReviewDiffTransientError('busy')
+      throw new CodeRenderTransientError('busy')
     }
 
     state[budgetName] += 1
@@ -98,6 +131,7 @@ export function createReviewFileDiffRenderer({
           maxOutputBytes: budget.maxOutputBytes,
           maxRenderedLines: budget.maxRenderedLines,
         },
+        kind: 'diff',
         newText,
         oldText,
         path: diff.path,
@@ -114,10 +148,10 @@ export function createReviewFileDiffRenderer({
   }
 }
 
-const RENDERER_VERSION = 'pierre-1.6.1-v2'
+const RENDERER_VERSION = 'pierre-1.6.1-v3'
 
 function budgetedPresentation(
-  result: Exclude<ReviewFileDiffWorkerResult, { kind: 'error' }>,
+  result: Exclude<CodeRenderWorkerResult, { kind: 'error' }>,
   budget: ReviewDiffRenderBudget,
 ): ReviewDiffPresentation {
   return result.kind === 'omitted' ? { ...result, budget } : result
@@ -139,7 +173,7 @@ function nonTextPresentation(
   const binary = binarySides(diff)
   if (binary.length === 0) return null
 
-  const text = textSides(diff, REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes)
+  const text = textSides(diff, REVIEW_FILE_DIFF_MAX_MIXED_TEXT_BYTES)
   return text.length > 0
     ? { binary, kind: 'mixed', text }
     : { kind: 'binary', sides: binary }

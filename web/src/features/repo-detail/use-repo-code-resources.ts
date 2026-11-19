@@ -1,6 +1,5 @@
 import type { RepoContent } from '@/api/types'
 import type {
-  RepoFileContentResponse,
   RepoSummaryResponse,
   ViewId,
 } from '@/api/types.generated'
@@ -12,6 +11,7 @@ import { useCallback, useMemo } from 'react'
 import { repoContentCacheKey, repoContentResource } from './repo-content-cache'
 import { loadRepoFileWhenReady, repositoryLandingPath } from './repo-code-route-data'
 import { repoFileCacheKey, repoFileResource } from './repo-file-cache'
+import type { RepoFile } from './repo-file-highlight'
 import { repoResourceScope } from './repo-resource-scope'
 import {
   repositoryVersionSearch,
@@ -100,7 +100,7 @@ async function loadAddressedFile(
   version: RepositoryVersion,
   view: ViewId,
   signal: AbortSignal,
-): Promise<RepoFileContentResponse> {
+): Promise<RepoFile> {
   const data = { ...params, ...repositoryVersionSearch(version), path, view }
   const file = await loadRepoFileWhenReady({
     load: () => loadRepoFile({ data, signal }),

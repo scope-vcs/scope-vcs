@@ -1,22 +1,15 @@
 import assert from 'node:assert/strict'
-import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import test, { mock } from 'node:test'
-import { Worker } from 'node:worker_threads'
 import type { ReviewFileDiffResponse } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
-import {
-  REVIEW_FILE_DIFF_RENDER_BUDGETS,
-  REVIEW_FILE_DIFF_RENDERER_LIMITS,
-  type ReviewFileDiffWorkerInput,
-  reviewFileTextMetrics,
-} from './review-file-diff-render-contract'
+import type { CodeRenderDiffInput } from '../code-render/code-render-contract'
+import { CodeRenderTransientError } from '../code-render/code-render-worker-pool'
 import {
   boundedText,
   createReviewFileDiffRenderer,
-  ReviewDiffTransientError,
+  REVIEW_FILE_DIFF_MAX_MIXED_TEXT_BYTES,
+  REVIEW_FILE_DIFF_RENDER_BUDGETS,
 } from './review-file-diff-renderer'
-import { runReviewFileDiffWorker } from './review-file-diff-worker-pool'
 
 function textDiff(oldText: string, newText: string): ReviewFileDiffResponse {
   return {
@@ -30,22 +23,9 @@ function textDiff(oldText: string, newText: string): ReviewFileDiffResponse {
   }
 }
 
-test('counts UTF-8 bytes, lines, and the longest line exactly', () => {
-  assert.deepEqual(reviewFileTextMetrics('a😀\nβ'), {
-    bytes: 8,
-    lines: 2,
-    maxLineBytes: 5,
-  })
-  assert.deepEqual(reviewFileTextMetrics(''), {
-    bytes: 0,
-    lines: 0,
-    maxLineBytes: 0,
-  })
-})
-
 test('rejects input and line amplification before worker admission until a full render is requested', async () => {
   const isolatedRender = mock.fn(async (
-    _input: ReviewFileDiffWorkerInput,
+    _input: CodeRenderDiffInput,
     _deadlineMs: number,
   ) => ({ kind: 'omitted' as const, reason: 'lines' as const }))
   const render = createReviewFileDiffRenderer({ isolatedRender })
@@ -81,7 +61,7 @@ test('rejects input and line amplification before worker admission until a full 
 test('bounds mixed content without returning raw transport fields', async () => {
   const isolatedRender = mock.fn(async () => ({ kind: 'empty' as const }))
   const render = createReviewFileDiffRenderer({ isolatedRender })
-  const source = '😀'.repeat(REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes)
+  const source = '😀'.repeat(REVIEW_FILE_DIFF_MAX_MIXED_TEXT_BYTES)
   const result = await render({
     kind: 'Modified',
     new_content: { kind: 'text', text: source },
@@ -99,10 +79,10 @@ test('bounds mixed content without returning raw transport fields', async () => 
   const [text] = result.presentation.text
   assert.ok(text)
   assert.equal(text.truncated, true)
-  assert.ok(Buffer.byteLength(text.content) <= REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes)
+  assert.ok(Buffer.byteLength(text.content) <= REVIEW_FILE_DIFF_MAX_MIXED_TEXT_BYTES)
   assert.ok(
     Buffer.byteLength(JSON.stringify(result)) <
-      REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes + 1_024,
+      REVIEW_FILE_DIFF_MAX_MIXED_TEXT_BYTES + 1_024,
   )
 })
 
@@ -120,7 +100,7 @@ test('admits no queue, keeps full renders out of standard slots, and allows retr
   const second = render(textDiff('c', 'd'), 'standard')
   await assert.rejects(
     render(textDiff('e', 'f'), 'standard'),
-    (error: unknown) => error instanceof ReviewDiffTransientError &&
+    (error: unknown) => error instanceof CodeRenderTransientError &&
       error.failure === 'busy',
   )
   assert.equal(releases.length, 2)
@@ -128,7 +108,7 @@ test('admits no queue, keeps full renders out of standard slots, and allows retr
   const full = render(textDiff('g', 'h'), 'full')
   await assert.rejects(
     render(textDiff('i', 'j'), 'full'),
-    (error: unknown) => error instanceof ReviewDiffTransientError &&
+    (error: unknown) => error instanceof CodeRenderTransientError &&
       error.failure === 'busy',
   )
   assert.equal(releases.length, 3)
@@ -153,7 +133,7 @@ test('does not publish transient busy or deadline failures to a cache', async ()
   })
   const deadlineRender = createReviewFileDiffRenderer({
     isolatedRender: async () => {
-      throw new ReviewDiffTransientError('deadline')
+      throw new CodeRenderTransientError('deadline')
     },
   })
 
@@ -162,38 +142,6 @@ test('does not publish transient busy or deadline failures to a cache', async ()
   await assertTransientNotPublished(
     () => deadlineRender(textDiff('a', 'b'), 'standard'),
     'deadline',
-  )
-})
-
-test('zero-hunk and adversarial fixtures return bounded worker results', async () => {
-  assert.deepEqual(
-    await runSourceWorker(workerInput('same\n', 'same\n')),
-    { kind: 'empty' },
-  )
-  assert.deepEqual(
-    await runSourceWorker(workerInput('a\n', 'b\n', { maxHunks: 0 })),
-    { kind: 'omitted', reason: 'hunks' },
-  )
-  assert.deepEqual(
-    await runSourceWorker(workerInput('a\n', 'b\n', { maxRenderedLines: 1 })),
-    { kind: 'omitted', reason: 'lines' },
-  )
-  assert.deepEqual(
-    await runSourceWorker(workerInput('a\n', 'b\n', { maxOutputBytes: 100 })),
-    { kind: 'omitted', reason: 'output' },
-  )
-
-  const thousandOld = Array.from(
-    { length: 1_000 },
-    (_, index) => `export const before${index} = "aaaaaaaaaaaa"\n`,
-  ).join('')
-  const thousandNew = Array.from(
-    { length: 1_000 },
-    (_, index) => `export const after${index} = "bbbbbbbbbbbb"\n`,
-  ).join('')
-  assert.deepEqual(
-    await runSourceWorker(workerInput(thousandOld, thousandNew)),
-    { kind: 'omitted', reason: 'lines' },
   )
 })
 
@@ -244,39 +192,6 @@ test('bounds cached presentation bytes and excludes canceled work', async () => 
   assert.equal(renders, 18)
 })
 
-function workerInput(
-  oldText: string,
-  newText: string,
-  budgetOverrides: Partial<ReviewFileDiffWorkerInput['budget']> = {},
-): ReviewFileDiffWorkerInput {
-  return {
-    budget: {
-      maxHunks: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxHunks,
-      maxOutputBytes: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxOutputBytes,
-      maxRenderedLines: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxRenderedLines,
-      ...budgetOverrides,
-    },
-    newText,
-    oldText,
-    path: '/fixture.ts',
-  }
-}
-
-const COLD_MODULE_COMPILATION_DEADLINE_MS = 30_000
-
-async function runSourceWorker(input: ReviewFileDiffWorkerInput) {
-  const workerPath = resolve(
-    process.cwd(),
-    'src/features/review/review-file-diff-render-worker.ts',
-  )
-  const worker = new Worker(pathToFileURL(workerPath))
-  try {
-    return await runReviewFileDiffWorker(worker, input, 10_000, undefined, COLD_MODULE_COMPILATION_DEADLINE_MS)
-  } finally {
-    await worker.terminate()
-  }
-}
-
 async function assertTransientNotPublished(
   load: () => Promise<object>,
   expectedFailure: 'busy' | 'deadline',
@@ -285,7 +200,7 @@ async function assertTransientNotPublished(
   await resource.ensure('diff', '1', load)
   const snapshot = resource.getSnapshot('diff')
   assert.equal(snapshot.value, null, 'transient failures must not become cached render results')
-  assert.ok(snapshot.error instanceof ReviewDiffTransientError)
+  assert.ok(snapshot.error instanceof CodeRenderTransientError)
   assert.equal(snapshot.error.failure, expectedFailure)
 
   resource.invalidate('diff')

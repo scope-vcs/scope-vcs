@@ -99,7 +99,7 @@ test('a pushed revision refreshes its retained code and discussion references', 
   repoFileResource.clear()
   const code = { scope: 'viewer-a', repoId: 'repo', view: 'public', contentVersion: 0, version: { kind: 'request', id: 'one' } } as const
   const identities = [code, { ...code, version: { kind: 'request', id: 'two' } } as const, { ...code, version: { kind: 'main' } } as const, { ...code, scope: 'viewer-b' }]
-  const oldFile = { content: { kind: 'text' as const, text: 'old' }, oid: 'old', path: 'README.md', size_bytes: 3, label: 'public' }
+  const oldFile = { content: { kind: 'text' as const, text: 'old' }, highlightedHtml: null, oid: 'old', path: 'README.md', size_bytes: 3, label: 'public' }
   for (const identity of identities) {
     repoContentResource.write(repoContentCacheKey(identity), { clone_remote_url: 'remote', files: [] }, '0')
     repoFileResource.write(repoFileCacheKey({ ...identity, path: 'README.md' }), oldFile, '0')
@@ -304,7 +304,7 @@ test('public code with unchanged version refreshes retained tree and file on rep
   const fileKey = repoFileCacheKey({ ...identity, path: 'README.md' })
   let loads = 0
   const loadTree = async () => { loads += 1; return { clone_remote_url: 'remote', files: [] } }
-  const oldFile = { content: { kind: 'text' as const, text: 'old' }, oid: 'old', path: 'README.md', size_bytes: 3, label: 'public' as const }
+  const oldFile = { content: { kind: 'text' as const, text: 'old' }, highlightedHtml: null, oid: 'old', path: 'README.md', size_bytes: 3, label: 'public' as const }
   await repoContentResource.load(treeKey, '', loadTree)
   await repoContentResource.load(treeKey, '', loadTree)
   repoFileResource.write(fileKey, oldFile)
@@ -323,4 +323,36 @@ test('public code with unchanged version refreshes retained tree and file on rep
   }
   invalidate('viewer-a')
   assert.equal(repoFileResource.getSnapshot(fileKey).stale, true)
+})
+
+test('retained files count their highlighted markup against the file cache budget', () => {
+  repoFileResource.clear()
+  const identity = { scope: 'viewer-a', repoId: 'repo', view: 'public' as const, contentVersion: 0, version: { kind: 'main' } as const }
+  const key = (path: string) => repoFileCacheKey({ ...identity, path })
+  const highlightedHtml = 'x'.repeat(2 * 1024 * 1024 - 1_024)
+  for (let index = 0; index < 7; index += 1) {
+    const path = `${index}.rs`
+    repoFileResource.write(key(path), {
+      content: { kind: 'text', text: 'fn main() {}\n' },
+      highlightedHtml,
+      label: 'public',
+      oid: path,
+      path,
+      size_bytes: 13,
+    })
+  }
+  assert.equal(repoFileResource.peek(key('0.rs')), null)
+  assert.equal(repoFileResource.peek(key('1.rs'))?.oid, '1.rs')
+
+  const size_bytes = 25 * 1024 * 1024
+  repoFileResource.write(key('image.png'), {
+    content: { kind: 'binary', oid: 'image-oid', size_bytes },
+    highlightedHtml: null,
+    label: 'public',
+    oid: 'image-oid',
+    path: 'image.png',
+    size_bytes,
+  })
+  assert.equal(repoFileResource.peek(key('image.png'))?.oid, 'image-oid')
+  assert.equal(repoFileResource.peek(key('1.rs'))?.oid, '1.rs')
 })

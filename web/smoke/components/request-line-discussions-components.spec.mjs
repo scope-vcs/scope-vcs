@@ -7,13 +7,13 @@ const oldText = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf'
 const newText = ['alpha', 'bravo', 'CHARLIE', 'delta', 'echo', 'foxtrot', 'golf', 'hotel', 'india', ''].join('\n')
 
 async function renderDiff() {
-  const worker = new Worker(new URL('../../src/features/review/review-file-diff-render-worker.ts', import.meta.url))
+  const worker = new Worker(new URL('../../src/features/code-render/code-render-worker.ts', import.meta.url))
   try {
     return await new Promise((resolve, reject) => {
       worker.on('error', reject)
       worker.on('message', (message) => {
         if (message.kind === 'ready') {
-          worker.postMessage({ budget: { maxHunks: 64, maxOutputBytes: 262_144, maxRenderedLines: 800 }, newText, oldText, path: '/src/lib.ts' })
+          worker.postMessage({ budget: { maxHunks: 64, maxOutputBytes: 262_144, maxRenderedLines: 800 }, kind: 'diff', newText, oldText, path: '/src/lib.ts' })
         } else if (message.kind === 'html') resolve(message.html)
         else reject(new Error(`diff rendered as ${message.kind}`))
       })

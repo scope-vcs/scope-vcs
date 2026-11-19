@@ -1,6 +1,6 @@
 import { createApiClient } from '@/api/client'
 import { requestRoute } from './paths'
-import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
+import { renderReviewFileDiff } from '@/features/code-render/code-render-server'
 import type { ApproveRequestChecksInput, ReviewDiffRenderBudget, ReviewFileDiff, RequestParams } from './types'
 import type {
   RequestChecksResponse,

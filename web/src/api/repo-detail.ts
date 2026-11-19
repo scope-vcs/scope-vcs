@@ -3,6 +3,7 @@ import {
   clerkApiTokenTemplate,
   getPublicApiConnection,
 } from '@/api/client'
+import { highlightRepoFile } from '@/features/code-render/code-render-server'
 import { arrayOf, stripTrailingSlash } from './http'
 import { repoRoute } from './paths'
 import type { RepositoryVersionSearch } from '../features/repo-detail/repository-version'
@@ -72,11 +73,12 @@ export async function loadRepoFileForRequest(
   const api = createApiClient()
   const query = repoVersionQuery(data)
   query.set('path', data.path)
-  return api.get(
+  const file = await api.get(
     `${repoRoute(ApiRouteTemplates.repoFileContent, data)}?${query}`,
     RepoFileContentResponseValidator,
     { auth: 'optional', signal },
   )
+  return highlightRepoFile(file, signal)
 }
 
 export async function loadRepoDependenciesForRequest(

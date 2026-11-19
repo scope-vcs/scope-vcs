@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button'
 import { formatBytes } from '@/lib/format-bytes'
 import { shortOid } from '@/lib/short-oid'
 import { DiffSkeleton } from './diff-skeleton'
-import DOMPurify from 'dompurify'
 import { File, FileText, TriangleAlert, X } from 'lucide-react'
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -33,6 +32,7 @@ import {
   type ReviewDiffLineRange,
 } from './review-file-diff-lines'
 import type { ReviewDiffFullRender } from './review-file-diff-resource'
+import { mountPrerenderedCode } from '../code-render/prerendered-code'
 
 export type ReviewDiffAnnotations = {
   fileNotes: ReactNode
@@ -211,12 +211,7 @@ function PrerenderedDiff({
     const container = containerRef.current
     if (!container) return
 
-    const fragment = DOMPurify.sanitize(html, {
-      RETURN_DOM_FRAGMENT: true,
-    })
-    const nextHost = document.createElement('diffs-container')
-    const root = nextHost.attachShadow({ mode: 'open' })
-    root.replaceChildren(fragment)
+    const { host: nextHost, root } = mountPrerenderedCode(container, html)
     installLineNumberHoverStyle(root)
     root.addEventListener('click', (event) => {
       if (!(event instanceof MouseEvent)) return
@@ -225,7 +220,6 @@ function PrerenderedDiff({
       event.preventDefault()
       selectLineRef.current(line, event.shiftKey)
     })
-    container.replaceChildren(nextHost)
     setHost(nextHost)
   }, [html])
 
@@ -240,7 +234,7 @@ function PrerenderedDiff({
   return (
     <>
       <div
-        className="review-diff-viewer scope-content-enter"
+        className="prerendered-code scope-content-enter"
         ref={containerRef}
         suppressHydrationWarning
       />

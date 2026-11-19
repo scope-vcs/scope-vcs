@@ -1,5 +1,5 @@
 import { createApiClient } from '@/api/client'
-import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
+import { renderReviewFileDiff } from '@/features/code-render/code-render-server'
 import { parseHistoryFeed } from './history-inputs'
 import { parseViewId } from './repo-views'
 import type {

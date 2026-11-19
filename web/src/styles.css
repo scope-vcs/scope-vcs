@@ -307,7 +307,7 @@ body {
   line-height: 20px;
 }
 
-.review-diff-viewer diffs-container {
+.prerendered-code diffs-container {
   color-scheme: inherit;
   --diffs-dark: var(--foreground);
   --diffs-dark-bg: var(--background);
@@ -319,6 +319,11 @@ body {
   --diffs-gap-inline: 8px;
   display: block;
   min-width: 0;
+}
+
+.code-source-view diffs-container {
+  --diffs-light: var(--foreground);
+  --diffs-light-bg: var(--background);
 }
 
 .request-discussion-thread {

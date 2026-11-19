@@ -1,5 +1,4 @@
 import type { RepoContent, RepoParams } from '@/api/types'
-import type { RepoFileContentResponse } from '@/api/types.generated'
 import { PanelState } from '@/components/empty-state'
 import { FileWorkbench } from '@/components/file-workbench'
 import { PendingSurface } from '@/components/pending-surface'
@@ -42,6 +41,7 @@ import {
 } from './repository-code-skeletons'
 import { RepositoryFileContent } from './repository-file-content'
 import { RepositoryFileNavigator } from './repository-file-navigator'
+import type { RepoFile } from './repo-file-highlight'
 import type { RepositoryVersion } from './repository-version'
 import { useViewingAs } from './use-viewing-as'
 
@@ -57,7 +57,7 @@ export function RepositoryCodeView({
   workspaceTabs,
 }: {
   content: CachedResource<RepoContent>
-  file: CachedResource<RepoFileContentResponse>
+  file: CachedResource<RepoFile>
   onSelectFilePath: (path: string) => void
   params: RepoParams
   selectedPath: string | null
@@ -189,7 +189,7 @@ function SourcePane({
   availablePaths: string[]
   emptyMessage: string
   error: string | null
-  file: RepoFileContentResponse | null
+  file: RepoFile | null
   loading: boolean
   onActivateTab: (path: string) => void
   onEmptyTabFocus: () => void
@@ -336,7 +336,7 @@ function SourceContent({
 }: {
   emptyMessage: string
   error: string | null
-  file: RepoFileContentResponse | null
+  file: RepoFile | null
   loading: boolean
   params: RepoParams
   retry: () => void
@@ -398,7 +398,7 @@ function FileMeta({
   file,
   showVisibility,
 }: {
-  file: RepoFileContentResponse
+  file: RepoFile
   showVisibility: boolean
 }) {
   return (

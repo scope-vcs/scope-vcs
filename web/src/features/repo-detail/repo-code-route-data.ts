@@ -1,5 +1,5 @@
 import { displayRouteFilePath } from '../../lib/route-file'
-import type { RepoFileContentResponse } from '@/api/types.generated'
+import type { RepoFile } from './repo-file-highlight'
 
 export function repositoryLandingPath(files: ReadonlyArray<{ path: string }>) {
   for (const candidate of ['README.html', 'README.md']) {
@@ -12,7 +12,7 @@ export function repositoryLandingPath(files: ReadonlyArray<{ path: string }>) {
 const REBUILD_RETRY_DELAYS = [0, 250, 500, 1_000, 2_000] as const
 
 export type RepoFileLoadResult =
-  | { file: RepoFileContentResponse; status: 'ready' }
+  | { file: RepoFile; status: 'ready' }
   | { status: 'missing' | 'rebuilding' }
 
 export async function loadRepoFileWhenReady({
@@ -23,7 +23,7 @@ export async function loadRepoFileWhenReady({
   load: () => Promise<RepoFileLoadResult>
   retryDelays?: readonly number[]
   signal: AbortSignal
-}): Promise<RepoFileContentResponse | null> {
+}): Promise<RepoFile | null> {
   for (const delay of retryDelays) {
     if (delay > 0) await abortableDelay(delay, signal)
     else throwIfAborted(signal)
