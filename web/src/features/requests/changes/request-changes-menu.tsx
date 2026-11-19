@@ -6,13 +6,14 @@ import { PendingSurface } from '@/components/pending-surface'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
-import { diffStatWithChanges } from '@/lib/diff-stat'
+import { type DiffStat, diffStatFilesLabel, diffStatLabel, diffStatWithChanges } from '@/lib/diff-stat'
 import { shortOid } from '@/lib/short-oid'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
 import { ChevronDown, GitCommit, Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { type ReactElement, useMemo, useState } from 'react'
 import { requestActivityResource } from '../detail/request-activity-resource'
 import { REQUEST_ACTIVITY_PAGE_SIZE } from '../discussion/request-discussion-api'
 import type { RequestActivityPage } from '../discussion/request-discussion-types'
@@ -37,21 +38,27 @@ export function RequestChangesMenu({
   params: RequestRouteParams
 }) {
   const changes = diffStatWithChanges(diffStat)
-  const stat = changes ? (
+  const name = changes ? `Changes: ${diffStatLabel(changes)}` : undefined
+  const label = changes ? (
     <>
-      <DiffStatSummary className="request-changes-stat-exact font-normal" detail="exact" stat={changes} />
-      <DiffStatSummary className="request-changes-stat-compact font-normal" detail="compact" stat={changes} />
+      <DiffStatSummary className="request-changes-stat-exact pointer-events-none font-normal" detail="lines" stat={changes} />
+      <DiffStatSummary className="request-changes-stat-compact pointer-events-none font-normal" detail="compact" stat={changes} />
     </>
-  ) : null
+  ) : (
+    <>
+      <GitCommit />
+      Changes
+    </>
+  )
   if (!activity.identity) {
     return (
-      <Button asChild size="sm" variant="secondary">
-        <Link params={params} to="/$owner/$repo/requests/$requestId/changes">
-          <GitCommit />
-          Changes
-          {stat}
-        </Link>
-      </Button>
+      <ChangesHint changes={changes}>
+        <Button asChild size="sm" variant="secondary">
+          <Link aria-label={name} params={params} to="/$owner/$repo/requests/$requestId/changes">
+            {label}
+          </Link>
+        </Button>
+      </ChangesHint>
     )
   }
   return (
@@ -60,26 +67,40 @@ export function RequestChangesMenu({
       className="w-[min(30rem,calc(100vw-2rem))] p-0"
       label="Request changes"
       renderPanel={(close) => (
-        <RequestChangesMenuPanel activity={activity} onNavigate={close} params={params} />
+        <RequestChangesMenuPanel activity={activity} changes={changes} onNavigate={close} params={params} />
       )}
       renderTrigger={(props) => (
-        <Button size="sm" type="button" variant="secondary" {...props}>
-          <GitCommit />
-          Changes
-          {stat}
-          <ChevronDown />
-        </Button>
+        <ChangesHint changes={changes}>
+          <Button aria-label={name} size="sm" type="button" variant="secondary" {...props}>
+            {label}
+            <ChevronDown />
+          </Button>
+        </ChangesHint>
       )}
     />
   )
 }
 
+function ChangesHint({ changes, children }: { changes: DiffStat | null; children: ReactElement }) {
+  if (!changes) return children
+  return (
+    <TooltipProvider delayDuration={0}>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent>Changes · {diffStatFilesLabel(changes.changed_files)}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 function RequestChangesMenuPanel({
   activity: { identity, load, version },
+  changes,
   onNavigate,
   params,
 }: {
   activity: ActivitySource
+  changes: DiffStat | null
   onNavigate: () => void
   params: RequestRouteParams
 }) {
@@ -123,6 +144,7 @@ function RequestChangesMenuPanel({
         to="/$owner/$repo/requests/$requestId/changes"
       >
         <GitCommit className="size-3.5" /> Current changes
+        {changes ? <span className="ml-auto font-normal text-muted-foreground">{diffStatFilesLabel(changes.changed_files)}</span> : null}
       </Link>
       {resource.status === 'failed' ? (
         <PanelState tone="error">

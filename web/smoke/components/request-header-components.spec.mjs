@@ -64,6 +64,8 @@ test('request header keeps its state, facts, actions, and checks aligned across 
   assert(box.x >= 0 && box.x + box.width <= 390, 'Changes menu stays within the phone viewport')
   await page.keyboard.press('Escape')
   await page.setViewportSize({ width: 1280, height: 700 })
+  await changes.hover()
+  await page.getByRole('tooltip', { name: 'Changes · 203 files' }).waitFor()
   const tooltipName = 'CI runs publicly, so these changes are public.'
   await page.getByRole('button', { name: 'Public', exact: true }).hover()
   await page.getByRole('tooltip', { name: tooltipName }).waitFor()

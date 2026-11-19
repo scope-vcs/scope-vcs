@@ -16,11 +16,11 @@ export function DiffStatSummary({
   stat,
 }: {
   className?: string
-  detail: 'compact' | 'exact'
+  detail: 'compact' | 'exact' | 'lines'
   stat: DiffStat
 }) {
   const label = diffStatLabel(stat)
-  const exact = detail === 'exact'
+  const exact = detail !== 'compact'
   return (
     <span className={cn('whitespace-nowrap', className)} title={label}>
       <span aria-hidden="true">
@@ -31,7 +31,7 @@ export function DiffStatSummary({
               deletions={stat.deletions}
               format={exact ? exactCount : abbreviatedCount}
             />
-            {exact && ` · ${diffStatFilesLabel(stat.changed_files)}`}
+            {detail === 'exact' && ` · ${diffStatFilesLabel(stat.changed_files)}`}
           </>
         ) : diffStatFilesLabel(stat.changed_files)}
       </span>

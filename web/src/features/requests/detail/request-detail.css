@@ -107,12 +107,6 @@
   }
 }
 
-@container request-detail-header (max-width: 20rem) {
-  .request-changes-stat-compact {
-    display: none;
-  }
-}
-
 .request-detail-document {
   min-width: 0;
 }
