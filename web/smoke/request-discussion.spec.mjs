@@ -156,7 +156,7 @@ test('changes navigation preserves the request shell and collapsed replies', asy
     await waitForClientHydration(disclosure)
     await disclosure.click()
     await assertReplyRegion(page, retryThread.locator('#discussion-discussion_demo_retry_cap-replies'), false)
-    const changesMenu = page.getByRole('button', { name: 'Changes', exact: true })
+    const changesMenu = page.getByRole('button', { name: /^Changes/ })
     await waitForClientHydration(changesMenu)
     await changesMenu.click()
     const menu = page.getByRole('dialog', { name: 'Request changes' })

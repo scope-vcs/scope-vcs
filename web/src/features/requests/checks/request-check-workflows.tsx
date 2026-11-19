@@ -7,16 +7,14 @@ import { type RequestCheckRow, requestCheckGroups } from './request-check-rows'
 
 const ROW_CLASS = 'group flex min-w-0 items-center gap-2 rounded-md py-1.5 text-[13px]'
 
-export function RequestCheckWorkflows({ id, params, rows }: {
-  id: string
+export function RequestCheckWorkflows({ params, rows }: {
   params: RepoParams
   rows: RequestCheckRow[]
 }) {
-  if (!rows.length) return null
   const groups = requestCheckGroups(rows)
   const named = groups.length > 1
   return (
-    <div className="mt-2 grid min-w-0 gap-2" id={id}>
+    <div className="grid min-w-0 gap-2">
       {groups.map((group) => (
         <section aria-label={group.kind === 'workflow' ? `${group.name} workflow` : 'Other results'} key={group.key}>
           {named ? (

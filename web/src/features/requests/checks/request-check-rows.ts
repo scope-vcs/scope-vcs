@@ -23,15 +23,17 @@ export type RequestCheckRow = {
 
 type RequestChecksStatus = { tone: RunTone; text: string }
 
-type RequestChecksSummary = {
+export type RequestChecksSummary = {
   status: RequestChecksStatus | null
   counts: string | null
   startError: { text: string; failed: boolean } | null
   attention: RequestCheckRow[]
   all: RequestCheckRow[]
+  track: RequestCheckRow[]
 }
 
 const ATTENTION_ORDER: Partial<Record<RunTone, number>> = { danger: 0, running: 1, waiting: 2 }
+const TRACK_ORDER: Record<RunTone, number> = { danger: 0, success: 1, running: 2, waiting: 3, inert: 4 }
 
 function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
   const result = check.status
@@ -87,13 +89,28 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
       : { text: `The last attempt failed: ${push.error}`, failed: false }
     : null
 
-  return { status, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
+  const track = all
+    .map((check, index) => ({ check, index }))
+    .sort((a, b) => TRACK_ORDER[a.check.tone] - TRACK_ORDER[b.check.tone] || a.index - b.index)
+    .map(({ check }) => check)
+
+  return { status, counts: counts.length ? counts.join(' · ') : null, startError, attention, all, track }
+}
+
+export function requestListedChecks({ attention, all }: Pick<RequestChecksSummary, 'attention' | 'all'>) {
+  return [...attention, ...all.filter((check) => !attention.includes(check))]
+}
+
+export function requestFailedCheck({ attention }: Pick<RequestChecksSummary, 'attention'>) {
+  const failed = attention.filter((check) => check.tone === 'danger')
+  return failed[0] ? { check: failed[0], others: failed.length - 1 } : null
 }
 
 export type RequestPullRequestView = {
   text: string
   url: string | null
   note: { text: string; failed: boolean } | null
+  outOfStep: boolean
 }
 
 export function requestPullRequestView(
@@ -109,20 +126,22 @@ export function requestPullRequestView(
         text: 'Opening a pull request on GitHub',
         url: null,
         note: error ? { text: `The last attempt failed: ${error}`, failed: false } : null,
+        outOfStep: true,
       }
     case 'open':
-      return { text: named ?? 'Pull request on GitHub', url, note: null }
+      return { text: named ?? 'Pull request on GitHub', url, note: null, outOfStep: false }
     case 'closed':
-      return { text: `${named ?? 'Pull request on GitHub'} · closed`, url, note: null }
+      return { text: `${named ?? 'Pull request on GitHub'} · closed`, url, note: null, outOfStep: false }
     case 'closed_on_github':
-      return { text: `${named ?? 'Pull request on GitHub'} · closed on GitHub`, url, note: null }
+      return { text: `${named ?? 'Pull request on GitHub'} · closed on GitHub`, url, note: null, outOfStep: true }
     case 'merged':
-      return { text: `${named ?? 'Pull request on GitHub'} · merged`, url, note: null }
+      return { text: `${named ?? 'Pull request on GitHub'} · merged`, url, note: null, outOfStep: false }
     case 'failed':
       return {
         text: named ? `${named} is out of step` : 'Scope couldn’t open a pull request on GitHub',
         url,
         note: error ? { text: error, failed: true } : null,
+        outOfStep: true,
       }
   }
 }
@@ -135,8 +154,31 @@ const REVIEW_BOT_STATES = {
   timed_out: { label: 'Didn’t start · advisory', tone: 'inert' },
 } as const satisfies Record<RequestReviewBotState, { label: string; tone: RunTone }>
 
-export function requestReviewBotRows(bots: RequestReviewBotResponse[]) {
-  return bots.map((bot) => ({ login: bot.login, required: bot.required, ...REVIEW_BOT_STATES[bot.state] }))
+const REVIEW_URGENCY: RequestReviewBotState[] = ['working', 'commented', 'not_started', 'timed_out', 'clear']
+
+export type RequestReviewBotRow = {
+  login: string
+  name: string
+  required: boolean
+  state: RequestReviewBotState
+  label: string
+  tone: RunTone
+}
+
+export function requestReviewBotRows(bots: RequestReviewBotResponse[]): RequestReviewBotRow[] {
+  return bots.map((bot) => ({
+    login: bot.login,
+    name: bot.login.replace(/\[bot\]$/, ''),
+    required: bot.required,
+    state: bot.state,
+    ...REVIEW_BOT_STATES[bot.state],
+  }))
+}
+
+export function requestReviewSummary(bots: RequestReviewBotRow[]) {
+  const [first] = [...bots].sort((a, b) => REVIEW_URGENCY.indexOf(a.state) - REVIEW_URGENCY.indexOf(b.state))
+  if (!first) return null
+  return { state: first.state, label: first.state === 'clear' ? 'Review clear' : first.label }
 }
 
 type RequestCheckGroup =

@@ -1,35 +1,37 @@
-import type { RequestDiffStatResponse, RequestSummaryResponse } from '@/api/types.generated'
-import { DiffStatSummary } from '@/components/diff-stat'
-import { diffStatWithChanges } from '@/lib/diff-stat'
+import type { RepoParams } from '@/api/types'
+import type { RequestChecksResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { RelativeTimestamp } from '@/components/timestamp'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Link } from '@tanstack/react-router'
-import { Check, Copy } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
-import { toast } from 'sonner'
-import { requestMergeabilityLabel, requestMergeabilityTone } from './request-labels'
+import { Globe } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { requestChecksSummary, requestFailedCheck } from '../checks/request-check-rows'
 import { useRequestWorkspace } from '../workspace/request-workspace-context'
 import { actorHandle } from './request-actor'
+import { requestMergeabilityLabel, requestPublicChecksNote, requestStateMark } from './request-labels'
+import { RequestStateMark } from './request-state-mark'
+
+const DETAIL_CLASS = 'text-sm leading-6 text-muted-foreground'
 
 export function RequestDetailHeader({
   actions,
   backLink,
-  diffStat,
+  checks,
   params,
   request,
-  viewName,
+  stateActions,
 }: {
-  actions?: ReactNode
+  actions: ReactNode
   backLink: ReactNode
-  diffStat: RequestDiffStatResponse | null
-  params: { owner: string; repo: string; requestId: string }
+  checks: RequestChecksResponse
+  params: RepoParams
   request: RequestSummaryResponse
-  viewName: string
+  stateActions: ReactNode
 }) {
   const workspace = useRequestWorkspace()
   const queueItem = workspace?.selected ?? null
-  const changes = diffStatWithChanges(diffStat)
+  const publicNote = requestPublicChecksNote(checks)
+  const settledAt = request.merged_at_unix ?? request.closed_at_unix
 
   return (
     <header className="request-detail-header px-(--app-inset) pb-2 pt-3 min-[701px]:pt-6">
@@ -37,89 +39,81 @@ export function RequestDetailHeader({
       <h1 className="min-w-0 break-words text-[28px] font-semibold leading-[1.15] tracking-[-0.025em] sm:text-[30px]">
         {request.title}
       </h1>
-      <div className="request-detail-header-secondary mt-4">
-        <div className="request-detail-header-meta min-w-0 text-xs leading-5 text-muted-foreground">
-          <div className="request-detail-header-summary">
-            <Badge className="h-7 border-0 bg-transparent p-0 text-[13px]" variant={requestMergeabilityTone(request)}>
+      <div className="request-detail-header-state mt-4">
+        <p className="flex min-w-0 items-center gap-2">
+          <RequestStateMark mark={requestStateMark(request)} />
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2.5">
+            <span className="text-[17px] font-semibold leading-6 tracking-[-0.012em]">
               {requestMergeabilityLabel(request)}
-            </Badge>
-            <span className="request-detail-header-branch flex min-w-0 items-center gap-1">
-              <span className="truncate font-mono text-xs" title={request.name}>{request.name}</span>
-              <CopyBranchButton branch={request.name} />
             </span>
-            {changes && (
-              <Link
-                className="request-detail-header-stat rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                params={params}
-                search={{}}
-                to="/$owner/$repo/requests/$requestId/changes"
-              >
-                <DiffStatSummary detail="exact" stat={changes} />
-              </Link>
-            )}
-          </div>
-          <div className="request-detail-header-author flex flex-wrap items-baseline gap-x-1.5">
-            {queueItem ? (
-              <span className="flex flex-wrap items-baseline gap-x-1.5">
-                <span className="font-medium text-foreground">{actorHandle(queueItem.author)}</span>
-                <span>opened</span>
-                <RelativeTimestamp
-                  value={request.submitted_at_unix ?? request.created_at_unix}
-                />
-                {queueItem.claimer ? (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>reviewing:</span>
-                    <span className="text-foreground">{queueItem.claimer.handle}</span>
-                  </>
-                ) : null}
-              </span>
-            ) : null}
-            <span className="inline-flex min-w-0 max-w-full items-baseline gap-1.5">
-              {queueItem ? <span aria-hidden="true">·</span> : null}
-              <span className="truncate" title={`${viewName} view`}>{viewName} view</span>
+            {settledAt !== null
+              ? <RelativeTimestamp className={DETAIL_CLASS} value={settledAt} />
+              : request.mergeability.status === 'ChecksFailed'
+                ? <FailedCheckLink checks={checks} params={params} />
+                : null}
+          </span>
+        </p>
+        <div className="request-detail-header-actions">{stateActions}</div>
+      </div>
+      <div className="request-detail-header-facts mt-2">
+        <div className="request-detail-header-meta min-w-0 text-xs leading-5 text-muted-foreground">
+          {queueItem ? (
+            <span className="flex flex-wrap items-baseline gap-x-1.5">
+              <span className="font-medium text-foreground">{actorHandle(queueItem.author)}</span>
+              <span>opened</span>
+              <RelativeTimestamp
+                value={request.submitted_at_unix ?? request.created_at_unix}
+              />
+              {queueItem.claimer ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>reviewing:</span>
+                  <span className="text-foreground">{queueItem.claimer.handle}</span>
+                </>
+              ) : null}
             </span>
-          </div>
+          ) : null}
+          <span className="request-detail-header-branch truncate font-mono" title={request.name}>{request.name}</span>
+          {publicNote ? (
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="inline-flex items-center gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    type="button"
+                  >
+                    <Globe aria-hidden="true" className="size-3.5" />
+                    Public
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{publicNote}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
         </div>
-        {actions ? (
-          <div className="request-detail-header-actions">
-            {actions}
-          </div>
-        ) : null}
+        <div className="request-detail-header-actions">{actions}</div>
       </div>
     </header>
   )
 }
 
-function CopyBranchButton({ branch }: { branch: string }) {
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!copied) return
-    const timeout = window.setTimeout(() => setCopied(false), 1200)
-    return () => window.clearTimeout(timeout)
-  }, [copied])
-
-  async function copyBranch() {
-    try {
-      await navigator.clipboard.writeText(branch)
-    } catch {
-      toast.error('Copy failed')
-      return
-    }
-    setCopied(true)
-  }
-
+function FailedCheckLink({ checks, params }: { checks: RequestChecksResponse; params: RepoParams }) {
+  const failed = requestFailedCheck(requestChecksSummary(checks))
+  if (!failed) return null
+  const { check, others } = failed
   return (
-    <Button
-      aria-label="Copy branch name"
-      onClick={() => void copyBranch()}
-      size="icon-xs"
-      title="Copy branch name"
-      type="button"
-      variant="ghost"
-    >
-      {copied ? <Check /> : <Copy />}
-    </Button>
+    <span className={DETAIL_CLASS}>
+      {check.run ? (
+        <Link
+          className="rounded-sm underline decoration-border-strong underline-offset-[3px] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          hash={check.run.hash}
+          params={{ ...params, runId: check.run.id }}
+          to="/$owner/$repo/runs/$runId"
+        >
+          {check.name}
+        </Link>
+      ) : check.name}
+      {others ? ` and ${others} more` : null}
+    </span>
   )
 }

@@ -1,7 +1,9 @@
+import type { RepoParams } from '@/api/types'
 import type { RequestSummaryResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
-import { Ellipsis, History, XCircle } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Code, Ellipsis, History, XCircle } from 'lucide-react'
 import { type RefObject, useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
 import type { RequestActionController } from './use-request-actions'
@@ -15,20 +17,20 @@ export function RequestMoreMenu({
   actions,
   disabled,
   onViewActivity,
+  params,
   request,
   triggerRef,
 }: {
   actions: RequestActionController
   disabled: boolean
   onViewActivity: () => void
+  params: RepoParams
   request: RequestSummaryResponse
   triggerRef: RefObject<HTMLButtonElement | null>
 }) {
   const [closing, setClosing] = useState(false)
   const [align, setAlign] = useState<'start' | 'end'>('end')
   const { can_close: canClose, can_view_activity: canViewActivity } = request.permissions
-
-  if (!canClose && !canViewActivity) return null
 
   return (
     <>
@@ -38,6 +40,16 @@ export function RequestMoreMenu({
         label="More request actions"
         renderPanel={(close) => (
           <>
+            <Link
+              className={ITEM_CLASS}
+              onClick={close}
+              params={params}
+              search={{ request: request.id }}
+              to="/$owner/$repo/code"
+            >
+              <Code aria-hidden="true" />
+              Browse code
+            </Link>
             {canViewActivity ? (
               <button
                 className={ITEM_CLASS}

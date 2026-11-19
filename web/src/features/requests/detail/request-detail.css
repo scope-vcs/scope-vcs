@@ -29,38 +29,44 @@
   container: request-detail-header / inline-size;
 }
 
-.request-detail-header-secondary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 0.5rem 1rem;
-}
-
-.request-detail-header-summary {
+.request-detail-header-state {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0 0.75rem;
+  gap: 0.5rem 1rem;
+  min-height: 2rem;
+}
+
+.request-detail-header-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
   min-height: 1.75rem;
 }
 
-.request-detail-header-branch {
-  flex: 0 1 auto;
-  max-width: 20rem;
+.request-detail-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1.125rem;
 }
 
-.request-detail-header-author {
-  line-height: 1rem;
+.request-detail-header-branch {
+  max-width: min(20rem, 100%);
 }
 
 .request-detail-header-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: start;
-  justify-content: flex-end;
+  align-items: center;
   gap: 0.375rem;
   min-width: 0;
-  max-width: 34rem;
+}
+
+.request-detail-header-actions:empty {
+  display: none;
 }
 
 .request-detail-header-actions [data-size="sm"]:not(dialog *) {
@@ -79,30 +85,31 @@
   height: 0.875rem;
 }
 
-@container request-detail-header (max-width: 68rem) {
-  .request-detail-header-secondary {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.request-detail-header-facts [data-size="icon-sm"]:last-child:not(dialog *) {
+  margin-inline-end: -0.4375rem;
+}
 
-  .request-detail-header-actions {
-    justify-content: flex-start;
-    max-width: none;
-  }
+.request-changes-stat-compact {
+  display: none;
 }
 
 @container request-detail-header (max-width: 28rem) {
-  .request-detail-header-summary {
-    column-gap: 0.5rem;
+  .request-changes-stat-exact {
+    display: none;
   }
 
-  .request-detail-header-branch {
-    order: 1;
-    flex-basis: 100%;
-    max-width: 100%;
+  .request-changes-stat-compact {
+    display: inline;
   }
 
-  .request-detail-header-stat {
-    margin-left: auto;
+  .request-detail-header-facts [data-size="icon-sm"]:last-child:not(dialog *) {
+    margin-inline-end: 0;
+  }
+}
+
+@container request-detail-header (max-width: 20rem) {
+  .request-changes-stat-compact {
+    display: none;
   }
 }
 

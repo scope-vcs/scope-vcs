@@ -1,3 +1,5 @@
+import type { RequestDiffStatResponse } from '@/api/types.generated'
+import { DiffStatSummary } from '@/components/diff-stat'
 import { PanelState } from '@/components/empty-state'
 import { MENU_LIST_ROW_CLASS, MenuListPanel } from '@/components/menu-list-panel'
 import { PendingSurface } from '@/components/pending-surface'
@@ -5,6 +7,7 @@ import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
+import { diffStatWithChanges } from '@/lib/diff-stat'
 import { shortOid } from '@/lib/short-oid'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
@@ -24,13 +27,29 @@ type ActivitySource = {
   version: string
 }
 
-export function RequestChangesMenu({ activity, params }: { activity: ActivitySource; params: RequestRouteParams }) {
+export function RequestChangesMenu({
+  activity,
+  diffStat,
+  params,
+}: {
+  activity: ActivitySource
+  diffStat: RequestDiffStatResponse | null
+  params: RequestRouteParams
+}) {
+  const changes = diffStatWithChanges(diffStat)
+  const stat = changes ? (
+    <>
+      <DiffStatSummary className="request-changes-stat-exact font-normal" detail="exact" stat={changes} />
+      <DiffStatSummary className="request-changes-stat-compact font-normal" detail="compact" stat={changes} />
+    </>
+  ) : null
   if (!activity.identity) {
     return (
       <Button asChild size="sm" variant="secondary">
         <Link params={params} to="/$owner/$repo/requests/$requestId/changes">
           <GitCommit />
           Changes
+          {stat}
         </Link>
       </Button>
     )
@@ -47,6 +66,7 @@ export function RequestChangesMenu({ activity, params }: { activity: ActivitySou
         <Button size="sm" type="button" variant="secondary" {...props}>
           <GitCommit />
           Changes
+          {stat}
           <ChevronDown />
         </Button>
       )}
