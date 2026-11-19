@@ -1,20 +1,23 @@
 import { cn } from '@/lib/utils'
-import type { ReactNode } from 'react'
+import type { ReactNode, RefCallback } from 'react'
+import { enterRef } from './entrance'
 
 type RailElement = 'div' | 'main' | 'section'
 type RailProps = {
   as?: RailElement
   children: ReactNode
   className?: string
+  ref?: RefCallback<HTMLElement>
 }
 
 function AppRail({
   as: Component = 'div',
   children,
   className,
+  ref,
 }: RailProps) {
   return (
-    <Component className={cn('app-rail mx-auto w-full max-w-(--app-rail)', className)}>
+    <Component className={cn('app-rail mx-auto w-full max-w-(--app-rail)', className)} ref={ref}>
       {children}
     </Component>
   )
@@ -24,9 +27,10 @@ export function PageRail({
   as,
   children,
   className,
+  ref,
 }: RailProps) {
   return (
-    <AppRail as={as} className={cn('px-(--app-inset)', className)}>
+    <AppRail as={as} className={cn('px-(--app-inset)', className)} ref={ref}>
       {children}
     </AppRail>
   )
@@ -43,6 +47,7 @@ export function PageContent({
     <PageRail
       as="section"
       className={cn('scope-content-enter py-8 lg:py-10', className)}
+      ref={enterRef}
     >
       {children}
     </PageRail>
@@ -57,7 +62,7 @@ export function WorkbenchPane({
   className?: string
 }) {
   return (
-    <AppRail className={cn('scope-content-enter', className)}>
+    <AppRail className={cn('scope-content-enter', className)} ref={enterRef}>
       {children}
     </AppRail>
   )

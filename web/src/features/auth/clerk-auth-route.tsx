@@ -9,6 +9,7 @@ import {
 import { AuthFailureState, type AuthAction } from './auth-failure-state'
 import { AuthLayout } from './auth-layout'
 import { AuthLoadingState } from './auth-loading-state'
+import { Entrance } from '@/components/entrance'
 
 const authFormAppearance = {
   options: { elevation: 'flush' },
@@ -42,9 +43,9 @@ export function ClerkAuthRoute({ action }: { action: AuthAction }) {
             <AuthFailureState action={action} />
           </ClerkFailed>
           <ClerkLoaded>
-            <div className="scope-content-enter">
+            <Entrance>
               <Form appearance={authFormAppearance} />
-            </div>
+            </Entrance>
           </ClerkLoaded>
         </>
       )}

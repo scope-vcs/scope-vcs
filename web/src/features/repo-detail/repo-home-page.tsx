@@ -18,6 +18,7 @@ import { RepositoryFileContent } from './repository-file-content'
 import type { RepoFile } from './repo-file-highlight'
 import { RepoViewingAsPicker, useViewingAs } from './use-viewing-as'
 import { ViewingAsStatus } from './viewing-as-picker'
+import { Entrance } from '@/components/entrance'
 
 const MAIN = { kind: 'main' } as const
 
@@ -136,8 +137,8 @@ function RepositoryReadme({
     )
   }
   return (
-    <div className="scope-content-enter" key={file.value.oid}>
+    <Entrance key={file.value.oid}>
       <RepositoryFileContent file={file.value} htmlMode="preview" params={params} version={MAIN} />
-    </div>
+    </Entrance>
   )
 }

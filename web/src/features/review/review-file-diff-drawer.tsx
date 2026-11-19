@@ -33,6 +33,7 @@ import {
 } from './review-file-diff-lines'
 import type { ReviewDiffFullRender } from './review-file-diff-resource'
 import { mountPrerenderedCode } from '../code-render/prerendered-code'
+import { Entrance } from '@/components/entrance'
 
 export type ReviewDiffAnnotations = {
   fileNotes: ReactNode
@@ -233,8 +234,8 @@ function PrerenderedDiff({
 
   return (
     <>
-      <div
-        className="prerendered-code scope-content-enter"
+      <Entrance
+        className="prerendered-code"
         ref={containerRef}
         suppressHydrationWarning
       />
