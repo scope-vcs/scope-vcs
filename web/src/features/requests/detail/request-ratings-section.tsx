@@ -91,7 +91,7 @@ export function RequestRatingsSection({
           {ratings.length ? (
             <div className="divide-y divide-border">
               {ratings.map((rating) => (
-                <div className="py-2 leading-5" key={rating.id}>
+                <div className="py-2 leading-5 [overflow-wrap:anywhere]" key={rating.id}>
                   <div className="font-medium">
                     @{rating.rater.handle} rated @{rating.subject.handle} {rating.score}/5
                   </div>

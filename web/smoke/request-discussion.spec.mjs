@@ -246,6 +246,8 @@ test('Details opens a dropdown that reuses request data and preserves discussion
     page.on('request', (request) => {
       if (serverFunctionName(request) === 'loadRequestPage_createServerFn_handler') requestLoads.push(request.url())
     })
+    await page.keyboard.press('f')
+    await page.waitForFunction(() => document.documentElement.hasAttribute('data-focus'))
     await details.click()
     const menu = page.getByRole('dialog', { name: 'Request details' })
     await menu.getByText('Public request', { exact: true }).waitFor()
@@ -254,6 +256,9 @@ test('Details opens a dropdown that reuses request data and preserves discussion
     await page.keyboard.press('Escape')
     await menu.waitFor({ state: 'detached' })
     await page.waitForFunction(() => document.activeElement?.textContent === 'Details')
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-focus')), true)
+    await page.keyboard.press('f')
+    await page.waitForFunction(() => !document.documentElement.hasAttribute('data-focus'))
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
     assert.deepEqual(requestLoads, [])
     await thread.getByRole('button', { name: 'Show 3 replies' }).click()

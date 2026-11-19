@@ -6,6 +6,8 @@ test('an auto popover opens from its anchor, flips to its end, and otherwise sta
   const panel = { anchorWidth: 80, panelWidth: 480, viewportWidth: 768 }
   assert.equal(autoPopoverOffset({ ...panel, anchorLeft: 100 }), 0)
   assert.equal(autoPopoverOffset({ ...panel, anchorLeft: 600 }), -400)
+  assert.equal(autoPopoverOffset({ ...panel, anchorLeft: 8 }), 8)
+  assert.equal(autoPopoverOffset({ ...panel, anchorLeft: 680 }), -408)
   const middle = autoPopoverOffset({ ...panel, anchorLeft: 330 })
   assert.equal(330 + middle + 480, 768 - 16)
   assert.equal(autoPopoverOffset({ ...panel, anchorLeft: 20, viewportWidth: 320 }), -4)

@@ -7,6 +7,7 @@ import type {
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { overlayIsOpen } from '@/lib/keyboard-target'
 import { cn } from '@/lib/utils'
 import { ChevronRight, CircleCheck, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import {
@@ -149,7 +150,7 @@ export function RequestWorkspaceSidebar({
     }
     function escape(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
-      if (document.querySelector(':popover-open, [role="dialog"], [role="alertdialog"]')) return
+      if (overlayIsOpen()) return
       event.preventDefault()
       event.stopPropagation()
       close()
