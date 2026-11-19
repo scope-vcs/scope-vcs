@@ -212,6 +212,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               />
               <RequestDetailsMenu
                 actions={requestActions}
+                key={identity}
                 loadRatings={loadRatings}
                 onRate={rateRequest}
                 params={requestParams}

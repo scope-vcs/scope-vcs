@@ -14,7 +14,7 @@ import { requestAuthorRoleLabel, requestViewLabel } from './request-labels'
 import { DetailsRow } from './request-details-layout'
 import { requestShowsInvitees } from './request-lifecycle-model'
 import { RequestInvitees } from './request-invitees'
-import { RequestRatingsSection } from './request-ratings-section'
+import { type RatingDraft, RequestRatingsSection, useRatingDraft } from './request-ratings-section'
 import { requestRatingsResource } from './request-ratings-resource'
 import type { RequestActionController } from './use-request-actions'
 
@@ -28,12 +28,13 @@ type RequestDetailsProps = {
 }
 
 export function RequestDetailsMenu(props: RequestDetailsProps) {
+  const ratingDraft = useRatingDraft()
   return (
     <Popover
       align="auto"
       className="max-h-[calc(100dvh-8rem)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto p-0"
       label="Request details"
-      renderPanel={() => <RequestDetails {...props} />}
+      renderPanel={() => <RequestDetails {...props} ratingDraft={ratingDraft} />}
       renderTrigger={(trigger) => (
         <Button size="sm" type="button" variant="secondary" {...trigger}>
           <SlidersHorizontal />
@@ -45,7 +46,7 @@ export function RequestDetailsMenu(props: RequestDetailsProps) {
   )
 }
 
-function RequestDetails({ actions, loadRatings, onRate, params, ratingsIdentity, request }: RequestDetailsProps) {
+function RequestDetails({ actions, loadRatings, onRate, params, ratingDraft, ratingsIdentity, request }: RequestDetailsProps & { ratingDraft: RatingDraft }) {
   const views = useRepoViews()
   const ratings = useCachedResource({
     fallbackError: 'Participant ratings are unavailable.',
@@ -94,7 +95,7 @@ function RequestDetails({ actions, loadRatings, onRate, params, ratingsIdentity,
 
       <DetailsGroup>
         {ratings.value ? (
-          <RequestRatingsSection initial={ratings.value} onRate={onRate} params={params} />
+          <RequestRatingsSection draft={ratingDraft} initial={ratings.value} onRate={onRate} params={params} />
         ) : (
           <DetailsRow
             action={ratings.error ? <Button className="h-6 px-1.5 text-xs" onClick={ratings.retry} size="sm" type="button" variant="ghost">Try again</Button> : null}

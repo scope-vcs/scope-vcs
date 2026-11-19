@@ -7,7 +7,7 @@ import type { RateRequestInput } from '@/api/requests'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
-import { type SubmitEvent, useReducer, useState } from 'react'
+import { type Dispatch, type SubmitEvent, useReducer, useState } from 'react'
 import { DetailsRow, DetailsToggle } from './request-details-layout'
 
 type FormState = {
@@ -41,20 +41,24 @@ function formReducer(state: FormState, action: FormAction): FormState {
   }
 }
 
+export type RatingDraft = [FormState, Dispatch<FormAction>]
+
+export function useRatingDraft(): RatingDraft {
+  return useReducer(formReducer, initialFormState)
+}
+
 export function RequestRatingsSection({
+  draft: [{ error, reason, score, submitting }, dispatch],
   initial,
   onRate,
   params,
 }: {
+  draft: RatingDraft
   initial: RequestRatingsResponse
   onRate: (input: RateRequestInput) => Promise<RequestRatingResponse>
   params: RequestParams
 }) {
-  const [{ error, reason, score, submitting }, dispatch] = useReducer(
-    formReducer,
-    initialFormState,
-  )
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(reason !== '')
   const { eligible_subject: eligibleSubject, ratings } = initial
 
   async function submit(event: SubmitEvent<HTMLFormElement>) {
