@@ -1,5 +1,5 @@
 import type { RepoLanguageResponse, RepoSummaryResponse } from '@/api/types.generated'
-import { useCachedResource } from '@/lib/use-cached-resource'
+import { useCachedResource, useRetryOnReconnect } from '@/lib/use-cached-resource'
 import { loadRepoLanguages } from '@/routes/-repo-code-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useCallback } from 'react'
@@ -26,11 +26,14 @@ export function useRepoLanguages({
   const load = useCallback((signal: AbortSignal) => loadRepoLanguages({
     data: { owner, repo: repoName, view }, signal,
   }), [owner, repoName, view])
-  return useCachedResource({
+  const languages = useCachedResource({
     enabled: repo.lifecycle_state === 'Ready',
     fallbackError: 'Repository languages are unavailable.',
-    identity: scope ? repoResourceKey(scope, repo.id, repo.content_version, view) : null,
+    identity: scope ? repoResourceKey(scope, view) : null,
     load,
     resource: repoLanguagesResource,
+    version: String(repo.content_version),
   })
+  useRetryOnReconnect(languages)
+  return languages
 }
