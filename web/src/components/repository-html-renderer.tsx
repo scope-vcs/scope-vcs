@@ -1,17 +1,20 @@
 import { useThemeType } from '@/lib/use-theme-type'
 import { displayRouteFilePath } from '@/lib/route-file'
 import { useMemo } from 'react'
+import { CodeSourceView } from '@/features/code-render/prerendered-code'
 import { repositoryHtmlDocument } from './repository-html'
 import { PersistentRepositoryHtmlPreview } from './repository-html-preview-store'
 
 export type RepositoryHtmlMode = 'preview' | 'source'
 
 export function RepositoryHtmlRenderer({
+  highlightedHtml,
   identity,
   path,
   mode,
   source,
 }: {
+  highlightedHtml: string | null
   identity: string
   path: string
   mode: RepositoryHtmlMode
@@ -35,9 +38,9 @@ export function RepositoryHtmlRenderer({
           title={`${displayRouteFilePath(path)} preview`}
         />
       ) : (
-        <pre className="min-h-[32rem] overflow-x-auto bg-background p-5 font-mono text-xs leading-5 whitespace-pre text-foreground sm:p-7">
-          <code>{source}</code>
-        </pre>
+        <div className="min-h-[32rem]">
+          <CodeSourceView highlightedHtml={highlightedHtml} source={source} />
+        </div>
       )}
     </div>
   )

@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Worker } from 'node:worker_threads'
-import { REVIEW_FILE_DIFF_RENDER_BUDGETS } from './review-file-diff-render-contract'
-import { ReviewDiffTransientError } from './review-file-diff-renderer'
-import { createReviewFileDiffWorkerPool } from './review-file-diff-worker-pool'
+import type { CodeRenderFileInput } from './code-render-contract'
+import { CodeRenderTransientError, createCodeRenderWorkerPool } from './code-render-worker-pool'
 
 const workerCode = `
   const { parentPort, threadId } = require('node:worker_threads');
   let count = 0;
   parentPort.on('message', (input) => {
-    if (input.newText === 'spin') while (true) {}
-    if (input.newText === 'crash') throw new Error('fixture crash');
-    if (input.newText === 'exit') process.exit(0);
+    if (input.text === 'spin') while (true) {}
+    if (input.text === 'crash') throw new Error('fixture crash');
+    if (input.text === 'exit') process.exit(0);
     setTimeout(() => parentPort.postMessage({
       kind: 'html', html: threadId + ':' + (++count)
     }), 20);
@@ -22,13 +21,13 @@ const UNPRESSURED_DEADLINE_MS = 30_000
 const READY_DELAY_MS = 1_000
 const RENDER_AFTER_READY_DEADLINE_MS = 750
 
-function input(newText = 'text') {
-  return { budget: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard, oldText: '', newText, path: 'fixture.ts' }
+function input(text = 'text'): CodeRenderFileInput {
+  return { budget: { maxOutputBytes: 1_024 }, kind: 'file', path: 'fixture.ts', text }
 }
 
 test('reuses idle workers and rejects overload without a queue', async (t) => {
   const workers: Worker[] = []
-  const render = createReviewFileDiffWorkerPool(() => {
+  const render = createCodeRenderWorkerPool(() => {
     const worker = new Worker(workerCode, { eval: true })
     workers.push(worker)
     return worker
@@ -37,7 +36,7 @@ test('reuses idle workers and rejects overload without a queue', async (t) => {
   const first = render(input(), UNPRESSURED_DEADLINE_MS)
   const second = render(input(), UNPRESSURED_DEADLINE_MS)
   await assert.rejects(render(input(), UNPRESSURED_DEADLINE_MS), (error: unknown) =>
-    error instanceof ReviewDiffTransientError && error.failure === 'busy')
+    error instanceof CodeRenderTransientError && error.failure === 'busy')
   const [a] = await Promise.all([first, second])
   const reused = await render(input(), UNPRESSURED_DEADLINE_MS)
   assert.equal(workers.length, 2)
@@ -49,7 +48,7 @@ test('reuses idle workers and rejects overload without a queue', async (t) => {
 
 test('terminates timed out, canceled and failed tasks and replaces their workers', async (t) => {
   const workers: Worker[] = []
-  const render = createReviewFileDiffWorkerPool(() => {
+  const render = createCodeRenderWorkerPool(() => {
     const worker = new Worker(workerCode, { eval: true })
     workers.push(worker)
     return worker
@@ -57,7 +56,7 @@ test('terminates timed out, canceled and failed tasks and replaces their workers
   t.after(() => Promise.all(workers.map((worker) => worker.terminate())))
   await render(input(), UNPRESSURED_DEADLINE_MS)
   await assert.rejects(render(input('spin'), 25), (error: unknown) =>
-    error instanceof ReviewDiffTransientError && error.failure === 'deadline')
+    error instanceof CodeRenderTransientError && error.failure === 'deadline')
   assert.equal(workers[0]?.threadId, -1)
   await render(input(), UNPRESSURED_DEADLINE_MS)
   const controller = new AbortController()
@@ -79,17 +78,17 @@ test('separates bounded worker startup from the render deadline', async (t) => {
     parentPort.postMessage({ kind: 'ready' });
   }, ${READY_DELAY_MS});`, { eval: true })
   t.after(() => worker.terminate())
-  const render = createReviewFileDiffWorkerPool(() => worker, 1, UNPRESSURED_DEADLINE_MS)
+  const render = createCodeRenderWorkerPool(() => worker, 1, UNPRESSURED_DEADLINE_MS)
   assert.equal((await render(input(), RENDER_AFTER_READY_DEADLINE_MS)).kind, 'html')
   await assert.rejects(render(input('spin'), 25), (error: unknown) =>
-    error instanceof ReviewDiffTransientError && error.failure === 'deadline')
+    error instanceof CodeRenderTransientError && error.failure === 'deadline')
   assert.equal(worker.threadId, -1)
 })
 
 test('terminates a worker that never becomes ready within the startup budget', async () => {
   const worker = new Worker('while (true) {}', { eval: true })
-  const render = createReviewFileDiffWorkerPool(() => worker, 1, 25)
+  const render = createCodeRenderWorkerPool(() => worker, 1, 25)
   await assert.rejects(render(input(), UNPRESSURED_DEADLINE_MS), (error: unknown) =>
-    error instanceof ReviewDiffTransientError && error.failure === 'deadline')
+    error instanceof CodeRenderTransientError && error.failure === 'deadline')
   assert.equal(worker.threadId, -1)
 })

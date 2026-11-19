@@ -1,11 +1,21 @@
 import type { Worker } from 'node:worker_threads'
 import type {
-  ReviewFileDiffWorkerInput,
-  ReviewFileDiffWorkerResult,
-} from './review-file-diff-render-contract'
-import { ReviewDiffTransientError } from './review-file-diff-renderer'
+  CodeRenderWorkerInput,
+  CodeRenderWorkerResult,
+} from './code-render-contract'
 
-export function createReviewFileDiffWorkerPool(
+type CodeRenderTransientFailure = 'busy' | 'deadline'
+
+export class CodeRenderTransientError extends Error {
+  constructor(readonly failure: CodeRenderTransientFailure) {
+    super(failure === 'busy'
+      ? 'The diff renderer is busy. Try again.'
+      : 'Diff rendering took too long. Try again.')
+    this.name = 'CodeRenderTransientError'
+  }
+}
+
+export function createCodeRenderWorkerPool(
   createWorker: () => Worker,
   maxWorkers: number,
   startupDeadlineMs?: number,
@@ -21,15 +31,15 @@ export function createReviewFileDiffWorkerPool(
   }
 
   return async function render(
-    input: ReviewFileDiffWorkerInput,
+    input: CodeRenderWorkerInput,
     deadlineMs: number,
     signal?: AbortSignal,
-  ): Promise<ReviewFileDiffWorkerResult> {
+  ): Promise<CodeRenderWorkerResult> {
     signal?.throwIfAborted()
     let worker = [...workers].find(([, busy]) => !busy)?.[0]
     const starting = !worker
     if (!worker) {
-      if (workers.size >= maxWorkers) throw new ReviewDiffTransientError('busy')
+      if (workers.size >= maxWorkers) throw new CodeRenderTransientError('busy')
       worker = createWorker()
       workers.set(worker, false)
       const created = worker
@@ -39,7 +49,7 @@ export function createReviewFileDiffWorkerPool(
     workers.set(worker, true)
     worker.ref()
     try {
-      const result = await runReviewFileDiffWorker(
+      const result = await runCodeRenderWorker(
         worker, input, deadlineMs, signal, starting ? startupDeadlineMs : undefined,
       )
       if (result.kind === 'error') await discard(worker).catch(() => {})
@@ -56,13 +66,13 @@ export function createReviewFileDiffWorkerPool(
   }
 }
 
-export function runReviewFileDiffWorker(
+export function runCodeRenderWorker(
   worker: Pick<Worker, 'once' | 'off' | 'postMessage'>,
-  input: ReviewFileDiffWorkerInput,
+  input: CodeRenderWorkerInput,
   deadlineMs: number,
   signal?: AbortSignal,
   startupDeadlineMs = deadlineMs,
-): Promise<ReviewFileDiffWorkerResult> {
+): Promise<CodeRenderWorkerResult> {
   signal?.throwIfAborted()
   return new Promise((resolve, reject) => {
     let settled = false
@@ -77,7 +87,7 @@ export function runReviewFileDiffWorker(
       outcome()
     }
     const fail = (error: Error) => settle(() => reject(error))
-    const onMessage = (result: ReviewFileDiffWorkerResult | { kind: 'ready' }) => {
+    const onMessage = (result: CodeRenderWorkerResult | { kind: 'ready' }) => {
       if (result.kind === 'ready') {
         clearTimeout(deadline)
         deadline = setTimeout(onDeadline, deadlineMs)
@@ -92,7 +102,7 @@ export function runReviewFileDiffWorker(
       const reason: unknown = signal?.reason
       fail(reason instanceof Error ? reason : new DOMException('The diff render was aborted.', 'AbortError'))
     }
-    const onDeadline = () => fail(new ReviewDiffTransientError('deadline'))
+    const onDeadline = () => fail(new CodeRenderTransientError('deadline'))
     let deadline = setTimeout(onDeadline, startupDeadlineMs)
     worker.once('message', onMessage)
     worker.once('error', onError)

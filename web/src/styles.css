@@ -307,7 +307,7 @@ body {
   line-height: 20px;
 }
 
-.review-diff-viewer diffs-container {
+.prerendered-code diffs-container {
   color-scheme: inherit;
   --diffs-dark: var(--foreground);
   --diffs-dark-bg: var(--background);

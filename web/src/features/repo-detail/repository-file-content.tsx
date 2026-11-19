@@ -7,6 +7,8 @@ import { isRepositoryMarkdownPath } from '@/components/repository-markdown'
 import { RepositoryMarkdownRenderer } from '@/components/repository-markdown-renderer'
 import { formatBytes } from '@/lib/format-bytes'
 import { FileQuestion } from 'lucide-react'
+import { CodeSourceView } from '../code-render/prerendered-code'
+import type { RepoFile } from './repo-file-highlight'
 import { repositoryVersionSearch, type RepositoryVersion } from './repository-version'
 
 export function RepositoryFileContent({
@@ -15,7 +17,7 @@ export function RepositoryFileContent({
   params,
   version,
 }: {
-  file: RepoFileContentResponse
+  file: RepoFileContentResponse & Partial<Pick<RepoFile, 'highlightedHtml'>>
   htmlMode: RepositoryHtmlMode
   params: RepoParams
   version: RepositoryVersion
@@ -45,6 +47,7 @@ export function RepositoryFileContent({
   if (isRepositoryHtmlPath(file.path)) {
     return (
       <RepositoryHtmlRenderer
+        highlightedHtml={file.highlightedHtml ?? null}
         identity={`${file.path}\0${file.oid}`}
         key={`${file.path}:${file.oid}`}
         path={file.path}
@@ -55,8 +58,6 @@ export function RepositoryFileContent({
   }
 
   return (
-    <pre className="min-h-full bg-background p-5 font-mono text-xs leading-5 whitespace-pre text-foreground sm:p-7">
-      <code>{file.content.text}</code>
-    </pre>
+    <CodeSourceView highlightedHtml={file.highlightedHtml ?? null} source={file.content.text} />
   )
 }

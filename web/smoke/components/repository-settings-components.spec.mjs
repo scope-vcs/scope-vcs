@@ -1,9 +1,29 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { Worker } from 'node:worker_threads'
 import { openFixture } from '../support/fixture-server.mjs'
 
+async function renderSource() {
+  const worker = new Worker(new URL('../../src/features/code-render/code-render-worker.ts', import.meta.url))
+  try {
+    return await new Promise((resolve, reject) => {
+      worker.on('error', reject)
+      worker.on('message', (message) => {
+        if (message.kind === 'ready') {
+          worker.postMessage({ budget: { maxOutputBytes: 262_144 }, kind: 'file', path: 'README.html', text: '<h1>Test preview</h1>' })
+        } else if (message.kind === 'html') resolve(message.html)
+        else reject(new Error(`source rendered as ${message.kind}`))
+      })
+    })
+  } finally {
+    await worker.terminate()
+  }
+}
+
 test('repository components retain drafts, previews and pending actions across refreshes and interaction', async (t) => {
+  const sourceHtml = await renderSource()
   const { base, errors, page } = await openFixture(t, 'repository-settings', { page: { hasTouch: true }, tailwind: true })
+  await page.addInitScript((value) => { window.sourceHtml = value }, sourceHtml)
   await page.goto(base, { timeout: 30_000, waitUntil: 'domcontentloaded' })
   assert.equal(await page.getByLabel('Snapshot value').textContent(), 'Retained snapshot')
   await page.getByRole('button', { name: 'Invalidate snapshot', exact: true }).click()
@@ -482,9 +502,21 @@ test('repository components retain drafts, previews and pending actions across r
   await page.setViewportSize({ width: 1024, height: 768 })
   await page.locator('iframe').waitFor()
   const first = await page.locator('iframe').elementHandle()
-  const source = page.locator('pre').filter({ hasText: '<h1>Test preview</h1>' })
+  const source = page.locator('diffs-container pre').filter({ hasText: '<h1>Test preview</h1>' })
   await page.getByRole('button', { name: 'Toggle source' }).click()
   await source.waitFor()
+  const paint = () => source.evaluate((pre) => ({
+    background: getComputedStyle(pre).backgroundColor,
+    tokens: new Set([...pre.querySelectorAll('[data-line] span')].map((span) => getComputedStyle(span).color)).size,
+  }))
+  const light = await paint()
+  assert.ok(light.tokens > 1, 'HTML source is not highlighted')
+  await page.getByRole('button', { name: 'Toggle theme' }).click()
+  await page.waitForFunction(([pre, background]) => getComputedStyle(pre).backgroundColor !== background,
+    [await source.elementHandle(), light.background])
+  const dark = await paint()
+  assert.equal(dark.background, await page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+  await page.getByRole('button', { name: 'Toggle theme' }).click()
   await page.getByRole('button', { name: 'Toggle source' }).click()
   await source.waitFor({ state: 'detached' })
   assert.equal(await first.evaluate(node => node === document.querySelector('iframe')), true)

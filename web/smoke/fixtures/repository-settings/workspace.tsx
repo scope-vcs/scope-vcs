@@ -3,6 +3,10 @@ import { RepositoryHtmlPreviewProvider } from '@/components/repository-html-prev
 import { RepositoryHtmlRenderer } from '@/components/repository-html-renderer'
 import { WorkspaceTabStrip } from '@/components/workspace-tab-strip'
 
+declare global {
+  interface Window { sourceHtml?: string }
+}
+
 export function WorkspaceFixture() {
   const [mode, setMode] = useState<'preview' | 'source'>('preview')
   const [tabs, setTabs] = useState([{ id: 'one', label: 'One.html' }, { id: 'two', label: 'Two.html' }])
@@ -12,7 +16,7 @@ export function WorkspaceFixture() {
     <WorkspaceTabStrip activeId="one" ariaLabel="Fixture files" onActivate={() => {}}
       onClose={id => { setTabs(tabs.filter(tab => tab.id !== id)); return 'one' }}
       onEmptyFocus={() => {}} onPin={() => {}} previewId={null} tabSetId="fixture" tabs={tabs} />
-    <RepositoryHtmlRenderer key="README.html:oid" identity={'README.html\0oid'} path="README.html"
+    <RepositoryHtmlRenderer highlightedHtml={window.sourceHtml ?? null} key="README.html:oid" identity={'README.html\0oid'} path="README.html"
       mode={mode} source="<h1>Test preview</h1>" />
   </RepositoryHtmlPreviewProvider>
 }

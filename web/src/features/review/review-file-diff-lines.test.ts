@@ -3,22 +3,23 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { Worker } from 'node:worker_threads'
-import { REVIEW_FILE_DIFF_RENDER_BUDGETS } from './review-file-diff-render-contract'
+import { runCodeRenderWorker } from '../code-render/code-render-worker-pool'
 import { diffLineSide, renderedDiffLines } from './review-file-diff-lines'
-import { runReviewFileDiffWorker } from './review-file-diff-worker-pool'
+import { REVIEW_FILE_DIFF_RENDER_BUDGETS } from './review-file-diff-renderer'
 
 test('rendered diff lines follow each side of the prerendered diff, including context and hidden ranges', async () => {
   const oldText = 'a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\n'
   const newText = 'a\nb\nC\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\nnew\no\np\n'
-  const worker = new Worker(pathToFileURL(resolve(process.cwd(), 'src/features/review/review-file-diff-render-worker.ts')))
+  const worker = new Worker(pathToFileURL(resolve(process.cwd(), 'src/features/code-render/code-render-worker.ts')))
   let result
   try {
-    result = await runReviewFileDiffWorker(worker, {
+    result = await runCodeRenderWorker(worker, {
       budget: {
         maxHunks: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxHunks,
         maxOutputBytes: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxOutputBytes,
         maxRenderedLines: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxRenderedLines,
       },
+      kind: 'diff',
       newText,
       oldText,
       path: '/fixture.txt',

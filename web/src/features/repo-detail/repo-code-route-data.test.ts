@@ -5,10 +5,11 @@ import {
   repositoryLandingPath,
   type RepoFileLoadResult,
 } from './repo-code-route-data'
-import type { RepoFileContentResponse } from '@/api/types.generated'
+import type { RepoFile } from './repo-file-highlight'
 
-const readme: RepoFileContentResponse = {
+const readme: RepoFile = {
   content: { kind: 'text', text: '<h1>Scope</h1>' },
+  highlightedHtml: null,
   oid: 'readme-oid',
   path: '/README.html',
   size_bytes: 14,

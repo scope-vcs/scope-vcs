@@ -3,7 +3,7 @@ import { build } from 'vite'
 
 const webRoot = fileURLToPath(new URL('..', import.meta.url))
 const workerEntry = fileURLToPath(new URL(
-  '../src/features/review/review-file-diff-render-worker.ts',
+  '../src/features/code-render/code-render-worker.ts',
   import.meta.url,
 ))
 const workerOutput = fileURLToPath(new URL(
@@ -20,7 +20,7 @@ await build({
     rollupOptions: {
       output: {
         chunkFileNames: 'chunks/[name]-[hash].mjs',
-        entryFileNames: 'review-file-diff-render-worker.mjs',
+        entryFileNames: 'code-render-worker.mjs',
       },
     },
     ssr: workerEntry,
