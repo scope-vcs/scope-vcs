@@ -9,6 +9,7 @@ test('Home shows only the README and Browse code opens the file tree', async () 
   await withPage(requestRepoPath, async (page) => {
     const readme = page.getByRole('region', { name: 'Repository README' })
     await readme.locator('article h1').waitFor()
+    await page.getByRole('button', { name: 'Languages: Markdown 100.0%', exact: true }).waitFor()
     assert.equal(await page.getByLabel('Repository file navigator').count(), 0)
     assert.equal(await page.getByLabel('Latest repository change', { exact: true }).count(), 0)
     assert.equal(await page.getByRole('alert').count(), 0)

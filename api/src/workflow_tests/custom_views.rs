@@ -360,6 +360,10 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
             "/v1/repos/owner/repo/files?view=private",
             StatusCode::FORBIDDEN,
         ),
+        (
+            "/v1/repos/owner/repo/languages?view=private",
+            StatusCode::FORBIDDEN,
+        ),
         ("/v1/repos/owner/repo/history", StatusCode::OK),
         (
             "/v1/repos/owner/repo/requests/queue?section=active&view=private",
@@ -418,6 +422,40 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
             .collect::<Vec<_>>(),
         ["/README.md", "/src/lib.rs", "/src/main.rs"]
     );
+    for (bearer, uri, expected) in [
+        (
+            member_bearer(),
+            "/v1/repos/owner/repo/languages",
+            vec![("Rust", 29)],
+        ),
+        (
+            bearer_header(),
+            "/v1/repos/owner/repo/languages",
+            vec![("Rust", 29), ("Shell", 9)],
+        ),
+        (
+            bearer_header(),
+            "/v1/repos/owner/repo/languages?view=agent",
+            vec![("Rust", 29)],
+        ),
+    ] {
+        let languages = response_json(
+            api_request(router(state.clone()), "GET", uri, Some(&bearer), None).await,
+        )
+        .await;
+        assert_eq!(
+            languages
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|language| (
+                    language["name"].as_str().unwrap(),
+                    language["bytes"].as_u64().unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
     let summary = response_json(
         api_request(
             router(state.clone()),

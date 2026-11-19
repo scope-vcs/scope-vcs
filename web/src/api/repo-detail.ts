@@ -7,11 +7,17 @@ import { arrayOf, stripTrailingSlash } from './http'
 import { repoRoute } from './paths'
 import type { RepositoryVersionSearch } from '../features/repo-detail/repository-version'
 import type { RepoContent, RepoLiveState, RepoParams } from './types'
-import type { RepoSummaryResponse, RepositoryDependencyCheckResponse, ViewId } from './types.generated'
+import type {
+  RepoLanguageResponse,
+  RepoSummaryResponse,
+  RepositoryDependencyCheckResponse,
+  ViewId,
+} from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import {
   RepoFileContentResponseValidator,
   RepoFileResponseValidator,
+  RepoLanguageResponseValidator,
   RepoSummaryResponseValidator,
   RepositoryDependencyCheckResponseValidator,
 } from './validators.generated'
@@ -37,6 +43,17 @@ export async function loadRepoContentForRequest(
     clone_remote_url: `${publicApi}${gitPath}`,
     files,
   } satisfies RepoContent
+}
+
+export async function loadRepoLanguagesForRequest(
+  data: RepoParams & { view: ViewId },
+  signal?: AbortSignal,
+): Promise<RepoLanguageResponse[]> {
+  return createApiClient().get(
+    `${repoRoute(ApiRouteTemplates.repoLanguages, data)}?${new URLSearchParams({ view: data.view })}`,
+    arrayOf(RepoLanguageResponseValidator),
+    { auth: 'optional', signal },
+  )
 }
 
 export async function loadRepoLiveStateForRequest(data: RepoParams) {

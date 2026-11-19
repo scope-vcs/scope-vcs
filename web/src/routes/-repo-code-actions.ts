@@ -1,10 +1,11 @@
 import { parseRepoFileInput } from '@/api/request-inputs'
-import { HttpError, isNotFoundError } from '@/api/http'
+import { HttpError, isNotFoundError, loadOptionalResource } from '@/api/http'
 import {
   loadRepoContentForRequest,
   loadRepoFileForRequest,
+  loadRepoLanguagesForRequest,
 } from '@/api/repo-detail'
-import { parseRepoVersionViewInput } from '@/api/repo-params'
+import { parseRepoVersionViewInput, parseRepoViewInput } from '@/api/repo-params'
 import type { RepoFileLoadResult } from '@/features/repo-detail/repo-code-route-data'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
@@ -14,6 +15,13 @@ const PROJECTION_REBUILDING_MESSAGE = 'repository projection is rebuilding; retr
 export const loadRepoContent = createServerFn({ method: 'GET' })
   .validator(parseRepoVersionViewInput)
   .handler(({ data }) => loadRepoContentForRequest(data, getRequest().signal))
+
+export const loadRepoLanguages = createServerFn({ method: 'GET' })
+  .validator(parseRepoViewInput)
+  .handler(async ({ data }) => {
+    const signal = getRequest().signal
+    return (await loadOptionalResource(() => loadRepoLanguagesForRequest(data, signal))) ?? []
+  })
 
 export const loadRepoFile = createServerFn({ method: 'GET' })
   .validator(parseRepoFileInput)

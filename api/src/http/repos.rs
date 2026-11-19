@@ -298,6 +298,24 @@ pub(crate) async fn get_files(
     Ok(Json(projection_file_responses(files)))
 }
 
+pub(crate) async fn get_languages(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo_name)): Path<(String, String)>,
+    Query(input): Query<RepoLanguagesRequest>,
+) -> Result<Json<Vec<RepoLanguageResponse>>, ApiError> {
+    let viewer = Viewer::resolve(&state, &headers).await?;
+    let view = input.view.map(ViewId::from);
+    let files = state
+        .metadata
+        .repositories()
+        .repo_live_file_sizes(&owner, &repo_name, viewer.user_id(), view.as_ref())
+        .await?
+        .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
+
+    Ok(Json(language_responses(&files)))
+}
+
 pub(crate) async fn get_file_content(
     State(state): State<AppState>,
     Path((owner, repo_name)): Path<(String, String)>,

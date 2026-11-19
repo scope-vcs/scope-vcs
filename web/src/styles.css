@@ -164,6 +164,8 @@ body {
   --accent: #e9e6de;
   --border: #ddd9cf;
   --border-strong: #b9b3a5;
+  --language-lightness-min: 0.4;
+  --language-lightness-max: 0.7;
   --input: #cbc7bd;
   --ring: #7a746a;
   --success: #4f8561;
@@ -205,6 +207,8 @@ body {
   --accent: #24221e;
   --border: #2f2c27;
   --border-strong: #4a463f;
+  --language-lightness-min: 0.62;
+  --language-lightness-max: 0.85;
   --input: #4a463f;
   --ring: #c9c6bf;
   --success: #6fa27c;
@@ -288,6 +292,13 @@ body {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+}
+
+@utility language-color {
+  background-color: var(--language-color);
+  background-color: oklch(
+    from var(--language-color) clamp(var(--language-lightness-min), l, var(--language-lightness-max)) c h
+  );
 }
 
 @utility section-label {

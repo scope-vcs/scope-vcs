@@ -1742,6 +1742,16 @@ Repository: "https://github.com/fizyk20/generic-array.git"
 LICENSE: text ad4fcfaf8d5b12b97409c137a03d4a4e4b21024c65c54f976cc3b609c1bd5b0f
 
 ==============================================================================
+gengo-language 0.15.1
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/gengo-language/gengo-language-0.15.1.crate
+
+Repository: "https://github.com/spenserblack/gengo"
+LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+LICENSE-MIT: text bce66b009f1e44e6e68053dbe645b5bd1b21926ce7662668cc1e3cf497b52504
+
+==============================================================================
 getrandom 0.2.17
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -4390,6 +4400,17 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text b5dae953242620882b4803d63538e87d69fd3ea38efed9754bfa9253bd03da41
 
 ==============================================================================
+serde_yaml 0.9.34+deprecated
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/serde_yaml/serde_yaml-0.9.34+deprecated.crate
+
+Published author metadata: ["David Tolnay <dtolnay@gmail.com>"]
+Repository: "https://github.com/dtolnay/serde-yaml"
+LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e38179
+LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
+
+==============================================================================
 sha1 0.11.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -5328,6 +5349,16 @@ Published author metadata: ["RustCrypto Developers"]
 Repository: "https://github.com/RustCrypto/traits"
 LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
 LICENSE-MIT: text 5f934370168b8ded9168a3e5527fdd3c25fe04379135646595fbf40bf2434696
+
+==============================================================================
+unsafe-libyaml 0.2.11
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/unsafe-libyaml/unsafe-libyaml-0.2.11.crate
+
+Published author metadata: ["David Tolnay <dtolnay@gmail.com>"]
+Repository: "https://github.com/dtolnay/unsafe-libyaml"
+LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
 untrusted 0.7.1
@@ -10034,6 +10065,13 @@ Copyright (c) 2015 Carl Lerche + nix-rust Authors
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e84ac3 ---
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text bce66b009f1e44e6e68053dbe645b5bd1b21926ce7662668cc1e3cf497b52504 ---
+MIT License
+
+Copyright (c) 2023 Spenser Black
+
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text bdcd4825d5221f2bfc4426e5ee4ae5ce5ed1e57c9a650c1b182128d3fb452d4b ---

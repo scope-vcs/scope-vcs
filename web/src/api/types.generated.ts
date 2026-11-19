@@ -172,6 +172,10 @@ export type RepoFileContentRequest = { path: string, view: ViewId | null, reques
 
 export type RepoFilesRequest = { view: ViewId | null, request: string | null, update: string | null, };
 
+export type RepoLanguagesRequest = { view: ViewId | null, };
+
+export type RepoLanguageResponse = { name: string, color: string, bytes: number, };
+
 export type RepoFileContentResponse = { path: string, oid: string, label: ViewId, size_bytes: number, content: ReviewFileContentResponse, };
 
 export type RepositoryAccessResponse = { actor: RepositoryActor, view: ViewId, can_push: boolean, can_change_file_visibility: boolean, can_manage_members: boolean, can_delete_repo: boolean, };
@@ -572,6 +576,7 @@ export const ApiRouteTemplates = {
   repoRequestAttachmentMediaGrant: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/media-grant",
   repoFiles: "/v1/repos/{owner}/{repo}/files",
   repoFileContent: "/v1/repos/{owner}/{repo}/files/content",
+  repoLanguages: "/v1/repos/{owner}/{repo}/languages",
   repoRequestRevisionContext: "/v1/repos/{owner}/{repo}/requests/{request_id}/revision-context",
   repoRequestRevisionFileDiff: "/v1/repos/{owner}/{repo}/requests/{request_id}/changes/{revision_id}/file-diff",
   repoRequestRevisions: "/v1/repos/{owner}/{repo}/requests/{request_id}/changes",

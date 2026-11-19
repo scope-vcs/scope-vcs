@@ -1,4 +1,7 @@
-use super::{entities, integer_columns::u64_to_i64};
+use super::{
+    entities,
+    integer_columns::{i64_to_u64, u64_to_i64},
+};
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
@@ -228,6 +231,37 @@ where
         }
     }
     Ok(Some(files))
+}
+
+pub(super) async fn load_live_projection_file_sizes_for_view<C>(
+    conn: &C,
+    repo_id: &str,
+    repo_version: u64,
+    view: &ViewId,
+) -> Result<Option<Vec<(String, u64)>>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let Some(model) = live_projection_read_model(conn, repo_id, repo_version, view).await? else {
+        return Ok(None);
+    };
+    let views = repository_views(conn, repo_id).await?;
+    let rows = entities::projection_file::Entity::find()
+        .select_only()
+        .column(entities::projection_file::Column::Path)
+        .column(entities::projection_file::Column::SizeBytes)
+        .filter(entities::projection_file::Column::RepoId.eq(repo_id.to_string()))
+        .filter(view_condition(&views, view))
+        .into_tuple::<(String, i64)>()
+        .all(conn)
+        .await?;
+    if i64::try_from(rows.len()) != Ok(model.file_count) {
+        return Ok(None);
+    }
+    rows.into_iter()
+        .map(|(path, size)| Ok((path, i64_to_u64(size, "projection file size")?)))
+        .collect::<Result<_, _>>()
+        .map(Some)
 }
 
 #[cfg(test)]

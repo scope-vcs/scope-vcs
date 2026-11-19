@@ -8,6 +8,7 @@ members = [
     "crates/scope-content-lifecycle",
     "crates/scope-dependency-analyzer",
     "crates/scope-domain",
+    "crates/scope-languages",
     "crates/scope-postgres",
     "crates/scope-git",
     "crates/scope-storage",
@@ -98,6 +99,7 @@ scope_api_contract = { package = "scope-api-contract", path = "crates/scope-api-
 scope_content_lifecycle = { package = "scope-content-lifecycle", path = "crates/scope-content-lifecycle" }
 scope_dependency_analyzer = { package = "scope-dependency-analyzer", path = "crates/scope-dependency-analyzer" }
 scope_domain = { package = "scope-domain", path = "crates/scope-domain" }
+scope_languages = { package = "scope-languages", path = "crates/scope-languages" }
 scope_git = { package = "scope-git", path = "crates/scope-git" }
 scope_git_process = { package = "scope-git-process", path = "crates/scope-git-process" }
 scope_storage = { package = "scope-storage", path = "crates/scope-storage" }

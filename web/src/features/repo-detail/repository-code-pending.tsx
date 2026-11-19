@@ -12,6 +12,7 @@ import {
 } from './repository-code-skeletons'
 import { useLoadedRepoLayout } from './repo-layout-context'
 import { hasRepositoryAbout, RepositoryAbout } from './repository-about'
+import { RepositoryLanguageBar } from './repository-language-bar'
 import { RepositoryLatestActivityPending } from './repository-latest-activity'
 
 export function RepositoryCodePending() {
@@ -37,7 +38,8 @@ function RepositoryHomePending() {
         title="Home"
         titleHidden
       />
-      <section aria-label="Repository README" className="border-t border-border">
+      <RepositoryLanguageBar languages={null} />
+      <section aria-label="Repository README">
         <PendingSurface className="min-h-[220px]" label="Loading repository README">
           <ReadmeSkeleton />
         </PendingSurface>

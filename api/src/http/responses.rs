@@ -196,6 +196,12 @@ pub(crate) struct RepoFilesRequest {
     pub(crate) update: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct RepoLanguagesRequest {
+    pub(crate) view: Option<ViewId>,
+}
+
 pub(crate) use scope_api_contract::{ReviewFileContentResponse, ReviewFileDiffResponse};
 
 #[derive(Debug, Serialize)]
