@@ -58,7 +58,7 @@ export function RequestReviewBots({
           type="button"
         >
           <TooltipProvider delayDuration={0}>
-            <span className="mr-0.5 flex items-center gap-2">
+            <span className="mr-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 py-0.5">
               {bots.map((bot) => (
                 <Tooltip key={bot.login}>
                   <TooltipTrigger asChild>
@@ -71,7 +71,7 @@ export function RequestReviewBots({
               ))}
             </span>
           </TooltipProvider>
-          <span className={cn(summary.state === 'commented' && 'text-warning-strong')}>{summary.label}</span>
+          <span className={cn('shrink-0', summary.state === 'commented' && 'text-warning-strong')}>{summary.label}</span>
           <ChevronDown aria-hidden="true" />
         </button>
       )}

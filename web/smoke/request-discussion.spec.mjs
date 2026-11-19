@@ -16,9 +16,9 @@ import {
 } from './request-changes-smoke.mjs'
 
 const requestPath = `${requestRepoPath}/requests/req_demo_ready`
-const anonymousOpenPublicRequestStatusVariants = {
-  'Maintainer merges': 'outline',
-  'Update from main required': 'warning',
+const anonymousOpenPublicRequestStateMarks = {
+  'Maintainer merges': 'idle',
+  'Update from main required': 'attention',
 }
 
 test('reply disclosure preserves scroll and remains reversible', async () => {
@@ -235,7 +235,10 @@ test('Details opens a drawer that reuses request data and preserves discussion s
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
     const header = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Add bounded retry timing', exact: true }) })
     const status = header.getByText(/^(?:Maintainer merges|Update from main required)$/)
-    assert.equal(await status.getAttribute('data-variant'), anonymousOpenPublicRequestStatusVariants[await status.textContent()])
+    assert.equal(
+      await header.locator('[data-mark]').getAttribute('data-mark'),
+      anonymousOpenPublicRequestStateMarks[await status.textContent()],
+    )
     assert.equal(await header.getByText('Open', { exact: true }).count(), 0)
     assert.equal(await header.getByText('Open request', { exact: true }).count(), 0)
     assert.equal(await page.getByRole('navigation', { name: 'Request navigation' }).count(), 0)

@@ -17,7 +17,7 @@ const RINGS = {
 
 export function RequestStateMark({ mark }: { mark: Mark }) {
   return (
-    <svg aria-hidden="true" className="size-5 shrink-0" viewBox="0 0 20 20">
+    <svg aria-hidden="true" className="size-5 shrink-0" data-mark={mark} viewBox="0 0 20 20">
       {mark === 'waiting' || mark === 'idle' ? (
         <circle
           className={cn('fill-none stroke-2', RINGS[mark].stroke)}

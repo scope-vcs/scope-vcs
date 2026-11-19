@@ -10,7 +10,7 @@ export function RequestCheckTrack({ params, summary }: { params: RepoParams; sum
   const { status } = summary
   if (!status) return null
   const label = status.tone === 'success' ? 'Checks passed' : status.text
-  const labelClass = cn('font-medium', status.tone === 'danger' && 'text-danger-strong')
+  const labelClass = cn('shrink-0 font-medium', status.tone === 'danger' && 'text-danger-strong')
   if (!summary.track.length) return <span className={labelClass}>{label}</span>
   return (
     <Popover
