@@ -3,9 +3,10 @@ import type { RequestSummaryResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
 import { Link } from '@tanstack/react-router'
-import { Code, Ellipsis, History, XCircle } from 'lucide-react'
+import { Code, Ellipsis, History } from 'lucide-react'
 import { type RefObject, useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
+import { RequestOutcomeIcon } from './request-outcome-icon'
 import type { RequestActionController } from './use-request-actions'
 
 const ITEM_CLASS = 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-3.5'
@@ -73,7 +74,7 @@ export function RequestMoreMenu({
                 }}
                 type="button"
               >
-                <XCircle aria-hidden="true" />
+                <RequestOutcomeIcon outcome="closed" />
                 Close request
               </button>
             ) : null}

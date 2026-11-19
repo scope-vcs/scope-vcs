@@ -279,6 +279,18 @@
   content: "·" / "";
 }
 
+.request-workspace-row-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.request-workspace-row-author [data-author-record] {
+  position: relative;
+  z-index: 1;
+}
+
 .request-workspace-row-meta:empty {
   height: 0;
   margin-top: 0;

@@ -1,5 +1,6 @@
-import type { RequestQueueNextStep } from '@/api/types.generated'
+import type { RequestQueueNextStep, RequestState } from '@/api/types.generated'
 import { AlarmClock, CircleCheck, CircleDashed, CirclePlay, CircleX, Eye, MessageSquare, RefreshCw, Send, type LucideIcon } from 'lucide-react'
+import { RequestOutcomeIcon, requestOutcome } from './request-outcome-icon'
 import './request-status-glyph.css'
 
 const NEXT_STEP_ICONS: Record<RequestQueueNextStep, { icon: LucideIcon; round: boolean }> = {
@@ -15,7 +16,17 @@ const NEXT_STEP_ICONS: Record<RequestQueueNextStep, { icon: LucideIcon; round: b
   done: { icon: CircleCheck, round: true },
 }
 
-export function RequestStatusGlyph({ className, nextStep }: { className: string; nextStep: RequestQueueNextStep }) {
+export function RequestStatusGlyph({
+  className,
+  nextStep,
+  state,
+}: {
+  className: string
+  nextStep: RequestQueueNextStep
+  state: RequestState
+}) {
+  const outcome = requestOutcome(state)
+  if (outcome) return <RequestOutcomeIcon className={className} outcome={outcome} />
   const { icon: StepIcon, round } = NEXT_STEP_ICONS[nextStep]
   return <StepIcon aria-hidden="true" className={className} data-round={round || undefined} data-step={nextStep} />
 }

@@ -6,9 +6,11 @@ import { Link } from '@tanstack/react-router'
 import { Globe } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { requestChecksSummary, requestFailedCheck } from '../checks/request-check-rows'
+import { useRequestWorkspace } from '../workspace/request-workspace-context'
 import { actorHandle } from './request-actor'
 import { requestMergeabilityLabel, requestPublicChecksNote, requestStateMark } from './request-labels'
 import { RequestStateMark } from './request-state-mark'
+import { RequestAuthorRecord } from './request-author-record'
 
 const DETAIL_CLASS = 'text-sm leading-6 text-muted-foreground'
 
@@ -27,6 +29,7 @@ export function RequestDetailHeader({
   params: RepoParams
   stateActions: ReactNode
 }) {
+  const authorRecord = useRequestWorkspace()?.selected?.author_record ?? null
   const publicNote = requestPublicChecksNote(checks)
   const settledAt = request.merged_at_unix ?? request.closed_at_unix
 
@@ -56,6 +59,7 @@ export function RequestDetailHeader({
         <div className="request-detail-header-meta min-w-0 text-xs leading-5 text-muted-foreground">
           <span className="flex flex-wrap items-baseline gap-x-1.5">
             <span className="font-medium text-foreground">{actorHandle(author)}</span>
+            {authorRecord ? <RequestAuthorRecord detailed record={authorRecord} /> : null}
             <span>opened</span>
             <RelativeTimestamp
               value={request.submitted_at_unix ?? request.created_at_unix}

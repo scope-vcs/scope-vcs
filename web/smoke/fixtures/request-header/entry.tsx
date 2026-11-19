@@ -3,12 +3,13 @@ import { createRootRoute, createRouter, RouterProvider } from '@tanstack/react-r
 import { useRef, useState } from 'react'
 import { ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { RequestChecksResponse, RequestDetailResponse, RequestSummaryResponse } from '@/api/types.generated'
+import type { RequestAuthorRecordResponse, RequestChecksResponse, RequestDetailResponse, RequestQueueItemResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { RequestChecksSection } from '@/features/requests/checks/request-checks-section'
 import { RequestDetailHeader } from '@/features/requests/detail/request-detail-header'
 import { RequestChangesMenu } from '@/features/requests/changes/request-changes-menu'
 import { RequestLifecycleActions } from '@/features/requests/detail/request-lifecycle-actions'
 import { RequestMoreMenu } from '@/features/requests/detail/request-more-menu'
+import { RequestWorkspaceProvider } from '@/features/requests/workspace/request-workspace-context'
 import '@/features/requests/detail/request-detail.css'
 import '../shared/styles.css'
 
@@ -71,25 +72,31 @@ const autoMerge = {
 function App() {
   const [name, setName] = useState(request.name)
   const [stateName, setStateName] = useState<keyof typeof STATES>('findings')
+  const [authorRecord, setAuthorRecord] = useState<RequestAuthorRecordResponse | null>(null)
   const more = useRef<HTMLButtonElement | null>(null)
   const shown = STATES[stateName]
-  Object.assign(window, { setBranch: setName, setState: setStateName })
+  Object.assign(window, { setBranch: setName, setState: setStateName, setAuthorRecord })
   return <main>
-    <RequestDetailHeader
-      checks={shown.checks} params={params}
-      detail={{ request: { ...shown.request, name }, author: { id: 'author', handle: 'adamblumoff' }, claimer: null } as RequestDetailResponse}
-      backLink={<a href="#requests">Requests</a>}
-      stateActions={
-        <RequestLifecycleActions actions={actions} autoMerge={{ ...autoMerge, status: { ...autoMerge.status, can_enable: shown.canEnable } }} request={shown.request} viewerId="viewer"
-          className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-(--app-inset) py-3 min-[701px]:static min-[701px]:border-0 min-[701px]:p-0" />
-      }
-      actions={<>
-        <RequestChangesMenu activity={activity} diffStat={{ additions: 5495, deletions: 2578, changed_files: 203 }} params={requestParams} />
-        <Button size="sm" variant="secondary"><SlidersHorizontal />Details<ChevronDown /></Button>
-        <RequestMoreMenu actions={actions} disabled={false} onViewActivity={() => {}} params={params} request={shown.request} triggerRef={more} />
-      </>}
-    />
-    <RequestChecksSection checks={shown.checks} error={null} params={params} />
+    <RequestWorkspaceProvider value={{
+      selected: { author_record: authorRecord } as RequestQueueItemResponse,
+      claim: () => {}, release: () => {},
+    }}>
+      <RequestDetailHeader
+        checks={shown.checks} params={params}
+        detail={{ request: { ...shown.request, name }, author: { id: 'author', handle: 'adamblumoff' }, claimer: null } as RequestDetailResponse}
+        backLink={<a href="#requests">Requests</a>}
+        stateActions={
+          <RequestLifecycleActions actions={actions} autoMerge={{ ...autoMerge, status: { ...autoMerge.status, can_enable: shown.canEnable } }} request={shown.request} viewerId="viewer"
+            className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-(--app-inset) py-3 min-[701px]:static min-[701px]:border-0 min-[701px]:p-0" />
+        }
+        actions={<>
+          <RequestChangesMenu activity={activity} diffStat={{ additions: 5495, deletions: 2578, changed_files: 203 }} params={requestParams} />
+          <Button size="sm" variant="secondary"><SlidersHorizontal />Details<ChevronDown /></Button>
+          <RequestMoreMenu actions={actions} disabled={false} onViewActivity={() => {}} params={params} request={shown.request} triggerRef={more} />
+        </>}
+      />
+      <RequestChecksSection checks={shown.checks} error={null} params={params} />
+    </RequestWorkspaceProvider>
   </main>
 }
 

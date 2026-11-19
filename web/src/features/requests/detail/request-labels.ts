@@ -89,7 +89,7 @@ export function requestMergeabilityTone(request: RequestLabelSource): BadgeVaria
   return MERGEABILITY[request.mergeability.status].tone
 }
 
-export type RequestStateMark = 'merged' | 'ready' | 'failed' | 'attention' | 'waiting' | 'idle'
+export type RequestStateMark = 'merged' | 'closed' | 'ready' | 'failed' | 'attention' | 'waiting' | 'idle'
 
 const STATE_MARKS = {
   success: 'ready',
@@ -101,7 +101,9 @@ const STATE_MARKS = {
 } as const satisfies Record<BadgeVariant, RequestStateMark>
 
 export function requestStateMark(request: RequestLabelSource): RequestStateMark {
-  return request.mergeability.status === 'Merged' ? 'merged' : STATE_MARKS[requestMergeabilityTone(request)]
+  if (request.mergeability.status === 'Merged') return 'merged'
+  if (request.mergeability.status === 'Closed') return 'closed'
+  return STATE_MARKS[requestMergeabilityTone(request)]
 }
 
 export function requestCheckEvaluationNote(checks: RequestChecksResponse) {

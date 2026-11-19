@@ -13,6 +13,8 @@ import { Link } from '@tanstack/react-router'
 import { Check, Layers, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'lucide-react'
 import { useRef, useState, type CSSProperties } from 'react'
 import type { RequestAttentionCommand } from './request-attention-api'
+import { RequestAuthorRecord } from '../detail/request-author-record'
+import { authorRecordSummary } from '../detail/request-author-record-model'
 import { RequestStatusGlyph } from '../detail/request-status-glyph'
 import { RequestSnoozeMenu } from './request-snooze-menu'
 import {
@@ -223,6 +225,7 @@ function RequestWorkspaceRow({
   const status = requestStatusLabel(item, hydrated)
   const action = attention.reason === 'authored' ? undefined : REQUEST_NEXT_STEP_ACTIONS[item.next_step]
   const handle = REVIEW_REASONS.has(attention.reason) ? actorHandle(author) : null
+  const authorRecord = handle ? item.author_record : null
   const stackParent = requestStackParentLabel(item)
   const diffStat = diffStatWithChanges(request.diff_stat)
   const canSetAside = section === 'active' && attention.can_set_aside
@@ -281,7 +284,7 @@ function RequestWorkspaceRow({
             data-folded-count={folded.length || undefined}
             tabIndex={-1}
           >
-            <RequestStatusGlyph className="request-status-glyph" nextStep={item.next_step} />
+            <RequestStatusGlyph className="request-status-glyph" nextStep={item.next_step} state={request.state} />
             {unread && <span className="request-workspace-row-unread" />}
           </Link>
         </TooltipTrigger>
@@ -304,7 +307,7 @@ function RequestWorkspaceRow({
               {request.title}
             </span>
             <span className="sr-only" suppressHydrationWarning>
-              {[handle, status, action, stackParent].filter(Boolean).map((detail) => `, ${detail}`)}
+              {[handle, authorRecord && authorRecordSummary(authorRecord), status, action, stackParent].filter(Boolean).map((detail) => `, ${detail}`)}
             </span>
           </Link>
           <time
@@ -346,7 +349,12 @@ function RequestWorkspaceRow({
           )}
         </div>
         <div className="request-workspace-row-meta">
-          {handle && <span aria-hidden="true">{handle}</span>}
+          {handle && (
+            <span className="request-workspace-row-author">
+              <span aria-hidden="true">{handle}</span>
+              {authorRecord && <RequestAuthorRecord record={authorRecord} />}
+            </span>
+          )}
           {descendants.length > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>

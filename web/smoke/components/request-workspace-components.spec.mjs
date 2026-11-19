@@ -760,3 +760,47 @@ test('a stack\'s pill folds it behind its base and summarizes what it hides', as
   assert.deepEqual(await ids(), ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'base', 'first'])
   assert.deepEqual(errors, [])
 })
+
+test('a review row shows its author record and ended rows show their outcome', async (t) => {
+  const { page, base, errors } = await workspacePage(t)
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  const row = (id, state, attention, extra = {}) => ({
+    request: { id, title: `Request ${id}`, state, stack_depth: 1, mergeability: mergeability(state === 'Open' ? 'ChecksPending' : state) },
+    author: { handle: 'lin' },
+    attention: { stack_group: attention.group, ...attention },
+    attention_at_unix: 1790000000,
+    next_step: state === 'Open' ? 'review' : 'done',
+    ...extra,
+  })
+  const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
+  const history = { kind: 'history', merged: 7, closed_by_maintainer: 2, withdrawn: 0, other_open: 0, rating: { score_sum: 9, count: 2 } }
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), {
+    active: { ...empty, requests: [
+      row('reviewed', 'Open', { group: 'needs_you', reason: 'invited' }, { author_record: history }),
+      row('first', 'Open', { group: 'needs_you', reason: 'invited' }, { author_record: { kind: 'first_request' } }),
+      row('authored', 'Open', { group: 'needs_you', reason: 'authored' }, { author_record: history }),
+    ] },
+    unclaimed: empty,
+    set_aside: empty,
+    done: { ...empty, requests: [row('merged', 'Merged', { group: 'done', reason: 'merged' }), row('closed', 'Closed', { group: 'done', reason: 'closed' })] },
+  })
+  const kinds = (id) => page.locator(`[data-request-id="${id}"] [data-author-record] [data-kind]`)
+    .evaluateAll((tokens) => tokens.map((token) => `${token.dataset.kind}${token.textContent}`))
+  await page.locator('[data-request-id="reviewed"]').waitFor()
+  assert.deepEqual(await kinds('reviewed'), ['merged7', 'closed2', 'rating4.5'])
+  assert.deepEqual(await kinds('first'), ['first'])
+  assert.deepEqual(await kinds('authored'), [], 'a row that hides its author hides the record too')
+  await page.locator('[data-request-id="reviewed"]').getByRole('button', { name: '2 closed by a maintainer', exact: true }).hover()
+  assert.equal(await page.getByRole('tooltip').textContent(), '2 closed by a maintainer')
+  await page.mouse.move(1200, 800)
+  await page.getByRole('tooltip').waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: /^Done/ }).click()
+  for (const outcome of ['merged', 'closed']) {
+    assert.equal(
+      await page.locator(`[data-request-id="${outcome}"] .request-workspace-row-mark svg`).getAttribute('data-outcome'),
+      outcome,
+    )
+  }
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.getByRole('complementary', { name: 'Requests workspace' }).screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.author-record.png` })
+  assert.deepEqual(errors, [])
+})

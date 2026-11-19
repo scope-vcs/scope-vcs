@@ -1,5 +1,5 @@
 import type { RepoParams } from '@/api/types'
-import type { RequestQueueNextStep } from '@/api/types.generated'
+import type { RequestQueueNextStep, RequestState } from '@/api/types.generated'
 import { Link } from '@tanstack/react-router'
 import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
@@ -12,6 +12,7 @@ export type RailHintRequest = {
   id: string
   title: string
   nextStep: RequestQueueNextStep
+  state: RequestState
   status: string
   age: string | undefined
   depth: number
@@ -86,7 +87,7 @@ function RailHintRequestLine({ request }: { request: RailHintRequest }) {
   return (
     <>
       <span className="request-workspace-rail-hint-step-slot" title={request.status}>
-        <RequestStatusGlyph className="request-status-glyph" nextStep={request.nextStep} />
+        <RequestStatusGlyph className="request-status-glyph" nextStep={request.nextStep} state={request.state} />
       </span>
       <span className="request-workspace-rail-hint-title">{request.title}</span>
       {request.age && <span className="request-workspace-rail-hint-age">{request.age}</span>}
