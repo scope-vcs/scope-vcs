@@ -638,3 +638,51 @@ fn event(position: u64, payload: serde_json::Value) -> serde_json::Value {
 fn oid(character: char) -> String {
     std::iter::repeat_n(character, 40).collect()
 }
+
+#[test]
+fn delivery_lines_say_the_head_has_not_reached_github_until_it_is_sent() {
+    let delivered = |push: serde_json::Value| {
+        github_delivery_lines(
+            &serde_json::from_value::<RequestChecksResponse>(json!({
+                "request_id": "req_one", "head_oid": oid('b'), "state": "started",
+                "outcome": "pending", "message": null, "can_approve": false,
+                "changes_github_workflows": false, "private_request_on_public_github": false,
+                "review_bots": [], "review_bots_enforced": false, "github_push": push,
+                "checks": [], "mergeability": {
+                    "status": "ChecksPending", "current_main_oid": oid('a'),
+                    "request_head_oid": oid('b'), "reason": "CI has not finished"
+                }
+            }))
+            .unwrap(),
+        )
+    };
+    let push = |state: &str, error: Option<&str>| json!({"state": state, "branch": "scope/requests/req_one", "error": error});
+    let watch = "Watch it with `scope request ci`.";
+
+    assert!(delivered(serde_json::Value::Null).is_empty());
+    for (state, error, line) in [
+        (
+            "sending",
+            None,
+            "GitHub: head bbbbbbb is queued for scope/requests/req_one; its checks start once it arrives.",
+        ),
+        (
+            "sending",
+            Some("GitHub's rate limit was reached"),
+            "GitHub: head bbbbbbb is queued for scope/requests/req_one; its checks start once it arrives. The last attempt failed: GitHub's rate limit was reached",
+        ),
+        (
+            "awaiting_approval",
+            None,
+            "GitHub: head bbbbbbb waits for maintainer approval before going to scope/requests/req_one; its checks start once it arrives.",
+        ),
+        ("sent", None, "GitHub: sent to scope/requests/req_one"),
+        (
+            "failed",
+            Some("push refused"),
+            "GitHub: sending to scope/requests/req_one failed: push refused",
+        ),
+    ] {
+        assert_eq!(delivered(push(state, error)), [line, watch], "{state}");
+    }
+}

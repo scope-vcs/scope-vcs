@@ -37,7 +37,12 @@ pub(super) fn submit_request_command(
     let prompt = "Submit this request to its maintainers";
     require_confirmation(prompt, yes)?;
     let response = api_submit_request(api, api_target(&context, &request_id))?;
-    let human_lines = request_mutation_receipt_lines("Submitted", &response);
+    let mut human_lines = request_mutation_receipt_lines("Submitted", &response);
+    let checks = crate::api::request_checks(api, api_target(&context, &request_id))
+        .with_context(|| {
+            format!("submitted request {request_id}, but could not read whether its head reached GitHub; run `scope request ci`")
+        })?;
+    human_lines.extend(super::render::github_delivery_lines(&checks));
     Ok(RequestCommandOutcome::new(
         "request.submit",
         RequestCommandResult::Mutation(MutationResult {
