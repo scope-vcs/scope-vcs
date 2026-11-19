@@ -21,7 +21,7 @@ export function RequestReviewBots({
   return (
     <Popover
       align="auto"
-      className="w-[min(26rem,calc(100vw-2rem))] p-1"
+      className="max-h-[min(26rem,60vh)] w-[min(26rem,calc(100vw-2rem))] overflow-y-auto p-1"
       label="Review bots"
       renderPanel={() => (
         <>
@@ -64,7 +64,7 @@ export function RequestReviewBots({
                   <TooltipTrigger asChild>
                     <span><RequestReviewBotMark bot={bot} /></span>
                   </TooltipTrigger>
-                  <TooltipContent>
+                  <TooltipContent className="request-check-tooltip">
                     <span className="font-medium">{bot.name}</span> {bot.required ? 'required · ' : ''}{bot.label}
                   </TooltipContent>
                 </Tooltip>

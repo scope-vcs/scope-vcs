@@ -67,6 +67,8 @@ function Request() {
       setChecks((current) => ({ ...current, review_bots })),
     showApproval: () => setChecks({
       ...running, state: 'awaiting-approval', can_approve: true, changes_github_workflows: true,
+      github_push: { state: 'awaiting_approval', branch: 'scope/requests/req_1', error: null },
+      checks: [github('Required PR checks', null)],
     }),
     pushRevision: () => setChecks((current) => ({ ...current, head_oid: 'b'.repeat(40) })),
     refresh: () => setChecks((current) => ({

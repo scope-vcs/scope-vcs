@@ -96,6 +96,11 @@
   transform: scaleY(1.3);
 }
 
+.request-check-tooltip {
+  max-width: min(24rem, calc(100vw - 2rem));
+  overflow-wrap: anywhere;
+}
+
 .request-review-bot {
   --request-review-bot-surface: var(--background);
   position: relative;

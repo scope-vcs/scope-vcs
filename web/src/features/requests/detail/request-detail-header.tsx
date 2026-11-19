@@ -4,7 +4,7 @@ import { RelativeTimestamp } from '@/components/timestamp'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Link } from '@tanstack/react-router'
 import { Globe } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { requestChecksSummary, requestFailedCheck } from '../checks/request-check-rows'
 import { useRequestWorkspace } from '../workspace/request-workspace-context'
 import { actorHandle } from './request-actor'
@@ -74,26 +74,34 @@ export function RequestDetailHeader({
             </span>
           ) : null}
           <span className="request-detail-header-branch truncate font-mono" title={request.name}>{request.name}</span>
-          {publicNote ? (
-            <TooltipProvider delayDuration={0}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className="inline-flex items-center gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                    type="button"
-                  >
-                    <Globe aria-hidden="true" className="size-3.5" />
-                    Public
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{publicNote}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : null}
+          {publicNote ? <PublicChecksLabel note={publicNote} /> : null}
         </div>
         <div className="request-detail-header-actions">{actions}</div>
       </div>
     </header>
+  )
+}
+
+function PublicChecksLabel({ note }: { note: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <TooltipProvider delayDuration={0}>
+      <Tooltip onOpenChange={setOpen} open={open}>
+        <TooltipTrigger asChild onClick={(event) => {
+          event.preventDefault()
+          setOpen(true)
+        }}>
+          <button
+            className="inline-flex items-center gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            type="button"
+          >
+            <Globe aria-hidden="true" className="size-3.5" />
+            Public
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{note}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
@@ -102,7 +110,7 @@ function FailedCheckLink({ checks, params }: { checks: RequestChecksResponse; pa
   if (!failed) return null
   const { check, others } = failed
   return (
-    <span className={DETAIL_CLASS}>
+    <span className={`${DETAIL_CLASS} [overflow-wrap:anywhere]`}>
       {check.run ? (
         <Link
           className="rounded-sm underline decoration-border-strong underline-offset-[3px] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"

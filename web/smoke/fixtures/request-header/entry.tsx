@@ -23,8 +23,8 @@ const request = {
   mergeability: { status: 'ReviewFindingsOpen', reason: 'Review findings remain open.' },
   permissions: { can_merge: true, can_close: true, can_submit: false, can_view_activity: true },
 } as RequestSummaryResponse
-const check = (conclusion: 'success' | 'failure') => ({
-  name: 'Required PR checks', status: 'completed', conclusion, details_url: null,
+const check = (conclusion: 'success' | 'failure', name = 'Required PR checks') => ({
+  name, status: 'completed', conclusion, details_url: null,
   run: { run_id: '9002', workflow_name: 'PR requirements', job_id: '45' },
 } as const)
 const bots = (codex: 'commented' | 'not_started', greptile: 'clear' | 'not_started') => [
@@ -38,12 +38,17 @@ const baseChecks: RequestChecksResponse = {
   github_pull_request: { state: 'open', number: 1108, url: 'https://github.com/adamblumoff/scope-vcs/pull/1108', error: null },
   review_bots: bots('commented', 'clear'), review_bots_enforced: true, checks: [check('success')],
 }
+const failed = {
+  request: { ...request, mergeability: { status: 'ChecksFailed', reason: 'Required CI failed.' } },
+  checks: { ...baseChecks, checks: [check('failure')], review_bots: bots('not_started', 'not_started') },
+  canEnable: false,
+} satisfies { request: RequestSummaryResponse; checks: RequestChecksResponse; canEnable: boolean }
 const STATES = {
   findings: { request, checks: baseChecks, canEnable: true },
-  failed: {
-    request: { ...request, mergeability: { status: 'ChecksFailed', reason: 'Required CI failed.' } },
-    checks: { ...baseChecks, checks: [check('failure')], review_bots: bots('not_started', 'not_started') },
-    canEnable: false,
+  failed,
+  longFailure: {
+    ...failed,
+    checks: { ...failed.checks, checks: [check('failure', `required_${'web_validation_'.repeat(10)}`)] },
   },
   merged: {
     request: {

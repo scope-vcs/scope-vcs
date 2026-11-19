@@ -89,16 +89,13 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
       : { text: `The last attempt failed: ${push.error}`, failed: false }
     : null
 
-  const track = all
-    .map((check, index) => ({ check, index }))
-    .sort((a, b) => TRACK_ORDER[a.check.tone] - TRACK_ORDER[b.check.tone] || a.index - b.index)
-    .map(({ check }) => check)
+  const track = [...all].sort((a, b) => TRACK_ORDER[a.tone] - TRACK_ORDER[b.tone])
 
   return { status, counts: counts.length ? counts.join(' · ') : null, startError, attention, all, track }
 }
 
 export function requestListedChecks({ attention, all }: Pick<RequestChecksSummary, 'attention' | 'all'>) {
-  return [...attention, ...all.filter((check) => !attention.includes(check))]
+  return [...attention, ...all.filter((check) => ATTENTION_ORDER[check.tone] === undefined)]
 }
 
 export function requestFailedCheck({ attention }: Pick<RequestChecksSummary, 'attention'>) {

@@ -8,10 +8,9 @@ import { RequestCheckWorkflows } from './request-check-workflows'
 
 export function RequestCheckTrack({ params, summary }: { params: RepoParams; summary: RequestChecksSummary }) {
   const { status } = summary
-  if (!status) return null
-  const label = status.tone === 'success' ? 'Checks passed' : status.text
-  const labelClass = cn('shrink-0 font-medium', status.tone === 'danger' && 'text-danger-strong')
-  if (!summary.track.length) return <span className={labelClass}>{label}</span>
+  const label = status?.tone === 'success' ? 'Checks passed' : status?.text
+  const labelClass = cn('shrink-0 font-medium', status?.tone === 'danger' && 'text-danger-strong')
+  if (!summary.track.length) return label ? <span className={labelClass}>{label}</span> : null
   return (
     <Popover
       align="auto"
@@ -21,7 +20,7 @@ export function RequestCheckTrack({ params, summary }: { params: RepoParams; sum
       renderTrigger={(props) => (
         <button
           {...props}
-          aria-label={['CI', label, summary.counts].filter(Boolean).join(' · ')}
+          aria-label={label ? ['CI', label, summary.counts].filter(Boolean).join(' · ') : 'CI jobs'}
           className="request-check-toggle"
           type="button"
         >
@@ -32,14 +31,14 @@ export function RequestCheckTrack({ params, summary }: { params: RepoParams; sum
                   <TooltipTrigger asChild>
                     <span className="request-check-bar" data-tone={check.tone} />
                   </TooltipTrigger>
-                  <TooltipContent>
+                  <TooltipContent className="request-check-tooltip">
                     <span className="font-medium">{check.name}</span> {check.reason ?? check.state}
                   </TooltipContent>
                 </Tooltip>
               ))}
             </span>
           </TooltipProvider>
-          <span className={labelClass}>{label}</span>
+          <span className={labelClass}>{label ?? 'CI jobs'}</span>
           <ChevronDown aria-hidden="true" />
         </button>
       )}
