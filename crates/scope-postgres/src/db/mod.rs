@@ -79,7 +79,6 @@ mod request_navigation;
 mod request_queue;
 mod request_ratings;
 mod request_revision_context;
-mod request_revision_recovery;
 mod request_revision_rows;
 mod request_rows;
 mod request_stack;
