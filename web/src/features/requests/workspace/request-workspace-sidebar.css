@@ -286,9 +286,16 @@
   min-width: 0;
 }
 
+.request-workspace-row-author > [aria-hidden] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .request-workspace-row-author [data-author-record] {
   position: relative;
   z-index: 1;
+  flex: none;
 }
 
 .request-workspace-row-meta:empty {

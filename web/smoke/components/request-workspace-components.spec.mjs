@@ -765,15 +765,15 @@ test('a review row shows its author record and ended rows show their outcome', a
   const { page, base, errors } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests', base).href)
   const row = (id, state, attention, extra = {}) => ({
-    request: { id, title: `Request ${id}`, state, stack_depth: 1, mergeability: mergeability(state === 'Open' ? 'ChecksPending' : state) },
-    author: { handle: 'lin' },
+    request: { id, title: `Request ${id}`, state, stack_depth: 1, diff_stat: { additions: 2_480, deletions: 41, changed_files: 6 }, mergeability: mergeability(state === 'Open' ? 'ChecksPending' : state) },
+    author: { handle: 'a-contributor-with-a-very-long-handle' },
     attention: { stack_group: attention.group, ...attention },
     attention_at_unix: 1790000000,
     next_step: state === 'Open' ? 'review' : 'done',
     ...extra,
   })
   const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
-  const history = { kind: 'history', merged: 7, closed_by_maintainer: 2, withdrawn: 0, other_open: 0, rating: { score_sum: 9, count: 2 } }
+  const history = { kind: 'history', merged: 7, closed_by_maintainer: 2, withdrawn: 1, other_open: 3, rating: { score_sum: 9, count: 2 } }
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), {
     active: { ...empty, requests: [
       row('reviewed', 'Open', { group: 'needs_you', reason: 'invited' }, { author_record: history }),
@@ -787,7 +787,12 @@ test('a review row shows its author record and ended rows show their outcome', a
   const kinds = (id) => page.locator(`[data-request-id="${id}"] [data-author-record] [data-kind]`)
     .evaluateAll((tokens) => tokens.map((token) => `${token.dataset.kind}${token.textContent}`))
   await page.locator('[data-request-id="reviewed"]').waitFor()
-  assert.deepEqual(await kinds('reviewed'), ['merged7', 'closed2', 'rating4.5'])
+  assert.deepEqual(await kinds('reviewed'), ['merged7', 'closed2', 'open3', 'rating4.5'])
+  assert.equal(
+    await page.locator('[data-request-id="reviewed"] .request-workspace-row-meta').evaluate((meta) => meta.scrollWidth > meta.clientWidth),
+    false,
+    'a long handle gives way to the record instead of pushing it out of the row',
+  )
   assert.deepEqual(await kinds('first'), ['first'])
   assert.deepEqual(await kinds('authored'), [], 'a row that hides its author hides the record too')
   await page.locator('[data-request-id="reviewed"]').getByRole('button', { name: '2 closed by a maintainer', exact: true }).hover()

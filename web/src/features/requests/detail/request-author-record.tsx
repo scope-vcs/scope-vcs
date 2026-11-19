@@ -12,7 +12,7 @@ export function RequestAuthorRecord({ detailed = false, record }: { detailed?: b
   return (
     <TooltipProvider disableHoverableContent>
       <span className="mx-1 inline-flex items-center gap-2.5 self-center" data-author-record="">
-        {authorRecordTokens(record).map((token) => (
+        {authorRecordTokens(record, detailed).map((token) => (
           <AuthorRecordTokenMark detailed={detailed} key={token.kind} token={token} />
         ))}
       </span>

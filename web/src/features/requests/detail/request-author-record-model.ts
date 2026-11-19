@@ -9,7 +9,7 @@ export type AuthorRecordToken = {
   tip: string
 }
 
-export function authorRecordTokens(record: RequestAuthorRecordResponse): AuthorRecordToken[] {
+export function authorRecordTokens(record: RequestAuthorRecordResponse, detailed: boolean): AuthorRecordToken[] {
   if (record.kind === 'first_request') {
     return [{ kind: 'first', value: null, ratingCount: null, tip: 'First request in this repository' }]
   }
@@ -20,7 +20,7 @@ export function authorRecordTokens(record: RequestAuthorRecordResponse): AuthorR
     { kind: 'open', count: record.other_open, label: record.other_open === 1 ? 'other request open' : 'other requests open' },
   ] as const
   const tokens: AuthorRecordToken[] = counts
-    .filter(({ count }) => count > 0)
+    .filter(({ count, kind }) => count > 0 && (detailed || kind !== 'withdrawn'))
     .map(({ kind, count, label }) => ({ kind, value: String(count), ratingCount: null, tip: `${count} ${label}` }))
   if (record.rating) {
     const { count, score_sum: scoreSum } = record.rating
@@ -36,5 +36,5 @@ export function authorRecordTokens(record: RequestAuthorRecordResponse): AuthorR
 }
 
 export function authorRecordSummary(record: RequestAuthorRecordResponse) {
-  return authorRecordTokens(record).map(({ tip }) => tip).join(', ')
+  return authorRecordTokens(record, true).map(({ tip }) => tip).join(', ')
 }
