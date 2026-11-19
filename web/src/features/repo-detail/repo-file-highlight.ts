@@ -25,21 +25,21 @@ type IsolatedFileRender = (
 
 export function createRepoFileHighlighter({
   isolatedRender,
-  state = { active: 0 },
 }: {
   isolatedRender: IsolatedFileRender
-  state?: { active: number }
 }) {
+  let active = 0
   return async function highlightRepoFile(
     file: RepoFileContentResponse,
     signal?: AbortSignal,
   ): Promise<RepoFile> {
+    signal?.throwIfAborted()
+    const plain = { ...file, highlightedHtml: null }
+    if (active >= REPO_FILE_HIGHLIGHT_LIMITS.maxConcurrentRenders) return plain
     const text = highlightableText(file)
-    if (text === null || state.active >= REPO_FILE_HIGHLIGHT_LIMITS.maxConcurrentRenders) {
-      return { ...file, highlightedHtml: null }
-    }
+    if (text === null) return plain
 
-    state.active += 1
+    active += 1
     try {
       const result = await isolatedRender({
         budget: { maxOutputBytes: REPO_FILE_HIGHLIGHT_LIMITS.maxOutputBytes },
@@ -47,22 +47,24 @@ export function createRepoFileHighlighter({
         path: file.path,
         text,
       }, REPO_FILE_HIGHLIGHT_LIMITS.deadlineMs, signal)
+      signal?.throwIfAborted()
       if (result.kind === 'error') console.warn('[scope] file highlighting failed', file.path)
-      return { ...file, highlightedHtml: result.kind === 'html' ? result.html : null }
+      return result.kind === 'html' ? { ...file, highlightedHtml: result.html } : plain
     } catch (error) {
       if (signal?.aborted) throw error
       if (!(error instanceof CodeRenderTransientError)) {
         console.warn('[scope] file highlighting failed', file.path, error)
       }
-      return { ...file, highlightedHtml: null }
+      return plain
     } finally {
-      state.active -= 1
+      active -= 1
     }
   }
 }
 
 function highlightableText(file: RepoFileContentResponse) {
   if (file.content.kind !== 'text' || isRepositoryMarkdownPath(file.path)) return null
+  if (file.content.text.length > REPO_FILE_HIGHLIGHT_LIMITS.maxInputBytes) return null
   const metrics = codeTextMetrics(file.content.text)
   return metrics.bytes > REPO_FILE_HIGHLIGHT_LIMITS.maxInputBytes ||
     metrics.lines > REPO_FILE_HIGHLIGHT_LIMITS.maxInputLines

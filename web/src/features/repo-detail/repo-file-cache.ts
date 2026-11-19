@@ -36,8 +36,6 @@ export function repoFileCacheKey({
 }
 
 function approximateFileBytes(file: RepoFile) {
-  const contentBytes = file.content.kind === 'text'
-    ? file.content.text.length * 2
-    : file.content.size_bytes
+  const contentBytes = file.content.kind === 'text' ? file.content.text.length * 2 : 0
   return contentBytes + (file.highlightedHtml?.length ?? 0) * 2
 }

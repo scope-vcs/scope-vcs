@@ -19,7 +19,7 @@ test('highlights source files within the limits and leaves markdown, binaries, a
   const plain = [
     textFile('docs/guide.md', '# Guide\n'),
     { content: { kind: 'binary', oid: 'oid', size_bytes: 4 }, label: 'public', oid: 'oid', path: 'logo.png', size_bytes: 4 },
-    textFile('big.rs', 'x'.repeat(REPO_FILE_HIGHLIGHT_LIMITS.maxInputBytes + 1)),
+    textFile('big.rs', '😀'.repeat(26_000)),
     textFile('long.rs', '\n'.repeat(REPO_FILE_HIGHLIGHT_LIMITS.maxInputLines + 1)),
   ] satisfies RepoFileContentResponse[]
   for (const file of plain) {
@@ -37,7 +37,7 @@ test('highlights source files within the limits and leaves markdown, binaries, a
   }, REPO_FILE_HIGHLIGHT_LIMITS.deadlineMs])
 })
 
-test('a busy, slow, failed, or oversized render still loads the file as plain text, but cancellation propagates', async (t) => {
+test('slow, failed, or oversized renders load plain text and canceled results are discarded', async (t) => {
   t.mock.method(console, 'warn', () => {})
   const source = textFile('src/lib.rs', 'fn main() {}\n')
   const outcomes: Array<() => Promise<CodeRenderWorkerResult>> = [
@@ -51,18 +51,31 @@ test('a busy, slow, failed, or oversized render still loads the file as plain te
     assert.deepEqual(await highlight(source), { ...source, highlightedHtml: null })
   }
 
-  const isolatedRender = fakeRender(async () => ({ html: 'unused', kind: 'html' }))
-  const state = { active: REPO_FILE_HIGHLIGHT_LIMITS.maxConcurrentRenders }
-  const busy = createRepoFileHighlighter({ isolatedRender, state })
-  assert.deepEqual(await busy(source), { ...source, highlightedHtml: null })
-  assert.equal(isolatedRender.mock.callCount(), 0)
-
   const controller = new AbortController()
   const canceled = createRepoFileHighlighter({
     isolatedRender: fakeRender(async () => {
       controller.abort()
-      throw new DOMException('The diff render was aborted.', 'AbortError')
+      return { html: 'canceled result', kind: 'html' }
     }),
   })
   await assert.rejects(canceled(source, controller.signal), { name: 'AbortError' })
+})
+
+test('keeps two file renders in flight and admits new files as soon as a slot frees', async () => {
+  let finish: (result: CodeRenderWorkerResult) => void = () => {}
+  const pending = new Promise<CodeRenderWorkerResult>((resolve) => { finish = resolve })
+  const isolatedRender = fakeRender(() => pending)
+  const highlight = createRepoFileHighlighter({ isolatedRender })
+  const source = textFile('src/lib.rs', 'fn main() {}')
+  const first = highlight(source)
+  const second = highlight(source)
+  const third = highlight(source)
+  assert.equal(isolatedRender.mock.callCount(), 2)
+  finish({ html: 'highlighted', kind: 'html' })
+  assert.equal((await third).highlightedHtml, null)
+  for (const result of await Promise.all([first, second])) {
+    assert.equal(result.highlightedHtml, 'highlighted')
+  }
+  assert.equal((await highlight(source)).highlightedHtml, 'highlighted')
+  assert.equal(isolatedRender.mock.callCount(), 3)
 })

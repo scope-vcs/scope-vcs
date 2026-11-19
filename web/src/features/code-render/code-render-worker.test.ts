@@ -72,6 +72,12 @@ test('the source worker bounds diffs and files and picks each grammar from the f
     text: toml,
   })) > 1)
   assert.ok(tokenColors(await render(diff(
+    'export const value = 1\n',
+    'export const value = 2\n',
+    {},
+    '/fixture.TS',
+  ))) > 1)
+  assert.ok(tokenColors(await render(diff(
     'FROM node:24\nRUN echo old\n',
     'FROM node:24\nRUN echo new\n',
     {},

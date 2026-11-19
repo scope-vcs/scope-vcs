@@ -328,16 +328,31 @@ test('public code with unchanged version refreshes retained tree and file on rep
 test('retained files count their highlighted markup against the file cache budget', () => {
   repoFileResource.clear()
   const identity = { scope: 'viewer-a', repoId: 'repo', view: 'public' as const, contentVersion: 0, version: { kind: 'main' } as const }
-  const highlighted = (path: string) => ({
-    content: { kind: 'text' as const, text: 'fn main() {}\n' },
-    highlightedHtml: 'x'.repeat(7 * 1024 * 1024),
-    label: 'public' as const,
-    oid: path,
-    path,
-    size_bytes: 13,
+  const key = (path: string) => repoFileCacheKey({ ...identity, path })
+  const highlightedHtml = 'x'.repeat(2 * 1024 * 1024 - 1_024)
+  for (let index = 0; index < 7; index += 1) {
+    const path = `${index}.rs`
+    repoFileResource.write(key(path), {
+      content: { kind: 'text', text: 'fn main() {}\n' },
+      highlightedHtml,
+      label: 'public',
+      oid: path,
+      path,
+      size_bytes: 13,
+    })
+  }
+  assert.equal(repoFileResource.peek(key('0.rs')), null)
+  assert.equal(repoFileResource.peek(key('1.rs'))?.oid, '1.rs')
+
+  const size_bytes = 25 * 1024 * 1024
+  repoFileResource.write(key('image.png'), {
+    content: { kind: 'binary', oid: 'image-oid', size_bytes },
+    highlightedHtml: null,
+    label: 'public',
+    oid: 'image-oid',
+    path: 'image.png',
+    size_bytes,
   })
-  repoFileResource.write(repoFileCacheKey({ ...identity, path: 'a.rs' }), highlighted('a.rs'))
-  repoFileResource.write(repoFileCacheKey({ ...identity, path: 'b.rs' }), highlighted('b.rs'))
-  assert.equal(repoFileResource.peek(repoFileCacheKey({ ...identity, path: 'a.rs' })), null)
-  assert.equal(repoFileResource.peek(repoFileCacheKey({ ...identity, path: 'b.rs' }))?.oid, 'b.rs')
+  assert.equal(repoFileResource.peek(key('image.png'))?.oid, 'image-oid')
+  assert.equal(repoFileResource.peek(key('1.rs'))?.oid, '1.rs')
 })

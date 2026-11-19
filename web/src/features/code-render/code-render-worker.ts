@@ -1,4 +1,9 @@
-import { parseDiffFromFile, type FileDiffOptions, type FileOptions } from '@pierre/diffs'
+import {
+  getFiletypeFromFileName,
+  parseDiffFromFile,
+  type FileDiffOptions,
+  type FileOptions,
+} from '@pierre/diffs'
 import { preloadFile, preloadFileDiff } from '@pierre/diffs/ssr'
 import { parentPort } from 'node:worker_threads'
 import type {
@@ -24,9 +29,10 @@ const DIFF_OPTIONS = {
 } satisfies FileDiffOptions<undefined, undefined>
 
 async function renderDiff(input: CodeRenderDiffInput): Promise<CodeRenderWorkerResult> {
+  const lang = codeLanguage(input.path)
   const fileDiff = parseDiffFromFile(
-    { contents: input.oldText, name: input.path },
-    { contents: input.newText, name: input.path },
+    { contents: input.oldText, lang, name: input.path },
+    { contents: input.newText, lang, name: input.path },
   )
 
   if (fileDiff.hunks.length === 0) {
@@ -51,10 +57,17 @@ async function renderDiff(input: CodeRenderDiffInput): Promise<CodeRenderWorkerR
 
 async function renderFile(input: CodeRenderFileInput): Promise<CodeRenderWorkerResult> {
   const { prerenderedHTML } = await preloadFile({
-    file: { contents: input.text, name: input.path },
+    file: { contents: input.text, lang: codeLanguage(input.path), name: input.path },
     options: CODE_OPTIONS,
   })
   return boundedHtml(prerenderedHTML, input.budget.maxOutputBytes)
+}
+
+function codeLanguage(path: string) {
+  const lowerPath = path.toLowerCase()
+  if (lowerPath.endsWith('.sh')) return 'shellscript'
+  const language = getFiletypeFromFileName(path)
+  return language === 'text' ? getFiletypeFromFileName(lowerPath) : language
 }
 
 function boundedHtml(html: string, maxOutputBytes: number): CodeRenderWorkerResult {
