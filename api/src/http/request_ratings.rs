@@ -1,4 +1,5 @@
 use super::requests::{actor_request, repo_metadata_and_access, visible_request};
+use super::responses::request_actor_summary_response;
 use crate::after_commit::AfterCommit;
 use crate::{
     auth::viewer::Viewer, error::ApiError, persistence::unix_now, repo_events::RepoChangeReason,
@@ -10,8 +11,7 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{
-    CreateRequestRatingRequest, RequestRatingParticipantResponse, RequestRatingResponse,
-    RequestRatingsResponse,
+    CreateRequestRatingRequest, RequestRatingResponse, RequestRatingsResponse,
 };
 use scope_domain::{
     account::UserAccount,
@@ -67,8 +67,7 @@ pub(crate) async fn create_request_rating(
         .auth()
         .users_by_ids([rating.rater_user_id.clone(), rating.subject_user_id.clone()])
         .await?;
-    let participants = rating_participants(&state, &users).await?;
-    Ok(Json(rating_response(rating, &participants)?))
+    Ok(Json(rating_response(rating, &users)?))
 }
 
 async fn ratings_response(
@@ -89,14 +88,13 @@ async fn ratings_response(
         .flat_map(|rating| [rating.rater_user_id.clone(), rating.subject_user_id.clone()])
         .chain(eligible_subject_id.iter().cloned());
     let users = state.metadata.auth().users_by_ids(user_ids).await?;
-    let participants = rating_participants(state, &users).await?;
     let ratings = ratings
         .into_iter()
-        .map(|rating| rating_response(rating, &participants))
+        .map(|rating| rating_response(rating, &users))
         .collect::<Result<Vec<_>, _>>()?;
     let eligible_subject = eligible_subject_id
         .as_deref()
-        .map(|user_id| participant_response(user_id, &participants))
+        .map(|user_id| request_actor_summary_response(user_id, &users))
         .transpose()?;
     Ok(Json(RequestRatingsResponse {
         ratings,
@@ -106,49 +104,15 @@ async fn ratings_response(
 
 fn rating_response(
     rating: RequestRating,
-    participants: &BTreeMap<String, RequestRatingParticipantResponse>,
+    users: &BTreeMap<String, UserAccount>,
 ) -> Result<RequestRatingResponse, ApiError> {
     Ok(RequestRatingResponse {
-        rater: participant_response(&rating.rater_user_id, participants)?,
-        subject: participant_response(&rating.subject_user_id, participants)?,
+        rater: request_actor_summary_response(&rating.rater_user_id, users)?,
+        subject: request_actor_summary_response(&rating.subject_user_id, users)?,
         id: rating.id,
         request_id: rating.request_id,
         score: rating.score,
         reason: rating.reason,
         created_at_unix: rating.created_at_unix,
     })
-}
-
-async fn rating_participants(
-    state: &AppState,
-    users: &BTreeMap<String, UserAccount>,
-) -> Result<BTreeMap<String, RequestRatingParticipantResponse>, ApiError> {
-    let mut participants = BTreeMap::new();
-    for user in users.values() {
-        let reputation = state
-            .metadata
-            .requests()
-            .request_reputation(&user.id)
-            .await?;
-        participants.insert(
-            user.id.clone(),
-            RequestRatingParticipantResponse {
-                id: user.id.clone(),
-                handle: user.handle.clone(),
-                rating_score_sum: reputation.score_sum,
-                rating_count: reputation.rating_count,
-            },
-        );
-    }
-    Ok(participants)
-}
-
-fn participant_response(
-    user_id: &str,
-    participants: &BTreeMap<String, RequestRatingParticipantResponse>,
-) -> Result<RequestRatingParticipantResponse, ApiError> {
-    participants
-        .get(user_id)
-        .cloned()
-        .ok_or_else(|| ApiError::internal_message("request rating participant is missing"))
 }

@@ -8,6 +8,7 @@ pub(crate) mod native_commit_details;
 pub(crate) mod push_intent;
 pub(crate) mod repository_collaboration;
 pub(crate) mod request_anchor_projection;
+pub(crate) mod request_author_records;
 pub(crate) mod request_auto_merge;
 pub(crate) mod request_checks;
 pub(crate) mod request_close;

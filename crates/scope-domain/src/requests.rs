@@ -168,8 +168,13 @@ pub use queue::{
 };
 mod ratings;
 pub use ratings::{
-    CreateRequestRatingInput, REQUEST_RATING_REASON_MAX_BYTES, RequestRating, RequestReputation,
+    CreateRequestRatingInput, REQUEST_RATING_REASON_MAX_BYTES, RequestRating,
     create_request_rating, eligible_rating_subject_user_id,
+};
+mod author_record;
+pub use author_record::{
+    AUTHOR_RECORD_ROLE, AuthorHistory, AuthorRating, AuthorRecord, AuthorRecordTotals,
+    AuthoredRequest, author_record, author_record_subject,
 };
 mod submission;
 pub use submission::{

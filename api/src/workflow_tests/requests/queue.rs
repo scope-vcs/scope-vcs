@@ -179,6 +179,8 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
     )
     .await;
     assert_eq!(request_ids(&first), ["req_open_high", "req_open_tie_a"]);
+    assert_eq!(first["requests"][0]["author_record"]["kind"], "history");
+    assert!(invitee_work["requests"][0]["author_record"].is_null());
     let cursor = first["next_cursor"].as_str().unwrap();
     create_public_request(
         &state,
