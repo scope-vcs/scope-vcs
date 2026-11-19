@@ -2,7 +2,6 @@ mod after_commit;
 pub mod app;
 mod background_work;
 pub mod maintenance_http;
-pub mod pool_pack_recovery;
 pub mod state;
 
 pub(crate) mod auth;
