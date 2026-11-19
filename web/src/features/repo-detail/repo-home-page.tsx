@@ -1,9 +1,5 @@
 import type { RepoContent, RepoParams } from '@/api/types'
-import type {
-  RepoFileContentResponse,
-  RepoLanguageResponse,
-  RepoSummaryResponse,
-} from '@/api/types.generated'
+import type { RepoLanguageResponse, RepoSummaryResponse } from '@/api/types.generated'
 import { PanelState } from '@/components/empty-state'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
@@ -19,6 +15,7 @@ import { hasRepositoryAbout, RepositoryAbout } from './repository-about'
 import { ReadmeSkeleton } from './repository-code-skeletons'
 import { RepositoryLanguageBar } from './repository-language-bar'
 import { RepositoryFileContent } from './repository-file-content'
+import type { RepoFile } from './repo-file-highlight'
 import { RepoViewingAsPicker, useViewingAs } from './use-viewing-as'
 import { ViewingAsStatus } from './viewing-as-picker'
 
@@ -33,7 +30,7 @@ export function RepoHomePage({
   selectedPath,
 }: {
   content: CachedResource<RepoContent>
-  file: CachedResource<RepoFileContentResponse>
+  file: CachedResource<RepoFile>
   languages: readonly RepoLanguageResponse[] | null
   params: RepoParams
   repo: RepoSummaryResponse
@@ -97,7 +94,7 @@ function RepositoryReadme({
   selectedPath,
 }: {
   content: CachedResource<RepoContent>
-  file: CachedResource<RepoFileContentResponse>
+  file: CachedResource<RepoFile>
   params: RepoParams
   ready: boolean
   selectedPath: string | null

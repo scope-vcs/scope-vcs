@@ -321,6 +321,11 @@ body {
   min-width: 0;
 }
 
+.code-source-view diffs-container {
+  --diffs-light: var(--foreground);
+  --diffs-light-bg: var(--background);
+}
+
 .request-discussion-thread {
   content-visibility: auto;
   contain-intrinsic-size: 0 240px;

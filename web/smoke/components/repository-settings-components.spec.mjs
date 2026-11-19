@@ -510,6 +510,7 @@ test('repository components retain drafts, previews and pending actions across r
     tokens: new Set([...pre.querySelectorAll('[data-line] span')].map((span) => getComputedStyle(span).color)).size,
   }))
   const light = await paint()
+  assert.equal(light.background, await page.evaluate(() => getComputedStyle(document.body).backgroundColor))
   assert.ok(light.tokens > 1, 'HTML source is not highlighted')
   await page.getByRole('button', { name: 'Toggle theme' }).click()
   await page.waitForFunction(([pre, background]) => getComputedStyle(pre).backgroundColor !== background,

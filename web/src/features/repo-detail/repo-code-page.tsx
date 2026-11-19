@@ -1,8 +1,5 @@
 import type { RepoContent, RepoParams } from '@/api/types'
-import type {
-  RepoFileContentResponse,
-  RepoSummaryResponse,
-} from '@/api/types.generated'
+import type { RepoSummaryResponse } from '@/api/types.generated'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { Button } from '@/components/ui/button'
@@ -12,6 +9,7 @@ import type { CachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, ChevronDown, GitBranch, GitPullRequest, History } from 'lucide-react'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
+import type { RepoFile } from './repo-file-highlight'
 import { useRepoViews } from './repo-layout-context'
 import { RepositoryCodeView } from './repository-code-view'
 import { RepositoryLatestActivity } from './repository-latest-activity'
@@ -30,7 +28,7 @@ export function RepoCodePage({
   version,
 }: {
   content: CachedResource<RepoContent>
-  file: CachedResource<RepoFileContentResponse>
+  file: CachedResource<RepoFile>
   onSelectFilePath: (path: string) => void
   params: RepoParams
   repo: RepoSummaryResponse

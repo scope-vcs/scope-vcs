@@ -1,5 +1,4 @@
 import type { RepoParams } from '@/api/types'
-import type { RepoFileContentResponse } from '@/api/types.generated'
 import { PanelState } from '@/components/empty-state'
 import { isRepositoryHtmlPath } from '@/components/repository-html'
 import { RepositoryHtmlRenderer, type RepositoryHtmlMode } from '@/components/repository-html-renderer'
@@ -17,7 +16,7 @@ export function RepositoryFileContent({
   params,
   version,
 }: {
-  file: RepoFileContentResponse & Partial<Pick<RepoFile, 'highlightedHtml'>>
+  file: RepoFile
   htmlMode: RepositoryHtmlMode
   params: RepoParams
   version: RepositoryVersion
@@ -47,7 +46,7 @@ export function RepositoryFileContent({
   if (isRepositoryHtmlPath(file.path)) {
     return (
       <RepositoryHtmlRenderer
-        highlightedHtml={file.highlightedHtml ?? null}
+        highlightedHtml={file.highlightedHtml}
         identity={`${file.path}\0${file.oid}`}
         key={`${file.path}:${file.oid}`}
         path={file.path}
@@ -58,6 +57,6 @@ export function RepositoryFileContent({
   }
 
   return (
-    <CodeSourceView highlightedHtml={file.highlightedHtml ?? null} source={file.content.text} />
+    <CodeSourceView highlightedHtml={file.highlightedHtml} source={file.content.text} />
   )
 }

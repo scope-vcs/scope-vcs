@@ -37,7 +37,7 @@ function PrerenderedCode({ html }: { html: string }) {
 
   return (
     <div
-      className="prerendered-code min-h-full"
+      className="prerendered-code code-source-view min-h-full"
       ref={containerRef}
       suppressHydrationWarning
     />
