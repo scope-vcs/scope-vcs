@@ -3,6 +3,7 @@ import { PendingSurface } from '@/components/pending-surface'
 import { Button } from '@/components/ui/button'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
+import { HistoryFeedSkeleton } from '@/features/history/history-feed-state'
 import { useParams } from '@tanstack/react-router'
 import {
   AccessSection,
@@ -10,7 +11,11 @@ import {
   DangerZoneSection,
   REPOSITORY_DETAIL_FIELDS,
   RepositoryDetailsSection,
+  VisibilityChangesSection,
 } from './repo-settings-sections'
+import { VIEW_ROW_CLASS, ViewsSection } from './repo-views-section'
+
+const PENDING_VIEW_ROWS = ['public', 'private']
 
 export function RepoSettingsPending() {
   const { owner } = useParams({ from: '/$owner/$repo' })
@@ -30,6 +35,19 @@ export function RepoSettingsPending() {
               <Button disabled size="sm" type="button">Save details</Button>
             </div>
           </RepositoryDetailsSection>
+          <ViewsSection>
+            <ul className="divide-y divide-border text-sm">
+              {PENDING_VIEW_ROWS.map((row) => (
+                <li className={VIEW_ROW_CLASS} key={row}>
+                  <TextSkeleton length="short" />
+                  <TextSkeleton length="medium" size="meta" />
+                </li>
+              ))}
+            </ul>
+          </ViewsSection>
+          <VisibilityChangesSection>
+            <HistoryFeedSkeleton />
+          </VisibilityChangesSection>
           <CiSection>
             <TextSkeleton length="long" />
           </CiSection>

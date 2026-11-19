@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button'
-import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
@@ -94,20 +93,6 @@ export function DeleteAccountRow({ onDelete }: { onDelete?: () => void }) {
   )
 }
 
-export const SESSION_ROW_CLASS = 'flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between'
-
 export function CliSessionListSkeleton() {
-  return (
-    <ul className="divide-y divide-border border-t border-border">
-      {(['medium', 'long'] as const).map((length) => (
-        <li className={SESSION_ROW_CLASS} key={length}>
-          <div className="min-w-0">
-            <TextSkeleton length={length} />
-            <TextSkeleton className="mt-1" length="long" size="meta" />
-          </div>
-          <BlockSkeleton className="h-8 w-16 shrink-0" />
-        </li>
-      ))}
-    </ul>
-  )
+  return <TextSkeleton length="medium" />
 }

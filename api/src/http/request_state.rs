@@ -77,6 +77,14 @@ pub(crate) fn detail_response(
 ) -> Result<RequestDetailResponse, ApiError> {
     let checks = snapshot.checks_outcome();
     Ok(RequestDetailResponse {
+        author: super::responses::recorded_actor_response(
+            snapshot.request.author_user_id.as_deref(),
+            &snapshot.users,
+        )?,
+        claimer: super::responses::recorded_actor_response(
+            snapshot.claimer_user_id.as_deref(),
+            &snapshot.users,
+        )?,
         diff_stat: diff_stat.map(super::responses::diff_stat_response),
         stack_navigation: scope_api_contract::RequestStackNavigationResponse {
             parent: snapshot

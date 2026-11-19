@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { LoaderCircle } from 'lucide-react'
 import { useState } from 'react'
 import type { CliSessionResponse } from '@/api/types.generated'
-import { SESSION_ROW_CLASS } from './settings-sections'
+
+const SESSION_ROW_CLASS = 'flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between'
 
 export function CliSessionList({
   pending,

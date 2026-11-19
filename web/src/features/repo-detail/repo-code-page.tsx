@@ -1,14 +1,13 @@
 import type { RepoContent, RepoParams } from '@/api/types'
 import type { RepoSummaryResponse } from '@/api/types.generated'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
-import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { Button } from '@/components/ui/button'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
 import { useRepositorySearch } from '@/features/repo-search/repository-search-context'
 import type { CachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, ChevronDown, GitBranch, GitPullRequest, History } from 'lucide-react'
-import { RepoCloneDropdown } from './repo-clone-dropdown'
+import { CloneButton, RepoCloneDropdown } from './repo-clone-dropdown'
 import type { RepoFile } from './repo-file-highlight'
 import { useRepoViews } from './repo-layout-context'
 import { RepositoryCodeView } from './repository-code-view'
@@ -52,7 +51,7 @@ export function RepoCodePage({
                 view={view}
                 viewName={views.name(view)}
               />
-            ) : content.status === 'loading' && <BlockSkeleton className="h-8 w-24" />)}
+            ) : content.status === 'loading' && <CloneButton disabled />)}
           </>
         )}
         summary={(

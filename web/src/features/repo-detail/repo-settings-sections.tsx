@@ -1,6 +1,6 @@
 import { SectionRow, SectionRows } from '@/components/section-rows'
 import { Button } from '@/components/ui/button'
-import { CircleCheck, MailPlus, Trash2, Users } from 'lucide-react'
+import { CircleCheck, Eye, History, MailPlus, Trash2, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 export function RepositoryDetailsSection({ children }: { children: ReactNode }) {
@@ -9,6 +9,32 @@ export function RepositoryDetailsSection({ children }: { children: ReactNode }) 
       <SectionRow
         description="Help visitors understand the project. These details are public."
         title="Repository details"
+      >
+        {children}
+      </SectionRow>
+    </SectionRows>
+  )
+}
+
+export function VisibilityChangesSection({
+  children,
+  onOpenHistory,
+}: {
+  children: ReactNode
+  onOpenHistory?: () => void
+}) {
+  return (
+    <SectionRows>
+      <SectionRow
+        actions={(
+          <Button className="-ml-2.5 text-muted-foreground" disabled={!onOpenHistory} onClick={onOpenHistory} size="sm" type="button" variant="ghost">
+            <History />
+            Visibility history
+          </Button>
+        )}
+        description="How paths' visibility changed over time, including changes made by pushes."
+        icon={<Eye className="size-4" />}
+        title="Visibility changes"
       >
         {children}
       </SectionRow>

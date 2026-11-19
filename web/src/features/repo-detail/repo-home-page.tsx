@@ -4,12 +4,11 @@ import { PanelState } from '@/components/empty-state'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
-import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { Button } from '@/components/ui/button'
 import type { CachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
 import { Code, FileQuestion, TriangleAlert } from 'lucide-react'
-import { RepoCloneDropdown } from './repo-clone-dropdown'
+import { CloneButton, RepoCloneDropdown } from './repo-clone-dropdown'
 import { useRepoViews } from './repo-layout-context'
 import { hasRepositoryAbout, RepositoryAbout } from './repository-about'
 import { ReadmeSkeleton } from './repository-code-skeletons'
@@ -54,7 +53,7 @@ export function RepoHomePage({
                 view={view}
                 viewName={views.name(view)}
               />
-            ) : content.status === 'loading' && <BlockSkeleton className="h-8 w-24" />)}
+            ) : content.status === 'loading' && <CloneButton disabled />)}
             <RepoPrimaryActionButton
               repo={repo}
               requireOwner

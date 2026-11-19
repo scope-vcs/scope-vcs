@@ -1,13 +1,11 @@
 import type { RepoParams } from '@/api/types'
-import { SectionRow, SectionRows } from '@/components/section-rows'
-import { Button } from '@/components/ui/button'
 import { HistoryFeedState } from '@/features/history/history-feed-state'
 import { useHistoryFeed } from '@/features/history/history-feed'
 import { useRepositorySearch } from '@/features/repo-search/repository-search-context'
 import { VisibilityTimeline } from '@/features/history/visibility-timeline'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { viewingAsSearch } from '@/features/repo-detail/viewing-as'
-import { Eye, History } from 'lucide-react'
+import { VisibilityChangesSection } from '@/features/repo-detail/repo-settings-sections'
 import type { ViewId } from '@/api/types.generated'
 
 export function VisibilityLogSection({ params, view }: { params: RepoParams; view: ViewId }) {
@@ -15,29 +13,17 @@ export function VisibilityLogSection({ params, view }: { params: RepoParams; vie
   const history = useHistoryFeed({ view, feed: 'visibility', params })
   const search = useRepositorySearch()
   return (
-    <SectionRows>
-      <SectionRow
-        actions={(
-          <Button className="-ml-2.5 text-muted-foreground" onClick={() => search.open('visibility')} size="sm" type="button" variant="ghost">
-            <History />
-            Visibility history
-          </Button>
+    <VisibilityChangesSection onOpenHistory={() => search.open('visibility')}>
+      <HistoryFeedState empty="No visibility changes yet." resource={history.resource}>
+        {(page) => (
+          <VisibilityTimeline
+            entries={page.entries}
+            params={params}
+            search={viewingAsSearch(view, repo.access.view)}
+            view={view}
+          />
         )}
-        description="How paths' visibility changed over time, including changes made by pushes."
-        icon={<Eye className="size-4" />}
-        title="Visibility changes"
-      >
-        <HistoryFeedState empty="No visibility changes yet." resource={history.resource}>
-          {(page) => (
-            <VisibilityTimeline
-              entries={page.entries}
-              params={params}
-              search={viewingAsSearch(view, repo.access.view)}
-              view={view}
-            />
-          )}
-        </HistoryFeedState>
-      </SectionRow>
-    </SectionRows>
+      </HistoryFeedState>
+    </VisibilityChangesSection>
   )
 }
