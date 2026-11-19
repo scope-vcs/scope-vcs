@@ -6,3 +6,7 @@ export function isTypingTarget(target: EventTarget | null) {
     ) !== null
   )
 }
+
+export function overlayIsOpen() {
+  return document.querySelector(':popover-open, dialog[open], [role="dialog"], [role="alertdialog"]') !== null
+}

@@ -1,5 +1,5 @@
 import type { RequestQueueItemResponse, RequestQueueSection } from '@/api/types.generated'
-import { isTypingTarget } from '@/lib/keyboard-target'
+import { isTypingTarget, overlayIsOpen } from '@/lib/keyboard-target'
 import { useEffect } from 'react'
 import type { RequestAttentionCommand } from '../workspace/request-attention-api'
 
@@ -26,7 +26,7 @@ export function useRequestKeyboard({
       if (event.defaultPrevented || event.isComposing) return
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       if (isTypingTarget(event.target)) return
-      if (document.querySelector(':popover-open, [role="dialog"], [role="alertdialog"]')) return
+      if (overlayIsOpen()) return
 
       const links = [...document.querySelectorAll<HTMLElement>(ROW_LINK)].filter(
         (link) => link.offsetParent !== null,

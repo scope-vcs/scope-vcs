@@ -80,7 +80,7 @@ async function clickAfterHydration(locator) {
 }
 
 function waitForLifecycleBadge(page, label) {
-  return page.locator('.request-detail-pane').getByText(label, { exact: true }).filter({ visible: true }).waitFor()
+  return page.locator('.request-workspace-detail').getByText(label, { exact: true }).filter({ visible: true }).waitFor()
 }
 
 async function syncMain(actor) {

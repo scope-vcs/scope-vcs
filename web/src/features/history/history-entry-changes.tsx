@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button'
-import { isTypingTarget } from '@/lib/keyboard-target'
+import { isTypingTarget, overlayIsOpen } from '@/lib/keyboard-target'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import type { HistoryEntryDetailResponse } from '@/api/types.generated'
@@ -72,7 +72,7 @@ export function HistoryEntryChanges({
       if (event.defaultPrevented || event.isComposing) return
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       if (isTypingTarget(event.target)) return
-      if (document.querySelector(':popover-open, [role="dialog"], [role="alertdialog"]')) return
+      if (overlayIsOpen()) return
       event.preventDefault()
       stepFromKeyboard(event.key === 'j' ? 1 : -1)
     }

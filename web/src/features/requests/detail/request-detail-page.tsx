@@ -15,7 +15,6 @@ import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
   ShieldQuestion,
-  SlidersHorizontal,
   UserRound,
   UserRoundMinus,
 } from 'lucide-react'
@@ -36,14 +35,12 @@ import { RequestStackContext } from './request-stack-context'
 import { RequestChecksSection } from '../checks/request-checks-section'
 import { RequestCiApproval } from '../checks/request-ci-approval'
 import { RequestDetailHeader } from './request-detail-header'
-import { RequestDetails, RequestDetailsProvider } from './request-details'
-import { RequestDetailsSurface } from './request-details-surface'
+import { RequestDetailsMenu } from './request-details'
 import type { RequestActivityPage } from '../discussion/request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from '../discussion/request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
 import { RequestMoreMenu } from './request-more-menu'
-import { useRequestDetailsRailVisibility } from './use-request-details-rail-visibility'
 import { useElementHeight } from './use-element-height'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
@@ -170,12 +167,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     repo: params.repo,
     request_id: request.id,
   }), [params.owner, params.repo, request.id])
-  const paneRef = useRef<HTMLDivElement>(null)
   const moreActions = useRef<HTMLButtonElement>(null)
-  const detailsButton = useRef<HTMLButtonElement>(null)
-  const [detailsOpen, setDetailsOpen] = useState(false)
-  const rail = useRequestDetailsRailVisibility(paneRef, detailsButton)
-  if (rail && detailsOpen) setDetailsOpen(false)
   const [lifecycleBar, setLifecycleBar] = useState<HTMLDivElement | null>(null)
   const actionClearance = useElementHeight(lifecycleBar)
   useLayoutEffect(() => {
@@ -208,8 +200,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       viewerId={viewerId ?? 'anonymous'}
     >
       <div
-        className="request-detail-pane scope-content-enter w-full"
-        ref={paneRef}
+        className="scope-content-enter w-full"
       >
         <RequestDetailHeader
           actions={
@@ -219,17 +210,15 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 diffStat={state.detail.diff_stat}
                 params={{ ...params, requestId: request.id }}
               />
-              <Button
-                className="request-details-trigger"
-                onClick={() => setDetailsOpen(true)}
-                ref={detailsButton}
-                size="sm"
-                type="button"
-                variant="secondary"
-              >
-                <SlidersHorizontal />
-                Details
-              </Button>
+              <RequestDetailsMenu
+                actions={requestActions}
+                key={identity}
+                loadRatings={loadRatings}
+                onRate={rateRequest}
+                params={requestParams}
+                ratingsIdentity={identity}
+                request={request}
+              />
               {canClaim ? (
                 <Button onClick={workspace.claim} size="sm" type="button" variant="secondary">
                   <UserRound />
@@ -292,35 +281,14 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           error={checks.error}
           params={params}
         />
-        <RequestDetailsProvider value={{
-          actions: requestActions,
-          onRate: rateRequest,
-          params: requestParams,
-          active: rail || detailsOpen,
-          loadRatings,
-          ratingsIdentity: identity,
-          request,
-        }}>
-          <div className="request-detail-layout">
-            <div
-              className="request-detail-document pt-4"
-            >
-              <RequestDescription
-                canEdit={request.permissions.can_edit_identity}
-                description={description}
-                onSave={saveDescription}
-              />
-              <div className="min-w-0">{children}</div>
-            </div>
-            <RequestDetailsSurface
-              onOpenChange={setDetailsOpen}
-              open={detailsOpen}
-              returnFocus={detailsButton}
-            >
-              <RequestDetails />
-            </RequestDetailsSurface>
-          </div>
-        </RequestDetailsProvider>
+        <div className="min-w-0 pt-4">
+          <RequestDescription
+            canEdit={request.permissions.can_edit_identity}
+            description={description}
+            onSave={saveDescription}
+          />
+          <div className="min-w-0">{children}</div>
+        </div>
 
         <RequestActivityDrawer
           activity={history.activity}

@@ -364,10 +364,6 @@ html[data-focus] .application-topbar {
   margin-inline: auto;
 }
 
-.request-workspace-shell[data-focus] .request-workspace-detail aside {
-  display: none;
-}
-
 .request-workspace-focus-hint {
   position: fixed;
   top: 12px;

@@ -1,3 +1,5 @@
+const VIEWPORT_GUTTER = 16
+
 export function autoPopoverOffset({
   anchorLeft,
   anchorWidth,
@@ -9,8 +11,9 @@ export function autoPopoverOffset({
   panelWidth: number
   viewportWidth: number
 }) {
-  if (anchorLeft + panelWidth <= viewportWidth) return 0
-  const endAligned = anchorWidth - panelWidth
-  if (anchorLeft + endAligned >= 0) return endAligned
-  return Math.max(viewportWidth - panelWidth - anchorLeft, -anchorLeft)
+  const lastPanelLeft = viewportWidth - VIEWPORT_GUTTER - panelWidth
+  if (anchorLeft <= lastPanelLeft) return Math.max(VIEWPORT_GUTTER, anchorLeft) - anchorLeft
+  const endAligned = anchorLeft + anchorWidth - panelWidth
+  if (endAligned >= VIEWPORT_GUTTER && endAligned <= lastPanelLeft) return endAligned - anchorLeft
+  return Math.max(VIEWPORT_GUTTER, lastPanelLeft) - anchorLeft
 }
