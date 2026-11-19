@@ -101,7 +101,30 @@ fn fetch_main_projection(
         .context("Scope main projection did not produce a local remote ref")
 }
 
-const STALE_REQUEST_PUSH_ERROR: &str = "Someone else updated this request. Fetch it and try again.";
+enum RequestLeaseConflict<'a> {
+    MovedOnServer,
+    UnseenOnBranch {
+        request_id: &'a str,
+        request_head_oid: &'a str,
+    },
+}
+
+impl From<RequestLeaseConflict<'_>> for CliError {
+    fn from(conflict: RequestLeaseConflict<'_>) -> Self {
+        match conflict {
+            RequestLeaseConflict::MovedOnServer => {
+                Self::conflict("Someone else updated this request. Fetch it and try again.")
+            }
+            RequestLeaseConflict::UnseenOnBranch {
+                request_id,
+                request_head_oid,
+            } => Self::conflict(format!(
+                "This branch has no record of request head {}, which happens when a rebase was prepared on a different branch. Run `scope request checkout --request {request_id}`, rebase there with `scope request restack`, and push again.",
+                short_oid(request_head_oid)
+            )),
+        }
+    }
+}
 
 pub(super) fn push_request_head(
     target: &ScopeRemote,
@@ -126,7 +149,7 @@ pub(super) fn push_request_head(
 
 pub(super) fn request_push_error(error: anyhow::Error, request_id: &str) -> anyhow::Error {
     if error.is::<StaleRefLease>() {
-        CliError::conflict(STALE_REQUEST_PUSH_ERROR).into()
+        CliError::from(RequestLeaseConflict::MovedOnServer).into()
     } else {
         error.context(format!("push request branch for {request_id}"))
     }
@@ -146,7 +169,11 @@ pub(super) fn last_seen_request_head(
     {
         return Ok(lease);
     }
-    Err(CliError::conflict(STALE_REQUEST_PUSH_ERROR).into())
+    Err(CliError::from(RequestLeaseConflict::UnseenOnBranch {
+        request_id: &request.id,
+        request_head_oid: &lease,
+    })
+    .into())
 }
 
 fn branch_reflog_includes(git_repo: &GitRepo, branch: &str, oid: &str) -> anyhow::Result<bool> {

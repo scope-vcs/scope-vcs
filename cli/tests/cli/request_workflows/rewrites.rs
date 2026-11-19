@@ -389,10 +389,71 @@ fn request_push_without_a_seen_head_only_builds_on_the_current_head() {
     let error: Value = serde_json::from_str(stderr.lines().last().unwrap()).unwrap();
     assert_eq!(
         error["message"],
-        "Someone else updated this request. Fetch it and try again."
+        format!(
+            "This branch has no record of request head {}, which happens when a rebase was prepared on a different branch. Run `scope request checkout --request req_one`, rebase there with `scope request restack`, and push again.",
+            &someone_else[..7]
+        )
     );
     assert_eq!(
         git_stdout(bare.path(), ["rev-parse", "refs/heads/fix-one"]),
         someone_else
+    );
+}
+
+#[test]
+fn request_push_from_a_rebase_on_a_new_branch_names_the_unseen_request_head() {
+    let dir = TempDir::new("request-push-rebased-branch");
+    create_repo_with_head(dir.path());
+    let base = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    run_git(dir.path(), ["switch", "--quiet", "-c", "fix-one"]);
+    fs::write(dir.path().join("fix.txt"), "fix\n").unwrap();
+    let published = commit_all(dir.path(), "Fix one");
+    let bare = TempDir::new("request-push-rebased-branch-bare");
+    run_git(bare.path(), ["init", "--bare"]);
+    run_git(
+        dir.path(),
+        ["push", bare.path().to_str().unwrap(), "main", "fix-one"],
+    );
+    run_git(dir.path(), ["switch", "--quiet", "main"]);
+    fs::write(dir.path().join("main.txt"), "main moved\n").unwrap();
+    commit_all(dir.path(), "Main moved");
+    run_git(dir.path(), ["switch", "--quiet", "-c", "fix-one-rebased"]);
+    fs::write(dir.path().join("fix.txt"), "fix\n").unwrap();
+    commit_all(dir.path(), "Fix one");
+
+    let mut detail = request();
+    detail["main_ancestor_oid"] = base.clone().into();
+    detail["base"]["review_base_oid"] = base.clone().into();
+    detail["head_oid"] = published.clone().into();
+    detail["mergeability"]["current_main_oid"] = base.into();
+    detail["mergeability"]["request_head_oid"] = published.clone().into();
+    let server = FixtureServer::with_request(detail);
+    let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+    let output = transport
+        .command(&server, dir.path())
+        .args([
+            "--json",
+            "request",
+            "push",
+            "--remote",
+            "scope",
+            "--request",
+            "req_one",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let error: Value = serde_json::from_str(stderr.lines().last().unwrap()).unwrap();
+    assert_eq!(
+        error["message"],
+        format!(
+            "This branch has no record of request head {}, which happens when a rebase was prepared on a different branch. Run `scope request checkout --request req_one`, rebase there with `scope request restack`, and push again.",
+            &published[..7]
+        )
+    );
+    assert_eq!(
+        git_stdout(bare.path(), ["rev-parse", "refs/heads/fix-one"]),
+        published
     );
 }
