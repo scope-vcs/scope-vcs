@@ -440,6 +440,28 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     lines
 }
 
+pub(super) fn github_delivery_lines(checks: &RequestChecksResponse) -> Vec<String> {
+    let Some(push) = &checks.github_push else {
+        return Vec::new();
+    };
+    let watch = "Watch it with `scope request ci`.";
+    let head = short_oid(checks.head_oid.as_str());
+    let branch = terminal_text(&push.branch);
+    let queued = match (push.state, push.error.as_deref().map(terminal_text)) {
+        (RequestGitHubPushState::Sending, None) => {
+            format!("GitHub: head {head} is queued for {branch}; its checks start once it arrives.")
+        }
+        (RequestGitHubPushState::Sending, Some(error)) => format!(
+            "GitHub: head {head} is queued for {branch}; its checks start once it arrives. The last attempt failed: {error}"
+        ),
+        (RequestGitHubPushState::AwaitingApproval, _) => format!(
+            "GitHub: head {head} waits for maintainer approval before going to {branch}; its checks start once it arrives."
+        ),
+        _ => github_push_line(push),
+    };
+    vec![queued, watch.to_string()]
+}
+
 fn github_push_line(push: &RequestGitHubPushResponse) -> String {
     let branch = terminal_text(&push.branch);
     let error = push.error.as_deref().map(terminal_text);

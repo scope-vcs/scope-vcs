@@ -99,6 +99,7 @@ pub(crate) fn stack_server_with_base(
             request["head_oid"]=String::from_utf8_lossy(&head.stdout).trim().into();
             Json(json!({"request":request,"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})}))
         } }))
+        .route("/v1/repos/owner/repo/requests/req_child/checks", get(|| async { Json(checks_evaluation("started", None)) }))
         .route("/v1/repos/owner/repo/requests/req_child/changes", get(move |Query(query):Query<HashMap<String,String>>| { let child=history_child.clone(); let accepted=accepted_read.clone(); let bare=bare.clone(); let revisions=revisions.clone(); async move {
             if query.get("revision").is_some_and(|revision| revision == "rev_context") {
                 let accepted=accepted.lock().unwrap().clone().unwrap();

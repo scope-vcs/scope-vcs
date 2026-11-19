@@ -244,12 +244,15 @@ pub(super) fn push_request_branch(
     .map_err(|error| recover("update_remote_ref", error))?;
     let detail = get_request(api, api_target(&context, &request_id))
         .map_err(|error| recover("refresh_request", error))?;
+    let checks = crate::api::request_checks(api, api_target(&context, &request_id))
+        .map_err(|error| recover("refresh_request", error))?;
     if pending.is_some() {
         restack::state::clear(git_repo)
             .map_err(|error| recover("clear_restack_selection", error))?;
     }
     let mut human_lines = repo_access_lines(&context.repo);
     human_lines.extend(request_detail_lines(&detail, &context.views));
+    human_lines.extend(super::render::github_delivery_lines(&checks));
     let result = DetailResult {
         repo: context.repo,
         detail,
