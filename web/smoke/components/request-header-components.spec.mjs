@@ -69,7 +69,10 @@ test('request header keeps its state, facts, actions, and checks aligned across 
   const tooltipName = 'CI runs publicly, so these changes are public.'
   await page.getByRole('button', { name: 'Public', exact: true }).hover()
   await page.getByRole('tooltip', { name: tooltipName }).waitFor()
-  await page.getByRole('button', { name: 'More request actions', exact: true }).click()
+  const moreActions = page.getByRole('button', { name: 'More request actions', exact: true })
+  const closedMoreActions = await moreActions.boundingBox()
+  await moreActions.click()
+  assert.deepEqual(await moreActions.boundingBox(), closedMoreActions, 'Opening more actions keeps the trigger in place')
   assert.equal(
     await page.getByRole('dialog', { name: 'More request actions' }).getByRole('link', { name: 'Browse code', exact: true }).getAttribute('href'),
     '/adamblumoff/scope-vcs/code?request=request',

@@ -85,7 +85,7 @@
   height: 0.875rem;
 }
 
-.request-detail-header-facts [data-size="icon-sm"]:last-child:not(dialog *) {
+.request-detail-header-facts [data-size="icon-sm"]:nth-last-child(1 of :not(dialog)):not(dialog *) {
   margin-inline-end: -0.4375rem;
 }
 
@@ -102,7 +102,7 @@
     display: inline;
   }
 
-  .request-detail-header-facts [data-size="icon-sm"]:last-child:not(dialog *) {
+  .request-detail-header-facts [data-size="icon-sm"]:nth-last-child(1 of :not(dialog)):not(dialog *) {
     margin-inline-end: 0;
   }
 }
