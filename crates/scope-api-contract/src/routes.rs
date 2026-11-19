@@ -153,6 +153,7 @@ routes! {
             );
         REPO_FILES = "/v1/repos/{owner}/{repo}/files" => "repoFiles";
         REPO_FILE_CONTENT = "/v1/repos/{owner}/{repo}/files/content" => "repoFileContent";
+        REPO_LANGUAGES = "/v1/repos/{owner}/{repo}/languages" => "repoLanguages";
         REPO_REQUEST_REVISION_CONTEXT = "/v1/repos/{owner}/{repo}/requests/{request_id}/revision-context"
             => "repoRequestRevisionContext",
             repo_request_revision_context(owner: &str, repo: &str, request_id: &str);

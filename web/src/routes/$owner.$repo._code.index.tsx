@@ -3,6 +3,7 @@ import { RepoHomePage } from '@/features/repo-detail/repo-home-page'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { RepositoryCodePending } from '@/features/repo-detail/repository-code-pending'
 import { useRepoCodeResources } from '@/features/repo-detail/use-repo-code-resources'
+import { useRepoLanguages } from '@/features/repo-detail/use-repo-languages'
 import { createFileRoute } from '@tanstack/react-router'
 
 const MAIN = { kind: 'main' } as const
@@ -22,5 +23,6 @@ function RepoHomeRoute() {
     repo,
     version: MAIN,
   })
-  return <RepoHomePage {...code} params={params} repo={repo} />
+  const languages = useRepoLanguages({ params, repo })
+  return <RepoHomePage {...code} languages={languages.value} params={params} repo={repo} />
 }

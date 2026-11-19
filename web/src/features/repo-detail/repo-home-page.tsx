@@ -1,6 +1,7 @@
 import type { RepoContent, RepoParams } from '@/api/types'
 import type {
   RepoFileContentResponse,
+  RepoLanguageResponse,
   RepoSummaryResponse,
 } from '@/api/types.generated'
 import { PanelState } from '@/components/empty-state'
@@ -16,6 +17,7 @@ import { RepoCloneDropdown } from './repo-clone-dropdown'
 import { useRepoViews } from './repo-layout-context'
 import { hasRepositoryAbout, RepositoryAbout } from './repository-about'
 import { ReadmeSkeleton } from './repository-code-skeletons'
+import { RepositoryLanguageBar } from './repository-language-bar'
 import { RepositoryFileContent } from './repository-file-content'
 import { RepoViewingAsPicker, useViewingAs } from './use-viewing-as'
 import { ViewingAsStatus } from './viewing-as-picker'
@@ -25,12 +27,14 @@ const MAIN = { kind: 'main' } as const
 export function RepoHomePage({
   content,
   file,
+  languages,
   params,
   repo,
   selectedPath,
 }: {
   content: CachedResource<RepoContent>
   file: CachedResource<RepoFileContentResponse>
+  languages: readonly RepoLanguageResponse[] | null
   params: RepoParams
   repo: RepoSummaryResponse
   selectedPath: string | null
@@ -77,7 +81,8 @@ export function RepoHomePage({
         title="Home"
         titleHidden
       />
-      <section aria-label="Repository README" className="border-t border-border">
+      <RepositoryLanguageBar languages={languages} />
+      <section aria-label="Repository README">
         <RepositoryReadme content={content} file={file} params={params} ready={ready} selectedPath={selectedPath} />
       </section>
     </WorkbenchPane>

@@ -4,7 +4,7 @@ use super::{
     landing_files::repository_landing_file,
     projection_read_models::{
         ProjectionFileLookup, load_live_projection_file_for_view,
-        load_live_projection_files_for_view,
+        load_live_projection_file_sizes_for_view, load_live_projection_files_for_view,
     },
     repository_from_model,
 };
@@ -21,6 +21,7 @@ use {
         projection_views::{
             ProjectionViewFile, ProjectionViewFileContent, has_visible_projected_non_control_files,
             projected_file_content as domain_projected_file_content,
+            projected_file_contents as domain_projected_file_contents,
             projected_files as domain_projected_files,
         },
         repository::access::{
@@ -132,6 +133,20 @@ impl RepositoryStore {
         Ok(files)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repo_live_file_sizes"))]
+    pub async fn repo_live_file_sizes(
+        &self,
+        owner: &str,
+        name: &str,
+        viewer_user_id: Option<&str>,
+        view: Option<&ViewId>,
+    ) -> Result<Option<Vec<(String, u64)>>, PostgresError> {
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let sizes = repo_live_file_sizes_tx(&tx, owner, name, viewer_user_id, view).await?;
+        tx.commit().await?;
+        Ok(sizes)
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repo_live_file_with_landing_content"))]
     pub async fn repo_live_file_with_landing_content(
         &self,
@@ -229,6 +244,42 @@ where
         repo.repo_config.views(),
         view,
     )))
+}
+
+async fn repo_live_file_sizes_tx<C>(
+    conn: &C,
+    owner: &str,
+    name: &str,
+    viewer_user_id: Option<&str>,
+    requested_view: Option<&ViewId>,
+) -> Result<Option<Vec<(String, u64)>>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let Some((row, access)) = readable_repo_row(conn, owner, name, viewer_user_id).await? else {
+        return Ok(None);
+    };
+
+    let view = readable_view(&access, &row.views()?, requested_view)?;
+    if let Some(sizes) =
+        load_live_projection_file_sizes_for_view(conn, &row.id, row.content_version()?, view)
+            .await?
+    {
+        return Ok(Some(sizes));
+    }
+
+    let repo = hydrate_repo_from_row_id(conn, &row.id).await?;
+    Ok(Some(
+        domain_projected_file_contents(&repo, repo.repo_config.views(), view)
+            .into_iter()
+            .map(|content| {
+                (
+                    content.file.path.as_str().to_string(),
+                    content.blob.size_bytes,
+                )
+            })
+            .collect(),
+    ))
 }
 
 async fn repo_live_file_with_landing_content_tx<C>(

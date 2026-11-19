@@ -10,6 +10,7 @@ use scope_domain::{
         ProjectionViewFile, projection_preview, repo_scope_path as domain_repo_scope_path,
     },
 };
+use scope_languages::language_breakdown;
 use scope_postgres::db::{RepositoryProjectionSource, RepositoryReadPolicy};
 use serde::{Deserialize, Serialize};
 
@@ -57,6 +58,14 @@ pub(crate) struct RepoFileResponse {
     pub(crate) oid: String,
     pub(crate) tracked: bool,
     pub(crate) label: ViewId,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct RepoLanguageResponse {
+    pub(crate) name: String,
+    pub(crate) color: String,
+    pub(crate) bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -115,6 +124,21 @@ pub(crate) fn projection_preview_response(
 
 pub(crate) fn projection_file_responses(files: Vec<ProjectionViewFile>) -> Vec<RepoFileResponse> {
     files.into_iter().map(repo_file_response).collect()
+}
+
+pub(crate) fn language_responses(file_sizes: &[(String, u64)]) -> Vec<RepoLanguageResponse> {
+    language_breakdown(
+        file_sizes
+            .iter()
+            .map(|(path, bytes)| (path.as_str(), *bytes)),
+    )
+    .into_iter()
+    .map(|share| RepoLanguageResponse {
+        name: share.name.to_string(),
+        color: share.color.to_string(),
+        bytes: share.bytes,
+    })
+    .collect()
 }
 
 pub(crate) fn repo_scope_path(path: &str) -> Result<ScopePath, ApiError> {

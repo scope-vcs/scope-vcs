@@ -183,6 +183,7 @@ pub fn router(state: AppState) -> Router {
             post(http::repos::create_push_intent),
         )
         .route(routes::REPO_FILES, get(http::repos::get_files))
+        .route(routes::REPO_LANGUAGES, get(http::repos::get_languages))
         .route(
             routes::REPO_FILE_CONTENT,
             get(http::repos::get_file_content),
