@@ -1,7 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
-import { SlidersHorizontal } from 'lucide-react'
+import { ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { RequestChecksResponse, RequestQueueItemResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { RequestChecksSection } from '@/features/requests/checks/request-checks-section'
@@ -75,7 +75,7 @@ function App() {
   const more = useRef<HTMLButtonElement | null>(null)
   const shown = STATES[stateName]
   Object.assign(window, { setBranch: setName, setState: setStateName })
-  return <main className="request-detail-pane">
+  return <main>
     <RequestWorkspaceProvider value={{
       selected: { author: { handle: 'adamblumoff' }, claimer: null } as RequestQueueItemResponse,
       claim: () => {}, release: () => {},
@@ -89,7 +89,7 @@ function App() {
         }
         actions={<>
           <RequestChangesMenu activity={activity} diffStat={{ additions: 5495, deletions: 2578, changed_files: 203 }} params={requestParams} />
-          <Button className="request-details-trigger" size="sm" variant="secondary"><SlidersHorizontal />Details</Button>
+          <Button size="sm" variant="secondary"><SlidersHorizontal />Details<ChevronDown /></Button>
           <RequestMoreMenu actions={actions} disabled={false} onViewActivity={() => {}} params={params} request={shown.request} triggerRef={more} />
         </>}
       />

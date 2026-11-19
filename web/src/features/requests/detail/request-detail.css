@@ -1,30 +1,3 @@
-.request-detail-pane {
-  container: request-detail-pane / inline-size;
-}
-
-.request-details-rail {
-  display: none;
-}
-
-@container request-detail-pane (min-width: 1040px) {
-  .request-detail-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
-  }
-
-  .request-details-rail {
-    display: block;
-  }
-
-  .request-details-rail .request-details-body {
-    padding-inline-end: var(--app-inset);
-  }
-
-  .request-details-trigger {
-    display: none;
-  }
-}
-
 .request-detail-header {
   container: request-detail-header / inline-size;
 }
@@ -105,10 +78,6 @@
   .request-detail-header-facts [data-size="icon-sm"]:last-child:not(dialog *) {
     margin-inline-end: 0;
   }
-}
-
-.request-detail-document {
-  min-width: 0;
 }
 
 @media (max-width: 700px) {

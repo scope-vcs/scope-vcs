@@ -1,103 +1,132 @@
 import type { RequestParams } from '@/api/types'
 import type { RequestRatingResponse, RequestRatingsResponse, RequestSummaryResponse } from '@/api/types.generated'
-import { shortOid } from '@/lib/short-oid'
-import { DetailsBody, DetailsSection, DetailsValue } from './request-details-layout'
-import { createContext, type ReactNode, use } from 'react'
-import { RequestInvitees } from './request-invitees'
-import { useCachedResource } from '@/lib/use-cached-resource'
-import { requestRatingsResource } from './request-ratings-resource'
-import { Button } from '@/components/ui/button'
-import { RequestRatingsSection } from './request-ratings-section'
 import type { RateRequestInput } from '@/api/requests'
-import {
-  requestViewLabel,
-  requestAuthorRoleLabel,
-} from './request-labels'
 import { AbsoluteTimestamp } from '@/components/timestamp'
-import type { RequestActionController } from './use-request-actions'
+import { Button } from '@/components/ui/button'
+import { Popover } from '@/components/ui/popover'
+import { shortOid } from '@/lib/short-oid'
+import { useCachedResource } from '@/lib/use-cached-resource'
+import { ChevronDown, Copy, SlidersHorizontal } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { toast } from 'sonner'
 import { useRepoViews } from '../../repo-detail/repo-layout-context'
+import { requestAuthorRoleLabel, requestViewLabel } from './request-labels'
+import { DetailsRow } from './request-details-layout'
 import { requestShowsInvitees } from './request-lifecycle-model'
+import { RequestInvitees } from './request-invitees'
+import { RequestRatingsSection } from './request-ratings-section'
+import { requestRatingsResource } from './request-ratings-resource'
+import type { RequestActionController } from './use-request-actions'
 
 type RequestDetailsProps = {
   actions: RequestActionController
+  loadRatings: (signal: AbortSignal) => Promise<RequestRatingsResponse>
   onRate: (input: RateRequestInput) => Promise<RequestRatingResponse>
   params: RequestParams
-  active: boolean
-  loadRatings: (signal: AbortSignal) => Promise<RequestRatingsResponse>
   ratingsIdentity: string
   request: RequestSummaryResponse
 }
 
-type RequestDetailsContextValue = RequestDetailsProps & {
-  ratings: RequestRatingsResponse | null
-  ratingsError: string | null
-  retryRatings: () => void
-}
-
-const RequestDetailsContext = createContext<RequestDetailsContextValue | null>(null)
-
-export function RequestDetailsProvider({ children, value }: { children: ReactNode; value: RequestDetailsProps }) {
-  const ratings = useCachedResource({
-    enabled: value.active,
-    fallbackError: 'Participant ratings are unavailable.',
-    identity: value.ratingsIdentity,
-    load: value.loadRatings,
-    resource: requestRatingsResource,
-  })
+export function RequestDetailsMenu(props: RequestDetailsProps) {
   return (
-    <RequestDetailsContext value={{ ...value, ratings: ratings.value, ratingsError: ratings.error, retryRatings: ratings.retry }}>
-      {children}
-    </RequestDetailsContext>
+    <Popover
+      align="auto"
+      className="max-h-[calc(100dvh-8rem)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto p-0"
+      label="Request details"
+      renderPanel={() => <RequestDetails {...props} />}
+      renderTrigger={(trigger) => (
+        <Button size="sm" type="button" variant="secondary" {...trigger}>
+          <SlidersHorizontal />
+          Details
+          <ChevronDown />
+        </Button>
+      )}
+    />
   )
 }
 
-export function RequestDetails() {
-  const context = use(RequestDetailsContext)
+function RequestDetails({ actions, loadRatings, onRate, params, ratingsIdentity, request }: RequestDetailsProps) {
   const views = useRepoViews()
-  if (!context) throw new Error('Request details context is unavailable')
-  const { actions, onRate, params, ratings, ratingsError, retryRatings, request } = context
+  const ratings = useCachedResource({
+    fallbackError: 'Participant ratings are unavailable.',
+    identity: ratingsIdentity,
+    load: loadRatings,
+    resource: requestRatingsResource,
+  })
+  const reviewBase = request.base.kind === 'main' ? request.base.review_base_oid : request.base.head_oid
+  const checkout = `git fetch origin\ngit switch --track origin/${request.name}`
   return (
-    <DetailsBody label="Request details">
-      <DetailsSection title="Lifecycle">
-        <DetailsValue label="Author" value={requestAuthorRoleLabel(request)} />
-        <DetailsValue label="View" value={requestViewLabel(request, views)} />
-        <DetailsValue
-          label="Submitted"
-          value={<AbsoluteTimestamp value={request.submitted_at_unix} />}
-        />
+    <div className="divide-y divide-border text-xs">
+      <DetailsGroup>
+        <DetailsRow label="Author">{requestAuthorRoleLabel(request)}</DetailsRow>
+        <DetailsRow label="View">{requestViewLabel(request, views)}</DetailsRow>
+        <DetailsRow label="Submitted"><AbsoluteTimestamp value={request.submitted_at_unix} /></DetailsRow>
         {request.closed_at_unix !== null && (
-          <DetailsValue
-            label="Closed"
-            value={<AbsoluteTimestamp value={request.closed_at_unix} />}
-          />
+          <DetailsRow label="Closed"><AbsoluteTimestamp value={request.closed_at_unix} /></DetailsRow>
         )}
         {request.merged_at_unix !== null && (
-          <DetailsValue
-            label="Merged"
-            value={<AbsoluteTimestamp value={request.merged_at_unix} />}
-          />
+          <DetailsRow label="Merged"><AbsoluteTimestamp value={request.merged_at_unix} /></DetailsRow>
         )}
-      </DetailsSection>
+      </DetailsGroup>
 
       {requestShowsInvitees(request, views) ? (
-        <RequestInvitees actions={actions} request={request} />
+        <DetailsGroup>
+          <RequestInvitees actions={actions} request={request} />
+        </DetailsGroup>
       ) : null}
 
-      {ratings ? <RequestRatingsSection initial={ratings} onRate={onRate} params={params} /> : (
-        <DetailsSection title="Participant ratings">
-          <p className="text-xs text-muted-foreground" role={ratingsError ? 'alert' : 'status'}>
-            {ratingsError ?? 'Loading participant ratings…'}
-          </p>
-          {ratingsError ? <Button onClick={retryRatings} size="sm" variant="secondary">Try again</Button> : null}
-        </DetailsSection>
-      )}
+      <DetailsGroup>
+        <DetailsRow action={<CopyButton label="head commit" value={request.head_oid} />} label="Head">
+          <code className="font-mono">{shortOid(request.head_oid)}</code>
+        </DetailsRow>
+        <DetailsRow action={<CopyButton label="review base commit" value={reviewBase} />} label="Review base">
+          <code className="font-mono">{shortOid(reviewBase)}</code>
+        </DetailsRow>
+        <DetailsRow label="Main ancestor">
+          <code className="font-mono">{shortOid(request.main_ancestor_oid)}</code>
+          {request.main_ancestor_oid === reviewBase ? <span className="ml-1.5 text-muted-foreground">same as base</span> : null}
+        </DetailsRow>
+        <div className="mt-1.5 flex min-w-0 items-center gap-1 rounded-md bg-muted py-1 pr-1 pl-2">
+          <code className="min-w-0 flex-1 truncate font-mono" title={checkout}>git switch --track origin/{request.name}</code>
+          <CopyButton label="checkout commands" value={checkout} />
+        </div>
+      </DetailsGroup>
 
-      <DetailsSection title="Git state">
-        <DetailsValue label="Review base" value={<code className="font-mono">{shortOid(request.base.kind === 'main' ? request.base.review_base_oid : request.base.head_oid)}</code>} />
-        <DetailsValue label="Main ancestor" value={<code className="font-mono">{shortOid(request.main_ancestor_oid)}</code>} />
-        <DetailsValue label="Head" value={<code className="font-mono">{shortOid(request.head_oid)}</code>} />
-        <pre className="mt-1 min-w-0 whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 font-mono text-xs leading-5"><code>{`git fetch origin\ngit switch --track origin/${request.name}`}</code></pre>
-      </DetailsSection>
-    </DetailsBody>
+      <DetailsGroup>
+        {ratings.value ? (
+          <RequestRatingsSection initial={ratings.value} onRate={onRate} params={params} />
+        ) : (
+          <DetailsRow
+            action={ratings.error ? <Button className="h-6 px-1.5 text-xs" onClick={ratings.retry} size="sm" type="button" variant="ghost">Try again</Button> : null}
+            label="Ratings"
+          >
+            <span className="text-muted-foreground" role={ratings.error ? 'alert' : 'status'}>
+              {ratings.error ?? 'Loading…'}
+            </span>
+          </DetailsRow>
+        )}
+      </DetailsGroup>
+    </div>
+  )
+}
+
+function DetailsGroup({ children }: { children: ReactNode }) {
+  return <section className="px-3 py-2">{children}</section>
+}
+
+function CopyButton({ label, value }: { label: string; value: string }) {
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+    } catch {
+      toast.error('Copy failed')
+      return
+    }
+    toast.success('Copied')
+  }
+  return (
+    <Button aria-label={`Copy ${label}`} onClick={() => void copy()} size="icon-xs" title={`Copy ${label}`} type="button" variant="ghost">
+      <Copy />
+    </Button>
   )
 }

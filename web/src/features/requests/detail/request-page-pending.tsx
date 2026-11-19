@@ -6,7 +6,6 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
 import { RequestChecksPending } from '../checks/request-checks-pending'
-import { RequestDetailsSkeleton } from './request-details-layout'
 import { ChildRoutesPending } from '@/components/child-routes-pending'
 import { RequestChangesScreen } from '../changes/request-changes-screen'
 import './request-detail.css'
@@ -28,7 +27,7 @@ export function RequestDetailPagePending() {
   const { isSignedIn } = useAuth()
   return (
     <PendingSurface label="Loading request">
-      <div className="request-detail-pane w-full">
+      <div className="w-full">
         <header className="request-detail-header px-(--app-inset) pb-2 pt-3 min-[701px]:pt-6">
           <TextSkeleton className="mb-3 py-1 min-[701px]:hidden" length="short" size="meta" />
           <TextSkeleton length="xlong" size="heading" />
@@ -40,27 +39,22 @@ export function RequestDetailPagePending() {
             <TextSkeleton className="h-5 py-1" length="long" size="meta" />
             <div className="request-detail-header-actions">
               <BlockSkeleton className="h-7 w-44" />
-              <BlockSkeleton className="request-details-trigger h-7 w-24" />
+              <BlockSkeleton className="h-7 w-24" />
               <BlockSkeleton className="size-7" />
             </div>
           </div>
         </header>
         <RequestChecksPending />
-        <div className="request-detail-layout">
-          <div className="request-detail-document pt-4">
-            <section className="min-w-0 border-b border-border px-(--app-inset) pb-5">
-              <TextSkeleton className="h-6 py-1" length="xlong" />
-            </section>
-            <div className="min-w-0">
-              <ChildRoutesPending
-                below="/$owner/$repo/requests/$requestId/_discussion"
-                fallback={<DiscussionSkeleton />}
-              />
-            </div>
+        <div className="min-w-0 pt-4">
+          <section className="min-w-0 border-b border-border px-(--app-inset) pb-5">
+            <TextSkeleton className="h-6 py-1" length="xlong" />
+          </section>
+          <div className="min-w-0">
+            <ChildRoutesPending
+              below="/$owner/$repo/requests/$requestId/_discussion"
+              fallback={<DiscussionSkeleton />}
+            />
           </div>
-          <aside className="request-details-rail min-w-0 border-l border-border">
-            <RequestDetailsSkeleton />
-          </aside>
         </div>
         {isSignedIn ? (
           <div className="fixed inset-x-0 bottom-0 z-30 flex justify-end gap-2 border-t border-border bg-background px-(--app-inset) py-3 min-[701px]:hidden">

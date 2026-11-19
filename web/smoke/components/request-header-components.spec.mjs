@@ -13,7 +13,7 @@ test('request header keeps its state, facts, actions, and checks aligned across 
     document.documentElement.classList.add('dark')
     await document.fonts.ready
   })
-  const header = page.locator('.request-detail-pane')
+  const header = page.locator('main')
   const changes = page.getByRole('button', { name: /^Changes/ })
   await changes.waitFor()
   for (const width of [1280, 490, 486, 390, 320]) {

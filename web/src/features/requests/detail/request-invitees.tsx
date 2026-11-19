@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input'
 import { LoaderCircle, UserMinus, UserPlus } from 'lucide-react'
 import type { SubmitEvent } from 'react'
 import { useId, useState } from 'react'
+import { DetailsRow, DetailsToggle } from './request-details-layout'
 import type { RequestActionController } from './use-request-actions'
 import type { RequestSummaryResponse } from '@/api/types.generated'
 
@@ -18,6 +19,7 @@ export function RequestInvitees({
   const inputId = useId()
   const [handle, setHandle] = useState('')
   const [removingHandle, setRemovingHandle] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
   const normalizedHandle = handle.trim().replace(/^@/, '')
   const atCapacity = request.invitees.length >= REQUEST_ACTIVE_INVITEE_LIMIT
   const adding = actions.pending === 'add_invitee'
@@ -36,93 +38,97 @@ export function RequestInvitees({
     setRemovingHandle(null)
   }
 
+  const canAct = request.permissions.can_manage_invitees || request.permissions.can_leave_request
   return (
-    <details open={request.invitees.length > 0 || request.permissions.can_manage_invitees || request.permissions.can_leave_request ? true : undefined}>
-      <summary className="cursor-pointer list-item items-center justify-between gap-3">
-        <h2 className="section-label inline">
-          Invitees
-        </h2>
-        <span className="float-right text-xs tabular-nums text-muted-foreground">
-          {request.invitees.length} / {REQUEST_ACTIVE_INVITEE_LIMIT}
-        </span>
-      </summary>
-
-      {request.invitees.length > 0 ? (
-        <div className="mt-3 divide-y divide-border">
-          {request.invitees.map((invitee) => (
-            <div className="flex min-w-0 items-center gap-2 py-2" key={invitee.user.id}>
-              <span className="min-w-0 flex-1 truncate text-sm">@{invitee.user.handle}</span>
-              <span className="text-xs text-muted-foreground">push</span>
-              {request.permissions.can_manage_invitees ? (
-                <Button
-                  aria-label={`Remove @${invitee.user.handle}`}
-                  disabled={actions.pending !== null}
-                  onClick={() => void removeInvitee(invitee.user.handle)}
-                  size="icon-sm"
-                  title={`Remove @${invitee.user.handle}`}
-                  type="button"
-                  variant="ghost"
-                >
-                  {removingHandle === invitee.user.handle ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <UserMinus />
-                  )}
-                </Button>
-              ) : null}
+    <>
+      <DetailsRow
+        action={canAct || request.invitees.length > 0 ? (
+          <DetailsToggle expanded={expanded} label={canAct ? 'Manage' : 'Show'} onToggle={() => setExpanded((value) => !value)} />
+        ) : null}
+        label="Invitees"
+      >
+        {request.invitees.length > 0 ? request.invitees.map((invitee) => `@${invitee.user.handle}`).join(', ') : 'None'}
+      </DetailsRow>
+      {expanded ? (
+        <div className="pb-2">
+          {request.invitees.length > 0 ? (
+            <div className="divide-y divide-border">
+              {request.invitees.map((invitee) => (
+                <div className="flex min-w-0 items-center gap-2 py-1" key={invitee.user.id}>
+                  <span className="min-w-0 flex-1 truncate">@{invitee.user.handle}</span>
+                  <span className="text-muted-foreground">push</span>
+                  {request.permissions.can_manage_invitees ? (
+                    <Button
+                      aria-label={`Remove @${invitee.user.handle}`}
+                      disabled={actions.pending !== null}
+                      onClick={() => void removeInvitee(invitee.user.handle)}
+                      size="icon-xs"
+                      title={`Remove @${invitee.user.handle}`}
+                      type="button"
+                      variant="ghost"
+                    >
+                      {removingHandle === invitee.user.handle ? (
+                        <LoaderCircle className="animate-spin" />
+                      ) : (
+                        <UserMinus />
+                      )}
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 text-xs leading-5 text-muted-foreground">
-          No invitees. Exact-handle collaborators can push this branch.
-        </p>
-      )}
+          ) : (
+            <p className="py-1 leading-5 text-muted-foreground">
+              No invitees. Exact-handle collaborators can push this branch.
+            </p>
+          )}
 
-      {request.permissions.can_manage_invitees ? (
-        <form className="mt-3 grid gap-2" onSubmit={(event) => void addInvitee(event)}>
-          <label className="text-xs font-medium" htmlFor={inputId}>
-            Add exact Scope handle
-          </label>
-          <div className="flex gap-2">
-            <Input
-              autoComplete="off"
-              disabled={atCapacity || actions.pending !== null}
-              id={inputId}
-              onChange={(event) => setHandle(event.target.value)}
-              placeholder="@handle"
-              value={handle}
-            />
+          {request.permissions.can_manage_invitees ? (
+            <form className="mt-2 grid gap-1.5" onSubmit={(event) => void addInvitee(event)}>
+              <label className="text-xs font-medium" htmlFor={inputId}>
+                Add exact Scope handle
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  autoComplete="off"
+                  disabled={atCapacity || actions.pending !== null}
+                  id={inputId}
+                  onChange={(event) => setHandle(event.target.value)}
+                  placeholder="@handle"
+                  value={handle}
+                />
+                <Button
+                  aria-label="Add request invitee"
+                  disabled={!normalizedHandle || atCapacity || actions.pending !== null}
+                  size="icon-sm"
+                  title="Add invitee"
+                  type="submit"
+                  variant="secondary"
+                >
+                  {adding ? <LoaderCircle className="animate-spin" /> : <UserPlus />}
+                </Button>
+              </div>
+              {atCapacity ? (
+                <p className="text-xs text-muted-foreground">The {REQUEST_ACTIVE_INVITEE_LIMIT}-invitee limit has been reached.</p>
+              ) : null}
+            </form>
+          ) : null}
+
+          {request.permissions.can_leave_request ? (
             <Button
-              aria-label="Add request invitee"
-              disabled={!normalizedHandle || atCapacity || actions.pending !== null}
-              size="icon-sm"
-              title="Add invitee"
-              type="submit"
+              className="mt-2"
+              disabled={actions.pending !== null}
+              onClick={() => void actions.run({ action: 'leave' })}
+              size="sm"
+              type="button"
               variant="secondary"
             >
-              {adding ? <LoaderCircle className="animate-spin" /> : <UserPlus />}
+              {actions.pending === 'leave' ? <LoaderCircle className="animate-spin" /> : null}
+              Leave request
             </Button>
-          </div>
-          {atCapacity ? (
-            <p className="text-xs text-muted-foreground">The {REQUEST_ACTIVE_INVITEE_LIMIT}-invitee limit has been reached.</p>
           ) : null}
-        </form>
+        </div>
       ) : null}
-
-      {request.permissions.can_leave_request ? (
-        <Button
-          className="mt-3"
-          disabled={actions.pending !== null}
-          onClick={() => void actions.run({ action: 'leave' })}
-          size="sm"
-          type="button"
-          variant="secondary"
-        >
-          {actions.pending === 'leave' ? <LoaderCircle className="animate-spin" /> : null}
-          Leave request
-        </Button>
-      ) : null}
-    </details>
+    </>
   )
 }

@@ -225,7 +225,7 @@ async function assertReplyRegion(page, region, expanded) {
   assert.equal(await region.getAttribute('inert'), expanded ? null : '')
 }
 
-test('Details opens a drawer that reuses request data and preserves discussion state', async () => {
+test('Details opens a dropdown that reuses request data and preserves discussion state', async () => {
   await withPage(requestPath, async (page) => {
     const details = page.getByRole('button', { name: 'Details', exact: true })
     const thread = page.locator('#discussion-discussion_demo_retry_cap')
@@ -247,12 +247,12 @@ test('Details opens a drawer that reuses request data and preserves discussion s
       if (serverFunctionName(request) === 'loadRequestPage_createServerFn_handler') requestLoads.push(request.url())
     })
     await details.click()
-    const drawer = page.getByRole('dialog', { name: 'Details' })
-    await drawer.getByRole('region', { name: 'Request details' }).getByText('Public request', { exact: true }).waitFor()
+    const menu = page.getByRole('dialog', { name: 'Request details' })
+    await menu.getByText('Public request', { exact: true }).waitFor()
     await page.setViewportSize({ width: 390, height: 844 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false)
     await page.keyboard.press('Escape')
-    await drawer.waitFor({ state: 'detached' })
+    await menu.waitFor({ state: 'detached' })
     await page.waitForFunction(() => document.activeElement?.textContent === 'Details')
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
     assert.deepEqual(requestLoads, [])
