@@ -29,26 +29,19 @@ export function RequestDetailPagePending() {
   return (
     <PendingSurface label="Loading request">
       <div className="request-detail-pane w-full">
-        <header className="request-detail-header border-b border-border px-(--app-inset) pb-4 pt-3 min-[701px]:pt-6">
+        <header className="request-detail-header px-(--app-inset) pb-2 pt-3 min-[701px]:pt-6">
           <TextSkeleton className="mb-3 py-1 min-[701px]:hidden" length="short" size="meta" />
           <TextSkeleton length="xlong" size="heading" />
-          <div className="request-detail-header-secondary mt-4">
-            <div className="request-detail-header-meta min-w-0 text-xs leading-5">
-              <div className="request-detail-header-summary">
-                <BlockSkeleton className="h-5 w-40 rounded-md" />
-                <TextSkeleton className="h-6 py-1.5" length="long" size="meta" />
-              </div>
-              <TextSkeleton length="medium" size="meta" />
-            </div>
+          <div className="request-detail-header-state mt-4">
+            <BlockSkeleton className="h-6 w-40 rounded-md" />
+            {isSignedIn ? <BlockSkeleton className="hidden h-7 w-20 min-[701px]:block" /> : null}
+          </div>
+          <div className="request-detail-header-facts mt-2">
+            <TextSkeleton className="h-5 py-1" length="long" size="meta" />
             <div className="request-detail-header-actions">
-              <BlockSkeleton className="h-7 w-[6.5rem]" />
+              <BlockSkeleton className="h-7 w-44" />
               <BlockSkeleton className="request-details-trigger h-7 w-24" />
-              {isSignedIn ? (
-                <>
-                  <BlockSkeleton className="hidden h-7 w-20 min-[701px]:block" />
-                  <BlockSkeleton className="size-7" />
-                </>
-              ) : null}
+              <BlockSkeleton className="size-7" />
             </div>
           </div>
         </header>

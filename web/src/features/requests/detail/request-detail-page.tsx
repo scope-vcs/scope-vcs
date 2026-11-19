@@ -13,7 +13,6 @@ import { PageContent } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Link } from '@tanstack/react-router'
 import {
-  Code,
   ArrowLeft,
   ShieldQuestion,
   SlidersHorizontal,
@@ -51,7 +50,6 @@ import { useRequestActivityHistory } from './use-request-activity-history'
 import { useRequestChecks } from '../checks/use-request-checks'
 import { useRequestAutoMerge } from '../checks/use-request-auto-merge'
 import { requestActivityIdentity } from './request-activity-resource'
-import { useRepoViews } from '../../repo-detail/repo-layout-context'
 import { RequestChangesMenu } from '../changes/request-changes-menu'
 import {
   RequestAttachmentProvider,
@@ -160,7 +158,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   })
   const requestActions = useRequestActions(performAction)
   const workspace = useRequestWorkspace()
-  const requestViewName = useRepoViews().name(request.view)
   const [descriptionOverride, setDescriptionOverride] = useState<{
     server: string
     value: string
@@ -217,14 +214,9 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
         <RequestDetailHeader
           actions={
             <>
-              <Button asChild size="sm" variant="secondary">
-                <Link params={params} search={{ request: request.id }} to="/$owner/$repo/code">
-                  <Code />
-                  Browse code
-                </Link>
-              </Button>
               <RequestChangesMenu
                 activity={activity}
+                diffStat={state.detail.diff_stat}
                 params={{ ...params, requestId: request.id }}
               />
               <Button
@@ -244,25 +236,17 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   I’ll take this
                 </Button>
               ) : null}
-              <RequestCiApproval controller={checks} key={identity} />
               {canRelease ? (
                 <Button onClick={workspace?.release} size="sm" type="button" variant="secondary">
                   <UserRoundMinus />
                   Release
                 </Button>
               ) : null}
-              <RequestLifecycleActions
-                actions={requestActions}
-                autoMerge={autoMerge}
-                className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-(--app-inset) py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
-                ref={setLifecycleBar}
-                request={request}
-                viewerId={state.viewer?.id ?? 'anonymous'}
-              />
               <RequestMoreMenu
                 actions={requestActions}
                 disabled={requestActions.pending !== null || autoMerge.pending !== null}
                 onViewActivity={history.openHistory}
+                params={params}
                 request={request}
                 triggerRef={moreActions}
               />
@@ -277,10 +261,22 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               <ArrowLeft aria-hidden="true" className="size-3.5" /> Requests
             </Link>
           )}
-          diffStat={state.detail.diff_stat}
-          params={{ ...params, requestId: request.id }}
+          checks={checks.checks}
+          params={params}
           request={request}
-          viewName={requestViewName}
+          stateActions={
+            <>
+              <RequestCiApproval controller={checks} key={identity} />
+              <RequestLifecycleActions
+                actions={requestActions}
+                autoMerge={autoMerge}
+                className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-(--app-inset) py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
+                ref={setLifecycleBar}
+                request={request}
+                viewerId={state.viewer?.id ?? 'anonymous'}
+              />
+            </>
+          }
         />
         {requestActions.error || autoMerge.error || stateError ? (
           <p

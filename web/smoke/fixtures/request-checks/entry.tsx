@@ -53,6 +53,11 @@ function Request() {
       github_pull_request: { state: 'open', number: 12, url: 'https://github.com/octo/demo/pull/12', error: null },
       review_bots: [{ login: 'octo-reviewer[bot]', required: true, state: 'clear' }],
     }),
+    showMany: () => setChecks({
+      ...running,
+      checks: Array.from({ length: 50 }, (_, index) => github(`job ${index}`, 'completed', 'success', ciRun(String(100 + index)))),
+      review_bots: Array.from({ length: 20 }, (_, index) => ({ login: `bot-${index}[bot]`, required: false, state: 'not_started' })),
+    }),
     showState: (state: RequestChecksResponse['state']) => setChecks({
       ...running, state, checks: [], github_push: null, private_request_on_public_github: false,
     }),
@@ -62,6 +67,8 @@ function Request() {
       setChecks((current) => ({ ...current, review_bots })),
     showApproval: () => setChecks({
       ...running, state: 'awaiting-approval', can_approve: true, changes_github_workflows: true,
+      github_push: { state: 'awaiting_approval', branch: 'scope/requests/req_1', error: null },
+      checks: [github('Required PR checks', null)],
     }),
     pushRevision: () => setChecks((current) => ({ ...current, head_oid: 'b'.repeat(40) })),
     refresh: () => setChecks((current) => ({

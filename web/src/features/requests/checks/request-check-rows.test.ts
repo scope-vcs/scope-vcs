@@ -4,8 +4,11 @@ import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.ge
 import {
   requestCheckGroups,
   requestChecksSummary,
+  requestFailedCheck,
+  requestListedChecks,
   requestPullRequestView,
   requestReviewBotRows,
+  requestReviewSummary,
 } from './request-check-rows'
 
 const github = (
@@ -48,7 +51,7 @@ test('a GitHub check takes its conclusion, then its status, names only a specifi
   assert.equal(rows(github('ci', 'completed', 'failure'))[0]!.reason, null)
 })
 
-test('the summary leads with its most urgent count and lists only checks that need someone', () => {
+test('the summary leads with its most urgent count, lists checks that need someone first, and tracks progress', () => {
   const running = requestChecksSummary(checks([
     github('lint', 'completed', 'success'),
     github('ci / cli', null),
@@ -57,8 +60,9 @@ test('the summary leads with its most urgent count and lists only checks that ne
   ]))
   assert.deepEqual(running.status, { tone: 'running', text: '2 of 3 left' })
   assert.equal(running.counts, '1 passed · 1 skipped')
-  assert.deepEqual(running.attention.map((row) => row.name), ['ci / api', 'ci / cli'])
-  assert.equal(running.all.length, 4)
+  assert.deepEqual(requestListedChecks(running).map((row) => row.name), ['ci / api', 'ci / cli', 'ci / web', 'lint'])
+  assert.deepEqual(running.track.map((row) => row.name), ['lint', 'ci / api', 'ci / cli', 'ci / web'])
+  assert.equal(requestFailedCheck(running), null)
 
   const failed = requestChecksSummary(checks([
     github('ci / api', 'in_progress'),
@@ -67,7 +71,10 @@ test('the summary leads with its most urgent count and lists only checks that ne
   ]))
   assert.deepEqual(failed.status, { tone: 'danger', text: '1 failed' })
   assert.equal(failed.counts, '1 left · 1 passed')
-  assert.deepEqual(failed.attention.map((row) => row.name), ['ci / web', 'ci / api'])
+  assert.deepEqual(requestListedChecks(failed).map((row) => row.name), ['ci / web', 'ci / api', 'lint'])
+  assert.deepEqual(failed.track.map((row) => row.name), ['ci / web', 'lint', 'ci / api'])
+  const blocking = requestFailedCheck(failed)
+  assert.deepEqual([blocking?.check.name, blocking?.others], ['ci / web', 0])
 
   const passed = requestChecksSummary(checks([
     github('lint', 'completed', 'success'),
@@ -85,6 +92,12 @@ test('the summary leads with its most urgent count and lists only checks that ne
   ]))
   assert.deepEqual(canceled.status, { tone: 'danger', text: '1 failed' })
   assert.deepEqual(canceled.attention.map((row) => [row.name, row.reason]), [['b', 'cancelled']])
+
+  const twoFailed = requestFailedCheck(requestChecksSummary(checks([
+    github('b', 'completed', 'failure'),
+    github('a', 'completed', 'timed_out'),
+  ])))
+  assert.deepEqual([twoFailed?.check.name, twoFailed?.others], ['a', 1])
 })
 
 test('the summary says when checks are starting or could not start, without naming the host', () => {
@@ -126,46 +139,54 @@ test('jobs group by their actual workflow run, independently of job paths or sha
   assert.deepEqual(unassigned?.jobs.map((job) => job.name), ['validate / missing'])
 })
 
-test('a carrier pull request links to GitHub once it has a number and explains failures', () => {
+test('a carrier pull request links to GitHub once it has a number, explains failures, and says when it is out of step', () => {
   const url = 'https://github.com/o/r/pull/5'
   assert.equal(requestPullRequestView(null), null)
   assert.deepEqual(requestPullRequestView({ state: 'open', number: 5, url, error: null }), {
     text: 'Pull request #5 on GitHub',
     url,
     note: null,
+    outOfStep: false,
   })
   assert.deepEqual(requestPullRequestView({ state: 'opening', number: null, url: null, error: 'GitHub was down' }), {
     text: 'Opening a pull request on GitHub',
     url: null,
     note: { text: 'The last attempt failed: GitHub was down', failed: false },
+    outOfStep: true,
   })
   assert.deepEqual(requestPullRequestView({ state: 'closed_on_github', number: 5, url, error: null }), {
     text: 'Pull request #5 on GitHub · closed on GitHub',
     url,
     note: null,
+    outOfStep: true,
   })
+  assert.equal(requestPullRequestView({ state: 'merged', number: 5, url, error: null })?.outOfStep, false)
   assert.deepEqual(requestPullRequestView({ state: 'failed', number: null, url: null, error: 'Accept the permission' }), {
     text: 'Scope couldn’t open a pull request on GitHub',
     url: null,
     note: { text: 'Accept the permission', failed: true },
+    outOfStep: true,
   })
 })
 
-test('review bots keep their listed order and say where each is on the latest head', () => {
-  assert.deepEqual(
-    requestReviewBotRows([
-      { login: 'greptile-apps[bot]', required: true, state: 'working' },
-      { login: 'chatgpt-codex-connector[bot]', required: false, state: 'commented' },
-      { login: 'octo-reviewer[bot]', required: true, state: 'clear' },
-      { login: 'lint-bot[bot]', required: false, state: 'not_started' },
-      { login: 'quiet-bot[bot]', required: true, state: 'timed_out' },
-    ]),
-    [
-      { login: 'greptile-apps[bot]', required: true, label: 'Reviewing', tone: 'running' },
-      { login: 'chatgpt-codex-connector[bot]', required: false, label: 'Finished with comments', tone: 'waiting' },
-      { login: 'octo-reviewer[bot]', required: true, label: 'Finished, nothing found', tone: 'success' },
-      { login: 'lint-bot[bot]', required: false, label: 'Not started', tone: 'inert' },
-      { login: 'quiet-bot[bot]', required: true, label: 'Didn’t start · advisory', tone: 'inert' },
-    ],
-  )
+test('review bots keep their listed order, say where each is on the latest head, and sum up as the most urgent one', () => {
+  const rows = requestReviewBotRows([
+    { login: 'greptile-apps[bot]', required: true, state: 'working' },
+    { login: 'chatgpt-codex-connector[bot]', required: false, state: 'commented' },
+    { login: 'octo-reviewer[bot]', required: true, state: 'clear' },
+    { login: 'lint-bot[bot]', required: false, state: 'not_started' },
+    { login: 'quiet-bot[bot]', required: true, state: 'timed_out' },
+  ])
+  assert.deepEqual(rows, [
+    { login: 'greptile-apps[bot]', name: 'greptile-apps', required: true, state: 'working', label: 'Reviewing', tone: 'running' },
+    { login: 'chatgpt-codex-connector[bot]', name: 'chatgpt-codex-connector', required: false, state: 'commented', label: 'Finished with comments', tone: 'waiting' },
+    { login: 'octo-reviewer[bot]', name: 'octo-reviewer', required: true, state: 'clear', label: 'Finished, nothing found', tone: 'success' },
+    { login: 'lint-bot[bot]', name: 'lint-bot', required: false, state: 'not_started', label: 'Not started', tone: 'inert' },
+    { login: 'quiet-bot[bot]', name: 'quiet-bot', required: true, state: 'timed_out', label: 'Didn’t start · advisory', tone: 'inert' },
+  ])
+  assert.deepEqual(requestReviewSummary(rows), { state: 'working', label: 'Reviewing' })
+  assert.deepEqual(requestReviewSummary(rows.slice(1)), { state: 'commented', label: 'Finished with comments' })
+  assert.deepEqual(requestReviewSummary(rows.slice(2)), { state: 'not_started', label: 'Not started' })
+  assert.deepEqual(requestReviewSummary(rows.slice(2, 3)), { state: 'clear', label: 'Review clear' })
+  assert.equal(requestReviewSummary([]), null)
 })

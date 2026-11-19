@@ -122,7 +122,7 @@ test('a CLI contribution is discussed and merged in the browser', async () => {
   await thread(contributor.page, answer).getByText(collaborators.contributor.handle).first().waitFor()
   await thread(maintainer.page, question).getByText(answer).waitFor()
 
-  await maintainer.page.getByRole('button', { name: 'Changes', exact: true }).click()
+  await maintainer.page.getByRole('button', { name: /^Changes/ }).click()
   await maintainer.page.getByRole('dialog', { name: 'Request changes' })
     .getByRole('link', { name: new RegExp(`latest .* ${head.slice(0, 12)}$`) }).click()
   await maintainer.page.getByText(path).first().waitFor()
