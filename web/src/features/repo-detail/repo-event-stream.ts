@@ -238,9 +238,7 @@ export function parseRepoStreamMessage(message: string): RepoStreamParseOutcome 
 }
 
 export function eventStreamUrlSince(eventStreamUrl: string, sinceUnixMs: number) {
-  const url = new URL(eventStreamUrl)
-  url.searchParams.set('since', String(sinceUnixMs))
-  return url.toString()
+  return `${eventStreamUrl}${eventStreamUrl.includes('?') ? '&' : '?'}since=${sinceUnixMs}`
 }
 
 export function syncedThrough({ kind }: RepoChangeEvent) {
