@@ -16,7 +16,7 @@ export function getRouter() {
     routeTree,
     defaultPendingComponent: PendingSurface,
     defaultPendingMinMs: 250,
-    defaultPendingMs: 150,
+    defaultPendingMs: 300,
     defaultPreload: 'intent',
     scrollRestoration: ({ location }) => {
       const entry = location.state.__TSR_key ?? location.href

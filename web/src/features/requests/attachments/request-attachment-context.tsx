@@ -1,6 +1,5 @@
 import type {
   CreateRequestAttachmentMediaGrantResponse,
-  RequestAttachmentListResponse,
   RequestAttachmentLimitsResponse,
   RequestAttachmentResponse,
 } from '@/api/types.generated'
@@ -11,22 +10,16 @@ import type { RepoLiveState, RequestParams } from '@/api/types'
 import type { GrantAttachmentInput, RetryAttachmentInput } from './request-attachment-api'
 import {
   activateRequestAttachmentResourceScope,
+  loadRequestAttachmentValue,
   requestAttachmentResource,
   requestAttachmentResourceIdentity,
+  type RequestAttachmentLoaders,
 } from './request-attachment-resource'
 import type { AttachmentUploadActions } from './request-attachment-upload'
 import { activateRequestAttachmentDraftScope } from './request-attachment-drafts'
 
-export type RequestAttachmentActions = AttachmentUploadActions & {
+export type RequestAttachmentActions = AttachmentUploadActions & RequestAttachmentLoaders & {
   grant: (input: GrantAttachmentInput) => Promise<CreateRequestAttachmentMediaGrantResponse>
-  list: (
-    input: RequestParams,
-    signal?: AbortSignal,
-  ) => Promise<RequestAttachmentListResponse>
-  limits: (
-    input: RequestParams,
-    signal?: AbortSignal,
-  ) => Promise<RequestAttachmentLimitsResponse>
   retry: (input: RetryAttachmentInput) => Promise<RequestAttachmentResponse>
 }
 
@@ -71,13 +64,7 @@ export function RequestAttachmentProvider({
     request_id: requestId,
   }), [live.repo.name, live.repo.owner_handle, requestId])
   const load = useCallback(
-    async (signal: AbortSignal) => {
-      const [list, limits] = await Promise.all([
-        actions.list(params, signal),
-        actions.limits(params, signal),
-      ])
-      return { attachments: list.attachments, limits }
-    },
+    (signal: AbortSignal) => loadRequestAttachmentValue(actions, params, signal),
     [actions, params],
   )
   const resource = useCachedResource({

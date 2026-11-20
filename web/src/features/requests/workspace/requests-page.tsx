@@ -1,5 +1,5 @@
 import type { RepoParams } from '@/api/types'
-import type { RequestQueueItemResponse } from '@/api/types.generated'
+import type { RequestQueueItemResponse, ViewId } from '@/api/types.generated'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -24,6 +24,13 @@ import { applyAttentionMoves } from './request-attention-moves'
 import { RequestCustomSnoozeDialog } from './request-custom-snooze-dialog'
 import { useRequestAttentionActions } from './use-request-attention-actions'
 import { useRequestQueue } from './use-request-queue'
+
+export function requestQueuePageLoader({ owner, repo }: RepoParams, view: ViewId): LoadRequestQueuePage {
+  return (section, cursor, signal) => loadRequestQueuePage({
+    data: { owner, repo, section, cursor, search: null, view },
+    signal,
+  })
+}
 
 export function RequestsPage({ children, params }: { children: ReactNode; params: RepoParams }) {
   const { userId, isLoaded } = useAuth()
@@ -66,12 +73,8 @@ function RequestWorkspaceContent({
     return () => document.documentElement.removeAttribute('data-focus')
   }, [focus])
   const toggleFocus = useCallback(() => setFocus((value) => !value), [])
-  const load = useCallback<LoadRequestQueuePage>(
-    (section, cursor, signal) =>
-      loadRequestQueuePage({
-        data: { owner: params.owner, repo: params.repo, section, cursor, search: null, view },
-        signal,
-      }),
+  const load = useMemo(
+    () => requestQueuePageLoader({ owner: params.owner, repo: params.repo }, view),
     [params.owner, params.repo, view],
   )
   const queue = useRequestQueue(identity, version, load)

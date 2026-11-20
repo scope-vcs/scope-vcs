@@ -23,6 +23,10 @@ export function requestStateIdentity(scope: string, requestId: string) {
   return repoResourceKey(scope, requestId)
 }
 
+export function requestStateAvailable(identity: string) {
+  return Boolean(requestStateResource.peek(identity)?.state)
+}
+
 export async function loadRequestStateValue(
   identity: string,
   load: (signal: AbortSignal) => Promise<RequestStateValue>,

@@ -6,11 +6,24 @@ import { RequestDetailPagePending } from '@/features/requests/detail/request-pag
 import { RequestStateProvider, useRequestState } from '@/features/requests/detail/request-state-context'
 import { requestParamsForRoute } from '@/features/requests/detail/request-route-data'
 import { loadRequestStateValue, requestStateIdentity } from '@/features/requests/detail/request-state-resource'
-import { loadRepoSummary, repoSummaryIdentity } from '@/features/repo-detail/repo-summary-resource'
+import {
+  loadRequestAttachmentValue,
+  requestAttachmentResource,
+  requestAttachmentResourceIdentity,
+  warmRequestAttachments,
+} from '@/features/requests/attachments/request-attachment-resource'
+import { loadRepoSummary, repoSummaryIdentity, retainedRepoScope } from '@/features/repo-detail/repo-summary-resource'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import type { RequestParams } from '@/api/types'
 import { getCurrentViewerId } from '@/lib/viewer-state'
-import { loadRequestChildrenForViewer, loadRequestState, loadRequestStateForViewer } from '@/routes/-request-state-actions'
-import { loadRequestDiscussionRoute } from '@/routes/-request-discussion-loader'
+import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
+import {
+  loadRequestChildrenForViewer,
+  loadRequestState,
+  loadRequestStateForViewer,
+  requestStateForViewer,
+} from '@/routes/-request-state-actions'
+import { loadRequestDiscussionFirstPage, loadRequestDiscussionRoute } from '@/routes/-request-discussion-loader'
 import { loadRepoSummaryState } from '@/routes/-repo-summary-actions'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useMemo } from 'react'
@@ -25,29 +38,55 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
   loader: async ({ deps, params, location }) => {
     const data = requestParamsForRoute(params)
     const repoParams = { owner: params.owner, repo: params.repo }
-    const live = await loadRepoSummary(
-      repoSummaryIdentity(repoParams),
-      (signal) => loadRepoSummaryState(repoParams, signal),
-    )
+    const summaryIdentity = repoSummaryIdentity(repoParams)
+    const showsDiscussion = !location.pathname.endsWith('/changes')
     const activeViewerId = getCurrentViewerId()
-    const answered = activeViewerId === undefined ? await loadRequestState({ data }) : null
+    const started = retainedRepoScope(summaryIdentity) === null
+      ? startRequestPageLoads(data, showsDiscussion, deps.discussion)
+      : null
+    const live = await loadRepoSummary(summaryIdentity, (signal) => loadRepoSummaryState(repoParams, signal))
+    const answered = activeViewerId === undefined && started ? await started.state : null
     const viewerId = answered ? answered.viewerId : activeViewerId ?? null
     const scope = repoResourceScope(live.repo, viewerId)
-    const discussionAvailable = location.pathname.endsWith('/changes')
-      ? undefined
-      : loadRequestDiscussionRoute(data, scope, viewerId, deps.discussion)
-    await loadRequestStateValue(
+    const attachmentsIdentity = requestAttachmentResourceIdentity(scope, data.request_id)
+    const attachments = started
+      ? started.attachments
+      : requestAttachmentResource.isCurrent(attachmentsIdentity) ? null : startRequestAttachments(data)
+    const discussionAvailable = showsDiscussion
+      ? loadRequestDiscussionRoute(data, scope, viewerId, deps.discussion, started?.discussion)
+      : undefined
+    const { state } = await loadRequestStateValue(
       requestStateIdentity(scope, data.request_id),
       answered
         ? () => Promise.resolve({ state: answered.state })
-        : (signal) => loadRequestStateForViewer(data, viewerId, signal),
+        : started
+          ? () => requestStateForViewer(started.state, viewerId)
+          : (signal) => loadRequestStateForViewer(data, viewerId, signal),
       (cursor, signal) => loadRequestChildrenForViewer({ ...data, cursor }, viewerId, signal),
     )
+    if (state && attachments) warmRequestAttachments(attachmentsIdentity, attachments)
     return { scope, viewerId, discussionAvailable }
   },
   pendingComponent: RequestRoutePending,
   component: RequestRoute,
 })
+
+function startRequestPageLoads(data: RequestParams, showsDiscussion: boolean, discussionId: string | undefined) {
+  const started = {
+    state: loadRequestState({ data }),
+    attachments: startRequestAttachments(data),
+    discussion: showsDiscussion ? loadRequestDiscussionFirstPage(data, discussionId) : undefined,
+  }
+  void started.state.catch(() => {})
+  void started.discussion?.catch(() => {})
+  return started
+}
+
+function startRequestAttachments(data: RequestParams) {
+  const attachments = loadRequestAttachmentValue(requestAttachmentActions, data)
+  void attachments.catch(() => {})
+  return attachments
+}
 
 function RequestRoutePending() {
   return <ChildRoutesPending below="/$owner/$repo/requests/$requestId" />

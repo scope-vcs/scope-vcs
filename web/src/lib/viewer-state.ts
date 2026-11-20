@@ -9,15 +9,26 @@ export function resetViewerState() {
 }
 
 let currentViewerId: string | null | undefined
+const viewerWaiters = new Set<(viewerId: string | null) => void>()
 
 export function getCurrentViewerId() {
   return currentViewerId
+}
+
+export function whenViewerActive(): Promise<string | null> {
+  const viewerId = currentViewerId
+  if (viewerId !== undefined) return Promise.resolve(viewerId)
+  return new Promise((resolve) => {
+    viewerWaiters.add(resolve)
+  })
 }
 
 export function activateViewer(viewerId: string | null) {
   const previous = currentViewerId
   currentViewerId = viewerId
   if (previous !== undefined && previous !== viewerId) resetViewerState()
+  for (const wake of viewerWaiters) wake(viewerId)
+  viewerWaiters.clear()
   return previous
 }
 
