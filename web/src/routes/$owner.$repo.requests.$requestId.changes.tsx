@@ -20,10 +20,7 @@ import {
 import { RequestAttachmentProvider } from '@/features/requests/attachments/request-attachment-context'
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
 import { loadDiscussionReferencePage } from '@/features/requests/changes/request-changes-discussion-references'
-import { requestChangesResource, requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges, warmRequestChanges } from '@/features/requests/changes/request-changes-resource'
-import { repoChangeGeneration } from '@/features/repo-detail/repo-resource'
-import { repoSummaryIdentity, retainedRepoScope, retainedRepoSummary } from '@/features/repo-detail/repo-summary-resource'
-import { requestStateAvailable, requestStateIdentity } from '@/features/requests/detail/request-state-resource'
+import { requestChangesResource, requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges } from '@/features/requests/changes/request-changes-resource'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import {
   RequestChangesWorkbench,
@@ -83,30 +80,6 @@ export const Route = createFileRoute(
     path: parseRouteFilePathSearch(search.path),
     revision: searchText(search.revision),
   }),
-  loaderDeps: ({ search }) => ({ comparison: search.comparison, commit: search.commit, revision: search.revision }),
-  loader: async ({ deps, params, parentMatchPromise }) => {
-    const query = requestChangesQuery(deps)
-    const data = { ...requestParamsForRoute(params), ...query }
-    const identity = (scope: string) =>
-      requestChangesSelectionIdentity(scope, params.requestId, query.revision_id, query.commit_oid, query.comparison)
-    const available = (scope: string) => requestStateAvailable(requestStateIdentity(scope, params.requestId))
-    const summaryIdentity = repoSummaryIdentity(params)
-    const generation = repoChangeGeneration()
-    const known = retainedRepoScope(summaryIdentity)
-    if (known && requestChangesResource.isCurrent(identity(known))) return
-    if (known && available(known)) {
-      warmRequestChanges(identity(known), (signal) => loadRevisions({ data, signal }))
-      return
-    }
-    const revisions = retainedRepoSummary(summaryIdentity) === null ? loadRevisions({ data }) : null
-    void revisions?.catch(() => {})
-    const scope = (await parentMatchPromise.catch(() => null))?.loaderData?.scope
-    if (!scope || !available(scope)) return
-    warmRequestChanges(
-      identity(scope),
-      revisions && repoChangeGeneration() === generation ? () => revisions : (signal) => loadRevisions({ data, signal }),
-    )
-  },
   pendingComponent: RequestChangesPending,
   component: RequestChangesRoute,
 })

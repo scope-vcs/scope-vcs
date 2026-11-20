@@ -2,8 +2,7 @@ import { HttpError, InvalidApiResponseError } from '../../api/http'
 import type { RepoLiveState, RepoParams } from '../../api/types'
 import { fetchServerFunction, StaleBuildError } from '../../lib/stale-build'
 import { createRepoResource } from './repo-resource'
-import { getCurrentViewerId } from '../../lib/viewer-state'
-import { repoResourceScope, repoResourceScopeRepoId } from './repo-resource-scope'
+import { repoResourceScopeRepoId } from './repo-resource-scope'
 
 export type RepoSummaryLoadResult = { live: RepoLiveState } | { unavailable: string }
 
@@ -52,12 +51,6 @@ export function retainedRepoSummary(identity: string) {
   const { value, error } = repoSummaryResource.getSnapshot(identity)
   const retained = error === null || error instanceof StaleBuildError || isRetryableRepoSummaryError(error)
   return retained ? value : null
-}
-
-export function retainedRepoScope(identity: string) {
-  const live = retainedRepoSummary(identity)
-  const viewerId = getCurrentViewerId()
-  return live && viewerId !== undefined ? repoResourceScope(live.repo, viewerId) : null
 }
 
 export function loadRepoSummary(identity: string, load: (signal: AbortSignal) => Promise<RepoLiveState>) {

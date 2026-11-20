@@ -14,10 +14,6 @@ export function requestChangesSelectionIdentity(scope: string, requestId: string
   return repoResourceKey(scope, requestId, query.revision_id ?? '', query.comparison, query.commit_oid ?? '')
 }
 
-export function warmRequestChanges(identity: string, load: (signal: AbortSignal) => Promise<RequestRevisionListResponse>) {
-  void requestChangesResource.ensure(identity, '', load)
-}
-
 export function retainPinnedRequestChanges(
   scope: string,
   requestId: string,
