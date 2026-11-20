@@ -173,8 +173,10 @@ pub use ratings::{
 };
 mod author_record;
 pub use author_record::{
-    AUTHOR_RECORD_ROLE, AuthorHistory, AuthorRating, AuthorRecord, AuthorRecordSubject,
-    AuthorRecordTotals, AuthoredRequest, author_record_subject, author_record_viewer_can_read,
+    AUTHOR_OUTCOME_RULES, AUTHOR_RECORD_COUNTS, AUTHOR_RECORD_ROLE, AuthorHistory, AuthorOutcome,
+    AuthorRating, AuthorRecord, AuthorRecordSubject, AuthorRecordTotals, AuthorRequestCondition,
+    AuthorRequestFact, AuthorRequestFacts, AuthoredRequest, author_record_subject,
+    author_record_viewer_can_read, author_request_outcomes,
 };
 mod submission;
 pub use submission::{

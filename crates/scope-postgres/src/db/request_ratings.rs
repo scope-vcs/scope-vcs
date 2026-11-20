@@ -5,7 +5,8 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
-    AUTHOR_RECORD_ROLE, AuthorRecordTotals, CreateRequestRatingInput, RequestRating,
+    AUTHOR_OUTCOME_RULES, AUTHOR_RECORD_COUNTS, AUTHOR_RECORD_ROLE, AuthorRecordTotals,
+    AuthorRequestCondition, AuthorRequestFact, CreateRequestRatingInput, RequestRating,
     create_request_rating,
 };
 use sea_orm::{
@@ -49,39 +50,34 @@ pub(super) async fn author_record_totals<C: ConnectionTrait>(
     repo_id: &str,
     author_user_ids: Vec<String>,
 ) -> Result<HashMap<String, AuthorRecordTotals>, PostgresError> {
+    let outcome_counts = AUTHOR_OUTCOME_RULES
+        .iter()
+        .enumerate()
+        .map(|(index, (_, when))| {
+            format!(
+                "COUNT(*) FILTER (WHERE {}) AS outcome_{index}",
+                conditions_sql(when)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     let rows = conn
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            r#"
-                SELECT requests.author_user_id,
-                       COUNT(*) FILTER (
-                           WHERE requests.merged_at_unix IS NOT NULL
-                       ) AS merged,
-                       COUNT(*) FILTER (
-                           WHERE requests.closed_at_unix IS NOT NULL
-                             AND requests.closed_by_user_id
-                                 IS DISTINCT FROM requests.author_user_id
-                       ) AS closed_by_maintainer,
-                       COUNT(*) FILTER (
-                           WHERE requests.closed_at_unix IS NOT NULL
-                             AND requests.closed_by_user_id = requests.author_user_id
-                       ) AS withdrawn,
-                       COUNT(*) FILTER (
-                           WHERE requests.merged_at_unix IS NULL
-                             AND requests.closed_at_unix IS NULL
-                       ) AS open,
-                       COALESCE(SUM(ratings.score), 0) AS rating_score_sum,
-                       COUNT(ratings.id) AS rating_count
-                FROM scope_requests requests
-                LEFT JOIN scope_request_ratings ratings
-                       ON ratings.request_id = requests.id
-                      AND ratings.subject_user_id = requests.author_user_id
-                WHERE requests.repo_id = $1
-                  AND requests.author_user_id = ANY($2)
-                  AND requests.author_role = $3
-                  AND requests.submitted_at_unix IS NOT NULL
-                GROUP BY requests.author_user_id
-            "#,
+            format!(
+                "SELECT requests.author_user_id, {outcome_counts},
+                        COALESCE(SUM(ratings.score), 0) AS rating_score_sum,
+                        COUNT(ratings.id) AS rating_count
+                 FROM scope_requests requests
+                 LEFT JOIN scope_request_ratings ratings
+                        ON ratings.request_id = requests.id
+                       AND ratings.subject_user_id = requests.author_user_id
+                 WHERE requests.repo_id = $1
+                   AND requests.author_user_id = ANY($2)
+                   AND {}
+                 GROUP BY requests.author_user_id",
+                conditions_sql(&AUTHOR_RECORD_COUNTS)
+            ),
             [
                 repo_id.into(),
                 author_user_ids.into(),
@@ -92,19 +88,40 @@ pub(super) async fn author_record_totals<C: ConnectionTrait>(
     rows.into_iter()
         .map(|row| {
             let count = |column: &str| i64_to_u64(row.try_get("", column)?, column);
-            Ok((
-                row.try_get::<String>("", "author_user_id")?,
-                AuthorRecordTotals {
-                    merged: count("merged")?,
-                    closed_by_maintainer: count("closed_by_maintainer")?,
-                    withdrawn: count("withdrawn")?,
-                    open: count("open")?,
-                    rating_score_sum: count("rating_score_sum")?,
-                    rating_count: count("rating_count")?,
-                },
-            ))
+            let mut totals = AuthorRecordTotals {
+                rating_score_sum: count("rating_score_sum")?,
+                rating_count: count("rating_count")?,
+                ..AuthorRecordTotals::default()
+            };
+            for (index, (outcome, _)) in AUTHOR_OUTCOME_RULES.iter().enumerate() {
+                totals.count(*outcome, count(&format!("outcome_{index}"))?);
+            }
+            Ok((row.try_get::<String>("", "author_user_id")?, totals))
         })
         .collect()
+}
+
+fn conditions_sql(conditions: &[AuthorRequestCondition]) -> String {
+    conditions
+        .iter()
+        .map(|condition| {
+            let fact = match condition.fact {
+                AuthorRequestFact::Submitted => "requests.submitted_at_unix IS NOT NULL",
+                AuthorRequestFact::AuthoredAsContributor => "requests.author_role = $3",
+                AuthorRequestFact::Merged => "requests.merged_at_unix IS NOT NULL",
+                AuthorRequestFact::Closed => "requests.closed_at_unix IS NOT NULL",
+                AuthorRequestFact::ClosedByAuthor => {
+                    "requests.closed_by_user_id IS NOT DISTINCT FROM requests.author_user_id"
+                }
+            };
+            if condition.holds {
+                format!("({fact})")
+            } else {
+                format!("NOT ({fact})")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" AND ")
 }
 
 async fn ratings_for_request<C>(

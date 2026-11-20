@@ -1,6 +1,6 @@
 use super::{
-    AuthorHistory, AuthorRating, AuthorRecord, AuthorRecordTotals, AuthoredRequest,
-    author_record_subject,
+    AuthorHistory, AuthorOutcome, AuthorRating, AuthorRecord, AuthorRecordTotals,
+    AuthorRequestFacts, AuthoredRequest, author_record_subject, author_request_outcomes,
 };
 use crate::{
     repository::access::{RepositoryAccess, RepositoryActor},
@@ -116,4 +116,58 @@ fn a_rating_needs_possible_totals() {
     assert!(rated(0, 1).is_err());
     assert!(rated(6, 1).is_err());
     assert!(rated(1, 0).is_err());
+}
+
+#[test]
+fn a_counted_request_has_one_outcome_and_a_missing_closer_is_a_maintainer_closure() {
+    let open = AuthorRequestFacts {
+        submitted: true,
+        authored_as_contributor: true,
+        merged: false,
+        closed: false,
+        closed_by_author: false,
+    };
+    let closed = AuthorRequestFacts {
+        closed: true,
+        ..open
+    };
+    for (facts, outcome) in [
+        (open, Some(AuthorOutcome::Open)),
+        (
+            AuthorRequestFacts {
+                merged: true,
+                ..open
+            },
+            Some(AuthorOutcome::Merged),
+        ),
+        (closed, Some(AuthorOutcome::ClosedByMaintainer)),
+        (
+            AuthorRequestFacts {
+                closed_by_author: true,
+                ..closed
+            },
+            Some(AuthorOutcome::Withdrawn),
+        ),
+        (
+            AuthorRequestFacts {
+                submitted: false,
+                ..open
+            },
+            None,
+        ),
+        (
+            AuthorRequestFacts {
+                authored_as_contributor: false,
+                merged: true,
+                ..open
+            },
+            None,
+        ),
+    ] {
+        assert_eq!(
+            author_request_outcomes(&facts).collect::<Vec<_>>(),
+            Vec::from_iter(outcome),
+            "{facts:?}"
+        );
+    }
 }

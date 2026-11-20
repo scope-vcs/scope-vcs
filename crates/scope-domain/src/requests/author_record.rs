@@ -20,6 +20,112 @@ pub struct AuthorRecordTotals {
     pub rating_count: u64,
 }
 
+impl AuthorRecordTotals {
+    pub fn count(&mut self, outcome: AuthorOutcome, requests: u64) {
+        match outcome {
+            AuthorOutcome::Merged => self.merged = requests,
+            AuthorOutcome::ClosedByMaintainer => self.closed_by_maintainer = requests,
+            AuthorOutcome::Withdrawn => self.withdrawn = requests,
+            AuthorOutcome::Open => self.open = requests,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthorRequestFact {
+    Submitted,
+    AuthoredAsContributor,
+    Merged,
+    Closed,
+    ClosedByAuthor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AuthorRequestCondition {
+    pub fact: AuthorRequestFact,
+    pub holds: bool,
+}
+
+const fn is(fact: AuthorRequestFact) -> AuthorRequestCondition {
+    AuthorRequestCondition { fact, holds: true }
+}
+
+const fn not(fact: AuthorRequestFact) -> AuthorRequestCondition {
+    AuthorRequestCondition { fact, holds: false }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthorOutcome {
+    Merged,
+    ClosedByMaintainer,
+    Withdrawn,
+    Open,
+}
+
+pub const AUTHOR_RECORD_COUNTS: [AuthorRequestCondition; 2] = [
+    is(AuthorRequestFact::Submitted),
+    is(AuthorRequestFact::AuthoredAsContributor),
+];
+
+pub const AUTHOR_OUTCOME_RULES: [(AuthorOutcome, &[AuthorRequestCondition]); 4] = [
+    (AuthorOutcome::Merged, &[is(AuthorRequestFact::Merged)]),
+    (
+        AuthorOutcome::ClosedByMaintainer,
+        &[
+            is(AuthorRequestFact::Closed),
+            not(AuthorRequestFact::ClosedByAuthor),
+        ],
+    ),
+    (
+        AuthorOutcome::Withdrawn,
+        &[
+            is(AuthorRequestFact::Closed),
+            is(AuthorRequestFact::ClosedByAuthor),
+        ],
+    ),
+    (
+        AuthorOutcome::Open,
+        &[
+            not(AuthorRequestFact::Merged),
+            not(AuthorRequestFact::Closed),
+        ],
+    ),
+];
+
+#[derive(Clone, Copy, Debug)]
+pub struct AuthorRequestFacts {
+    pub submitted: bool,
+    pub authored_as_contributor: bool,
+    pub merged: bool,
+    pub closed: bool,
+    pub closed_by_author: bool,
+}
+
+impl AuthorRequestCondition {
+    pub fn matches(self, facts: &AuthorRequestFacts) -> bool {
+        let value = match self.fact {
+            AuthorRequestFact::Submitted => facts.submitted,
+            AuthorRequestFact::AuthoredAsContributor => facts.authored_as_contributor,
+            AuthorRequestFact::Merged => facts.merged,
+            AuthorRequestFact::Closed => facts.closed,
+            AuthorRequestFact::ClosedByAuthor => facts.closed_by_author,
+        };
+        value == self.holds
+    }
+}
+
+pub fn author_request_outcomes(
+    facts: &AuthorRequestFacts,
+) -> impl Iterator<Item = AuthorOutcome> + '_ {
+    let counted = AUTHOR_RECORD_COUNTS
+        .iter()
+        .all(|condition| condition.matches(facts));
+    AUTHOR_OUTCOME_RULES
+        .iter()
+        .filter(move |(_, when)| counted && when.iter().all(|condition| condition.matches(facts)))
+        .map(|(outcome, _)| *outcome)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AuthorRating {
     pub score_sum: u64,
