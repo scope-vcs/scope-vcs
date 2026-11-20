@@ -7,8 +7,8 @@ import { Globe } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { requestChecksSummary, requestFailedCheck } from '../checks/request-check-rows'
 import { actorHandle } from './request-actor'
-import { authorRecordTokens } from './request-author-record-model'
-import { RequestAuthorRecord } from './request-author-record'
+import { authorRecordSummary } from './request-author-record-model'
+import { RequestAuthorRecordSummary } from './request-author-record'
 import { requestMergeabilityLabel, requestPublicChecksNote, requestStateMark } from './request-labels'
 import { RequestStateMark } from './request-state-mark'
 
@@ -58,7 +58,7 @@ export function RequestDetailHeader({
         <div className="request-detail-header-meta min-w-0 text-xs leading-5 text-muted-foreground">
           <span className="flex flex-wrap items-baseline gap-x-1.5">
             <span className="font-medium text-foreground">{actorHandle(author)}</span>
-            {authorRecord ? <RequestAuthorRecord detailed tokens={authorRecordTokens(authorRecord, true)} /> : null}
+            {authorRecord ? <RequestAuthorRecordSummary handle={actorHandle(author)} summary={authorRecordSummary(authorRecord)} /> : null}
             <span>opened</span>
             <RelativeTimestamp
               value={request.submitted_at_unix ?? request.created_at_unix}

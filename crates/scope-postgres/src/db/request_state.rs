@@ -1,6 +1,6 @@
 use super::{
     GitHubWorkflowRunReference, RequestInviteeRead, RequestStore, begin_metadata_read_snapshot,
-    entities, request_ratings::author_record_totals,
+    entities, request_ratings::author_standings,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -172,19 +172,19 @@ async fn read_request_state(
     let author_record = match author_record_subject(
         AuthoredRequest {
             author_user_id: request.author_user_id.as_deref(),
-            author_role: request.author_role,
             state: request.state(),
         },
         &repository.access,
         &repository.views,
     ) {
         Some(subject) => {
-            let totals =
-                author_record_totals(&tx, &request.repo_id, vec![subject.user_id.to_owned()])
+            let standing =
+                author_standings(&tx, &request.repo_id, vec![subject.user_id.to_owned()])
                     .await?
                     .remove(subject.user_id)
-                    .unwrap_or_default();
-            Some(subject.record(totals)?)
+                    .ok_or_else(|| PostgresError::internal_message("author standing is missing"))?;
+            let author = standing.access(&repository.record, subject.user_id);
+            subject.record(&author, standing.totals)?
         }
         None => None,
     };

@@ -773,7 +773,7 @@ test('a review row shows its author record and ended rows show their outcome', a
     ...extra,
   })
   const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
-  const history = { kind: 'history', merged: 7, closed_by_maintainer: 2, withdrawn: 1, other_open: 3, rating: { score_sum: 9, count: 2 } }
+  const history = { kind: 'history', merged: 7, closed: 2, withdrawn: 1, other_open: 3, rating: { score_sum: 9, count: 2 } }
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), {
     active: { ...empty, requests: [
       row('reviewed', 'Open', { group: 'needs_you', reason: 'invited' }, { author_record: history }),

@@ -305,7 +305,7 @@ pub(crate) fn author_record_response(record: AuthorRecord) -> RequestAuthorRecor
         AuthorRecord::FirstRequest => RequestAuthorRecordResponse::FirstRequest,
         AuthorRecord::History(history) => RequestAuthorRecordResponse::History {
             merged: history.merged,
-            closed_by_maintainer: history.closed_by_maintainer,
+            closed: history.closed,
             withdrawn: history.withdrawn,
             other_open: history.other_open,
             rating: history.rating.map(|rating| RequestAuthorRatingResponse {

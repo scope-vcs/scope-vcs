@@ -1,17 +1,24 @@
 use super::{
     RequestStore, entities,
     integer_columns::i64_to_u64,
+    joined_rows::{joined, prefixed_columns},
     request_access::{ensure_user_exists, lock_request_repository},
 };
 use crate::error::PostgresError;
-use scope_domain::requests::{
-    AUTHOR_OUTCOME_RULES, AUTHOR_RECORD_COUNTS, AUTHOR_RECORD_ROLE, AuthorRecordTotals,
-    AuthorRequestCondition, AuthorRequestFact, CreateRequestRatingInput, RequestRating,
-    create_request_rating,
+use scope_domain::{
+    repository::{
+        RepoRecord,
+        access::{RepositoryAccess, repository_access_for_user_id},
+        collaboration::RepositoryMemberPermissions,
+    },
+    requests::{
+        AUTHOR_OUTCOME_RULES, AUTHOR_RECORD_COUNTS, AuthorRecordTotals, AuthorRequestCondition,
+        AuthorRequestFact, CreateRequestRatingInput, RequestRating, create_request_rating,
+    },
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult,
+    IntoActiveModel, QueryFilter, QueryOrder, Statement, TransactionTrait,
 };
 use std::collections::HashMap;
 
@@ -44,12 +51,29 @@ impl RequestStore {
     }
 }
 
-#[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "author_record_totals"))]
-pub(super) async fn author_record_totals<C: ConnectionTrait>(
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct AuthorStanding {
+    permissions: Option<RepositoryMemberPermissions>,
+    pub totals: AuthorRecordTotals,
+}
+
+impl AuthorStanding {
+    pub(super) fn access(&self, repository: &RepoRecord, author_user_id: &str) -> RepositoryAccess {
+        repository_access_for_user_id(
+            &repository.owner_user_id,
+            repository.lifecycle_state,
+            self.permissions.clone(),
+            author_user_id,
+        )
+    }
+}
+
+#[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "author_standings"))]
+pub(super) async fn author_standings<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
     author_user_ids: Vec<String>,
-) -> Result<HashMap<String, AuthorRecordTotals>, PostgresError> {
+) -> Result<HashMap<String, AuthorStanding>, PostgresError> {
     let outcome_counts = AUTHOR_OUTCOME_RULES
         .iter()
         .enumerate()
@@ -65,24 +89,26 @@ pub(super) async fn author_record_totals<C: ConnectionTrait>(
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
-                "SELECT requests.author_user_id, {outcome_counts},
-                        COALESCE(SUM(ratings.score), 0) AS rating_score_sum,
-                        COUNT(ratings.id) AS rating_count
-                 FROM scope_requests requests
-                 LEFT JOIN scope_request_ratings ratings
-                        ON ratings.request_id = requests.id
-                       AND ratings.subject_user_id = requests.author_user_id
-                 WHERE requests.repo_id = $1
-                   AND requests.author_user_id = ANY($2)
-                   AND {}
-                 GROUP BY requests.author_user_id",
+                "SELECT author.user_id AS author_user_id, {}, totals.*
+                 FROM unnest($2::text[]) AS author(user_id)
+                 LEFT JOIN scope_repository_members member
+                        ON member.repo_id = $1 AND member.user_id = author.user_id
+                 CROSS JOIN LATERAL (
+                     SELECT {outcome_counts},
+                            COALESCE(SUM(ratings.score), 0) AS rating_score_sum,
+                            COUNT(ratings.id) AS rating_count
+                     FROM scope_requests requests
+                     LEFT JOIN scope_request_ratings ratings
+                            ON ratings.request_id = requests.id
+                           AND ratings.subject_user_id = requests.author_user_id
+                     WHERE requests.repo_id = $1
+                       AND requests.author_user_id = author.user_id
+                       AND {}
+                 ) totals",
+                prefixed_columns::<entities::repository_member::Column>("member", "m_"),
                 conditions_sql(&AUTHOR_RECORD_COUNTS)
             ),
-            [
-                repo_id.into(),
-                author_user_ids.into(),
-                entities::encode_enum(AUTHOR_RECORD_ROLE)?.into(),
-            ],
+            [repo_id.into(), author_user_ids.into()],
         ))
         .await?;
     rows.into_iter()
@@ -96,7 +122,22 @@ pub(super) async fn author_record_totals<C: ConnectionTrait>(
             for (index, (outcome, _)) in AUTHOR_OUTCOME_RULES.iter().enumerate() {
                 totals.count(*outcome, count(&format!("outcome_{index}"))?);
             }
-            Ok((row.try_get::<String>("", "author_user_id")?, totals))
+            let permissions = if joined(&row, "m_repo_id")? {
+                Some(
+                    entities::repository_member::Model::from_query_result(&row, "m_")?
+                        .try_into_domain()?
+                        .permissions,
+                )
+            } else {
+                None
+            };
+            Ok((
+                row.try_get::<String>("", "author_user_id")?,
+                AuthorStanding {
+                    permissions,
+                    totals,
+                },
+            ))
         })
         .collect()
 }
@@ -107,8 +148,10 @@ fn conditions_sql(conditions: &[AuthorRequestCondition]) -> String {
         .map(|condition| {
             let fact = match condition.fact {
                 AuthorRequestFact::Submitted => "requests.submitted_at_unix IS NOT NULL",
-                AuthorRequestFact::AuthoredAsContributor => "requests.author_role = $3",
                 AuthorRequestFact::Merged => "requests.merged_at_unix IS NOT NULL",
+                AuthorRequestFact::MergedByAuthor => {
+                    "requests.merged_by_user_id IS NOT DISTINCT FROM requests.author_user_id"
+                }
                 AuthorRequestFact::Closed => "requests.closed_at_unix IS NOT NULL",
                 AuthorRequestFact::ClosedByAuthor => {
                     "requests.closed_by_user_id IS NOT DISTINCT FROM requests.author_user_id"
@@ -146,7 +189,11 @@ where
 mod tests {
     use super::*;
     use crate::db::requests::tests::{postgres_store, start_public_request};
-    use scope_domain::requests::{Request, RequestActorRole, StoredRequest};
+    use scope_domain::{
+        repository::{access::RepositoryActor, collaboration::RepositoryMember},
+        requests::{Request, RequestActorRole, StoredRequest},
+        views::ViewId,
+    };
 
     #[tokio::test]
     async fn terminal_participants_persist_at_most_one_immutable_rating_each() {
@@ -224,8 +271,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn author_totals_count_a_contributors_submitted_requests_in_one_repository() {
+    async fn author_standings_pair_each_authors_membership_with_what_others_decided() {
         let store = postgres_store();
+        let mut repo = store
+            .repositories()
+            .repository_for_tests("owner/repo")
+            .await
+            .unwrap()
+            .unwrap();
+        repo.collaboration.members.push(RepositoryMember {
+            repo_id: repo.record.id.clone(),
+            user_id: "restricted".into(),
+            permissions: RepositoryMemberPermissions {
+                view: ViewId::public(),
+                ..Default::default()
+            },
+            created_at_unix: 1,
+            updated_at_unix: 1,
+        });
+        repo.bump_content_version();
+        store
+            .repositories()
+            .replace_repository_for_tests(repo.clone())
+            .await
+            .unwrap();
         start_public_request(&store).await;
         let requests = store.requests();
         crate::db::test_support::request_fixtures::submitted(
@@ -259,6 +328,10 @@ mod tests {
         };
         for request in [
             variant("req_merged", &merge),
+            variant("req_merged_by_author", &|stored| {
+                merge(stored);
+                stored.lifecycle.merged_by_user_id = Some("user_public".to_string());
+            }),
             variant("req_closed", &|stored| close(stored, "user_owner")),
             variant("req_closed_deleted_maintainer", &|stored| {
                 stored.lifecycle.closed_at_unix = Some(5);
@@ -321,28 +394,60 @@ mod tests {
             .unwrap();
         }
 
-        let authors = vec!["user_public".to_string(), "user_owner".to_string()];
+        let authors = ["user_public", "restricted", "user_owner"]
+            .map(str::to_string)
+            .to_vec();
+        let nothing_submitted = |permissions| AuthorStanding {
+            permissions,
+            totals: AuthorRecordTotals::default(),
+        };
+        let standings = author_standings(requests.db.as_ref(), &open.repo_id, authors.clone())
+            .await
+            .unwrap();
         assert_eq!(
-            author_record_totals(requests.db.as_ref(), &open.repo_id, authors.clone())
-                .await
-                .unwrap(),
-            HashMap::from([(
-                "user_public".to_string(),
-                AuthorRecordTotals {
-                    merged: 1,
-                    closed_by_maintainer: 2,
-                    withdrawn: 1,
-                    open: 1,
-                    rating_score_sum: 4,
-                    rating_count: 1,
-                },
-            )])
+            standings,
+            HashMap::from([
+                (
+                    "user_public".to_string(),
+                    AuthorStanding {
+                        permissions: None,
+                        totals: AuthorRecordTotals {
+                            merged: 2,
+                            merged_by_author: 1,
+                            closed: 2,
+                            withdrawn: 1,
+                            open: 1,
+                            rating_score_sum: 5,
+                            rating_count: 2,
+                        },
+                    },
+                ),
+                (
+                    "restricted".to_string(),
+                    nothing_submitted(Some(RepositoryMemberPermissions {
+                        view: ViewId::public(),
+                        ..Default::default()
+                    })),
+                ),
+                ("user_owner".to_string(), nothing_submitted(None)),
+            ])
         );
+        for (author, actor, view) in [
+            ("user_public", RepositoryActor::Public, ViewId::public()),
+            ("restricted", RepositoryActor::Member, ViewId::public()),
+            ("user_owner", RepositoryActor::Owner, ViewId::private()),
+        ] {
+            let access = standings[author].access(&repo.record, author);
+            assert_eq!((access.actor, access.view), (actor, view));
+        }
         assert_eq!(
-            author_record_totals(requests.db.as_ref(), "another_repository", authors)
+            author_standings(requests.db.as_ref(), "another_repository", authors)
                 .await
                 .unwrap(),
-            HashMap::new()
+            HashMap::from_iter(
+                ["user_public", "restricted", "user_owner"]
+                    .map(|author| (author.to_string(), nothing_submitted(None)))
+            )
         );
     }
 }

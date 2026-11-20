@@ -362,7 +362,7 @@ export type CreateRequestRatingRequest = { score: number, reason: string, };
 
 export type RequestAuthorRatingResponse = { score_sum: number, count: number, };
 
-export type RequestAuthorRecordResponse = { "kind": "first_request" } | { "kind": "history", merged: number, closed_by_maintainer: number, withdrawn: number, other_open: number, rating: RequestAuthorRatingResponse | null, };
+export type RequestAuthorRecordResponse = { "kind": "first_request" } | { "kind": "history", merged: number, closed: number, withdrawn: number, other_open: number, rating: RequestAuthorRatingResponse | null, };
 
 export type RequestRatingResponse = { id: string, request_id: string, rater: RequestActorSummaryResponse, subject: RequestActorSummaryResponse, score: number, reason: string, created_at_unix: number, };
 

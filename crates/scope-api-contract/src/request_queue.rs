@@ -32,7 +32,7 @@ pub enum RequestAuthorRecordResponse {
     FirstRequest,
     History {
         merged: u64,
-        closed_by_maintainer: u64,
+        closed: u64,
         withdrawn: u64,
         other_open: u64,
         rating: Option<RequestAuthorRatingResponse>,

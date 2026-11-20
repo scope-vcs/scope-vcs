@@ -225,7 +225,7 @@ function RequestWorkspaceRow({
   const status = requestStatusLabel(item, hydrated)
   const action = attention.reason === 'authored' ? undefined : REQUEST_NEXT_STEP_ACTIONS[item.next_step]
   const handle = REVIEW_REASONS.has(attention.reason) ? actorHandle(author) : null
-  const recordTokens = handle && item.author_record ? authorRecordTokens(item.author_record, false) : []
+  const recordTokens = handle && item.author_record ? authorRecordTokens(item.author_record) : []
   const stackParent = requestStackParentLabel(item)
   const diffStat = diffStatWithChanges(request.diff_stat)
   const canSetAside = section === 'active' && attention.can_set_aside

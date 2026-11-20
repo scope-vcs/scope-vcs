@@ -47,25 +47,37 @@ test('request header keeps its state, facts, actions, and checks aligned across 
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.evaluate(() => {
     window.setState('findings')
-    window.setAuthorRecord({ kind: 'history', merged: 7, closed_by_maintainer: 2, withdrawn: 1, other_open: 3, rating: { score_sum: 18, count: 4 } })
+    window.setAuthorRecord({ kind: 'history', merged: 7, closed: 2, withdrawn: 1, other_open: 3, rating: { score_sum: 18, count: 4 } })
   })
-  const closedCount = header.getByRole('button', { name: '2 closed by a maintainer', exact: true })
-  await closedCount.waitFor()
+  const record = header.getByRole('button', { name: 'Rated 4.5', exact: true })
+  await record.waitFor()
+  assert.equal(await header.locator('[data-author-record]').count(), 1, 'the header shows one mark for the whole record')
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.setViewportSize({ width: 1280, height: 700 })
   await page.evaluate(() => window.setBranch('repository-row-security'))
   await page.getByText('repository-row-security', { exact: true }).waitFor()
   await compareScreenshot(header, 'author-record')
-  await closedCount.focus()
-  const closedTooltip = page.getByRole('tooltip', { name: '2 closed by a maintainer' })
-  await closedTooltip.waitFor()
+  await record.focus()
+  const card = page.getByRole('tooltip')
+  await card.waitFor()
+  assert.equal(
+    (await card.innerText()).replace(/\s+/g, ' ').trim(),
+    'adamblumoff in this repository 7 merged 2 closed 1 withdrawn 3 others open 4.5 from 4 ratings',
+  )
   await page.keyboard.press('Escape')
-  await closedTooltip.waitFor({ state: 'detached' })
+  await card.waitFor({ state: 'detached' })
+  await page.evaluate(() => window.setAuthorRecord({ kind: 'history', merged: 0, closed: 4, withdrawn: 0, other_open: 0, rating: null }))
+  await header.getByRole('button', { name: 'Not rated yet', exact: true }).hover()
+  await card.waitFor()
+  assert.equal(
+    (await card.innerText()).replace(/\s+/g, ' ').trim(),
+    'adamblumoff in this repository 4 closed not rated yet',
+  )
   await page.evaluate(() => {
     window.setAuthorRecord(null)
     window.setBranch('repository-row-security-with-a-long-name-that-must-not-displace-actions')
   })
-  await closedCount.waitFor({ state: 'detached' })
+  await header.locator('[data-author-record]').waitFor({ state: 'detached' })
   await compareScreenshot(changes, 'changes-chevron')
   await changes.click()
   const menu = page.getByRole('dialog', { name: 'Request changes' })

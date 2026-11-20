@@ -1,6 +1,6 @@
 use super::{
     RequestListRow, RequestStore, auth::load_users_by_ids, begin_metadata_read_snapshot, entities,
-    repository_access::repository_access, request_ratings::author_record_totals,
+    repository_access::repository_access, request_ratings::author_standings,
     request_rows::RequestListModel,
 };
 use crate::{
@@ -165,7 +165,6 @@ async fn load_author_records<C: ConnectionTrait>(
             let subject = author_record_subject(
                 AuthoredRequest {
                     author_user_id: row.request.author_user_id.as_deref(),
-                    author_role: row.request.author_role,
                     state: row.request.state,
                 },
                 &input.access,
@@ -177,11 +176,12 @@ async fn load_author_records<C: ConnectionTrait>(
     if subjects.is_empty() {
         return Ok(());
     }
-    let current_access = repository_access(conn, input.repo_id, input.viewer_user_id).await?;
-    if !current_access.is_some_and(|repo| author_record_viewer_can_read(&repo.access, &repo.views))
-    {
+    let Some(repository) = repository_access(conn, input.repo_id, input.viewer_user_id)
+        .await?
+        .filter(|repo| author_record_viewer_can_read(&repo.access, &repo.views))
+    else {
         return Ok(());
-    }
+    };
     let authors = subjects
         .iter()
         .map(|(_, subject)| subject.user_id)
@@ -189,10 +189,13 @@ async fn load_author_records<C: ConnectionTrait>(
         .into_iter()
         .map(str::to_owned)
         .collect();
-    let totals = author_record_totals(conn, input.repo_id, authors).await?;
+    let standings = author_standings(conn, input.repo_id, authors).await?;
     for (record, subject) in subjects {
-        let author_totals = totals.get(subject.user_id).copied().unwrap_or_default();
-        *record = Some(subject.record(author_totals)?);
+        let standing = standings
+            .get(subject.user_id)
+            .ok_or_else(|| PostgresError::internal_message("author standing is missing"))?;
+        let author = standing.access(&repository.record, subject.user_id);
+        *record = subject.record(&author, standing.totals)?;
     }
     Ok(())
 }

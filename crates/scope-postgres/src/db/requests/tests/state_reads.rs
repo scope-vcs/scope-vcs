@@ -146,4 +146,43 @@ async fn state_reads_preserve_viewer_visibility_and_bound_round_trips() {
             assert_eq!(error.message, "request not found");
         }
     }
+    for (author_view, record) in [
+        (
+            ViewId::public(),
+            Some(scope_domain::requests::AuthorRecord::FirstRequest),
+        ),
+        (ViewId::private(), None),
+    ] {
+        use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel};
+        crate::db::entities::repository_member::Entity::delete_by_id((
+            repo.record.id.clone(),
+            "user_public".to_string(),
+        ))
+        .exec(requests.db.as_ref())
+        .await
+        .unwrap();
+        crate::db::entities::repository_member::Model::from_domain(&RepositoryMember {
+            repo_id: repo.record.id.clone(),
+            user_id: "user_public".into(),
+            permissions: RepositoryMemberPermissions {
+                view: author_view.clone(),
+                ..Default::default()
+            },
+            created_at_unix: 6,
+            updated_at_unix: 6,
+        })
+        .unwrap()
+        .into_active_model()
+        .insert(requests.db.as_ref())
+        .await
+        .unwrap();
+        let snapshot = requests
+            .request_state_snapshot("owner", "repo", "req_1", Some("user_owner"))
+            .await
+            .unwrap();
+        assert_eq!(
+            snapshot.author_record, record,
+            "an author assigned the {author_view} view"
+        );
+    }
 }

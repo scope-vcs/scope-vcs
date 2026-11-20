@@ -5,7 +5,7 @@ use super::{
 use crate::{
     repository::access::{RepositoryAccess, RepositoryActor},
     requests::{
-        RequestActorRole, RequestState,
+        RequestState,
         fixtures::{access, actor_views, agent},
     },
     views::ViewId,
@@ -13,7 +13,6 @@ use crate::{
 
 const OPEN: AuthoredRequest<'static> = AuthoredRequest {
     author_user_id: Some("author"),
-    author_role: RequestActorRole::Public,
     state: RequestState::Open,
 };
 
@@ -22,8 +21,9 @@ fn owner() -> RepositoryAccess {
 }
 
 fn record(request: AuthoredRequest<'_>, totals: AuthorRecordTotals) -> Option<AuthorRecord> {
-    author_record_subject(request, &owner(), actor_views())
-        .map(|subject| subject.record(totals).unwrap())
+    author_record_subject(request, &owner(), actor_views())?
+        .record(&RepositoryAccess::public(), totals)
+        .unwrap()
 }
 
 fn history(request: AuthoredRequest<'_>, totals: AuthorRecordTotals) -> AuthorHistory {
@@ -34,27 +34,39 @@ fn history(request: AuthoredRequest<'_>, totals: AuthorRecordTotals) -> AuthorHi
 }
 
 #[test]
-fn only_full_view_maintainers_see_a_record_and_only_for_contributors_with_an_account() {
-    for author_role in [RequestActorRole::Member, RequestActorRole::Owner] {
-        let request = AuthoredRequest {
-            author_role,
-            ..OPEN
-        };
-        assert!(author_record_subject(request, &owner(), actor_views()).is_none());
+fn readers_of_the_full_view_see_the_record_of_authors_who_do_not_read_it() {
+    let full_view_member = access(RepositoryActor::Member, ViewId::private(), true);
+    let off_the_full_view = [
+        RepositoryAccess::public(),
+        access(RepositoryActor::Member, agent(), true),
+        access(RepositoryActor::Member, ViewId::public(), false),
+    ];
+    for viewer in [owner(), full_view_member.clone()] {
+        for author in &off_the_full_view {
+            let subject = author_record_subject(OPEN, &viewer, actor_views()).unwrap();
+            assert_eq!(
+                subject.record(author, AuthorRecordTotals::default()),
+                Ok(Some(AuthorRecord::FirstRequest)),
+                "{author:?}"
+            );
+        }
+        for author in [owner(), full_view_member.clone()] {
+            let subject = author_record_subject(OPEN, &viewer, actor_views()).unwrap();
+            assert_eq!(
+                subject.record(&author, AuthorRecordTotals::default()),
+                Ok(None),
+                "{author:?}"
+            );
+        }
+    }
+    for viewer in &off_the_full_view {
+        assert!(author_record_subject(OPEN, viewer, actor_views()).is_none());
     }
     let deleted_author = AuthoredRequest {
         author_user_id: None,
         ..OPEN
     };
     assert!(author_record_subject(deleted_author, &owner(), actor_views()).is_none());
-    for viewer in [
-        RepositoryAccess::public(),
-        access(RepositoryActor::Member, agent(), true),
-    ] {
-        assert!(author_record_subject(OPEN, &viewer, actor_views()).is_none());
-    }
-    let member = access(RepositoryActor::Member, ViewId::private(), true);
-    assert!(author_record_subject(OPEN, &member, actor_views()).is_some());
 }
 
 #[test]
@@ -71,6 +83,20 @@ fn a_request_with_nothing_else_submitted_is_the_first() {
     assert_eq!(
         record(draft, AuthorRecordTotals::default()),
         Some(AuthorRecord::FirstRequest)
+    );
+    let merged_their_own = AuthorRecordTotals {
+        merged_by_author: 1,
+        ..own_open
+    };
+    assert_eq!(
+        record(OPEN, merged_their_own),
+        Some(AuthorRecord::History(AuthorHistory {
+            merged: 0,
+            closed: 0,
+            withdrawn: 0,
+            other_open: 0,
+            rating: None,
+        }))
     );
 }
 
@@ -93,25 +119,28 @@ fn a_rating_needs_possible_totals() {
     let rated = |rating_score_sum, rating_count| {
         author_record_subject(OPEN, &owner(), actor_views())
             .unwrap()
-            .record(AuthorRecordTotals {
-                open: 1,
-                rating_score_sum,
-                rating_count,
-                ..AuthorRecordTotals::default()
-            })
+            .record(
+                &RepositoryAccess::public(),
+                AuthorRecordTotals {
+                    open: 1,
+                    rating_score_sum,
+                    rating_count,
+                    ..AuthorRecordTotals::default()
+                },
+            )
     };
     assert_eq!(
         rated(9, 2).unwrap(),
-        AuthorRecord::History(AuthorHistory {
+        Some(AuthorRecord::History(AuthorHistory {
             merged: 0,
-            closed_by_maintainer: 0,
+            closed: 0,
             withdrawn: 0,
             other_open: 0,
             rating: Some(AuthorRating {
                 score_sum: 9,
                 count: 2,
             }),
-        })
+        }))
     );
     assert!(rated(0, 1).is_err());
     assert!(rated(6, 1).is_err());
@@ -119,13 +148,17 @@ fn a_rating_needs_possible_totals() {
 }
 
 #[test]
-fn a_counted_request_has_one_outcome_and_a_missing_closer_is_a_maintainer_closure() {
+fn a_submitted_request_has_one_outcome_and_a_missing_actor_is_someone_else() {
     let open = AuthorRequestFacts {
         submitted: true,
-        authored_as_contributor: true,
         merged: false,
+        merged_by_author: false,
         closed: false,
         closed_by_author: false,
+    };
+    let merged = AuthorRequestFacts {
+        merged: true,
+        ..open
     };
     let closed = AuthorRequestFacts {
         closed: true,
@@ -133,14 +166,15 @@ fn a_counted_request_has_one_outcome_and_a_missing_closer_is_a_maintainer_closur
     };
     for (facts, outcome) in [
         (open, Some(AuthorOutcome::Open)),
+        (merged, Some(AuthorOutcome::Merged)),
         (
             AuthorRequestFacts {
-                merged: true,
-                ..open
+                merged_by_author: true,
+                ..merged
             },
-            Some(AuthorOutcome::Merged),
+            Some(AuthorOutcome::MergedByAuthor),
         ),
-        (closed, Some(AuthorOutcome::ClosedByMaintainer)),
+        (closed, Some(AuthorOutcome::Closed)),
         (
             AuthorRequestFacts {
                 closed_by_author: true,
@@ -151,14 +185,6 @@ fn a_counted_request_has_one_outcome_and_a_missing_closer_is_a_maintainer_closur
         (
             AuthorRequestFacts {
                 submitted: false,
-                ..open
-            },
-            None,
-        ),
-        (
-            AuthorRequestFacts {
-                authored_as_contributor: false,
-                merged: true,
                 ..open
             },
             None,
