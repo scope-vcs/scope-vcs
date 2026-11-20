@@ -41,15 +41,15 @@ test('generated validators enforce arrays and JavaScript safe integers', () => {
     label: 'public',
   }]), false)
 
-  const connected = {
+  const lagged = {
     incarnation_id: 'incarnation-1',
-    kind: 'Connected',
+    kind: 'Lagged',
     repo_id: 'owner/repo',
     version: Number.MAX_SAFE_INTEGER,
   }
-  assert.equal(RepoChangeEventValidator(connected), true)
+  assert.equal(RepoChangeEventValidator(lagged), true)
   assert.equal(RepoChangeEventValidator({
-    ...connected,
+    ...lagged,
     version: Number.MAX_SAFE_INTEGER + 1,
   }), false)
 })

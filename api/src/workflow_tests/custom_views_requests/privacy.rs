@@ -16,7 +16,7 @@ pub(super) async fn merged_event_stream(state: &AppState) -> axum::body::BodyDat
     assert!(
         String::from_utf8(connected.to_vec())
             .unwrap()
-            .contains("Connected")
+            .contains("Synced")
     );
     stream
 }

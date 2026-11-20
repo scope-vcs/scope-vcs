@@ -125,13 +125,13 @@ async function assertShellBeforeFileReady({ content, path, requestPath }) {
         releaseFileRequest()
         await content(page).waitFor()
         await settled()
-        assert.equal(fileRequests, 2, 'initial file read plus connection catch-up')
+        assert.equal(fileRequests, 1, 'connecting the event stream does not read the file again')
       },
       {
         settle: false,
         prepare: async (page) => {
           settled = trackPageSettle(page)
-          await page.route('**/events', async route => {
+          await page.route((url) => url.pathname.endsWith('/events'), async route => {
             await fileRequestStarted
             await route.continue()
           })

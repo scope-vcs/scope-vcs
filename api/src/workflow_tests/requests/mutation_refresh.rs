@@ -31,7 +31,7 @@ async fn committed_submission_refreshes_other_viewers_when_response_projection_f
     assert!(
         String::from_utf8(connected.to_vec())
             .unwrap()
-            .contains("Connected")
+            .contains("Synced")
     );
 
     let response = api_request(

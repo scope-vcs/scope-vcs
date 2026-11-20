@@ -129,15 +129,22 @@ test('a live refresh in flight leaves the reader where they scrolled', async () 
       assert.equal(await mainContent.evaluate((element) => element.scrollTop), scrollTop)
     }, {
       settle: false,
-      prepare: (page) => page.route('**/_serverFn/**', async (route) => {
-        if (!isSummary(route.request())) return route.fallback()
-        summaryRequests += 1
-        if (summaryRequests !== LIVE_REFRESH_SUMMARY) return route.fallback()
-        markSummaryRequested()
-        const response = await route.fetch()
-        await summaryHeld
-        await route.fulfill({ response })
-      }),
+      prepare: async (page) => {
+        await page.route((url) => url.pathname.endsWith('/events'), (route) => {
+          const stale = new URL(route.request().url())
+          stale.searchParams.set('since', '1')
+          return route.continue({ url: stale.toString() })
+        })
+        await page.route('**/_serverFn/**', async (route) => {
+          if (!isSummary(route.request())) return route.fallback()
+          summaryRequests += 1
+          if (summaryRequests !== LIVE_REFRESH_SUMMARY) return route.fallback()
+          markSummaryRequested()
+          const response = await route.fetch()
+          await summaryHeld
+          await route.fulfill({ response })
+        })
+      },
     })
   } finally {
     releaseSummary()

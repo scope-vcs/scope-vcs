@@ -37,9 +37,28 @@ test('accepted summaries and reconnects reconcile the retained request queue wit
   await page.evaluate(() => window.fixture.submit(['during-disconnect']))
   await page.getByRole('listitem').filter({ hasText: 'during-disconnect' }).waitFor()
   assert.equal(await page.evaluate(() => window.fixture.server.connections), 2)
+  assert.deepEqual(
+    await page.evaluate(() => window.fixture.server.sinces.slice(1)),
+    await page.evaluate(() => window.fixture.server.synced.slice(0, 1)),
+    'a reconnect resumes from the last Synced watermark',
+  )
   const settled = await page.evaluate(() => ({ reads: window.fixture.server.summaryReads, connections: window.fixture.server.connections }))
   await page.waitForTimeout(150)
   assert.deepEqual(await page.evaluate(() => ({ reads: window.fixture.server.summaryReads, connections: window.fixture.server.connections })), settled)
+  assert.deepEqual(errors, [])
+})
+
+test('an open page reloads its repository data every ten minutes as a backstop', async t => {
+  const { base, errors, page } = await openFixture(t, 'repo-refresh', { aliases: [fixtureClerk], timeout: 5_000 })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  await page.goto(base, { timeout: 30_000 })
+  await page.waitForFunction(() => window.fixture?.server.queueReads >= 4 && window.fixture.server.synced.length === 1)
+  const queueReads = () => page.evaluate(() => window.fixture.server.queueReads)
+  const before = await queueReads()
+  await page.clock.runFor(9 * 60_000)
+  assert.equal(await queueReads(), before)
+  await page.clock.runFor(2 * 60_000)
+  await page.waitForFunction((reads) => window.fixture.server.queueReads === reads + 4, before)
   assert.deepEqual(errors, [])
 })
 

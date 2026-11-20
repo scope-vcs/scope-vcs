@@ -69,7 +69,7 @@ async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts
     assert!(
         String::from_utf8(connected.to_vec())
             .unwrap()
-            .contains("Connected")
+            .contains("Synced")
     );
 
     let created = api_request(

@@ -58,12 +58,13 @@ export async function loadRepoLanguagesForRequest(
 }
 
 export async function loadRepoLiveStateForRequest(data: RepoParams) {
+  const loadedAtUnixMs = Date.now()
   const repo = await createApiClient().get(
     repoRoute(ApiRouteTemplates.repo, data),
     RepoSummaryResponseValidator,
     { auth: 'optional' },
   )
-  return repoLiveState(data, repo)
+  return repoLiveState(data, repo, loadedAtUnixMs)
 }
 
 export async function loadRepoFileForRequest(
@@ -99,12 +100,13 @@ function repoVersionQuery({ request, update, view }: { view: ViewId } & Reposito
   return query
 }
 
-function repoLiveState(data: RepoParams, repo: RepoSummaryResponse): RepoLiveState {
+function repoLiveState(data: RepoParams, repo: RepoSummaryResponse, loadedAtUnixMs: number): RepoLiveState {
   const publicApi = stripTrailingSlash(getPublicApiConnection('building repo event stream URL'))
   return {
     api_url: publicApi,
     clerk_token_template: clerkApiTokenTemplate(),
     event_stream_url: `${publicApi}${repoRoute(ApiRouteTemplates.repoEvents, data)}`,
+    loaded_at_unix_ms: loadedAtUnixMs,
     repo,
   }
 }

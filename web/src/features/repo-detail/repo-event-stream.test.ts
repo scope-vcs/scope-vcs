@@ -274,18 +274,16 @@ test('stream recovery follows retryable, protocol, and terminal outcomes', async
   ]
   const waits: number[] = []
   const diagnostics: unknown[] = []
-  let interruptions = 0
   await runRepoEventStream({
     connect: async () => outcomes.shift()!,
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     onEvent,
-    onInterrupted: () => { interruptions += 1 },
+    onStopped: () => {},
     random: () => 0,
     signal: new AbortController().signal,
     wait: async (milliseconds) => { waits.push(milliseconds) },
   })
 
-  assert.equal(interruptions, 3)
   assert.deepEqual(waits, [2_000, 4_000])
   assert.deepEqual(diagnostics, [
     { type: 'protocol-error', failureClass: 'schema', issuePath: '/kind' },
@@ -296,14 +294,13 @@ test('stream recovery follows retryable, protocol, and terminal outcomes', async
 test('an expired stream token reconnects with a fresh token', async () => {
   const expired = 'event: error\ndata: {"code":"unauthorized","message":"token expired","retryable":false}\n\n'
   const delivered = `event: repo-change\ndata: ${JSON.stringify(event(2))}\n\n`
-  for (const { firstStream, interruptions, waits } of [
-    { firstStream: expired, interruptions: 1, waits: [2_000] },
-    { firstStream: delivered + expired, interruptions: 0, waits: [] },
+  for (const { firstStream, waits } of [
+    { firstStream: expired, waits: [2_000] },
+    { firstStream: delivered + expired, waits: [] },
   ]) {
     const controller = new AbortController()
     const tokens: Array<string | null> = []
     let tokenReads = 0
-    let interrupted = 0
     const observedWaits: number[] = []
     globalThis.fetch = async (_input, init) => {
       tokens.push(new Headers(init?.headers).get('authorization'))
@@ -318,13 +315,12 @@ test('an expired stream token reconnects with a fresh token', async () => {
         signal,
       ),
       onEvent: () => { if (tokens.length === 2) controller.abort() },
-      onInterrupted: () => { interrupted += 1 },
+      onStopped: () => {},
       signal: controller.signal,
       random: () => 0,
       wait: async milliseconds => { observedWaits.push(milliseconds) },
     })
     assert.deepEqual(tokens, ['Bearer test-token-1', 'Bearer test-token-2'])
-    assert.equal(interrupted, interruptions)
     assert.deepEqual(observedWaits, waits)
   }
 })
@@ -352,7 +348,7 @@ test('third transport failure records once and a healthy event resets the run', 
     },
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     onEvent: () => {},
-    onInterrupted: () => {},
+    onStopped: () => {},
     random: () => 0,
     signal: new AbortController().signal,
     wait: async (milliseconds) => { waits.push(milliseconds) },
@@ -362,7 +358,7 @@ test('third transport failure records once and a healthy event resets the run', 
   assert.deepEqual(waits, [2_000, 4_000, 8_000, 2_000, 4_000])
 })
 
-test('an active stream connects and reports interruption while an aborted stream does neither', async () => {
+test('an active stream reports a permanent error as stopped while an aborted stream never connects', async () => {
   for (const aborted of [false, true]) {
     const controller = new AbortController()
     if (aborted) controller.abort()
@@ -374,11 +370,11 @@ test('an active stream connects and reports interruption while an aborted stream
       },
       onDiagnostic: () => { calls.push('diagnostic') },
       onEvent: () => { calls.push('event') },
-      onInterrupted: () => { calls.push('interrupted') },
+      onStopped: () => { calls.push('stopped') },
       signal: controller.signal,
       wait: async () => { calls.push('wait') },
     })
-    assert.deepEqual(calls, aborted ? [] : ['connect', 'interrupted'])
+    assert.deepEqual(calls, aborted ? [] : ['connect', 'stopped'])
   }
 })
 
@@ -403,7 +399,7 @@ test('completed stream reconnect delays release abort listeners before reconnect
       },
       onDiagnostic: () => {},
       onEvent: () => {},
-      onInterrupted: () => {},
+      onStopped: () => {},
       signal: controller.signal,
     })
     assert.deepEqual(listenersAtConnect, Array.from({ length: 20 }, () => 0))

@@ -16,8 +16,9 @@ const repo = {
   access: { actor: 'Owner', view: 'private', can_push: true,
     can_change_file_visibility: true, can_manage_members: true, can_delete_repo: true },
 } satisfies RepoLiveState['repo']
-const server = { ids: [] as string[], summaryFailures: 0, summaryReads: 0, queueReads: 0, connections: 0, streams: new Set<ReadableStreamDefaultController<Uint8Array>>() }
-const live = (): RepoLiveState => ({ repo: { ...repo, open_request_count: server.ids.length }, api_url: '', event_stream_url: '/events', clerk_token_template: 'scope' })
+const server = { ids: [] as string[], missed: [] as { at: number; message: string }[], sinces: [] as number[], synced: [] as number[], summaryFailures: 0, summaryReads: 0, queueReads: 0, connections: 0, streams: new Set<ReadableStreamDefaultController<Uint8Array>>() }
+const live = (): RepoLiveState => ({ repo: { ...repo, open_request_count: server.ids.length }, api_url: '', event_stream_url: '/events', clerk_token_template: 'scope', loaded_at_unix_ms: Date.now() })
+const repoChange = (kind: unknown, version: number) => `event: repo-change\ndata: ${JSON.stringify({ repo_id: repo.id, incarnation_id: 'repo-i', kind, version })}\n\n`
 const summaryIdentity = 'owner/repo'
 const summary = async () => {
   server.summaryReads++
@@ -31,11 +32,18 @@ const refresh = () => repoSummaryResource.invalidate(summaryIdentity)
 const ignoreRejection = () => {}
 const originalFetch = window.fetch
 window.fetch = async (input, init) => {
-  if (input !== '/events') return originalFetch(input, init)
+  if (typeof input !== 'string' || !input.startsWith('/events?since=')) return originalFetch(input, init)
   server.connections++
+  const since = Number(new URL(input, location.href).searchParams.get('since'))
+  server.sinces.push(since)
   return new Response(new ReadableStream({ start(controller) {
     server.streams.add(controller)
-    controller.enqueue(new TextEncoder().encode(`event: repo-change\ndata: ${JSON.stringify({ repo_id: repo.id, incarnation_id: 'repo-i', kind: 'Connected', version: repo.change_version })}\n\n`))
+    for (const missed of server.missed.splice(0)) {
+      if (missed.at >= since - 5_000) controller.enqueue(new TextEncoder().encode(missed.message))
+    }
+    const through = Date.now()
+    server.synced.push(through)
+    controller.enqueue(new TextEncoder().encode(repoChange({ Synced: { through_unix_ms: through } }, 0)))
     init?.signal?.addEventListener('abort', () => { if (server.streams.delete(controller)) controller.close() }, { once: true })
   } }), { headers: { 'content-type': 'text/event-stream' } })
 }
@@ -55,10 +63,13 @@ function App() {
     server, refresh,
     navigate: () => setVisible(value => !value),
     unmount: () => root.unmount(),
-    submit: (ids: string[]) => { server.ids = ids },
+    submit: (ids: string[]) => {
+      server.ids = ids
+      if (server.streams.size === 0) server.missed.push({ at: Date.now(), message: repoChange({ RepositoryChanged: { reason: 'request-submitted' } }, repo.change_version) })
+    },
     advanceVersion: () => { repo.change_version++ },
     interrupt: () => { for (const stream of server.streams) stream.close(); server.streams.clear() },
-    lag: () => { for (const stream of server.streams) stream.enqueue(new TextEncoder().encode(`event: repo-change\ndata: ${JSON.stringify({ repo_id: repo.id, incarnation_id: 'repo-i', kind: 'Lagged', version: 0 })}\n\n`)) },
+    lag: () => { for (const stream of server.streams) stream.enqueue(new TextEncoder().encode(repoChange('Lagged', 0))) },
   } })
   if (!current) return null
   return <main><h1>Requests <span data-count>{current.repo.open_request_count}</span></h1><button onClick={() => setVisible(value => !value)}>Navigate</button>{visible && <Queue current={current} />}</main>

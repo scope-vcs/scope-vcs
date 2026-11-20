@@ -334,7 +334,7 @@ async fn request_attachment_events_hide_unbound_uploads_from_other_maintainers()
     assert!(
         String::from_utf8(stream.next().await.unwrap().unwrap().to_vec())
             .unwrap()
-            .contains("Connected")
+            .contains("Synced")
     );
     let incarnation = test_repo_incarnation();
     let event = scope_api_contract::RepoChangeEvent {

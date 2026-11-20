@@ -76,7 +76,6 @@ function visibleText(body) {
 }
 
 const SERVER_FUNCTION_QUIET_MS = 200
-const REPOSITORY_LOAD_SUMMARIES = 2
 
 export function trackPageSettle(page) {
   const pending = new Set()
@@ -99,7 +98,7 @@ export function trackPageSettle(page) {
     const repository = await page.evaluate(() =>
       globalThis.__TSR_ROUTER__.state.matches.some(({ routeId }) => routeId === '/$owner/$repo'))
     const deadline = Date.now() + 30_000
-    while ((repository && summaries < REPOSITORY_LOAD_SUMMARIES) || pending.size || Date.now() - lastActivity < SERVER_FUNCTION_QUIET_MS) {
+    while ((repository && summaries === 0) || pending.size || Date.now() - lastActivity < SERVER_FUNCTION_QUIET_MS) {
       assert(Date.now() < deadline, `page did not settle: ${summaries} live-state summaries, pending ${[...pending].map(serverFunctionName).join(', ')}`)
       await delay(50)
     }

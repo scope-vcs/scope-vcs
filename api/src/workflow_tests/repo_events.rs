@@ -19,6 +19,17 @@ async fn events(state: AppState, auth: Option<String>) -> Response {
     .await
 }
 
+async fn events_since(state: AppState, auth: Option<String>, since: u64) -> Response {
+    api_request(
+        router(state),
+        "GET",
+        &format!("/v1/repos/owner/repo/events?since={since}"),
+        auth.as_deref(),
+        None,
+    )
+    .await
+}
+
 async fn next_event(stream: &mut axum::body::BodyDataStream) -> String {
     let bytes = tokio::time::timeout(Duration::from_secs(5), stream.next())
         .await
@@ -58,7 +69,7 @@ async fn real_git_push_emits_one_post_commit_event_and_failed_push_emits_none() 
     assert!(
         next_event(&mut stream)
             .await
-            .contains(r#""kind":"Connected""#)
+            .contains(r#""kind":{"Synced""#)
     );
 
     let permissioned_remote = format!("{origin}/git/private/{TEST_REPO_ID}").replacen(
@@ -208,7 +219,7 @@ async fn repo_events_stream_permission_changes_to_members() {
     assert!(
         next_event(&mut stream)
             .await
-            .contains(r#""kind":"Connected""#)
+            .contains(r#""kind":{"Synced""#)
     );
 
     let updated = api_request(
@@ -259,7 +270,7 @@ async fn repo_events_send_one_public_error_when_repo_is_deleted() {
     assert!(
         next_event(&mut stream)
             .await
-            .contains(r#""kind":"Connected""#)
+            .contains(r#""kind":{"Synced""#)
     );
 
     let deleted = api_request(
@@ -327,6 +338,10 @@ async fn event_streams_isolate_missed_recreation_notifications() {
         2,
         RepoChangeReason::MetadataUpdated,
     )]);
+    let resync = next_event(&mut new_stream).await;
+    assert!(resync.contains(r#""kind":"Lagged""#), "{resync}");
+    assert!(resync.contains(r#""incarnation_id":"repoi_recreated_events""#));
+    assert!(!resync.contains(r#""version":99"#));
     let update = next_event(&mut new_stream).await;
     assert!(update.contains("event: repo-change"), "{update}");
     assert!(update.contains(r#""version":2"#), "{update}");
@@ -398,7 +413,7 @@ async fn public_repo_stream_drops_private_request_identifiers() {
     assert!(
         next_event(&mut stream)
             .await
-            .contains(r#""kind":"Connected""#)
+            .contains(r#""kind":{"Synced""#)
     );
 
     state
@@ -458,8 +473,8 @@ async fn run_and_dependency_changes_reach_members_but_not_public_repo_streams() 
     assert_eq!(member.status(), StatusCode::OK);
     let mut public_stream = public.into_body().into_data_stream();
     let mut member_stream = member.into_body().into_data_stream();
-    assert!(next_event(&mut public_stream).await.contains("Connected"));
-    assert!(next_event(&mut member_stream).await.contains("Connected"));
+    assert!(next_event(&mut public_stream).await.contains("Synced"));
+    assert!(next_event(&mut member_stream).await.contains("Synced"));
 
     for (kind, member_sees) in [
         (
@@ -500,11 +515,7 @@ async fn event_streams_end_when_shutdown_begins_so_connections_can_drain() {
     cache_test_jwks(&state);
     let response = events(state.clone(), Some(bearer_header())).await;
     let mut open = response.into_body().into_data_stream();
-    assert!(
-        next_event(&mut open)
-            .await
-            .contains(r#""kind":"Connected""#)
-    );
+    assert!(next_event(&mut open).await.contains(r#""kind":{"Synced""#));
 
     state.end_event_streams();
 

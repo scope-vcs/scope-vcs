@@ -20,7 +20,7 @@ test('latest repository activity survives child navigation without another reque
     await activity.waitFor()
     const original = await activity.innerText()
     const firstRequests = requests
-    assert.equal(firstRequests, 2, 'initial read plus connection catch-up')
+    assert.equal(firstRequests, 1, 'connecting the event stream does not read again')
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 844 })
       await page.getByRole('link', { name: 'Requests', exact: true }).first().click()
@@ -115,7 +115,6 @@ test('repository events received off-page refresh retained activity without blan
   try {
     await withPage(`${repoPath}/code`, async (page) => {
       await page.waitForFunction(() => globalThis.__TSR_ROUTER__?.state.status === 'idle' && window.__scopeRepositoryStreamCount() > 0)
-      await emitEvent('Connected')
       await settled()
       const activity = page.getByLabel('Latest repository change', { exact: true })
       await activity.waitFor()
