@@ -6,6 +6,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 const PAGE_SIZE: usize = 100;
 const MAX_PAGES: usize = 10;
+const REACTED_COMMENTS_READ: usize = 10;
 
 #[derive(Deserialize)]
 struct Author {
@@ -117,16 +118,20 @@ impl GitHubApp {
         let mut comment_reactions = Vec::new();
         for comment in comments
             .iter()
+            .rev()
             .filter(|comment| comment.reactions.holds_bot_signal())
+            .take(REACTED_COMMENTS_READ)
         {
             comment_reactions.extend(
-                self.oldest_pages::<Reaction>(
+                self.newest_pages::<Reaction>(
                     installation_id,
                     &format!(
                         "/repos/{full_name}/issues/comments/{}/reactions?",
                         comment.id
                     ),
                     "/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
+                    head_delivered_at_unix,
+                    |reaction| parse_time(&reaction.created_at),
                 )
                 .await?
                 .into_iter()

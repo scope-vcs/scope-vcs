@@ -387,6 +387,10 @@ async fn a_thumbs_up_counts_only_after_the_head_reached_github() {
 async fn a_thumbs_up_on_the_comment_that_asked_for_the_review_clears_the_bot() {
     let request = gated_request("review-bot-comment-reaction").await;
     let pulls = &request.fake.pulls;
+    for _ in 0..12 {
+        let earlier = pulls.request_review_as(1, "octocat", "@greptileai review");
+        pulls.react_to_comment_as(earlier, "octocat", "+1", AFTER_PUSH);
+    }
     let asked = pulls.request_review_as(1, "octocat", "@greptileai review");
     pulls.react_to_comment_as(asked, "octocat", "+1", AFTER_PUSH);
     pulls.react_to_comment_as(asked, GREPTILE, "+1", BEFORE_PUSH);
