@@ -151,7 +151,7 @@ impl RecentRepoChanges {
         Some(repo.map_or_else(Vec::new, |repo| {
             repo.events
                 .iter()
-                .filter(|(received_at_ms, _)| *received_at_ms > from_ms)
+                .filter(|(received_at_ms, _)| *received_at_ms >= from_ms)
                 .map(|(_, event)| event.clone())
                 .collect()
         }))
@@ -466,6 +466,11 @@ mod tests {
         assert_eq!(
             recent.since("repo", 14_000, 40_000),
             Some(vec![timeline("repo", 1), timeline("repo", 3)])
+        );
+        assert_eq!(
+            recent.since("repo", 35_000, 40_000),
+            Some(vec![timeline("repo", 3)]),
+            "a change received exactly at the replay boundary is replayed"
         );
         assert_eq!(recent.since("quiet", 25_000, 40_000), Some(Vec::new()));
     }

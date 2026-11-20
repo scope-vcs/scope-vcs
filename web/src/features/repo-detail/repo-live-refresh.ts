@@ -6,6 +6,8 @@ import { eventStreamUrlSince, runRepoEventStream, streamRepoEvents, syncedThroug
 import { repoResourceScope } from './repo-resource-scope'
 import { invalidateRepoResources, resyncTopics, topicsOf } from './repo-resource'
 
+const RESYNC_BACKSTOP_MS = 10 * 60_000
+
 type RepoChangeListener = (event: RepoChangeEvent) => void
 export type SubscribeToRepoChanges = (
   listener: RepoChangeListener,
@@ -45,6 +47,11 @@ export function useRepoLiveRefresh(live: RepoLiveState | null) {
         }
       }
     }
+    const resync = () => {
+      invalidateRepoResources(scope, resyncTopics({ versioned }))
+      notifyListeners({ incarnation_id: 'local-resync', kind: 'Lagged', repo_id: repoId, version: 0 })
+    }
+    const backstop = window.setInterval(resync, RESYNC_BACKSTOP_MS)
     if (syncedRef.current?.scope !== scope) syncedRef.current = { scope, throughUnixMs: loadedAtUnixMs() }
     const synced = syncedRef.current
     const onEvent = (event: RepoChangeEvent) => {
@@ -61,10 +68,13 @@ export function useRepoLiveRefresh(live: RepoLiveState | null) {
         signal,
       ),
       onEvent,
-      onStopped: () => invalidateRepoResources(scope, resyncTopics({ versioned })),
+      onStopped: resync,
       signal: controller.signal,
     })
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      window.clearInterval(backstop)
+    }
   }, [getToken, repoId, scope, eventStreamUrl, tokenTemplate, versioned])
 
   const acceptedRef = useRef<{ live: RepoLiveState; scope: string } | null>(null)

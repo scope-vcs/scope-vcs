@@ -22,7 +22,10 @@ use scope_domain::{
 };
 use serde::Deserialize;
 use std::{convert::Infallible, time::Duration};
-use tokio::sync::broadcast::{self, error::RecvError};
+use tokio::sync::broadcast::{
+    self,
+    error::{RecvError, TryRecvError},
+};
 use tokio_stream::{Stream, StreamExt, iter};
 
 const CLIENT_RESYNC_VERSION: u64 = 9_007_199_254_740_991;
@@ -119,10 +122,12 @@ pub(crate) async fn repo_events(
                             stream_state.finished = true;
                             return Some((Ok(sse_error_event(error)), stream_state));
                         }
-                        if !stream_state.receiver.is_empty() {
-                            continue;
+                        match stream_state.receiver.try_recv() {
+                            Ok(event) => event,
+                            Err(TryRecvError::Empty) => synced_event(&stream_state.incarnation, unix_now_ms()),
+                            Err(TryRecvError::Lagged(_)) => lagged_event(&stream_state.incarnation),
+                            Err(TryRecvError::Closed) => return None,
                         }
-                        synced_event(&stream_state.incarnation, unix_now_ms())
                     }
                     event = stream_state.receiver.recv() => match event {
                         Ok(event) => event,
@@ -214,11 +219,14 @@ async fn stream_event_for_user(
             "repository was recreated; reconnect event stream",
         ));
     }
-    if event.repo_id != expected_incarnation.repository_id()
-        || event.incarnation_id != expected_incarnation.incarnation_id()
-    {
+    if event.repo_id != expected_incarnation.repository_id() {
         return Ok(None);
     }
+    let event = if event.incarnation_id == expected_incarnation.incarnation_id() {
+        event
+    } else {
+        lagged_event(expected_incarnation)
+    };
     if let RepoChangeKind::RequestTimelineChanged { request_id, .. }
     | RepoChangeKind::RequestStateChanged { request_id, .. } = &event.kind
     {

@@ -122,6 +122,7 @@ impl AppState {
                 move || lost_bus.notifications_lost(),
             )
             .await?;
+        repo_events.notifications_lost();
         Ok(Self::assemble(
             services,
             integrations,

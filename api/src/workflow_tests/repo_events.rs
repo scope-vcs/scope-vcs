@@ -338,6 +338,10 @@ async fn event_streams_isolate_missed_recreation_notifications() {
         2,
         RepoChangeReason::MetadataUpdated,
     )]);
+    let resync = next_event(&mut new_stream).await;
+    assert!(resync.contains(r#""kind":"Lagged""#), "{resync}");
+    assert!(resync.contains(r#""incarnation_id":"repoi_recreated_events""#));
+    assert!(!resync.contains(r#""version":99"#));
     let update = next_event(&mut new_stream).await;
     assert!(update.contains("event: repo-change"), "{update}");
     assert!(update.contains(r#""version":2"#), "{update}");

@@ -146,6 +146,8 @@ async fn a_reconnect_replays_the_changes_it_missed_or_resyncs_when_they_are_gone
         0,
         RepoChangeReason::RepoDeleted,
     ));
+    let late = next_event(&mut replayed).await;
+    assert!(late.contains(r#""kind":"Lagged""#), "{late}");
     let recreated = events_since(state.clone(), Some(bearer_header()), since).await;
     let event = next_event(&mut recreated.into_body().into_data_stream()).await;
     assert!(event.contains(r#""kind":"Lagged""#), "{event}");
