@@ -57,7 +57,8 @@ def packages():
                 raise ValueError(f"Conflicting crate sources or checksums: {key}")
             entry["lockfiles"].append(lock)
     result = list(crates.values())
-    lock = yaml.safe_load((ROOT / "web/pnpm-lock.yaml").read_text())
+    lock = next(document for document in yaml.safe_load_all((ROOT / "web/pnpm-lock.yaml").read_text())
+        if "packageManagerDependencies" not in document.get("importers", {}).get(".", {}))
     for key, package in lock["packages"].items():
         name, version = key.rsplit("@", 1)
         resolution = package["resolution"]

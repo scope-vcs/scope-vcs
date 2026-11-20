@@ -123,6 +123,27 @@ class LicensingChecks(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unsupported Cargo source"):
                 generate.packages()
 
+    def test_web_packages_exclude_the_pinned_package_manager(self):
+        self.write("Cargo.lock", "package = []\n")
+        self.write("cli/Cargo.lock", "package = []\n")
+        self.write("web/pnpm-lock.yaml", "\n".join([
+            "---",
+            "importers:",
+            "  .:",
+            "    packageManagerDependencies:",
+            "      pnpm: {specifier: 12.21.0, version: 12.21.0}",
+            "packages:",
+            "  pnpm@12.21.0: {resolution: {integrity: sha512-manager}}",
+            "---",
+            "importers:",
+            "  .:",
+            "    dependencies: {react: {specifier: 19.3.0, version: 19.3.0}}",
+            "packages:",
+            "  react@19.3.0: {resolution: {integrity: sha512-react}}",
+        ]))
+        self.assertEqual([(package["name"], package["integrity"]) for package in generate.packages()],
+            [("react", "sha512-react")])
+
     def test_changed_lockfile_or_generator_input_invalidates_notice_check(self):
         files = {"Cargo.lock": "locked packages\n", "dev/licensing/generate.py": "audited generator\n",
             "legal/third-party-rust.txt": "license texts\n"}

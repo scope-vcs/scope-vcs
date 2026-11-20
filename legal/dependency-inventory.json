@@ -2,10 +2,10 @@
   "lockfiles": {
     "Cargo.lock": "f9369809c0194b9fb4e0115e8713d9cc8179bbec6c7fb9fffc680c37f680c66c",
     "cli/Cargo.lock": "746c15b3c27b80c38910eda030c91da19cf267cb26e58bd9e944ff509bdcce8d",
-    "web/pnpm-lock.yaml": "1e5974be08731458d09d96529797f0e479e23ba133dee4427c263a73486b6e92"
+    "web/pnpm-lock.yaml": "243f304f9e43d5cca9efab548a9bd7382fdc02f9777c7202708253b65db4a7ea"
   },
   "inputs": {
-    "dev/licensing/generate.py": "6312836d258dd2b6fe865c580e244fb6532ffbfe5b4634031d9d8a6d04d0cd68",
+    "dev/licensing/generate.py": "efc760b00755cab40f8b8e1544ef7aa650a4a0c8f48feda6b871405cf6c2a347",
     "dev/licensing/requirements.txt": "0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a",
     "legal/copied-sources.json": "9090b1e82ee97fa10def12887a72b64edbec4263b39367a4a8988a1d56d90cea",
     "legal/git-sources.json": "a8db269598ef5d4df96efe4083b2fec7daa289f10c628cc5d20fa0e91a38e092",
