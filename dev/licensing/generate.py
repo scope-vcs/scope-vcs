@@ -35,9 +35,15 @@ def digest(data, algorithm="sha256"):
     return hashlib.new(algorithm, data).hexdigest()
 
 
-def packages():
+def project_lock_packages():
     import yaml
 
+    for document in yaml.safe_load_all((ROOT / "web/pnpm-lock.yaml").read_text()):
+        if "configDependencies" not in document.get("importers", {}).get(".", {}):
+            yield from document["packages"].items()
+
+
+def packages():
     crates = {}
     for lock in ["Cargo.lock", "cli/Cargo.lock"]:
         for package in tomllib.loads((ROOT / lock).read_text())['package']:
@@ -57,9 +63,7 @@ def packages():
                 raise ValueError(f"Conflicting crate sources or checksums: {key}")
             entry["lockfiles"].append(lock)
     result = list(crates.values())
-    lock = next(document for document in yaml.safe_load_all((ROOT / "web/pnpm-lock.yaml").read_text())
-        if "packageManagerDependencies" not in document.get("importers", {}).get(".", {}))
-    for key, package in lock["packages"].items():
+    for key, package in project_lock_packages():
         name, version = key.rsplit("@", 1)
         resolution = package["resolution"]
         url = resolution.get("tarball")

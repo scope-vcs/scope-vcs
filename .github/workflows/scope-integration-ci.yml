@@ -69,7 +69,7 @@ jobs:
       - name: Enable pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
-          version: 12.21.0
+          package_json_file: web/package.json
 
       - name: Install Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -240,7 +240,7 @@ jobs:
       - name: Enable pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
-          version: 12.21.0
+          package_json_file: web/package.json
 
       - name: Install Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -390,7 +390,7 @@ jobs:
       - name: Enable pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
-          version: 12.21.0
+          package_json_file: web/package.json
 
       - name: Install Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
