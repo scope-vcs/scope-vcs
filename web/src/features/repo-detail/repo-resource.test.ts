@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { RepoChangeEvent } from '../../api/types.generated'
 import { repositoryActivityIdentity, repositoryActivityResource } from './repository-activity-resource'
 import { requestActivityIdentity, requestActivityResource } from '../requests/detail/request-activity-resource'
-import { invalidateRepoResources, resyncTopics, topicsOf } from './repo-resource'
+import { invalidateRepoResources, repoChangeGeneration, resyncTopics, topicsOf } from './repo-resource'
 import { repositoryDependencyResource } from './repository-dependency-resource'
 import { historyFeedResource } from '../history/history-resource-cache'
 import { repoContentCacheKey, repoContentResource } from './repo-content-cache'
@@ -355,4 +355,10 @@ test('retained files count their highlighted markup against the file cache budge
   })
   assert.equal(repoFileResource.peek(key('image.png'))?.oid, 'image-oid')
   assert.equal(repoFileResource.peek(key('1.rs'))?.oid, '1.rs')
+})
+
+test('an invalidation advances the change generation even with nothing retained', () => {
+  const before = repoChangeGeneration()
+  invalidateRepoResources('viewer-a', [{ topic: 'requestAttachments', requestId: 'unloaded' }])
+  assert.equal(repoChangeGeneration(), before + 1)
 })

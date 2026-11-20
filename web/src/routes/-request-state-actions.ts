@@ -17,14 +17,21 @@ export const loadRequestState = createServerFn({ method: 'GET' })
     return { state, viewerId: userId }
   })
 
-export async function loadRequestStateForViewer(
+export async function requestStateForViewer(
+  loading: ReturnType<typeof loadRequestState>,
+  viewerId: string | null,
+): Promise<RequestStateValue> {
+  const loaded = await loading
+  if (loaded.viewerId !== viewerId) throw new Error('The account changed while loading this request.')
+  return { state: loaded.state }
+}
+
+export function loadRequestStateForViewer(
   data: RequestParams,
   viewerId: string | null,
   signal: AbortSignal,
 ): Promise<RequestStateValue> {
-  const loaded = await loadRequestState({ data, signal })
-  if (loaded.viewerId !== viewerId) throw new Error('The account changed while loading this request.')
-  return { state: loaded.state }
+  return requestStateForViewer(loadRequestState({ data, signal }), viewerId)
 }
 
 export const loadRequestChildren = createServerFn({ method: 'GET' })

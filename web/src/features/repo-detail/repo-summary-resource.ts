@@ -47,10 +47,15 @@ export function acceptRepoSummary(result: RepoSummaryLoadResult) {
   throw new RepoSummaryUnavailable(result.unavailable)
 }
 
-export function loadRepoSummary(identity: string, load: (signal: AbortSignal) => Promise<RepoLiveState>) {
+export function retainedRepoSummary(identity: string) {
   const { value, error } = repoSummaryResource.getSnapshot(identity)
   const retained = error === null || error instanceof StaleBuildError || isRetryableRepoSummaryError(error)
-  if (value && retained) return Promise.resolve(value)
+  return retained ? value : null
+}
+
+export function loadRepoSummary(identity: string, load: (signal: AbortSignal) => Promise<RepoLiveState>) {
+  const value = retainedRepoSummary(identity)
+  if (value) return Promise.resolve(value)
   return repoSummaryResource.load(identity, '', load)
 }
 

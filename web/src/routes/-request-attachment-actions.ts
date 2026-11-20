@@ -14,6 +14,7 @@ import {
   retryRequestAttachment,
 } from '@/features/requests/attachments/request-attachment-api'
 import type { RequestAttachmentActions } from '@/features/requests/attachments/request-attachment-context'
+import { auth } from '@clerk/tanstack-react-start/server'
 import { createServerFn } from '@tanstack/react-start'
 
 const listRequestAttachments = createServerFn({ method: 'GET' })
@@ -23,6 +24,17 @@ const listRequestAttachments = createServerFn({ method: 'GET' })
 const loadAttachmentLimits = createServerFn({ method: 'GET' })
   .validator(parseRequestParams)
   .handler(({ data }) => loadRequestAttachmentLimits(data))
+
+export const loadRequestAttachmentsForViewer = createServerFn({ method: 'GET' })
+  .validator(parseRequestParams)
+  .handler(async ({ data }) => {
+    const [{ userId }, list, limits] = await Promise.all([
+      auth(),
+      loadRequestAttachments(data),
+      loadRequestAttachmentLimits(data),
+    ])
+    return { attachments: list.attachments, limits, viewerId: userId }
+  })
 
 const prepareAttachment = createServerFn({ method: 'POST' })
   .validator(parsePrepareAttachmentInput)

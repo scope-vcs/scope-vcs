@@ -129,6 +129,10 @@ export function createCachedResource<T extends object>({ retainAcrossViewers = f
       throw new Error('Resource is no longer available.')
     },
     getSnapshot,
+    isCurrent(identity: string, version = '') {
+      const snapshot = getSnapshot(identity)
+      return attempts.get(identity)?.version === version || (!snapshot.stale && snapshot.version === version)
+    },
     getServerSnapshot: (): ResourceSnapshot<T> => emptySnapshot,
     invalidate,
     invalidateMatching(matches: (identity: string) => boolean) {

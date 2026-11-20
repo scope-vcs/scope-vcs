@@ -1,6 +1,8 @@
+import type { RequestParams } from '@/api/types'
 import type {
   CreateRequestAttachmentMediaGrantResponse,
   RequestAttachmentLimitsResponse,
+  RequestAttachmentListResponse,
   RequestAttachmentResponse,
 } from '@/api/types.generated'
 import { affectsRequestKey, createRepoResource, repoResourceKey, repoResourceKeyParts } from '../../repo-detail/repo-resource'
@@ -51,6 +53,27 @@ export function requestAttachmentResourceIdentity(
   requestId: string,
 ) {
   return repoResourceKey(accessScope, requestId)
+}
+
+export type RequestAttachmentLoaders = {
+  list: (input: RequestParams, signal?: AbortSignal) => Promise<RequestAttachmentListResponse>
+  limits: (input: RequestParams, signal?: AbortSignal) => Promise<RequestAttachmentLimitsResponse>
+}
+
+export async function loadRequestAttachmentValue(
+  loaders: RequestAttachmentLoaders,
+  params: RequestParams,
+  signal?: AbortSignal,
+): Promise<RequestAttachmentResourceValue> {
+  const [list, limits] = await Promise.all([
+    loaders.list(params, signal),
+    loaders.limits(params, signal),
+  ])
+  return { attachments: list.attachments, limits }
+}
+
+export function warmRequestAttachments(identity: string, load: (signal: AbortSignal) => Promise<RequestAttachmentResourceValue>) {
+  void requestAttachmentResource.ensure(identity, '', load)
 }
 
 export function refreshRequestAttachments(accessScope: string, requestId: string) {

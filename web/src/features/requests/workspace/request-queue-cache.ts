@@ -31,6 +31,10 @@ export async function refreshRequestQueue(key: string | null, load: LoadRequestQ
   return { pages: Object.fromEntries(entries) as RequestQueuePages }
 }
 
+export function warmRequestQueue(key: string, version: string, load: LoadRequestQueuePage) {
+  void requestQueueResource.ensure(key, version, (signal) => refreshRequestQueue(key, load, signal))
+}
+
 export async function loadMoreRequestQueue(key: string, section: RequestQueueSection, load: LoadRequestQueuePage) {
   const snapshot = requestQueueResource.getSnapshot(key)
   const current = snapshot.value

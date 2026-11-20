@@ -3,7 +3,7 @@ import type { RequestQueueItemResponse } from '@/api/types.generated'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
+import { requestQueuePageLoader } from '@/routes/-request-workspace-actions'
 import { useRepoLayout } from '../../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../../repo-detail/repo-resource-scope'
 import { RepoViewingAsPicker, useViewingAs } from '../../repo-detail/use-viewing-as'
@@ -11,7 +11,6 @@ import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
 import {
   loadMoreRequestQueue,
   requestQueueIdentity,
-  type LoadRequestQueuePage,
 } from './request-queue-cache'
 import { RequestWorkspaceSidebar } from './request-workspace-sidebar'
 import { RequestWorkspaceShell } from './request-workspace-shell'
@@ -66,12 +65,8 @@ function RequestWorkspaceContent({
     return () => document.documentElement.removeAttribute('data-focus')
   }, [focus])
   const toggleFocus = useCallback(() => setFocus((value) => !value), [])
-  const load = useCallback<LoadRequestQueuePage>(
-    (section, cursor, signal) =>
-      loadRequestQueuePage({
-        data: { owner: params.owner, repo: params.repo, section, cursor, search: null, view },
-        signal,
-      }),
+  const load = useMemo(
+    () => requestQueuePageLoader({ owner: params.owner, repo: params.repo }, view),
     [params.owner, params.repo, view],
   )
   const queue = useRequestQueue(identity, version, load)

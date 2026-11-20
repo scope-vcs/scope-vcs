@@ -12,6 +12,7 @@ const backgroundServerFunctions = new Set([
   'listRequestAttachments_createServerFn_handler',
   'loadAccountSession_createServerFn_handler',
   'loadAttachmentLimits_createServerFn_handler',
+  'loadRequestAttachmentsForViewer_createServerFn_handler',
 ])
 
 export function captureRequestShell(page) {
