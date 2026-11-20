@@ -6,7 +6,6 @@ import { Link } from '@tanstack/react-router'
 import { Globe } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { requestChecksSummary, requestFailedCheck } from '../checks/request-check-rows'
-import { useRequestWorkspace } from '../workspace/request-workspace-context'
 import { actorHandle } from './request-actor'
 import { authorRecordTokens } from './request-author-record-model'
 import { RequestAuthorRecord } from './request-author-record'
@@ -19,7 +18,7 @@ export function RequestDetailHeader({
   actions,
   backLink,
   checks,
-  detail: { author, claimer, request },
+  detail: { author, author_record: authorRecord, claimer, request },
   params,
   stateActions,
 }: {
@@ -30,7 +29,6 @@ export function RequestDetailHeader({
   params: RepoParams
   stateActions: ReactNode
 }) {
-  const authorRecord = useRequestWorkspace()?.selected?.author_record ?? null
   const publicNote = requestPublicChecksNote(checks)
   const settledAt = request.merged_at_unix ?? request.closed_at_unix
 

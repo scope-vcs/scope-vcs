@@ -78,13 +78,18 @@ async fn state_reads_preserve_viewer_visibility_and_bound_round_trips() {
         Some("user_guest"),
         None,
     ] {
+        let reads_author_record = matches!(viewer, Some("user_owner" | "member"));
         let snapshot = assert_round_trips(
-            12,
+            12 + usize::from(reads_author_record),
             requests.request_state_snapshot("owner", "repo", "req_1", viewer),
         )
         .await
         .unwrap();
         assert_eq!(snapshot.request, expected);
+        assert_eq!(
+            snapshot.author_record,
+            reads_author_record.then_some(scope_domain::requests::AuthorRecord::FirstRequest)
+        );
         assert_eq!(snapshot.is_invitee, viewer == Some("user_guest"));
         assert_eq!(snapshot.invitees[0].user.id, "user_guest");
         assert_eq!(

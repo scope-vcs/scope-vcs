@@ -18,6 +18,7 @@ fn detail_lines_render_the_request_summary() {
         &scope_api_contract::RequestDetailResponse {
             request,
             author: None,
+            author_record: None,
             claimer: None,
             stack_navigation: scope_api_contract::RequestStackNavigationResponse {
                 parent: None,

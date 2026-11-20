@@ -81,6 +81,9 @@ pub(crate) fn detail_response(
             snapshot.request.author_user_id.as_deref(),
             &snapshot.users,
         )?,
+        author_record: snapshot
+            .author_record
+            .map(super::responses::author_record_response),
         claimer: super::responses::recorded_actor_response(
             snapshot.claimer_user_id.as_deref(),
             &snapshot.users,
