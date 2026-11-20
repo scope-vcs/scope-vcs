@@ -117,7 +117,6 @@ export function topicsOf(event: RepoChangeEvent, { versioned = false }: RepoResy
   const requestList: RepoChange = { topic: 'requestList' }
   if (typeof kind === 'string') {
     switch (kind) {
-      case 'Connected':
       case 'Lagged':
         return resyncTopics({ versioned })
       case 'DependenciesChanged':
@@ -130,6 +129,7 @@ export function topicsOf(event: RepoChangeEvent, { versioned = false }: RepoResy
         return unhandledKind(kind)
     }
   }
+  if ('Synced' in kind) return []
   if ('RepositoryChanged' in kind) return everyTopic().map((change) => change.topic === 'summary' ? summary : change)
   if ('GitHubWorkflowRunChanged' in kind) {
     return [{ topic: 'workflowRun', runId: kind.GitHubWorkflowRunChanged.github_run_id }]

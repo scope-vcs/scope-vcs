@@ -2,11 +2,14 @@ use crate::{
     auth::scope::optional_scope_user,
     error::ApiError,
     repo_access::find_read_access,
-    repo_events::{RepoChangeEvent, RepoChangeKind, RepoChangeReason, repository_change_event},
+    repo_events::{
+        RepoChangeEvent, RepoChangeKind, RepoChangeReason, repository_change_event, synced_event,
+        unix_now_ms,
+    },
     state::AppState,
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     response::sse::{Event, KeepAlive, Sse},
 };
@@ -17,46 +20,73 @@ use scope_domain::{
     repository::{RepositoryIncarnation, repo_id},
     requests::request_policy,
 };
+use serde::Deserialize;
 use std::{convert::Infallible, time::Duration};
-use tokio_stream::{Stream, StreamExt, once, wrappers::BroadcastStream};
+use tokio::sync::broadcast::{self, error::RecvError};
+use tokio_stream::{Stream, StreamExt, iter};
 
 const CLIENT_RESYNC_VERSION: u64 = 9_007_199_254_740_991;
 const RECONCILIATION_INTERVAL: Duration = Duration::from_secs(30);
+
+#[derive(Deserialize)]
+pub(crate) struct RepoEventsQuery {
+    since: Option<u64>,
+}
 
 pub(crate) async fn repo_events(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo_name)): Path<(String, String)>,
+    Query(query): Query<RepoEventsQuery>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
     let user = optional_scope_user(&state, &headers).await?;
     let repo_id = repo_id(&owner, &repo_name);
     let receiver = state.repo_events.subscribe(&repo_id);
 
-    let repo = match find_read_access(
-        &state,
-        &owner,
-        &repo_name,
-        user.as_ref().map(|user| user.id.as_str()),
-    )
-    .await
-    {
-        Ok(repo) => repo,
+    let catch_up = async {
+        let repo = find_read_access(
+            &state,
+            &owner,
+            &repo_name,
+            user.as_ref().map(|user| user.id.as_str()),
+        )
+        .await?;
+        let incarnation = repo.incarnation();
+        let caught_up_ms = unix_now_ms();
+        let mut initial = Vec::new();
+        if let Some(since) = query.since {
+            match state.repo_events.changes_since(&repo_id, since) {
+                Some(missed) => {
+                    for event in missed {
+                        initial.extend(
+                            stream_event_for_user(
+                                &state,
+                                &owner,
+                                &repo_name,
+                                &incarnation,
+                                user.as_ref(),
+                                event,
+                            )
+                            .await?,
+                        );
+                    }
+                }
+                None => initial.extend(event_for_access(&repo, lagged_event(&incarnation))),
+            }
+        }
+        initial.extend(event_for_access(
+            &repo,
+            synced_event(&incarnation, caught_up_ms),
+        ));
+        Ok::<_, ApiError>((incarnation, initial))
+    };
+    let (incarnation, initial) = match catch_up.await {
+        Ok(caught_up) => caught_up,
         Err(error) => {
             drop(receiver);
             state.repo_events.remove_if_idle(&repo_id);
             return Err(error);
         }
-    };
-    let incarnation = repo.incarnation();
-    let connected = repository_change_event(
-        &incarnation,
-        repo.record.change_version,
-        RepoChangeReason::Connected,
-    );
-    let initial = if repo.reads_full_view() {
-        connected
-    } else {
-        redacted_event(connected)
     };
     let updates = stream::unfold(
         RepoEventStreamState {
@@ -64,7 +94,7 @@ pub(crate) async fn repo_events(
             headers,
             incarnation,
             owner,
-            receiver: BroadcastStream::new(receiver),
+            receiver,
             reconciliation: reconciliation_interval(),
             repo_name,
             state: state.clone(),
@@ -82,11 +112,15 @@ pub(crate) async fn repo_events(
                             stream_state.finished = true;
                             return Some((Ok(sse_error_event(error)), stream_state));
                         }
-                        stream_state.resync_event()
+                        if !stream_state.receiver.is_empty() {
+                            continue;
+                        }
+                        synced_event(&stream_state.incarnation, unix_now_ms())
                     }
-                    event = stream_state.receiver.next() => match event? {
+                    event = stream_state.receiver.recv() => match event {
                         Ok(event) => event,
-                        Err(_) => stream_state.resync_event(),
+                        Err(RecvError::Lagged(_)) => lagged_event(&stream_state.incarnation),
+                        Err(RecvError::Closed) => return None,
                     },
                 };
 
@@ -112,11 +146,12 @@ pub(crate) async fn repo_events(
     );
 
     Ok(
-        Sse::new(once(Ok::<_, Infallible>(sse_event(initial))).chain(updates)).keep_alive(
-            KeepAlive::new()
-                .interval(Duration::from_secs(20))
-                .text("keep-alive"),
-        ),
+        Sse::new(iter(initial.into_iter().map(|event| Ok(sse_event(event)))).chain(updates))
+            .keep_alive(
+                KeepAlive::new()
+                    .interval(Duration::from_secs(20))
+                    .text("keep-alive"),
+            ),
     )
 }
 
@@ -125,7 +160,7 @@ struct RepoEventStreamState {
     headers: HeaderMap,
     incarnation: RepositoryIncarnation,
     owner: String,
-    receiver: BroadcastStream<RepoChangeEvent>,
+    receiver: broadcast::Receiver<RepoChangeEvent>,
     reconciliation: tokio::time::Interval,
     repo_name: String,
     state: AppState,
@@ -143,14 +178,10 @@ impl RepoEventStreamState {
         self.user = current_user;
         Ok(())
     }
+}
 
-    fn resync_event(&self) -> RepoChangeEvent {
-        repository_change_event(
-            &self.incarnation,
-            CLIENT_RESYNC_VERSION,
-            RepoChangeReason::Lagged,
-        )
-    }
+fn lagged_event(incarnation: &RepositoryIncarnation) -> RepoChangeEvent {
+    repository_change_event(incarnation, CLIENT_RESYNC_VERSION, RepoChangeReason::Lagged)
 }
 
 fn reconciliation_interval() -> tokio::time::Interval {
@@ -197,7 +228,7 @@ async fn stream_event_for_user(
         let policy = request_policy(&request, viewer, &repo.views);
         let visible = match &event.kind {
             RepoChangeKind::RequestStateChanged { .. } => policy.exact_visible,
-            RepoChangeKind::Connected
+            RepoChangeKind::Synced { .. }
             | RepoChangeKind::Lagged
             | RepoChangeKind::DependenciesChanged
             | RepoChangeKind::GitHubWorkflowRunsChanged
@@ -269,8 +300,7 @@ fn event_for_access(
 fn redacted_event(event: RepoChangeEvent) -> RepoChangeEvent {
     RepoChangeEvent {
         kind: match event.kind {
-            RepoChangeKind::Connected => RepoChangeKind::Connected,
-            RepoChangeKind::Lagged => RepoChangeKind::Lagged,
+            kind @ (RepoChangeKind::Synced { .. } | RepoChangeKind::Lagged) => kind,
             RepoChangeKind::DependenciesChanged
             | RepoChangeKind::GitHubWorkflowRunsChanged
             | RepoChangeKind::GitHubWorkflowRunChanged { .. }

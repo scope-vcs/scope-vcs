@@ -486,7 +486,9 @@ pub struct RepoChangeNotification {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub enum RepoChangeKind {
-    Connected,
+    Synced {
+        through_unix_ms: u64,
+    },
     Lagged,
     DependenciesChanged,
     GitHubWorkflowRunsChanged,

@@ -113,12 +113,14 @@ impl AppState {
         let integrations = Integrations::from_env()?;
         let repo_events = RepoChangeBus::default();
         let listener_bus = repo_events.clone();
+        let lost_bus = repo_events.clone();
         let repo_change_listener = services
             .metadata
             .repositories()
-            .listen_for_repo_changes(move |payload| {
-                listener_bus.publish_notification_payload(&payload)
-            })
+            .listen_for_repo_changes(
+                move |payload| listener_bus.publish_notification_payload(&payload),
+                move || lost_bus.notifications_lost(),
+            )
             .await?;
         Ok(Self::assemble(
             services,

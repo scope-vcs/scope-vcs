@@ -26,6 +26,7 @@ afterEach(() => {
 const summary = (change_version: number, actor: 'Owner' | 'Public' = 'Owner'): RepoLiveState => ({
   api_url: 'https://scope.test',
   clerk_token_template: 'scope',
+  loaded_at_unix_ms: 0,
   event_stream_url: 'https://scope.test/events',
   repo: {
     id: 'owner/repo', owner_handle: 'owner', name: 'repo', description: null,
@@ -70,7 +71,6 @@ test('events at or below the retained version and run or discussion activity lea
 test('newer versions, resyncs, unversioned events, and public readers refresh the summary', () => {
   for (const changed of [
     event(6),
-    event(5, 'Connected'),
     event(0, 'Lagged'),
     event(0, { RequestStateChanged: { request_id: 'request', view: 'public' } }),
     event(6, 'DependenciesChanged'),
@@ -111,7 +111,7 @@ test('a resync during a read that has no retained summary yet reads the summary 
   let resolve: (value: RepoLiveState) => void = () => {}
   const read = repoSummaryResource.ensure('owner/repo', '', () => new Promise((settle) => { resolve = settle }))
   await Promise.resolve()
-  invalidateRepoResources(scope, topicsOf(event(6, 'Connected'), { versioned: true }))
+  invalidateRepoResources(scope, topicsOf(event(6, 'Lagged'), { versioned: true }))
   resolve(summary(5))
   await read
   const followUp = mock.fn(async () => summary(6))

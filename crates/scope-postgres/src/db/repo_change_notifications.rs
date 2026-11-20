@@ -3,13 +3,18 @@ use crate::error::PostgresError;
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use sqlx::postgres::PgListener;
 use std::{
-    sync::{Arc, Mutex, OnceLock, PoisonError},
+    sync::{
+        Arc, Mutex, OnceLock, PoisonError,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tokio::{sync::mpsc, task::JoinHandle};
 
 pub(crate) const POSTGRES_REPO_CHANGE_CHANNEL: &str = "scope_repo_changes";
+const NOTIFICATIONS_LOST_PAYLOAD: &str = "notifications-lost";
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
+const LOSS_ANNOUNCEMENT_RETRY_DELAY: Duration = Duration::from_secs(1);
 const QUEUED_NOTIFICATION_LIMIT: usize = 16_384;
 const NOTIFICATIONS_PER_COMMIT: usize = 256;
 
@@ -52,6 +57,7 @@ impl RepositoryStore {
     pub async fn listen_for_repo_changes(
         &self,
         on_payload: impl Fn(String) + Send + 'static,
+        on_notifications_lost: impl Fn() + Send + 'static,
     ) -> Result<RepoChangeListener, PostgresError> {
         let database_url = self.postgres_database_url.clone().ok_or_else(|| {
             PostgresError::internal_message("repo change listener requires a PostgreSQL URL")
@@ -59,7 +65,12 @@ impl RepositoryStore {
         let listener = subscribe(&database_url).await.map_err(|error| {
             PostgresError::unavailable(format!("subscribing to repo changes: {error}"))
         })?;
-        let task = tokio::spawn(receive_repo_changes(database_url, listener, on_payload));
+        let task = tokio::spawn(receive_repo_changes(
+            database_url,
+            listener,
+            on_payload,
+            on_notifications_lost,
+        ));
         Ok(RepoChangeListener {
             task: Mutex::new(Some(task)),
         })
@@ -73,21 +84,29 @@ impl RepositoryStore {
 #[derive(Clone, Default)]
 pub(in crate::db) struct RepoChangeNotifier {
     queue: Arc<OnceLock<mpsc::Sender<String>>>,
+    lost: Arc<AtomicBool>,
 }
 
 impl RepoChangeNotifier {
     fn queue(&self, db: &Arc<DatabaseConnection>, payload: String) -> Result<(), PostgresError> {
         let queue = self.queue.get_or_init(|| {
             let (queue, queued) = mpsc::channel(QUEUED_NOTIFICATION_LIMIT);
-            tokio::spawn(send_queued_notifications(Arc::clone(db), queued));
+            tokio::spawn(send_queued_notifications(
+                Arc::clone(db),
+                queued,
+                Arc::clone(&self.lost),
+            ));
             queue
         });
-        queue.try_send(payload).map_err(|error| match error {
-            mpsc::error::TrySendError::Full(_) => {
-                PostgresError::internal_message("repo change notification queue is full")
-            }
-            mpsc::error::TrySendError::Closed(_) => {
-                PostgresError::internal_message("repo change notification queue is closed")
+        queue.try_send(payload).map_err(|error| {
+            self.lost.store(true, Ordering::Release);
+            match error {
+                mpsc::error::TrySendError::Full(_) => {
+                    PostgresError::internal_message("repo change notification queue is full")
+                }
+                mpsc::error::TrySendError::Closed(_) => {
+                    PostgresError::internal_message("repo change notification queue is closed")
+                }
             }
         })
     }
@@ -96,14 +115,33 @@ impl RepoChangeNotifier {
 async fn send_queued_notifications(
     db: Arc<DatabaseConnection>,
     mut queued: mpsc::Receiver<String>,
+    lost: Arc<AtomicBool>,
 ) {
     let mut payloads = Vec::with_capacity(NOTIFICATIONS_PER_COMMIT);
-    while queued
-        .recv_many(&mut payloads, NOTIFICATIONS_PER_COMMIT)
-        .await
-        > 0
-    {
+    loop {
+        let closed = if lost.load(Ordering::Acquire) {
+            matches!(
+                tokio::time::timeout(
+                    LOSS_ANNOUNCEMENT_RETRY_DELAY,
+                    queued.recv_many(&mut payloads, NOTIFICATIONS_PER_COMMIT),
+                )
+                .await,
+                Ok(0)
+            )
+        } else {
+            queued
+                .recv_many(&mut payloads, NOTIFICATIONS_PER_COMMIT)
+                .await
+                == 0
+        };
+        if closed {
+            return;
+        }
+        if lost.swap(false, Ordering::AcqRel) {
+            payloads.push(NOTIFICATIONS_LOST_PAYLOAD.to_owned());
+        }
         if let Err(error) = notify_together(db.as_ref(), &payloads).await {
+            lost.store(true, Ordering::Release);
             tracing::warn!(
                 %error,
                 notifications = payloads.len(),
@@ -144,13 +182,18 @@ async fn receive_repo_changes(
     database_url: Arc<str>,
     mut listener: PgListener,
     on_payload: impl Fn(String),
+    on_notifications_lost: impl Fn(),
 ) {
     loop {
         match listener.recv().await {
+            Ok(notification) if notification.payload() == NOTIFICATIONS_LOST_PAYLOAD => {
+                on_notifications_lost();
+            }
             Ok(notification) => on_payload(notification.payload().to_string()),
             Err(error) => {
                 tracing::warn!(%error, "repo change listener disconnected");
                 listener = resubscribe(&database_url).await;
+                on_notifications_lost();
             }
         }
     }
@@ -180,12 +223,21 @@ mod tests {
             postgres_database_url: Some(Arc::from("postgres://scope@127.0.0.1:1/scope")),
             ..store.repositories()
         };
-        assert!(unreachable.listen_for_repo_changes(|_| {}).await.is_err());
+        assert!(
+            unreachable
+                .listen_for_repo_changes(|_| {}, || {})
+                .await
+                .is_err()
+        );
 
         let (received, mut payloads) = mpsc::unbounded_channel();
+        let losses = received.clone();
         let listener = store
             .repositories()
-            .listen_for_repo_changes(move |payload| received.send(payload).unwrap())
+            .listen_for_repo_changes(
+                move |payload| received.send(payload).unwrap(),
+                move || losses.send("lost".to_string()).unwrap(),
+            )
             .await
             .unwrap();
         store
@@ -196,6 +248,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(payload.as_deref(), Some("ready"));
+        store
+            .repositories()
+            .queue_repo_change_notification(super::NOTIFICATIONS_LOST_PAYLOAD.to_string())
+            .unwrap();
+        let announced = tokio::time::timeout(Duration::from_secs(4), payloads.recv())
+            .await
+            .unwrap();
+        assert_eq!(announced.as_deref(), Some("lost"));
 
         listener.shutdown().await;
         assert_eq!(

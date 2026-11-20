@@ -50,7 +50,6 @@ export async function runRepoEventStream({
   connect,
   onDiagnostic = logRepoStreamDiagnostic,
   onEvent,
-  onInterrupted,
   random = Math.random,
   signal,
   wait = abortableDelay,
@@ -58,7 +57,6 @@ export async function runRepoEventStream({
   connect: ConnectRepoStream
   onDiagnostic?: (diagnostic: RepoStreamDiagnostic) => void
   onEvent: (event: RepoChangeEvent) => void
-  onInterrupted: () => void
   random?: () => number
   signal: AbortSignal
   wait?: Wait
@@ -87,7 +85,6 @@ export async function runRepoEventStream({
       const delivered = deliveredEvents > deliveredBefore
       if (delivered && outcome.type === 'stream-error' && outcome.error.code === 'unauthorized') continue
 
-      onInterrupted()
       if (outcome.type === 'stream-error' && !outcome.error.retryable && outcome.error.code !== 'unauthorized') return
 
       if (outcome.type === 'protocol-error') {
@@ -238,6 +235,16 @@ export function parseRepoStreamMessage(message: string): RepoStreamParseOutcome 
     }
   }
   return { type: 'stream-error', error: payload }
+}
+
+export function eventStreamUrlSince(eventStreamUrl: string, sinceUnixMs: number) {
+  const url = new URL(eventStreamUrl)
+  url.searchParams.set('since', String(sinceUnixMs))
+  return url.toString()
+}
+
+export function syncedThrough({ kind }: RepoChangeEvent) {
+  return typeof kind === 'object' && 'Synced' in kind ? kind.Synced.through_unix_ms : null
 }
 
 export function reconnectDelay(attempt: number, jitter: number) {

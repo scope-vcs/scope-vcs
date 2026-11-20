@@ -270,19 +270,19 @@ test('a GitHub run report during a log request keeps that request and asks again
   }
 })
 
-test('connection and lag recovery invalidate retained resources only in their scope', () => {
-  for (const kind of ['Connected', 'Lagged'] as const) {
+test('lag recovery invalidates retained resources only in their scope and a sync invalidates none', () => {
+  for (const [kind, stale] of [['Lagged', true], [{ Synced: { through_unix_ms: 1 } }, false]] as const) {
     seed()
     invalidate('viewer-a', event(kind))
-    assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
-    assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
-    assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
+    assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, stale)
+    assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, stale)
+    assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, stale)
     assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
   }
 })
 
 test('versioned resyncs leave content-versioned resources to the reloaded repository version', () => {
-  for (const kind of ['Connected', 'Lagged', undefined] as const) {
+  for (const kind of ['Lagged', undefined] as const) {
     seed()
     invalidate('viewer-a', kind && event(kind), { versioned: true })
     assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)

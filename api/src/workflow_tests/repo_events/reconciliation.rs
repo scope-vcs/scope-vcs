@@ -10,6 +10,18 @@ async fn advance_reconciliation() {
     tokio::time::resume();
 }
 
+fn synced_through(event: &str) -> u64 {
+    let (_, through) = event
+        .split_once(r#""through_unix_ms":"#)
+        .unwrap_or_else(|| panic!("expected a Synced event, got {event}"));
+    through
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .unwrap()
+}
+
 async fn next_application_event(stream: &mut axum::body::BodyDataStream) -> String {
     loop {
         let event = next_event(stream).await;
@@ -20,7 +32,7 @@ async fn next_application_event(stream: &mut axum::body::BodyDataStream) -> Stri
 }
 
 #[tokio::test]
-async fn a_reader_reconciles_a_committed_request_change_without_its_notification() {
+async fn a_reader_that_lost_notifications_ends_its_streams_and_resyncs_reconnects() {
     let writer = test_state_with_repo();
     cache_test_jwks(&writer);
     let reader = AppState {
@@ -57,11 +69,7 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
     let response = events(reader.clone(), Some(bearer_header())).await;
     assert_eq!(response.status(), StatusCode::OK);
     let mut stream = response.into_body().into_data_stream();
-    assert!(
-        next_event(&mut stream)
-            .await
-            .contains(r#""kind":"Connected""#)
-    );
+    let synced_through = synced_through(&next_event(&mut stream).await);
 
     crate::use_cases::request_identity::persist_identity_edit(
         &writer.metadata.requests(),
@@ -91,8 +99,15 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
         "repository version polling alone cannot discover request mutations"
     );
 
-    advance_reconciliation().await;
-    let event = next_application_event(&mut stream).await;
+    reader.repo_events.notifications_lost();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), stream.next())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let reconnected = events_since(reader.clone(), Some(bearer_header()), synced_through).await;
+    let event = next_event(&mut reconnected.into_body().into_data_stream()).await;
     assert!(event.contains(r#""kind":"Lagged""#), "{event}");
     let request = reader
         .metadata
@@ -102,6 +117,34 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
         .unwrap()
         .unwrap();
     assert_eq!(request.title, "After");
+}
+
+#[tokio::test]
+async fn a_reconnect_replays_the_changes_it_missed_or_resyncs_when_they_are_gone() {
+    let state = AppState {
+        repo_events: crate::repo_events::RepoChangeBus::complete_after(0),
+        ..test_state_with_repo()
+    };
+    cache_test_jwks(&state);
+    let response = events(state.clone(), Some(bearer_header())).await;
+    let since = synced_through(&next_event(&mut response.into_body().into_data_stream()).await);
+    state.after_commit([AfterCommit::request_summary(
+        &test_repo_incarnation(),
+        RepoChangeReason::RequestIdentityEdited,
+    )]);
+
+    let replayed = events_since(state.clone(), Some(bearer_header()), since).await;
+    let mut replayed = replayed.into_body().into_data_stream();
+    let missed = next_event(&mut replayed).await;
+    assert!(missed.contains("request-identity-edited"), "{missed}");
+    let caught_up = next_event(&mut replayed).await;
+    assert!(synced_through(&caught_up) >= since, "{caught_up}");
+
+    let stale = events_since(state, Some(bearer_header()), 1).await;
+    let mut stale = stale.into_body().into_data_stream();
+    let event = next_event(&mut stale).await;
+    assert!(event.contains(r#""kind":"Lagged""#), "{event}");
+    assert!(next_event(&mut stale).await.contains(r#""kind":{"Synced""#));
 }
 
 #[tokio::test]
@@ -127,7 +170,7 @@ async fn an_idle_stream_closes_after_its_cli_session_is_revoked() {
     assert!(
         next_event(&mut stream)
             .await
-            .contains(r#""kind":"Connected""#)
+            .contains(r#""kind":{"Synced""#)
     );
 
     service
@@ -150,12 +193,12 @@ async fn anonymous_reconciliation_never_exposes_private_versions_or_event_detail
     assert!(
         next_event(&mut stream)
             .await
-            .contains(r#""kind":"Connected""#)
+            .contains(r#""kind":{"Synced""#)
     );
 
     advance_reconciliation().await;
     let event = next_application_event(&mut stream).await;
-    assert!(event.contains(r#""kind":"Lagged""#), "{event}");
+    assert!(event.contains(r#""kind":{"Synced""#), "{event}");
     assert!(event.contains(r#""version":0"#), "{event}");
     assert!(!event.contains("request_id"), "{event}");
     assert!(!event.contains("run_id"), "{event}");
@@ -170,7 +213,7 @@ async fn reconciliation_closes_a_stream_after_an_unannounced_repository_recreati
     assert!(
         next_event(&mut stream)
             .await
-            .contains(r#""kind":"Connected""#)
+            .contains(r#""kind":{"Synced""#)
     );
 
     let mut recreated = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
