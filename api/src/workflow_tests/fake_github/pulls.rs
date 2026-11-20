@@ -17,6 +17,17 @@ use std::{
 };
 
 const APP_LOGIN: &str = "scope-checks[bot]";
+const APP_COMMENT_IDS: u64 = 1_000;
+const BOT_COMMENT_IDS: u64 = 2_000;
+const PERSON_COMMENT_IDS: u64 = 3_000;
+
+fn reaction(login: &str, content: &str, created_at: &str) -> serde_json::Value {
+    serde_json::json!({
+        "user": { "login": login },
+        "content": content,
+        "created_at": created_at,
+    })
+}
 
 type LookupHook = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send>;
 
@@ -26,6 +37,8 @@ pub(in crate::workflow_tests) struct FakePulls {
     pub(in crate::workflow_tests) comments: Mutex<Vec<(u64, String)>>,
     bot_comments: Mutex<HashMap<(u64, String), String>>,
     reactions: Mutex<Vec<(u64, serde_json::Value)>>,
+    person_comments: Mutex<Vec<(u64, serde_json::Value)>>,
+    comment_reactions: Mutex<Vec<(u64, serde_json::Value)>>,
     reviews: Mutex<Vec<(u64, serde_json::Value)>>,
     pub(in crate::workflow_tests) forbidden: AtomicBool,
     pub(in crate::workflow_tests) forbidden_by_an_ip_allow_list: AtomicBool,
@@ -113,14 +126,50 @@ impl FakePulls {
         content: &str,
         created_at: &str,
     ) {
-        self.reactions.lock().unwrap().push((
+        self.reactions
+            .lock()
+            .unwrap()
+            .push((number, reaction(login, content, created_at)));
+    }
+
+    pub(in crate::workflow_tests) fn request_review_as(
+        &self,
+        number: u64,
+        login: &str,
+        body: &str,
+    ) -> u64 {
+        let mut comments = self.person_comments.lock().unwrap();
+        let id = PERSON_COMMENT_IDS + comments.len() as u64;
+        comments.push((
             number,
-            serde_json::json!({
-                "user": { "login": login },
-                "content": content,
-                "created_at": created_at,
-            }),
+            serde_json::json!({ "id": id, "body": body, "user": { "login": login } }),
         ));
+        id
+    }
+
+    pub(in crate::workflow_tests) fn react_to_comment_as(
+        &self,
+        comment_id: u64,
+        login: &str,
+        content: &str,
+        created_at: &str,
+    ) {
+        self.comment_reactions
+            .lock()
+            .unwrap()
+            .push((comment_id, reaction(login, content, created_at)));
+    }
+
+    fn with_reaction_counts(&self, mut comment: serde_json::Value) -> serde_json::Value {
+        let reactions = self.comment_reactions.lock().unwrap();
+        let count = |content: &str| {
+            reactions
+                .iter()
+                .filter(|(on, reaction)| comment["id"] == *on && reaction["content"] == content)
+                .count()
+        };
+        comment["reactions"] = serde_json::json!({ "+1": count("+1"), "eyes": count("eyes") });
+        comment
     }
 
     pub(in crate::workflow_tests) fn review_as(
@@ -253,6 +302,19 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             ),
         )
         .route(
+            "/repos/{owner}/{name}/issues/comments/{comment_id}/reactions",
+            get(
+                |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                 AxumPath((_, _, comment_id)): AxumPath<(String, String, u64)>,
+                 AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
+                    if let Some(refused) = fake.pulls.refused() {
+                        return refused;
+                    }
+                    FakePulls::listed(&fake.pulls.comment_reactions, comment_id, &query)
+                },
+            ),
+        )
+        .route(
             "/repos/{owner}/{name}/pulls",
             get(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
@@ -266,7 +328,9 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                     }
                     let owner = GITHUB_FULL_NAME.split_once('/').unwrap().0;
                     let number = |name: &str, default: usize| {
-                        query.get(name).map_or(default, |value| value.parse().unwrap())
+                        query
+                            .get(name)
+                            .map_or(default, |value| value.parse().unwrap())
                     };
                     let (page, per_page) = (number("page", 1), number("per_page", 30));
                     let open = fake
@@ -376,9 +440,14 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                             .lock()
                             .unwrap()
                             .iter()
-                            .filter(|(on, _)| *on == number)
-                            .map(|(_, body)| {
-                                serde_json::json!({ "body": body, "user": { "login": APP_LOGIN } })
+                            .enumerate()
+                            .filter(|(_, (on, _))| *on == number)
+                            .map(|(index, (_, body))| {
+                                serde_json::json!({
+                                    "id": APP_COMMENT_IDS + index as u64,
+                                    "body": body,
+                                    "user": { "login": APP_LOGIN },
+                                })
                             })
                             .chain(
                                 fake.pulls
@@ -386,11 +455,26 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                                     .lock()
                                     .unwrap()
                                     .iter()
-                                    .filter(|((on, _), _)| *on == number)
-                                    .map(|((_, login), body)| {
-                                        serde_json::json!({ "body": body, "user": { "login": login } })
+                                    .enumerate()
+                                    .filter(|(_, ((on, _), _))| *on == number)
+                                    .map(|(index, ((_, login), body))| {
+                                        serde_json::json!({
+                                            "id": BOT_COMMENT_IDS + index as u64,
+                                            "body": body,
+                                            "user": { "login": login },
+                                        })
                                     }),
                             )
+                            .chain(
+                                fake.pulls
+                                    .person_comments
+                                    .lock()
+                                    .unwrap()
+                                    .iter()
+                                    .filter(|(on, _)| *on == number)
+                                    .map(|(_, comment)| comment.clone()),
+                            )
+                            .map(|comment| fake.pulls.with_reaction_counts(comment))
                             .collect::<Vec<_>>()
                     } else {
                         Vec::new()

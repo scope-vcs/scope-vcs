@@ -6,6 +6,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 const PAGE_SIZE: usize = 100;
 const MAX_PAGES: usize = 10;
+const REACTED_COMMENTS_READ: usize = 10;
 
 #[derive(Deserialize)]
 struct Author {
@@ -29,8 +30,39 @@ struct Reaction {
 
 #[derive(Deserialize)]
 struct Comment {
+    id: u64,
     user: Option<Author>,
     body: Option<String>,
+    #[serde(default)]
+    reactions: ReactionCounts,
+}
+
+#[derive(Default, Deserialize)]
+struct ReactionCounts {
+    #[serde(rename = "+1", default)]
+    thumbs_up: u64,
+    #[serde(default)]
+    eyes: u64,
+}
+
+impl ReactionCounts {
+    fn holds_bot_signal(&self) -> bool {
+        self.thumbs_up > 0 || self.eyes > 0
+    }
+}
+
+impl Reaction {
+    fn signal(self) -> Option<GitHubReviewBotSignal> {
+        Some(GitHubReviewBotSignal::Reacted {
+            login: self.user?.login,
+            reaction: match self.content.as_str() {
+                "eyes" => GitHubBotReaction::Eyes,
+                "+1" => GitHubBotReaction::ThumbsUp,
+                _ => return None,
+            },
+            at_unix: parse_time(&self.created_at)?,
+        })
+    }
 }
 
 impl GitHubApp {
@@ -68,17 +100,7 @@ impl GitHubApp {
             )
             .await?
             .into_iter()
-            .filter_map(|reaction| {
-                Some(GitHubReviewBotSignal::Reacted {
-                    login: reaction.user?.login,
-                    reaction: match reaction.content.as_str() {
-                        "eyes" => GitHubBotReaction::Eyes,
-                        "+1" => GitHubBotReaction::ThumbsUp,
-                        _ => return None,
-                    },
-                    at_unix: parse_time(&reaction.created_at)?,
-                })
-            });
+            .filter_map(Reaction::signal);
         let comments = match head_delivered_at_unix.and_then(github_time) {
             Some(since) => {
                 let query = url::form_urlencoded::Serializer::new(String::new())
@@ -92,9 +114,31 @@ impl GitHubApp {
                 .await?
             }
             None => Vec::new(),
+        };
+        let mut comment_reactions = Vec::new();
+        for comment in comments
+            .iter()
+            .rev()
+            .filter(|comment| comment.reactions.holds_bot_signal())
+            .take(REACTED_COMMENTS_READ)
+        {
+            comment_reactions.extend(
+                self.newest_pages::<Reaction>(
+                    installation_id,
+                    &format!(
+                        "/repos/{full_name}/issues/comments/{}/reactions?",
+                        comment.id
+                    ),
+                    "/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
+                    head_delivered_at_unix,
+                    |reaction| parse_time(&reaction.created_at),
+                )
+                .await?
+                .into_iter()
+                .filter_map(Reaction::signal),
+            );
         }
-        .into_iter()
-        .filter_map(|comment| {
+        let comments = comments.into_iter().filter_map(|comment| {
             let body = comment
                 .body
                 .filter(|body| CodexReviewState::appears_in(body))?;
@@ -103,7 +147,11 @@ impl GitHubApp {
                 body,
             })
         });
-        Ok(reviews.chain(reactions).chain(comments).collect())
+        Ok(reviews
+            .chain(reactions)
+            .chain(comment_reactions)
+            .chain(comments)
+            .collect())
     }
 
     async fn oldest_pages<T: DeserializeOwned>(

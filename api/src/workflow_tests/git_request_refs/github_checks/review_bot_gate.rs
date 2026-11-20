@@ -384,6 +384,35 @@ async fn a_thumbs_up_counts_only_after_the_head_reached_github() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_thumbs_up_on_the_comment_that_asked_for_the_review_clears_the_bot() {
+    let request = gated_request("review-bot-comment-reaction").await;
+    let pulls = &request.fake.pulls;
+    for _ in 0..12 {
+        let earlier = pulls.request_review_as(1, "octocat", "@greptileai review");
+        pulls.react_to_comment_as(earlier, "octocat", "+1", AFTER_PUSH);
+    }
+    let asked = pulls.request_review_as(1, "octocat", "@greptileai review");
+    pulls.react_to_comment_as(asked, "octocat", "+1", AFTER_PUSH);
+    pulls.react_to_comment_as(asked, GREPTILE, "+1", BEFORE_PUSH);
+    reconcile_now(&request).await;
+    assert_eq!(
+        bot_states(&request).await.0,
+        states("not_started", "not_started")
+    );
+
+    pulls.react_to_comment_as(asked, GREPTILE, "eyes", AFTER_PUSH);
+    reconcile_now(&request).await;
+    assert_eq!(
+        bot_states(&request).await.0,
+        states("not_started", "working")
+    );
+
+    pulls.react_to_comment_as(asked, GREPTILE, "+1", AFTER_PUSH);
+    reconcile_now(&request).await;
+    assert_eq!(bot_states(&request).await.0, states("not_started", "clear"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn codex_findings_hold_the_merge_until_their_review_is_imported() {
     let request = gated_request("review-bot-import").await;
     let head = request.head();
