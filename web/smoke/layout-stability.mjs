@@ -107,6 +107,7 @@ function trackLayout({ heldMs, pageEnd, tolerance }) {
   let candidates = new Map()
   let moves = []
   let blanks = []
+  let requestsInFlight = 0
 
   const elapsed = () => Math.round(performance.now() - start)
   const describe = (element) => {
@@ -163,7 +164,7 @@ function trackLayout({ heldMs, pageEnd, tolerance }) {
         displaced.push({ dx, dy, key, position })
         continue
       }
-      settled.set(key, position)
+      if (anchor.element !== position.element) settled.set(key, { ...anchor, element: position.element })
       candidates.delete(key)
     }
     if (displaced.length >= RESTYLE_MIN_TEXTS && displaced.length >= compared * RESTYLE_SHARE) {
@@ -185,12 +186,27 @@ function trackLayout({ heldMs, pageEnd, tolerance }) {
     for (const key of [...settled.keys()]) {
       if (!now.has(key)) settled.delete(key)
     }
+    for (const key of [...candidates.keys()]) {
+      if (!now.get(key)) candidates.delete(key)
+    }
     const visible = mainShowsSomething()
-    if (mainShowsSkeleton()) pending = true
+    const loading = mainShowsSkeleton()
+    if (loading) pending = true
     if (pending && !visible && !blank) blanks.push({ at: elapsed() })
-    if (!visible || candidates.size) lastChange = performance.now()
+    if (!visible || loading || requestsInFlight || candidates.size) lastChange = performance.now()
     blank = pending && !visible
     requestAnimationFrame(sample)
+  }
+
+  const fetchResource = globalThis.fetch
+  globalThis.fetch = async (input, init) => {
+    const tracked = String(input instanceof Request ? input.url : input).includes('/_serverFn/')
+    if (tracked) requestsInFlight += 1
+    try {
+      return await fetchResource(input, init)
+    } finally {
+      if (tracked) requestsInFlight -= 1
+    }
   }
 
   const begin = () => document.body ? requestAnimationFrame(sample) : setTimeout(begin, 5)
