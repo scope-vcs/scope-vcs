@@ -123,6 +123,23 @@ class LicensingChecks(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unsupported Cargo source"):
                 generate.packages()
 
+    def test_web_packages_skip_pnpm_environment_documents(self):
+        self.write("Cargo.lock", "package = []\n")
+        self.write("cli/Cargo.lock", "package = []\n")
+        project = ("---\nimporters:\n  .:\n    dependencies: {react: {specifier: 19.3.0, version: 19.3.0}}\n"
+            "packages:\n  react@19.3.0: {resolution: {integrity: sha512-react}}\n")
+        for environment, expected in [
+            ("importers:\n  .:\n    configDependencies: {}\n    packageManagerDependencies: {pnpm: {specifier: 12.21.0, version: 12.21.0}}\n"
+                "packages:\n  pnpm@12.21.0: {resolution: {integrity: sha512-pnpm}}\n" + project, ["react"]),
+            ("importers:\n  .:\n    configDependencies: {plugin: {specifier: 1.0.0, version: 1.0.0}}\n"
+                "packages:\n  plugin@1.0.0: {resolution: {integrity: sha512-plugin}}\n" + project, ["react"]),
+            ("importers:\n  .:\n    configDependencies: {plugin: {specifier: 1.0.0, version: 1.0.0}}\n"
+                "packages:\n  plugin@1.0.0: {resolution: {integrity: sha512-plugin}}\n", []),
+        ]:
+            with self.subTest(environment=environment):
+                self.write("web/pnpm-lock.yaml", "---\n" + environment)
+                self.assertEqual([package["name"] for package in generate.packages()], expected)
+
     def test_changed_lockfile_or_generator_input_invalidates_notice_check(self):
         files = {"Cargo.lock": "locked packages\n", "dev/licensing/generate.py": "audited generator\n",
             "legal/third-party-rust.txt": "license texts\n"}
