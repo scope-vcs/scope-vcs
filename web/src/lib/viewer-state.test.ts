@@ -32,14 +32,19 @@ test('waiting for the session ends when it becomes ready and never waits again a
   assert.equal(immediate.mock.callCount(), 1)
 })
 
-test('waiting for the viewer ends with the first activated viewer and resolves at once afterwards', async () => {
-  const woke: Array<string | null> = []
-  void whenViewerActive().then((viewerId) => woke.push(viewerId))
+test('waiting for the viewer ends at the bound or with the first activated viewer', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const woke: Array<string | null | undefined> = []
+  void whenViewerActive(10_000).then((viewerId) => woke.push(viewerId))
+  t.mock.timers.tick(9_999)
   await settle()
   assert.deepEqual(woke, [])
-  activateViewer(null)
+  t.mock.timers.tick(1)
   await settle()
-  assert.deepEqual(woke, [null])
+  assert.deepEqual(woke, [undefined])
+  const waiting = whenViewerActive(10_000)
+  activateViewer(null)
+  assert.equal(await waiting, null)
   activateViewer('maya')
-  assert.equal(await whenViewerActive(), 'maya')
+  assert.equal(await whenViewerActive(10_000), 'maya')
 })

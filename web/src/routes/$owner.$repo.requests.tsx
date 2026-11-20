@@ -8,6 +8,7 @@ import { resolveViewingAs } from '@/features/repo-detail/viewing-as'
 import { requestQueueIdentity, warmRequestQueue } from '@/features/requests/workspace/request-queue-cache'
 import { RequestsPage } from '@/features/requests/workspace/requests-page'
 import { RequestsPagePending } from '@/features/requests/workspace/requests-page-pending'
+import { SESSION_READY_BOUND_MS } from '@/lib/session-retry-fetch'
 import { whenViewerActive } from '@/lib/viewer-state'
 import { loadRepoSummaryState } from '@/routes/-repo-summary-actions'
 import { requestQueuePageLoader } from '@/routes/-request-workspace-actions'
@@ -25,7 +26,8 @@ export const Route = createFileRoute('/$owner/$repo/requests')({
 
 async function warmRequestsPageQueue(params: RepoParams, requested: ViewId | undefined) {
   const live = await loadRepoSummary(repoSummaryIdentity(params), (signal) => loadRepoSummaryState(params, signal))
-  const viewerId = await whenViewerActive()
+  const viewerId = await whenViewerActive(SESSION_READY_BOUND_MS)
+  if (viewerId === undefined) return
   const view = resolveViewingAs(repoViews(live.repo.views), live.repo.access.view, requested)
   warmRequestQueue(
     requestQueueIdentity(repoResourceScope(live.repo, viewerId), view),

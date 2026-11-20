@@ -15,11 +15,17 @@ export function getCurrentViewerId() {
   return currentViewerId
 }
 
-export function whenViewerActive(): Promise<string | null> {
+export function whenViewerActive(boundMs: number): Promise<string | null | undefined> {
   const viewerId = currentViewerId
   if (viewerId !== undefined) return Promise.resolve(viewerId)
   return new Promise((resolve) => {
-    viewerWaiters.add(resolve)
+    const wake = (activeViewerId?: string | null) => {
+      clearTimeout(timer)
+      viewerWaiters.delete(wake)
+      resolve(activeViewerId)
+    }
+    const timer = setTimeout(wake, boundMs)
+    viewerWaiters.add(wake)
   })
 }
 
@@ -28,7 +34,6 @@ export function activateViewer(viewerId: string | null) {
   currentViewerId = viewerId
   if (previous !== undefined && previous !== viewerId) resetViewerState()
   for (const wake of viewerWaiters) wake(viewerId)
-  viewerWaiters.clear()
   return previous
 }
 
