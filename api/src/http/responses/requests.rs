@@ -1,13 +1,13 @@
 use super::git_oid_response;
 use crate::error::ApiError;
 use scope_api_contract::{
-    RequestActorSummaryResponse, RequestDiffStatResponse, RequestEventResponse,
-    RequestInviteeResponse, RequestListItemResponse, RequestMergeabilityResponse,
-    RequestPermissionsResponse, RequestSummaryResponse,
+    RequestActorSummaryResponse, RequestAuthorRatingResponse, RequestAuthorRecordResponse,
+    RequestDiffStatResponse, RequestEventResponse, RequestInviteeResponse, RequestListItemResponse,
+    RequestMergeabilityResponse, RequestPermissionsResponse, RequestSummaryResponse,
 };
 use scope_domain::{
     requests::{
-        DiffStat, Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject,
+        AuthorRecord, DiffStat, Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject,
         RequestViewMains, RequestViewer, request_list_mergeability, request_mergeability,
         request_policy,
     },
@@ -298,6 +298,22 @@ pub(crate) fn request_children_page_response(
             .collect::<Result<_, _>>()?,
         next_cursor: page.next_cursor.clone(),
     })
+}
+
+pub(crate) fn author_record_response(record: AuthorRecord) -> RequestAuthorRecordResponse {
+    match record {
+        AuthorRecord::FirstRequest => RequestAuthorRecordResponse::FirstRequest,
+        AuthorRecord::History(history) => RequestAuthorRecordResponse::History {
+            merged: history.merged,
+            closed: history.closed,
+            withdrawn: history.withdrawn,
+            other_open: history.other_open,
+            rating: history.rating.map(|rating| RequestAuthorRatingResponse {
+                score_sum: rating.score_sum,
+                count: rating.count,
+            }),
+        },
+    }
 }
 
 #[cfg(test)]

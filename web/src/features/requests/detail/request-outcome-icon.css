@@ -1,0 +1,7 @@
+svg[data-outcome="merged"] {
+  color: var(--foreground);
+}
+
+svg[data-outcome="closed"] {
+  color: var(--danger);
+}

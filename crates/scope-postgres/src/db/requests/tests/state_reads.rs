@@ -78,13 +78,18 @@ async fn state_reads_preserve_viewer_visibility_and_bound_round_trips() {
         Some("user_guest"),
         None,
     ] {
+        let reads_author_record = matches!(viewer, Some("user_owner" | "member"));
         let snapshot = assert_round_trips(
-            12,
+            12 + usize::from(reads_author_record),
             requests.request_state_snapshot("owner", "repo", "req_1", viewer),
         )
         .await
         .unwrap();
         assert_eq!(snapshot.request, expected);
+        assert_eq!(
+            snapshot.author_record,
+            reads_author_record.then_some(scope_domain::requests::AuthorRecord::FirstRequest)
+        );
         assert_eq!(snapshot.is_invitee, viewer == Some("user_guest"));
         assert_eq!(snapshot.invitees[0].user.id, "user_guest");
         assert_eq!(
@@ -140,5 +145,44 @@ async fn state_reads_preserve_viewer_visibility_and_bound_round_trips() {
             assert_eq!(error.kind, PostgresErrorKind::NotFound);
             assert_eq!(error.message, "request not found");
         }
+    }
+    for (author_view, record) in [
+        (
+            ViewId::public(),
+            Some(scope_domain::requests::AuthorRecord::FirstRequest),
+        ),
+        (ViewId::private(), None),
+    ] {
+        use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel};
+        crate::db::entities::repository_member::Entity::delete_by_id((
+            repo.record.id.clone(),
+            "user_public".to_string(),
+        ))
+        .exec(requests.db.as_ref())
+        .await
+        .unwrap();
+        crate::db::entities::repository_member::Model::from_domain(&RepositoryMember {
+            repo_id: repo.record.id.clone(),
+            user_id: "user_public".into(),
+            permissions: RepositoryMemberPermissions {
+                view: author_view.clone(),
+                ..Default::default()
+            },
+            created_at_unix: 6,
+            updated_at_unix: 6,
+        })
+        .unwrap()
+        .into_active_model()
+        .insert(requests.db.as_ref())
+        .await
+        .unwrap();
+        let snapshot = requests
+            .request_state_snapshot("owner", "repo", "req_1", Some("user_owner"))
+            .await
+            .unwrap();
+        assert_eq!(
+            snapshot.author_record, record,
+            "an author assigned the {author_view} view"
+        );
     }
 }

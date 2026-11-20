@@ -3,7 +3,7 @@ import { createRootRoute, createRouter, RouterProvider } from '@tanstack/react-r
 import { useRef, useState } from 'react'
 import { ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { RequestChecksResponse, RequestDetailResponse, RequestSummaryResponse } from '@/api/types.generated'
+import type { RequestAuthorRecordResponse, RequestChecksResponse, RequestDetailResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { RequestChecksSection } from '@/features/requests/checks/request-checks-section'
 import { RequestDetailHeader } from '@/features/requests/detail/request-detail-header'
 import { RequestChangesMenu } from '@/features/requests/changes/request-changes-menu'
@@ -71,13 +71,14 @@ const autoMerge = {
 function App() {
   const [name, setName] = useState(request.name)
   const [stateName, setStateName] = useState<keyof typeof STATES>('findings')
+  const [authorRecord, setAuthorRecord] = useState<RequestAuthorRecordResponse | null>(null)
   const more = useRef<HTMLButtonElement | null>(null)
   const shown = STATES[stateName]
-  Object.assign(window, { setBranch: setName, setState: setStateName })
+  Object.assign(window, { setBranch: setName, setState: setStateName, setAuthorRecord })
   return <main>
     <RequestDetailHeader
       checks={shown.checks} params={params}
-      detail={{ request: { ...shown.request, name }, author: { id: 'author', handle: 'adamblumoff' }, claimer: null } as RequestDetailResponse}
+      detail={{ request: { ...shown.request, name }, author: { id: 'author', handle: 'adamblumoff' }, author_record: authorRecord, claimer: null } as RequestDetailResponse}
       backLink={<a href="#requests">Requests</a>}
       stateActions={
         <RequestLifecycleActions actions={actions} autoMerge={{ ...autoMerge, status: { ...autoMerge.status, can_enable: shown.canEnable } }} request={shown.request} viewerId="viewer"

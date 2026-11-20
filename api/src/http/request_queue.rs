@@ -1,8 +1,9 @@
 use super::{
     requests::{current_main_oid_for_context, repo_metadata_and_access},
     responses::{
-        RequestGateOutcomes, RequestListItemFacts, RequestMains, recorded_actor_response,
-        request_actor_summary_response, request_list_item_response, request_list_row_subject,
+        RequestGateOutcomes, RequestListItemFacts, RequestMains, author_record_response,
+        recorded_actor_response, request_actor_summary_response, request_list_item_response,
+        request_list_row_subject,
     },
 };
 use crate::after_commit::AfterCommit;
@@ -214,6 +215,7 @@ pub(crate) async fn request_queue(
                     },
                 )?,
                 author,
+                author_record: row.author_record.map(author_record_response),
                 attention: attention_response(row.attention, activity_version, group),
                 claimer,
                 next_step: next_step.into(),

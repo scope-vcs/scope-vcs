@@ -1,10 +1,10 @@
 import { cn } from '@/lib/utils'
 import type { RequestStateMark as Mark } from './request-labels'
+import { RequestOutcomeIcon } from './request-outcome-icon'
 
 const CHECK = 'm6 10.3 2.7 2.7L14 7.4'
 
 const DISCS = {
-  merged: { fill: 'fill-foreground', sign: CHECK },
   ready: { fill: 'fill-success', sign: CHECK },
   failed: { fill: 'fill-danger', sign: 'm7 7 6 6m0-6-6 6' },
   attention: { fill: 'fill-warning', sign: 'M10 5.6v5m0 3.6h.01' },
@@ -16,6 +16,9 @@ const RINGS = {
 } as const
 
 export function RequestStateMark({ mark }: { mark: Mark }) {
+  if (mark === 'merged' || mark === 'closed') {
+    return <RequestOutcomeIcon className="size-5 shrink-0" data-mark={mark} outcome={mark} />
+  }
   return (
     <svg aria-hidden="true" className="size-5 shrink-0" data-mark={mark} viewBox="0 0 20 20">
       {mark === 'waiting' || mark === 'idle' ? (

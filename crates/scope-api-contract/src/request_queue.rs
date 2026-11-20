@@ -18,9 +18,32 @@ pub struct RequestQueueItemResponse {
     pub attention_at_unix: u64,
     pub request: RequestListItemResponse,
     pub author: Option<RequestActorSummaryResponse>,
+    pub author_record: Option<RequestAuthorRecordResponse>,
     pub attention: RequestAttentionResponse,
     pub claimer: Option<RequestActorSummaryResponse>,
     pub next_step: RequestQueueNextStep,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(tag = "kind", rename_all = "snake_case"))]
+pub enum RequestAuthorRecordResponse {
+    FirstRequest,
+    History {
+        merged: u64,
+        closed: u64,
+        withdrawn: u64,
+        other_open: u64,
+        rating: Option<RequestAuthorRatingResponse>,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestAuthorRatingResponse {
+    pub score_sum: u64,
+    pub count: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

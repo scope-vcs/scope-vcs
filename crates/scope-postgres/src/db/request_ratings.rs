@@ -1,15 +1,26 @@
 use super::{
     RequestStore, entities,
+    integer_columns::i64_to_u64,
+    joined_rows::{joined, prefixed_columns},
     request_access::{ensure_user_exists, lock_request_repository},
 };
 use crate::error::PostgresError;
-use scope_domain::requests::{
-    CreateRequestRatingInput, RequestRating, RequestReputation, create_request_rating,
+use scope_domain::{
+    repository::{
+        RepoRecord,
+        access::{RepositoryAccess, repository_access_for_user_id},
+        collaboration::RepositoryMemberPermissions,
+    },
+    requests::{
+        AUTHOR_OUTCOME_RULES, AUTHOR_RECORD_COUNTS, AuthorRecordTotals, AuthorRequestCondition,
+        AuthorRequestFact, CreateRequestRatingInput, RequestRating, create_request_rating,
+    },
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult,
+    IntoActiveModel, QueryFilter, QueryOrder, Statement, TransactionTrait,
 };
+use std::collections::HashMap;
 
 impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_ratings"))]
@@ -38,36 +49,122 @@ impl RequestStore {
         tx.commit().await?;
         Ok(rating)
     }
+}
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_reputation"))]
-    pub async fn request_reputation(
-        &self,
-        user_id: &str,
-    ) -> Result<RequestReputation, PostgresError> {
-        let row = self
-            .db
-            .query_one_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-                    SELECT COALESCE(SUM(score), 0)::bigint AS score_sum,
-                           COUNT(*)::bigint AS rating_count
-                    FROM scope_request_ratings
-                    WHERE subject_user_id = $1
-                "#,
-                [user_id.into()],
-            ))
-            .await?
-            .ok_or_else(|| PostgresError::internal_message("request reputation row is missing"))?;
-        let score_sum = row
-            .try_get::<i64>("", "score_sum")?
-            .try_into()
-            .map_err(PostgresError::internal)?;
-        let rating_count = row
-            .try_get::<i64>("", "rating_count")?
-            .try_into()
-            .map_err(PostgresError::internal)?;
-        RequestReputation::from_totals(score_sum, rating_count).map_err(Into::into)
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct AuthorStanding {
+    permissions: Option<RepositoryMemberPermissions>,
+    pub totals: AuthorRecordTotals,
+}
+
+impl AuthorStanding {
+    pub(super) fn access(&self, repository: &RepoRecord, author_user_id: &str) -> RepositoryAccess {
+        repository_access_for_user_id(
+            &repository.owner_user_id,
+            repository.lifecycle_state,
+            self.permissions.clone(),
+            author_user_id,
+        )
     }
+}
+
+#[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "author_standings"))]
+pub(super) async fn author_standings<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    author_user_ids: Vec<String>,
+) -> Result<HashMap<String, AuthorStanding>, PostgresError> {
+    let outcome_counts = AUTHOR_OUTCOME_RULES
+        .iter()
+        .enumerate()
+        .map(|(index, (_, when))| {
+            format!(
+                "COUNT(*) FILTER (WHERE {}) AS outcome_{index}",
+                conditions_sql(when)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rows = conn
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "SELECT author.user_id AS author_user_id, {}, totals.*
+                 FROM unnest($2::text[]) AS author(user_id)
+                 LEFT JOIN scope_repository_members member
+                        ON member.repo_id = $1 AND member.user_id = author.user_id
+                 CROSS JOIN LATERAL (
+                     SELECT {outcome_counts},
+                            COALESCE(SUM(ratings.score), 0) AS rating_score_sum,
+                            COUNT(ratings.id) AS rating_count
+                     FROM scope_requests requests
+                     LEFT JOIN scope_request_ratings ratings
+                            ON ratings.request_id = requests.id
+                           AND ratings.subject_user_id = requests.author_user_id
+                     WHERE requests.repo_id = $1
+                       AND requests.author_user_id = author.user_id
+                       AND {}
+                 ) totals",
+                prefixed_columns::<entities::repository_member::Column>("member", "m_"),
+                conditions_sql(&AUTHOR_RECORD_COUNTS)
+            ),
+            [repo_id.into(), author_user_ids.into()],
+        ))
+        .await?;
+    rows.into_iter()
+        .map(|row| {
+            let count = |column: &str| i64_to_u64(row.try_get("", column)?, column);
+            let mut totals = AuthorRecordTotals {
+                rating_score_sum: count("rating_score_sum")?,
+                rating_count: count("rating_count")?,
+                ..AuthorRecordTotals::default()
+            };
+            for (index, (outcome, _)) in AUTHOR_OUTCOME_RULES.iter().enumerate() {
+                totals.count(*outcome, count(&format!("outcome_{index}"))?);
+            }
+            let permissions = if joined(&row, "m_repo_id")? {
+                Some(
+                    entities::repository_member::Model::from_query_result(&row, "m_")?
+                        .try_into_domain()?
+                        .permissions,
+                )
+            } else {
+                None
+            };
+            Ok((
+                row.try_get::<String>("", "author_user_id")?,
+                AuthorStanding {
+                    permissions,
+                    totals,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn conditions_sql(conditions: &[AuthorRequestCondition]) -> String {
+    conditions
+        .iter()
+        .map(|condition| {
+            let fact = match condition.fact {
+                AuthorRequestFact::Submitted => "requests.submitted_at_unix IS NOT NULL",
+                AuthorRequestFact::Merged => "requests.merged_at_unix IS NOT NULL",
+                AuthorRequestFact::MergedByAuthor => {
+                    "requests.merged_by_user_id IS NOT DISTINCT FROM requests.author_user_id"
+                }
+                AuthorRequestFact::Closed => "requests.closed_at_unix IS NOT NULL",
+                AuthorRequestFact::ClosedByAuthor => {
+                    "requests.closed_by_user_id IS NOT DISTINCT FROM requests.author_user_id"
+                }
+            };
+            if condition.holds {
+                format!("({fact})")
+            } else {
+                format!("NOT ({fact})")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" AND ")
 }
 
 async fn ratings_for_request<C>(
@@ -92,6 +189,11 @@ where
 mod tests {
     use super::*;
     use crate::db::requests::tests::{postgres_store, start_public_request};
+    use scope_domain::{
+        repository::{access::RepositoryActor, collaboration::RepositoryMember},
+        requests::{Request, RequestActorRole, StoredRequest},
+        views::ViewId,
+    };
 
     #[tokio::test]
     async fn terminal_participants_persist_at_most_one_immutable_rating_each() {
@@ -166,57 +268,186 @@ mod tests {
                 .len(),
             2
         );
+    }
 
-        let request_store = store.requests();
-        let mut second_request = request_store.request_by_id("req_1").await.unwrap().unwrap();
-        second_request.id = "req_2".to_string();
-        second_request.name = "second-request".to_string();
-        entities::request::Model::from_domain(&second_request)
+    #[tokio::test]
+    async fn author_standings_pair_each_authors_membership_with_what_others_decided() {
+        let store = postgres_store();
+        let mut repo = store
+            .repositories()
+            .repository_for_tests("owner/repo")
+            .await
+            .unwrap()
+            .unwrap();
+        repo.collaboration.members.push(RepositoryMember {
+            repo_id: repo.record.id.clone(),
+            user_id: "restricted".into(),
+            permissions: RepositoryMemberPermissions {
+                view: ViewId::public(),
+                ..Default::default()
+            },
+            created_at_unix: 1,
+            updated_at_unix: 1,
+        });
+        repo.bump_content_version();
+        store
+            .repositories()
+            .replace_repository_for_tests(repo.clone())
+            .await
+            .unwrap();
+        start_public_request(&store).await;
+        let requests = store.requests();
+        crate::db::test_support::request_fixtures::submitted(
+            &requests,
+            scope_domain::requests::SubmitRequestInput {
+                request_id: "req_1".to_string(),
+                actor_user_id: "user_public".to_string(),
+                event_id: "event_submitted".to_string(),
+                now_unix: 4,
+            },
+        )
+        .await;
+        let open = requests.request_by_id("req_1").await.unwrap().unwrap();
+        let merge = |stored: &mut StoredRequest| {
+            stored.lifecycle.merged_at_unix = Some(5);
+            stored.lifecycle.merged_by_user_id = Some("user_owner".to_string());
+            stored.lifecycle.merged_head_oid = Some(stored.head_oid.clone());
+            stored.lifecycle.merged_main_oid = Some(stored.head_oid.clone());
+        };
+        let close = |stored: &mut StoredRequest, closer: &str| {
+            stored.lifecycle.closed_at_unix = Some(5);
+            stored.lifecycle.closed_by_user_id = Some(closer.to_string());
+        };
+        let variant = |id: &str, edit: &dyn Fn(&mut StoredRequest)| {
+            let mut stored = open.stored();
+            stored.id = id.to_string();
+            stored.name = id.replace('_', "-");
+            edit(&mut stored);
+            stored.updated_at_unix = 5;
+            Request::restore(stored).unwrap()
+        };
+        for request in [
+            variant("req_merged", &merge),
+            variant("req_merged_by_author", &|stored| {
+                merge(stored);
+                stored.lifecycle.merged_by_user_id = Some("user_public".to_string());
+            }),
+            variant("req_closed", &|stored| close(stored, "user_owner")),
+            variant("req_closed_deleted_maintainer", &|stored| {
+                stored.lifecycle.closed_at_unix = Some(5);
+            }),
+            variant("req_withdrawn", &|stored| close(stored, "user_public")),
+            variant("req_draft", &|stored| {
+                stored.lifecycle.submitted_at_unix = None
+            }),
+            variant("req_as_owner", &|stored| {
+                stored.author_role = RequestActorRole::Owner;
+                merge(stored);
+            }),
+            variant("req_other_author", &|stored| {
+                stored.author_user_id = Some("user_guest".to_string());
+            }),
+        ] {
+            entities::request::Model::from_domain(&request)
+                .unwrap()
+                .into_active_model()
+                .insert(requests.db.as_ref())
+                .await
+                .unwrap();
+        }
+        for (id, request_id, rater, subject, score) in [
+            (
+                "rating_of_author",
+                "req_closed",
+                "user_owner",
+                "user_public",
+                4,
+            ),
+            (
+                "rating_of_maintainer",
+                "req_closed",
+                "user_public",
+                "user_owner",
+                1,
+            ),
+            (
+                "rating_as_owner",
+                "req_as_owner",
+                "user_owner",
+                "user_public",
+                1,
+            ),
+        ] {
+            entities::request_rating::Model::from_domain(&RequestRating {
+                id: id.to_string(),
+                request_id: request_id.to_string(),
+                rater_user_id: rater.to_string(),
+                subject_user_id: subject.to_string(),
+                score,
+                reason: "Reason".to_string(),
+                created_at_unix: 6,
+            })
             .unwrap()
             .into_active_model()
-            .insert(request_store.db.as_ref())
+            .insert(requests.db.as_ref())
             .await
             .unwrap();
-        request_store
-            .create_request_rating(CreateRequestRatingInput {
-                id: "rating_author_second_request".to_string(),
-                request_id: "req_2".to_string(),
-                actor_user_id: "user_public".to_string(),
-                score: 3,
-                reason: "Another clear review".to_string(),
-                now_unix: 9,
-            })
+        }
+
+        let authors = ["user_public", "restricted", "user_owner"]
+            .map(str::to_string)
+            .to_vec();
+        let nothing_submitted = |permissions| AuthorStanding {
+            permissions,
+            totals: AuthorRecordTotals::default(),
+        };
+        let standings = author_standings(requests.db.as_ref(), &open.repo_id, authors.clone())
             .await
             .unwrap();
         assert_eq!(
-            store
-                .requests()
-                .request_reputation("user_owner")
-                .await
-                .unwrap(),
-            RequestReputation {
-                score_sum: 8,
-                rating_count: 2,
-            }
+            standings,
+            HashMap::from([
+                (
+                    "user_public".to_string(),
+                    AuthorStanding {
+                        permissions: None,
+                        totals: AuthorRecordTotals {
+                            merged: 2,
+                            merged_by_author: 1,
+                            closed: 2,
+                            withdrawn: 1,
+                            open: 1,
+                            rating_score_sum: 5,
+                            rating_count: 2,
+                        },
+                    },
+                ),
+                (
+                    "restricted".to_string(),
+                    nothing_submitted(Some(RepositoryMemberPermissions {
+                        view: ViewId::public(),
+                        ..Default::default()
+                    })),
+                ),
+                ("user_owner".to_string(), nothing_submitted(None)),
+            ])
         );
+        for (author, actor, view) in [
+            ("user_public", RepositoryActor::Public, ViewId::public()),
+            ("restricted", RepositoryActor::Member, ViewId::public()),
+            ("user_owner", RepositoryActor::Owner, ViewId::private()),
+        ] {
+            let access = standings[author].access(&repo.record, author);
+            assert_eq!((access.actor, access.view), (actor, view));
+        }
         assert_eq!(
-            store
-                .requests()
-                .request_reputation("user_public")
+            author_standings(requests.db.as_ref(), "another_repository", authors)
                 .await
                 .unwrap(),
-            RequestReputation {
-                score_sum: 4,
-                rating_count: 1,
-            }
-        );
-        assert_eq!(
-            store
-                .requests()
-                .request_reputation("user_member")
-                .await
-                .unwrap(),
-            RequestReputation::default()
+            HashMap::from_iter(
+                ["user_public", "restricted", "user_owner"]
+                    .map(|author| (author.to_string(), nothing_submitted(None)))
+            )
         );
     }
 }

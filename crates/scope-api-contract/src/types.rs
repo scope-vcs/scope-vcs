@@ -222,6 +222,7 @@ pub struct RequestDetailResponse {
     pub stack_navigation: RequestStackNavigationResponse,
     pub request: RequestSummaryResponse,
     pub author: Option<RequestActorSummaryResponse>,
+    pub author_record: Option<crate::RequestAuthorRecordResponse>,
     pub claimer: Option<RequestActorSummaryResponse>,
     pub diff_stat: Option<RequestDiffStatResponse>,
 }
@@ -264,8 +265,8 @@ pub struct CreateRequestRatingRequest {
 pub struct RequestRatingResponse {
     pub id: String,
     pub request_id: String,
-    pub rater: RequestRatingParticipantResponse,
-    pub subject: RequestRatingParticipantResponse,
+    pub rater: RequestActorSummaryResponse,
+    pub subject: RequestActorSummaryResponse,
     pub score: u8,
     pub reason: String,
     pub created_at_unix: u64,
@@ -273,18 +274,9 @@ pub struct RequestRatingResponse {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub struct RequestRatingParticipantResponse {
-    pub id: String,
-    pub handle: String,
-    pub rating_score_sum: u64,
-    pub rating_count: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestRatingsResponse {
     pub ratings: Vec<RequestRatingResponse>,
-    pub eligible_subject: Option<RequestRatingParticipantResponse>,
+    pub eligible_subject: Option<RequestActorSummaryResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

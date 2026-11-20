@@ -1,5 +1,7 @@
 use super::{
-    RequestListRow, RequestStore, auth::load_users_by_ids, entities, request_rows::RequestListModel,
+    RequestListRow, RequestStore, auth::load_users_by_ids, begin_metadata_read_snapshot, entities,
+    repository_access::repository_access, request_ratings::author_standings,
+    request_rows::RequestListModel,
 };
 use crate::{
     db::integer_columns::{i64_to_u64, u64_to_i64},
@@ -9,15 +11,20 @@ use scope_domain::{
     account::UserAccount,
     repository::access::RepositoryAccess,
     requests::{
-        REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_QUEUE_RULES, RequestAttention, RequestAttentionReason,
-        RequestAttentionState, RequestClaim, RequestListPredicate, RequestQueueClassification,
-        RequestQueueFacts, RequestQueuePredicate, RequestQueuePredicateAtom, RequestQueueSection,
-        classify_request_queue_item, request_queue_visibility_predicate,
+        AuthorRecord, AuthoredRequest, REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_QUEUE_RULES,
+        RequestAttention, RequestAttentionReason, RequestAttentionState, RequestClaim,
+        RequestListPredicate, RequestQueueClassification, RequestQueueFacts, RequestQueuePredicate,
+        RequestQueuePredicateAtom, RequestQueueSection, author_record_subject,
+        author_record_viewer_can_read, classify_request_queue_item,
+        request_queue_visibility_predicate,
     },
     views::Views,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
-use std::{collections::BTreeMap, fmt::Write as _};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestQueueCursor {
@@ -42,6 +49,7 @@ pub struct RequestQueuePageQuery<'a> {
 #[derive(Clone, Debug)]
 pub struct RequestQueueRow {
     pub request: RequestListRow,
+    pub author_record: Option<AuthorRecord>,
     pub attention: RequestQueueClassification,
     pub claim: Option<RequestClaim>,
     pub cursor: RequestQueueCursor,
@@ -91,6 +99,7 @@ impl RequestStore {
             input.views,
             input.request_views.as_deref(),
         );
+        let snapshot = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let rows = QueueModel::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
@@ -108,7 +117,7 @@ impl RequestStore {
                     .into(),
             ],
         ))
-        .all(self.db.as_ref())
+        .all(&snapshot)
         .await?;
 
         let mut user_ids = Vec::with_capacity(rows.len() * 2);
@@ -123,10 +132,10 @@ impl RequestStore {
             );
             projected.push(row);
         }
-        let users = load_users_by_ids(self.db.as_ref(), user_ids).await?;
+        let users = load_users_by_ids(&snapshot, user_ids).await?;
         let next_attention_at_unix = if input.access.is_maintainer() {
             next_snooze_expiry(
-                self.db.as_ref(),
+                &snapshot,
                 input.repo_id,
                 input.viewer_user_id,
                 input.now_unix,
@@ -135,12 +144,60 @@ impl RequestStore {
         } else {
             None
         };
+        load_author_records(&snapshot, &input, &mut projected).await?;
+        snapshot.commit().await?;
         Ok(RequestQueuePage {
             rows: projected,
             users,
             next_attention_at_unix,
         })
     }
+}
+
+async fn load_author_records<C: ConnectionTrait>(
+    conn: &C,
+    input: &RequestQueuePageQuery<'_>,
+    rows: &mut [RequestQueueRow],
+) -> Result<(), PostgresError> {
+    let subjects = rows
+        .iter_mut()
+        .filter_map(|row| {
+            let subject = author_record_subject(
+                AuthoredRequest {
+                    author_user_id: row.request.author_user_id.as_deref(),
+                    state: row.request.state,
+                },
+                &input.access,
+                input.views,
+            )?;
+            Some((&mut row.author_record, subject))
+        })
+        .collect::<Vec<_>>();
+    if subjects.is_empty() {
+        return Ok(());
+    }
+    let Some(repository) = repository_access(conn, input.repo_id, input.viewer_user_id)
+        .await?
+        .filter(|repo| author_record_viewer_can_read(&repo.access, &repo.views))
+    else {
+        return Ok(());
+    };
+    let authors = subjects
+        .iter()
+        .map(|(_, subject)| subject.user_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let standings = author_standings(conn, input.repo_id, authors).await?;
+    for (record, subject) in subjects {
+        let standing = standings
+            .get(subject.user_id)
+            .ok_or_else(|| PostgresError::internal_message("author standing is missing"))?;
+        let author = standing.access(&repository.record, subject.user_id);
+        *record = subject.record(&author, standing.totals)?;
+    }
+    Ok(())
 }
 
 impl QueueModel {
@@ -173,6 +230,7 @@ impl QueueModel {
                 request_id: request.id.clone(),
             },
             request,
+            author_record: None,
             attention: classification,
             claim,
         })

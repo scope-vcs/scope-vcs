@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn terminal_participant_ratings_include_reputation_and_follow_request_visibility() {
+async fn terminal_participant_ratings_follow_request_visibility() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
     let author_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", "rating_author");
@@ -71,10 +71,6 @@ async fn terminal_participant_ratings_include_reputation_and_follow_request_visi
     )
     .await;
     assert_eq!(author_rating["subject"]["id"], test_owner_id());
-    assert_eq!(author_rating["subject"]["rating_score_sum"], 5);
-    assert_eq!(author_rating["subject"]["rating_count"], 1);
-    assert_eq!(author_rating["rater"]["rating_score_sum"], 0);
-    assert_eq!(author_rating["rater"]["rating_count"], 0);
     assert_eq!(author_rating["reason"], "Fast and clear review");
 
     let owner_rating = response_json(
@@ -89,10 +85,6 @@ async fn terminal_participant_ratings_include_reputation_and_follow_request_visi
     )
     .await;
     assert_eq!(owner_rating["subject"]["id"], author_id);
-    assert_eq!(owner_rating["subject"]["rating_score_sum"], 4);
-    assert_eq!(owner_rating["subject"]["rating_count"], 1);
-    assert_eq!(owner_rating["rater"]["rating_score_sum"], 5);
-    assert_eq!(owner_rating["rater"]["rating_count"], 1);
 
     let public = response_json(api_request(app, "GET", uri, None, None).await).await;
     assert_eq!(public["ratings"].as_array().unwrap().len(), 2);

@@ -760,3 +760,64 @@ test('a stack\'s pill folds it behind its base and summarizes what it hides', as
   assert.deepEqual(await ids(), ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'base', 'first'])
   assert.deepEqual(errors, [])
 })
+
+test('a review row shows its author record and ended rows show their outcome', async (t) => {
+  const { page, base, errors } = await workspacePage(t)
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  const row = (id, state, attention, extra = {}) => ({
+    request: { id, title: `Request ${id}`, state, stack_depth: 1, diff_stat: { additions: 2_480, deletions: 41, changed_files: 6 }, mergeability: mergeability(state === 'Open' ? 'ChecksPending' : state) },
+    author: { handle: 'a-contributor-with-a-very-long-handle' },
+    attention: { stack_group: attention.group, ...attention },
+    attention_at_unix: 1790000000,
+    next_step: state === 'Open' ? 'review' : 'done',
+    ...extra,
+  })
+  const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
+  const history = { kind: 'history', merged: 7, closed: 2, withdrawn: 1, other_open: 3, rating: { score_sum: 9, count: 2 } }
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), {
+    active: { ...empty, requests: [
+      row('reviewed', 'Open', { group: 'needs_you', reason: 'invited' }, { author_record: history }),
+      row('first', 'Open', { group: 'needs_you', reason: 'invited' }, { author_record: { kind: 'first_request' } }),
+      row('authored', 'Open', { group: 'needs_you', reason: 'authored' }, { author_record: history }),
+    ] },
+    unclaimed: empty,
+    set_aside: empty,
+    done: { ...empty, requests: [row('merged', 'Merged', { group: 'done', reason: 'merged' }), row('closed', 'Closed', { group: 'done', reason: 'closed' })] },
+  })
+  const kinds = (id) => page.locator(`[data-request-id="${id}"] [data-author-record] [data-kind]`)
+    .evaluateAll((tokens) => tokens.map((token) => `${token.dataset.kind}${token.textContent}`))
+  await page.locator('[data-request-id="reviewed"]').waitFor()
+  assert.deepEqual(await kinds('reviewed'), ['merged7', 'closed2', 'open3', 'rating4.5'])
+  assert.equal(
+    await page.locator('[data-request-id="reviewed"] .request-workspace-row-meta').evaluate((meta) => meta.scrollWidth > meta.clientWidth),
+    false,
+    'a long handle gives way to the record instead of pushing it out of the row',
+  )
+  assert.deepEqual(await kinds('first'), ['first'])
+  assert.deepEqual(await kinds('authored'), [], 'a row that hides its author hides the record too')
+  const reviewed = page.locator('[data-request-id="reviewed"]')
+  await reviewed.getByRole('link', { name: /7 merged, 2 closed by a maintainer, 3 other requests open/ }).waitFor()
+  await reviewed.getByRole('button', { name: '2 closed by a maintainer', exact: true }).hover()
+  const tooltip = page.getByRole('tooltip', { name: '2 closed by a maintainer' })
+  await tooltip.waitFor()
+  await page.locator('[data-slot="tooltip-content"]').hover()
+  assert.equal(await tooltip.isVisible(), true)
+  await page.mouse.move(1200, 800)
+  await tooltip.waitFor({ state: 'detached' })
+  const widthHandle = page.getByRole('separator', { name: 'Requests sidebar width' })
+  await widthHandle.press('Home')
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 180)
+  await reviewed.locator('[data-author-record]').waitFor({ state: 'hidden' })
+  assert.equal(await reviewed.locator('.request-workspace-row-meta').evaluate((meta) => meta.scrollWidth > meta.clientWidth), false)
+  await widthHandle.press('End')
+  await reviewed.locator('[data-author-record]').waitFor()
+  await page.getByRole('button', { name: /^Done/ }).click()
+  for (const outcome of ['merged', 'closed']) {
+    assert.equal(
+      await page.locator(`[data-request-id="${outcome}"] .request-workspace-row-mark svg`).getAttribute('data-outcome'),
+      outcome,
+    )
+  }
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.getByRole('complementary', { name: 'Requests workspace' }).screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.author-record.png` })
+  assert.deepEqual(errors, [])
+})

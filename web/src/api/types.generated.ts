@@ -346,13 +346,13 @@ export type RequestAttentionActionRequest = { "action": "claim", expected_activi
 
 export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, next_step: RequestQueueNextStep, };
 
-export type RequestQueueItemResponse = { attention_at_unix: number, request: RequestListItemResponse, author: RequestActorSummaryResponse | null, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, next_step: RequestQueueNextStep, };
+export type RequestQueueItemResponse = { attention_at_unix: number, request: RequestListItemResponse, author: RequestActorSummaryResponse | null, author_record: RequestAuthorRecordResponse | null, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, next_step: RequestQueueNextStep, };
 
 export type RequestQueuePageResponse = { requests: Array<RequestQueueItemResponse>, next_cursor: string | null, next_attention_at_unix: number | null, };
 
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
-export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, author: RequestActorSummaryResponse | null, claimer: RequestActorSummaryResponse | null, diff_stat: RequestDiffStatResponse | null, };
+export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, author: RequestActorSummaryResponse | null, author_record: RequestAuthorRecordResponse | null, claimer: RequestActorSummaryResponse | null, diff_stat: RequestDiffStatResponse | null, };
 
 export type RequestDiffStatResponse = { additions: number, deletions: number, changed_files: number, };
 
@@ -360,11 +360,13 @@ export type RequestStateResponse = { viewer: RequestActorSummaryResponse | null,
 
 export type CreateRequestRatingRequest = { score: number, reason: string, };
 
-export type RequestRatingParticipantResponse = { id: string, handle: string, rating_score_sum: number, rating_count: number, };
+export type RequestAuthorRatingResponse = { score_sum: number, count: number, };
 
-export type RequestRatingResponse = { id: string, request_id: string, rater: RequestRatingParticipantResponse, subject: RequestRatingParticipantResponse, score: number, reason: string, created_at_unix: number, };
+export type RequestAuthorRecordResponse = { "kind": "first_request" } | { "kind": "history", merged: number, closed: number, withdrawn: number, other_open: number, rating: RequestAuthorRatingResponse | null, };
 
-export type RequestRatingsResponse = { ratings: Array<RequestRatingResponse>, eligible_subject: RequestRatingParticipantResponse | null, };
+export type RequestRatingResponse = { id: string, request_id: string, rater: RequestActorSummaryResponse, subject: RequestActorSummaryResponse, score: number, reason: string, created_at_unix: number, };
+
+export type RequestRatingsResponse = { ratings: Array<RequestRatingResponse>, eligible_subject: RequestActorSummaryResponse | null, };
 
 export type RequestMutationResponse = { request: RequestSummaryResponse, };
 

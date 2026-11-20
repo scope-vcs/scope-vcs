@@ -7,7 +7,7 @@ export type RequestStateValue = { state: RequestStateResponse | null; childrenPa
 export const requestStateResource = createRepoResource<RequestStateValue>({
   invalidatedBy: ['request', 'requestTimeline', 'checks'],
   affectedBy: ({ requestId }, key, { snapshot }) => {
-    if (requestId === undefined || key[0] === requestId) return true
+    if (requestId === undefined || key[0] === requestId || snapshot.value?.state?.detail.author_record) return true
     const navigation = snapshot.value?.state?.detail.stack_navigation
     return snapshot.pending || Boolean(navigation && (
       navigation.ancestors.some((node) => node.id === requestId) ||

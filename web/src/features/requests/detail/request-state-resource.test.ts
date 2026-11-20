@@ -38,6 +38,17 @@ for (const kind of [
   })
 }
 
+test('another request ending refreshes a retained snapshot that shows its author record', () => {
+  const other = requestStateIdentity('viewer-access', 'other')
+  const shown = state()
+  shown.detail.author_record = { kind: 'first_request' }
+  requestStateResource.write(identity, { state: shown })
+  requestStateResource.write(other, { state: state() })
+  invalidateRepoResources('viewer-access', topicsOf(event({ RequestStateChanged: { request_id: 'elsewhere', view: 'public' } })))
+  assert.equal(requestStateResource.getSnapshot(identity).stale, true)
+  assert.equal(requestStateResource.getSnapshot(other).stale, false)
+})
+
 test('a workflow run association arriving after check results refreshes embedded check links', () => {
   requestStateResource.write(identity, { state: state() })
   invalidateRepoResources('viewer-access', topicsOf(event('GitHubWorkflowRunsChanged')))

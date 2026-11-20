@@ -304,6 +304,7 @@ export function RequestWorkspaceSidebar({
       id: item.request.id,
       title: item.request.title,
       nextStep: item.next_step,
+      state: item.request.state,
       status: requestStatusLabel(item, true),
       age: item.request.id === key ? requestAgeLabel(item.attention_at_unix, now, true) : undefined,
       depth,

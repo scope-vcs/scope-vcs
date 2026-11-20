@@ -1,6 +1,6 @@
 use super::{
     GitHubWorkflowRunReference, RequestInviteeRead, RequestStore, begin_metadata_read_snapshot,
-    entities,
+    entities, request_ratings::author_standings,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -12,8 +12,9 @@ use scope_domain::{
         repo_id,
     },
     requests::{
-        GitHubPullRequest, GitHubPush, Request, RequestAutoMergeIntent, RequestCheckEvaluation,
-        RequestCheckResults, RequestRevision, RequestViewer, request_policy,
+        AuthorRecord, AuthoredRequest, GitHubPullRequest, GitHubPush, Request,
+        RequestAutoMergeIntent, RequestCheckEvaluation, RequestCheckResults, RequestRevision,
+        RequestViewer, author_record_subject, request_policy,
     },
 };
 use sea_orm::DatabaseTransaction;
@@ -26,6 +27,7 @@ pub struct RequestStateSnapshot {
     pub children: super::RequestChildrenPage,
     pub repository: RepositoryAccessContext,
     pub request: Request,
+    pub author_record: Option<AuthorRecord>,
     pub is_invitee: bool,
     pub viewer_user_id: Option<String>,
     pub invitees: Vec<RequestInviteeRead>,
@@ -167,6 +169,25 @@ async fn read_request_state(
     } else {
         Vec::new()
     };
+    let author_record = match author_record_subject(
+        AuthoredRequest {
+            author_user_id: request.author_user_id.as_deref(),
+            state: request.state(),
+        },
+        &repository.access,
+        &repository.views,
+    ) {
+        Some(subject) => {
+            let standing =
+                author_standings(&tx, &request.repo_id, vec![subject.user_id.to_owned()])
+                    .await?
+                    .remove(subject.user_id)
+                    .ok_or_else(|| PostgresError::internal_message("author standing is missing"))?;
+            let author = standing.access(&repository.record, subject.user_id);
+            subject.record(&author, standing.totals)?
+        }
+        None => None,
+    };
     let evaluation = row.evaluation()?;
     let results =
         super::request_checks::request_check_results(&tx, &request.repo_id, evaluation.as_ref())
@@ -233,6 +254,7 @@ async fn read_request_state(
         children,
         repository,
         request,
+        author_record,
         is_invitee,
         viewer_user_id: viewer_user_id.map(str::to_string),
         invitees,
