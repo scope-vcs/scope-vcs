@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { authorRecordSummary, authorRecordTokens } from './request-author-record-model'
+import { authorRecordTokens } from './request-author-record-model'
 
 test('an author record leaves out zero counts and averages the rating', () => {
   const record = {
@@ -26,15 +26,14 @@ test('an author record leaves out zero counts and averages the rating', () => {
     'a list row leaves withdrawn requests to the request header',
   )
   assert.equal(
-    authorRecordSummary({
+    authorRecordTokens({
       kind: 'history',
       merged: 0,
       closed_by_maintainer: 2,
       withdrawn: 0,
       other_open: 3,
       rating: { score_sum: 2, count: 1 },
-    }),
-    '2 closed by a maintainer, 3 other requests open, Rated 2.0 by maintainers here, from 1 rating',
+    }, false).at(-1)?.tip,
+    'Rated 2.0 by maintainers here, from 1 rating',
   )
-  assert.equal(authorRecordSummary({ kind: 'first_request' }), 'First request in this repository')
 })

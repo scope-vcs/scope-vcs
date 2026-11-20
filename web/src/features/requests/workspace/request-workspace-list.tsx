@@ -14,7 +14,7 @@ import { Check, Layers, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'l
 import { useRef, useState, type CSSProperties } from 'react'
 import type { RequestAttentionCommand } from './request-attention-api'
 import { RequestAuthorRecord } from '../detail/request-author-record'
-import { authorRecordSummary } from '../detail/request-author-record-model'
+import { authorRecordTokens } from '../detail/request-author-record-model'
 import { RequestStatusGlyph } from '../detail/request-status-glyph'
 import { RequestSnoozeMenu } from './request-snooze-menu'
 import {
@@ -225,7 +225,7 @@ function RequestWorkspaceRow({
   const status = requestStatusLabel(item, hydrated)
   const action = attention.reason === 'authored' ? undefined : REQUEST_NEXT_STEP_ACTIONS[item.next_step]
   const handle = REVIEW_REASONS.has(attention.reason) ? actorHandle(author) : null
-  const authorRecord = handle ? item.author_record : null
+  const recordTokens = handle && item.author_record ? authorRecordTokens(item.author_record, false) : []
   const stackParent = requestStackParentLabel(item)
   const diffStat = diffStatWithChanges(request.diff_stat)
   const canSetAside = section === 'active' && attention.can_set_aside
@@ -307,7 +307,7 @@ function RequestWorkspaceRow({
               {request.title}
             </span>
             <span className="sr-only" suppressHydrationWarning>
-              {[handle, authorRecord && authorRecordSummary(authorRecord), status, action, stackParent].filter(Boolean).map((detail) => `, ${detail}`)}
+              {[handle, ...recordTokens.map(({ tip }) => tip), status, action, stackParent].filter(Boolean).map((detail) => `, ${detail}`)}
             </span>
           </Link>
           <time
@@ -352,7 +352,7 @@ function RequestWorkspaceRow({
           {handle && (
             <span className="request-workspace-row-author">
               <span aria-hidden="true">{handle}</span>
-              {authorRecord && <RequestAuthorRecord record={authorRecord} />}
+              <RequestAuthorRecord tokens={recordTokens} />
             </span>
           )}
           {descendants.length > 0 && (

@@ -1,6 +1,6 @@
 import type { RequestAuthorRecordResponse } from '../../../api/types.generated'
 
-export type AuthorRecordTokenKind = 'merged' | 'closed' | 'withdrawn' | 'open' | 'rating' | 'first'
+type AuthorRecordTokenKind = 'merged' | 'closed' | 'withdrawn' | 'open' | 'rating' | 'first'
 
 export type AuthorRecordToken = {
   kind: AuthorRecordTokenKind
@@ -33,8 +33,4 @@ export function authorRecordTokens(record: RequestAuthorRecordResponse, detailed
     })
   }
   return tokens
-}
-
-export function authorRecordSummary(record: RequestAuthorRecordResponse) {
-  return authorRecordTokens(record, true).map(({ tip }) => tip).join(', ')
 }

@@ -180,7 +180,15 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
     .await;
     assert_eq!(request_ids(&first), ["req_open_high", "req_open_tie_a"]);
     assert_eq!(first["requests"][0]["author_record"]["kind"], "history");
-    assert!(invitee_work["requests"][0]["author_record"].is_null());
+    assert_eq!(first["requests"][0]["author_record"]["other_open"], 3);
+    assert_eq!(
+        first["requests"][0]["author_record"]["closed_by_maintainer"],
+        2
+    );
+    assert_eq!(
+        invitee_work["requests"][0].get("author_record"),
+        Some(&serde_json::Value::Null)
+    );
     let cursor = first["next_cursor"].as_str().unwrap();
     create_public_request(
         &state,

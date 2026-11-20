@@ -298,6 +298,12 @@
   flex: none;
 }
 
+@container request-workspace-rows (max-width: 259px) {
+  .request-workspace-row-author [data-author-record] {
+    display: none;
+  }
+}
+
 .request-workspace-row-meta:empty {
   height: 0;
   margin-top: 0;

@@ -156,8 +156,6 @@ pub(crate) async fn request_queue(
         &rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>(),
     )
     .await?;
-    let mut author_records =
-        crate::use_cases::request_author_records::author_records(&state, &repo, &rows).await?;
     let requests = page
         .rows
         .into_iter()
@@ -217,9 +215,7 @@ pub(crate) async fn request_queue(
                     },
                 )?,
                 author,
-                author_record: author_records
-                    .remove(&request_id)
-                    .map(author_record_response),
+                author_record: row.author_record.map(author_record_response),
                 attention: attention_response(row.attention, activity_version, group),
                 claimer,
                 next_step: next_step.into(),

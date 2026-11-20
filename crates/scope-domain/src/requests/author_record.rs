@@ -41,62 +41,62 @@ pub enum AuthorRecord {
     History(AuthorHistory),
 }
 
+pub struct AuthorRecordSubject<'a> {
+    pub user_id: &'a str,
+    state: RequestState,
+}
+
+pub fn author_record_viewer_can_read(viewer: &RepositoryAccess, views: &Views) -> bool {
+    viewer.is_maintainer() && viewer.reads_full_view(views)
+}
+
 pub fn author_record_subject<'a>(
     request: AuthoredRequest<'a>,
     viewer: &RepositoryAccess,
     views: &Views,
-) -> Option<&'a str> {
-    let viewer_reads_every_request = viewer.is_maintainer() && viewer.reads_full_view(views);
-    (viewer_reads_every_request && request.author_role == AUTHOR_RECORD_ROLE)
-        .then_some(request.author_user_id)
-        .flatten()
+) -> Option<AuthorRecordSubject<'a>> {
+    if request.author_role != AUTHOR_RECORD_ROLE || !author_record_viewer_can_read(viewer, views) {
+        return None;
+    }
+    Some(AuthorRecordSubject {
+        user_id: request.author_user_id?,
+        state: request.state,
+    })
 }
 
-pub fn author_record(
-    request: AuthoredRequest<'_>,
-    viewer: &RepositoryAccess,
-    views: &Views,
-    totals: AuthorRecordTotals,
-) -> Result<Option<AuthorRecord>, DomainError> {
-    if author_record_subject(request, viewer, views).is_none() {
-        return Ok(None);
+impl AuthorRecordSubject<'_> {
+    pub fn record(self, totals: AuthorRecordTotals) -> Result<AuthorRecord, DomainError> {
+        let own_open = u64::from(self.state == RequestState::Open);
+        let history = AuthorHistory {
+            merged: totals.merged,
+            closed_by_maintainer: totals.closed_by_maintainer,
+            withdrawn: totals.withdrawn,
+            other_open: totals.open.saturating_sub(own_open),
+            rating: author_rating(totals.rating_score_sum, totals.rating_count)?,
+        };
+        let counts = [
+            history.merged,
+            history.closed_by_maintainer,
+            history.withdrawn,
+            history.other_open,
+        ];
+        Ok(
+            if counts.into_iter().all(|count| count == 0) && history.rating.is_none() {
+                AuthorRecord::FirstRequest
+            } else {
+                AuthorRecord::History(history)
+            },
+        )
     }
-    let own_open = u64::from(request.state == RequestState::Open);
-    let history = AuthorHistory {
-        merged: totals.merged,
-        closed_by_maintainer: totals.closed_by_maintainer,
-        withdrawn: totals.withdrawn,
-        other_open: totals.open.saturating_sub(own_open),
-        rating: author_rating(totals.rating_score_sum, totals.rating_count)?,
-    };
-    let other_requests =
-        history.merged + history.closed_by_maintainer + history.withdrawn + history.other_open;
-    Ok(Some(if other_requests == 0 && history.rating.is_none() {
-        AuthorRecord::FirstRequest
-    } else {
-        AuthorRecord::History(history)
-    }))
 }
 
 fn author_rating(score_sum: u64, count: u64) -> Result<Option<AuthorRating>, DomainError> {
-    if count == 0 {
-        return if score_sum == 0 {
-            Ok(None)
-        } else {
-            Err(DomainError::invariant_violation(
-                "author rating totals are inconsistent",
-            ))
-        };
-    }
-    let maximum = count
-        .checked_mul(5)
-        .ok_or_else(|| DomainError::invariant_violation("author rating count overflow"))?;
-    if !(count..=maximum).contains(&score_sum) {
+    if !(count..=count.saturating_mul(5)).contains(&score_sum) {
         return Err(DomainError::invariant_violation(
             "author rating totals are inconsistent",
         ));
     }
-    Ok(Some(AuthorRating { score_sum, count }))
+    Ok((count > 0).then_some(AuthorRating { score_sum, count }))
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 import type { RequestQueueNextStep, RequestState } from '@/api/types.generated'
 import { AlarmClock, CircleCheck, CircleDashed, CirclePlay, CircleX, Eye, MessageSquare, RefreshCw, Send, type LucideIcon } from 'lucide-react'
-import { RequestOutcomeIcon, requestOutcome } from './request-outcome-icon'
+import { requestOutcome } from './request-labels'
+import { RequestOutcomeIcon } from './request-outcome-icon'
 import './request-status-glyph.css'
 
 const NEXT_STEP_ICONS: Record<RequestQueueNextStep, { icon: LucideIcon; round: boolean }> = {
