@@ -5,7 +5,6 @@ import {
   requestDiscussionCacheKey,
   requestDiscussionResource,
   requestDiscussionState,
-  stopFollowingRequestDiscussion,
   syncRequestDiscussionProjections,
   updateRequestDiscussion,
   updateRequestDiscussionCollection,
@@ -34,23 +33,20 @@ test('keys timeline views by viewer, repository access scope, and request', () =
 
 test('reopening finds the subscribed collection, expansion, scroll and pending pagination', () => {
   resetViewerState()
-  const { caughtUp, epoch } = retain('request', page)
-  assert.equal(caughtUp, true)
+  const { epoch } = retain('request', page)
   let notifications = 0
   const unsubscribe = requestDiscussionResource.subscribe('request', () => notifications++)
   updateRequestDiscussionCollection('request', epoch, (current) => mergeDiscussion(current, { ...discussion('one', 1), expanded: true }))
   updateRequestDiscussion('request', epoch, { loadingMore: true })
   writeRequestDiscussionScroll('request', 240)
-  stopFollowingRequestDiscussion('request', epoch)
   unsubscribe()
 
   const reopened = requestDiscussionResource.peek('request')
   assert.ok(reopened)
   assert.equal(reopened.collection.byId.get('one')?.expanded, true)
   assert.equal(reopened.loadingMore, true)
-  assert.equal(reopened.caughtUp, false)
   assert.equal(readRequestDiscussionScroll('request'), 240)
-  assert.equal(notifications, 4)
+  assert.equal(notifications, 3)
 })
 
 test('bounds retained views and ignores late writes after eviction or reset', () => {

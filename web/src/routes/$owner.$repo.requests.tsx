@@ -6,10 +6,11 @@ import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { loadRepoSummary, repoSummaryIdentity } from '@/features/repo-detail/repo-summary-resource'
 import { resolveViewingAs } from '@/features/repo-detail/viewing-as'
 import { requestQueueIdentity, warmRequestQueue } from '@/features/requests/workspace/request-queue-cache'
-import { RequestsPage, requestQueuePageLoader } from '@/features/requests/workspace/requests-page'
+import { RequestsPage } from '@/features/requests/workspace/requests-page'
 import { RequestsPagePending } from '@/features/requests/workspace/requests-page-pending'
 import { whenViewerActive } from '@/lib/viewer-state'
 import { loadRepoSummaryState } from '@/routes/-repo-summary-actions'
+import { requestQueuePageLoader } from '@/routes/-request-workspace-actions'
 import { Outlet, createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/$owner/$repo/requests')({

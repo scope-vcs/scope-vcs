@@ -11,7 +11,6 @@ import {
 import {
   loadRequestDiscussionState,
   requestDiscussionResource,
-  stopFollowingRequestDiscussion,
   syncRequestDiscussionProjections,
   updateRequestDiscussion,
   updateRequestDiscussionCollection,
@@ -118,12 +117,11 @@ export function useRequestDiscussionStore({
     })
     sync.reset(key)
     syncRef.current = sync
-    if (!retained.caughtUp) void sync.catchUp()
+    void sync.catchUp()
     return () => {
       sync.stop()
       syncRef.current = null
       setLoadingMore(false)
-      stopFollowingRequestDiscussion(key, epoch)
     }
   }, [epoch, key, read, setError, setLoadingMore, updateCollection])
   useEffect(() => {

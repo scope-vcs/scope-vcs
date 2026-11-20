@@ -1,9 +1,9 @@
 import type { RepoParams } from '@/api/types'
-import type { RequestQueueItemResponse, ViewId } from '@/api/types.generated'
+import type { RequestQueueItemResponse } from '@/api/types.generated'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
+import { requestQueuePageLoader } from '@/routes/-request-workspace-actions'
 import { useRepoLayout } from '../../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../../repo-detail/repo-resource-scope'
 import { RepoViewingAsPicker, useViewingAs } from '../../repo-detail/use-viewing-as'
@@ -11,7 +11,6 @@ import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
 import {
   loadMoreRequestQueue,
   requestQueueIdentity,
-  type LoadRequestQueuePage,
 } from './request-queue-cache'
 import { RequestWorkspaceSidebar } from './request-workspace-sidebar'
 import { RequestWorkspaceShell } from './request-workspace-shell'
@@ -24,13 +23,6 @@ import { applyAttentionMoves } from './request-attention-moves'
 import { RequestCustomSnoozeDialog } from './request-custom-snooze-dialog'
 import { useRequestAttentionActions } from './use-request-attention-actions'
 import { useRequestQueue } from './use-request-queue'
-
-export function requestQueuePageLoader({ owner, repo }: RepoParams, view: ViewId): LoadRequestQueuePage {
-  return (section, cursor, signal) => loadRequestQueuePage({
-    data: { owner, repo, section, cursor, search: null, view },
-    signal,
-  })
-}
 
 export function RequestsPage({ children, params }: { children: ReactNode; params: RepoParams }) {
   const { userId, isLoaded } = useAuth()

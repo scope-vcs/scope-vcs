@@ -4,7 +4,6 @@ import { collectionFromPage, mergeRefreshedDiscussionPage, type DiscussionCollec
 import type { RequestDiscussionPage } from './request-discussion-types'
 
 export type RequestDiscussionState = {
-  caughtUp: boolean
   collection: DiscussionCollection
   epoch: number
   error: string | null
@@ -38,7 +37,6 @@ export function requestDiscussionCacheKey({ repoId, requestId, viewerId }: {
 export function requestDiscussionState(page: RequestDiscussionPage): RequestDiscussionState {
   epochs += 1
   return {
-    caughtUp: true,
     collection: collectionFromPage(page),
     epoch: epochs,
     error: null,
@@ -75,10 +73,6 @@ export function updateRequestDiscussionCollection(
   const collection = transform(current.collection)
   if (collection === current.collection) return
   updateRequestDiscussion(key, epoch, { collection })
-}
-
-export function stopFollowingRequestDiscussion(key: string, epoch: number) {
-  updateRequestDiscussion(key, epoch, { caughtUp: false })
 }
 
 export async function syncRequestDiscussionProjections(
