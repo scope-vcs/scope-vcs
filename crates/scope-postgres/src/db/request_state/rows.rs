@@ -5,6 +5,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, QueryResult, St
 
 pub(super) struct StateRow(QueryResult);
 
+#[tracing::instrument(name = "request_state_row", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "load"))]
 pub(super) async fn load<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

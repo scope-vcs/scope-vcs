@@ -20,6 +20,7 @@ pub struct RequestChildrenPage {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_stack_parents"))]
     pub async fn request_stack_parents(
         &self,
         repository: &RepositoryAccessContext,
@@ -105,6 +106,7 @@ async fn nodes_for_rows<C: ConnectionTrait>(
         .collect())
 }
 
+#[tracing::instrument(name = "request_navigation", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "navigation"))]
 pub(super) async fn navigation<C: ConnectionTrait>(
     conn: &C,
     repository: &RepositoryAccessContext,

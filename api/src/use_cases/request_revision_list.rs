@@ -60,6 +60,7 @@ pub(crate) struct ListedRequestRevision {
     pub(crate) inspection: RequestRevisionInspectionState,
 }
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn list_request_revisions(
     state: &AppState,
     repo: Arc<RepositoryReadPolicy>,

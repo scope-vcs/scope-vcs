@@ -180,6 +180,7 @@ impl RepositoryStore {
         Ok(self.repository_policy_config(context).await?.policy)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_policy_config"))]
     pub async fn repository_policy_config(
         &self,
         context: &RepositoryAccessContext,
@@ -310,6 +311,7 @@ enum PublicFilesVisibility<'a> {
     ProjectionMissing(&'a ViewId),
 }
 
+#[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "load_access"))]
 pub(super) async fn load_access<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

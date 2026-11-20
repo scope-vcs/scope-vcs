@@ -363,6 +363,7 @@ fn state_name(state: &GitHubPullRequestState) -> &'static str {
     }
 }
 
+#[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_pull_request"))]
 pub(in crate::db) async fn github_pull_request<C: ConnectionTrait>(
     conn: &C,
     request_id: &str,

@@ -62,6 +62,7 @@ pub struct RequestStackChildFacts {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_view_mains"))]
     pub async fn request_view_mains(
         &self,
         repo_id: &str,

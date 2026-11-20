@@ -16,6 +16,7 @@ use scope_domain::{
 use sha2::Digest as _;
 use std::{fs, path::Path};
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -119,6 +120,7 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     inspect_revision(state, &path, request, revision, leases, action).await
 }
 
+#[tracing::instrument(skip_all)]
 async fn install_revision_objects(
     state: &AppState,
     shelf: &Path,
@@ -150,6 +152,7 @@ async fn install_revision_objects(
     Ok(leases)
 }
 
+#[tracing::instrument(skip_all)]
 async fn install_revision_packs(
     state: &AppState,
     install: &PoolInstall<'_>,
@@ -167,6 +170,7 @@ async fn install_revision_packs(
     Ok(leases)
 }
 
+#[tracing::instrument(skip_all)]
 async fn ensure_full_object_repos(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -183,6 +187,7 @@ async fn ensure_full_object_repos(
     .await
 }
 
+#[tracing::instrument(skip_all)]
 async fn lease_canonical(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -210,6 +215,7 @@ pub(crate) fn sweep_revision_jobs(data_dir: &Path) -> std::io::Result<()> {
     }
 }
 
+#[tracing::instrument(skip_all)]
 async fn inspect_revision<T: Send + 'static>(
     state: &AppState,
     shelf: &Path,
