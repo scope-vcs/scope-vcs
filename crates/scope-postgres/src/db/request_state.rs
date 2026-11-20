@@ -35,6 +35,7 @@ pub struct RequestStateSnapshot {
     pub auto_merge: Option<RequestAutoMergeIntent>,
     pub auto_merge_actor_access: Option<RepositoryAccess>,
     pub users: BTreeMap<String, UserAccount>,
+    pub claimer_user_id: Option<String>,
     pub github_connection: Option<GitHubConnection>,
     pub github_push: Option<GitHubPush>,
     pub github_pull_request: Option<GitHubPullRequest>,
@@ -174,6 +175,7 @@ async fn read_request_state(
     let auto_merge = row.auto_merge()?;
     let auto_merge_actor_access = row.auto_merge_actor_access(&repository, auto_merge.as_ref())?;
     let users = row.users()?;
+    let claimer_user_id = row.claimer_user_id()?;
     let github_connection =
         super::github::connections::repository_github_connection(&tx, &request.repo_id).await?;
     let github_push = super::github::pushes::latest_github_push(&tx, request_id).await?;
@@ -240,6 +242,7 @@ async fn read_request_state(
         auto_merge,
         auto_merge_actor_access,
         users,
+        claimer_user_id,
         github_connection,
         github_push,
         github_pull_request,

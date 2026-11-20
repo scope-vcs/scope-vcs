@@ -1,9 +1,33 @@
 import type { RepoViews } from '@/api/repo-views'
 import type { ViewDefinition } from '@/api/types.generated'
+import type { ReactNode } from 'react'
 import { SectionRow, SectionRows } from '../../components/section-rows'
 import { Layers } from 'lucide-react'
 
+export const VIEW_ROW_CLASS = 'grid gap-0.5 py-2 first:pt-0 sm:flex sm:items-baseline sm:justify-between sm:gap-4'
+
 export function RepositoryViewsSection({ views }: { views: RepoViews }) {
+  return (
+    <ViewsSection>
+      <ul aria-label="Repository views" className="divide-y divide-border text-sm">
+        {views.definitions.map((view) => (
+          <li className={VIEW_ROW_CLASS} key={view.id}>
+            <span className="min-w-0 break-words">
+              <span className="font-medium">{view.name}</span>
+              {' '}
+              <span className="font-mono text-xs text-muted-foreground">{view.id}</span>
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {includesText(views, view)} · {readersText(view)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </ViewsSection>
+  )
+}
+
+export function ViewsSection({ children }: { children: ReactNode }) {
   return (
     <SectionRows>
       <SectionRow
@@ -12,20 +36,7 @@ export function RepositoryViewsSection({ views }: { views: RepoViews }) {
         id="views"
         title="Views"
       >
-        <ul aria-label="Repository views" className="divide-y divide-border text-sm">
-          {views.definitions.map((view) => (
-            <li className="grid gap-0.5 py-2 first:pt-0 sm:flex sm:items-baseline sm:justify-between sm:gap-4" key={view.id}>
-              <span className="min-w-0 break-words">
-                <span className="font-medium">{view.name}</span>
-                {' '}
-                <span className="font-mono text-xs text-muted-foreground">{view.id}</span>
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {includesText(views, view)} · {readersText(view)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {children}
         <p className="mt-3 text-xs leading-5 text-muted-foreground">
           Change views with <code className="font-mono">scope view</code> in the CLI, then publish them with{' '}
           <code className="font-mono">scope push --main</code>.

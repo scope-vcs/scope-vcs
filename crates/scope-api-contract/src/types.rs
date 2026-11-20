@@ -221,6 +221,8 @@ pub struct RequestListResponse {
 pub struct RequestDetailResponse {
     pub stack_navigation: RequestStackNavigationResponse,
     pub request: RequestSummaryResponse,
+    pub author: Option<RequestActorSummaryResponse>,
+    pub claimer: Option<RequestActorSummaryResponse>,
     pub diff_stat: Option<RequestDiffStatResponse>,
 }
 

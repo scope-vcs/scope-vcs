@@ -26,7 +26,8 @@ import {
   RequestChangesWorkbench,
   type RequestChangesSearch,
 } from '@/features/requests/changes/request-changes-workbench'
-import { RequestChangesBodyPending, RequestChangesPending } from '@/features/requests/detail/request-page-pending'
+import { RequestChangesBodyPending } from '@/features/requests/changes/request-changes-body-pending'
+import { RequestChangesPending } from '@/features/requests/detail/request-page-pending'
 import { RequestChangesScreen } from '@/features/requests/changes/request-changes-screen'
 import {
   requestChangeSelection,

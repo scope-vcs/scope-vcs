@@ -84,13 +84,17 @@ impl StateRow {
 
     pub(super) fn users(&self) -> Result<BTreeMap<String, UserAccount>, PostgresError> {
         let mut users = BTreeMap::new();
-        for prefix in ["viewer_", "actor_"] {
+        for prefix in ["viewer_", "actor_", "author_", "claimer_"] {
             if joined(&self.0, &format!("{prefix}id"))? {
                 let user = entities::user::Model::from_query_result(&self.0, prefix)?.into_domain();
                 users.insert(user.id.clone(), user);
             }
         }
         Ok(users)
+    }
+
+    pub(super) fn claimer_user_id(&self) -> Result<Option<String>, PostgresError> {
+        Ok(self.0.try_get("", "claim_claimer_user_id")?)
     }
 
     pub(super) fn canonical_main_oid(&self) -> Result<Option<String>, PostgresError> {
@@ -102,7 +106,8 @@ fn state_sql() -> &'static str {
     static SQL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     SQL.get_or_init(|| {
         format!(
-            "SELECT {}, {}, {}, {}, {}, {}, {}, head.head_oid AS canonical_main_oid,
+            "SELECT {}, {}, {}, {}, {}, {}, {}, {}, {}, head.head_oid AS canonical_main_oid,
+            claim.claimer_user_id AS claim_claimer_user_id,
             EXISTS (SELECT 1 FROM scope_request_invitees invitee
                     WHERE invitee.request_id = request.id AND invitee.user_id = $3) AS is_invitee
          FROM scope_requests request
@@ -119,6 +124,9 @@ fn state_sql() -> &'static str {
          ) intent ON TRUE
          LEFT JOIN scope_users viewer ON viewer.id = $3
          LEFT JOIN scope_users actor ON actor.id = intent.actor_user_id
+         LEFT JOIN scope_users author ON author.id = request.author_user_id
+         LEFT JOIN scope_request_claims claim ON claim.request_id = request.id
+         LEFT JOIN scope_users claimer ON claimer.id = claim.claimer_user_id
          LEFT JOIN scope_repositories repo ON repo.id = request.repo_id
          LEFT JOIN scope_repository_members member ON member.repo_id = request.repo_id
            AND member.user_id = intent.actor_user_id AND member.user_id <> repo.owner_user_id
@@ -131,6 +139,8 @@ fn state_sql() -> &'static str {
             prefixed_columns::<entities::request_auto_merge_intent::Column>("intent", "a_"),
             prefixed_columns::<entities::user::Column>("viewer", "viewer_"),
             prefixed_columns::<entities::user::Column>("actor", "actor_"),
+            prefixed_columns::<entities::user::Column>("author", "author_"),
+            prefixed_columns::<entities::user::Column>("claimer", "claimer_"),
             prefixed_columns::<entities::repository_member::Column>("member", "m_"),
         )
     })

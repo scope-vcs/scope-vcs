@@ -426,7 +426,7 @@ export function RequestWorkspaceSidebar({
                   </section>
                 )}
                 <div className="request-workspace-disclosures">
-                  {disclosures.filter(({ count }) => count !== '0').map(({ group, section, label, count, emptyLabel }) => (
+                  {disclosures.filter(({ count }) => count !== null && count !== '0').map(({ group, section, label, count, emptyLabel }) => (
                     <RequestWorkspaceDisclosure count={count} key={group} label={label}>
                       <RequestWorkspaceList
                         {...common}

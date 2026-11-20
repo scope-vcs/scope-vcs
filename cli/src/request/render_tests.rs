@@ -17,6 +17,8 @@ fn detail_lines_render_the_request_summary() {
     let rendered = request_detail_lines(
         &scope_api_contract::RequestDetailResponse {
             request,
+            author: None,
+            claimer: None,
             stack_navigation: scope_api_contract::RequestStackNavigationResponse {
                 parent: None,
                 ancestors: Vec::new(),

@@ -2,6 +2,7 @@ import { FileWorkbench } from '@/components/file-workbench'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { CloneButton } from './repo-clone-dropdown'
 import { useLocation } from '@tanstack/react-router'
 import { useState } from 'react'
 import {
@@ -30,7 +31,7 @@ function RepositoryHomePending() {
         actions={(
           <>
             <BlockSkeleton className="h-8 w-16" />
-            <BlockSkeleton className="h-8 w-24" />
+            <CloneButton disabled />
             <BlockSkeleton className="h-8 w-32" />
           </>
         )}
@@ -54,7 +55,7 @@ function RepositoryBrowserPending() {
   return (
     <WorkbenchPane>
       <WorkbenchBar
-        actions={<BlockSkeleton className="h-8 w-24" />}
+        actions={<CloneButton disabled />}
         summary={<BlockSkeleton className="h-8 w-40" />}
         title="Code"
       />

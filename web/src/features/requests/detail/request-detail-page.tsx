@@ -250,8 +250,8 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             </Link>
           )}
           checks={checks.checks}
+          detail={state.detail}
           params={params}
-          request={request}
           stateActions={
             <>
               <RequestCiApproval controller={checks} key={identity} />

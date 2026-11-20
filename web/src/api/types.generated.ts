@@ -352,7 +352,7 @@ export type RequestQueuePageResponse = { requests: Array<RequestQueueItemRespons
 
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
-export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, diff_stat: RequestDiffStatResponse | null, };
+export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, author: RequestActorSummaryResponse | null, claimer: RequestActorSummaryResponse | null, diff_stat: RequestDiffStatResponse | null, };
 
 export type RequestDiffStatResponse = { additions: number, deletions: number, changed_files: number, };
 

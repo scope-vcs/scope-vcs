@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { ChevronDown, Code2 } from 'lucide-react'
+import type { ComponentProps } from 'react'
 import { cloneCommands } from './clone-command'
 import type { RepoSummaryResponse, ViewId } from '@/api/types.generated'
 
@@ -41,18 +42,22 @@ export function RepoCloneDropdown({
           ))}
         </div>
       )}
-      renderTrigger={(props) => (
-        <Button size="sm" type="button" variant="secondary" {...props}>
-          <Code2 className="size-3.5" />
-          <span>Clone</span>
-          <ChevronDown
-            className={cn(
-              'size-3.5 text-muted-foreground transition-transform',
-              props['aria-expanded'] && 'rotate-180',
-            )}
-          />
-        </Button>
-      )}
+      renderTrigger={(props) => <CloneButton {...props} />}
     />
+  )
+}
+
+export function CloneButton(props: ComponentProps<typeof Button>) {
+  return (
+    <Button size="sm" type="button" variant="secondary" {...props}>
+      <Code2 className="size-3.5" />
+      <span>Clone</span>
+      <ChevronDown
+        className={cn(
+          'size-3.5 text-muted-foreground transition-transform',
+          props['aria-expanded'] && 'rotate-180',
+        )}
+      />
+    </Button>
   )
 }

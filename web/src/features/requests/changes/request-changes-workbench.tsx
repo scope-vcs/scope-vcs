@@ -4,10 +4,7 @@ import type {
   RequestRevisionListResponse,
 } from '@/api/types.generated'
 import type { LoadRequestRevisionDiffInput } from '@/api/requests'
-import { PendingSurface } from '@/components/pending-surface'
 import { SeparatedMeta, SeparatedMetaItem } from '@/components/separated-meta'
-import { BlockSkeleton } from '@/components/ui/block-skeleton'
-import { TextSkeleton } from '@/components/ui/text-skeleton'
 import {
   historyDiffCacheKey,
   historyDiffResource,
@@ -48,6 +45,7 @@ import type {
 } from '../discussion/request-discussion-types'
 import { actorHandle } from '../detail/request-actor'
 import { Entrance } from '@/components/entrance'
+import { RequestChangesBodyPending } from './request-changes-body-pending'
 
 export type RequestChangesSearch = {
   comparison?: 'request' | 'push' | 'commit'
@@ -61,8 +59,8 @@ type DiscussionReferenceState = {
   error: string | null
   incomplete: boolean
   loadMore?: () => void
-  loading: boolean
   retry?: () => void
+  settling: boolean
 }
 
 export function RequestChangesWorkbench({
@@ -182,32 +180,36 @@ export function RequestChangesWorkbench({
           </button>
         ))}
       </nav>
-      <HistoryWorkbench
-        commitContext={commitContext}
-        commitState={model.commitState}
-        commits={model.commits}
-        diffAnnotations={diffAnnotations}
-        diffIdentity={model.diffIdentity}
-        emptyDescription={emptyDescription}
-        emptyTitle={emptyTitle}
-        fileDiffState={model.fileDiffState}
-        header={model.selectedRevision ? (
-          <>
-            <RequestRevisionHeader revision={model.selectedRevision} />
-            {revisions.comparison?.inspection === 'Incomplete' ? (
-              <p role="status" className="border-b border-border px-5 py-2 text-xs text-muted-foreground sm:px-6 lg:px-8">
-                This comparison’s file inspection is incomplete. Showing the available files.
-              </p>
-            ) : null}
-          </>
-        ) : undefined}
-        onCloseDiff={model.closeDiff}
-        onRetryDiff={model.retryDiff}
-        onSelectCommit={model.selectCommit}
-        onSelectFile={model.selectFile}
-        selectedCommitId={model.selectedCommitId}
-        selectedFilePath={model.selectedFilePath}
-      />
+      {discussionReferences.settling ? (
+        <RequestChangesBodyPending />
+      ) : (
+        <HistoryWorkbench
+          commitContext={commitContext}
+          commitState={model.commitState}
+          commits={model.commits}
+          diffAnnotations={diffAnnotations}
+          diffIdentity={model.diffIdentity}
+          emptyDescription={emptyDescription}
+          emptyTitle={emptyTitle}
+          fileDiffState={model.fileDiffState}
+          header={model.selectedRevision ? (
+            <>
+              <RequestRevisionHeader revision={model.selectedRevision} />
+              {revisions.comparison?.inspection === 'Incomplete' ? (
+                <p role="status" className="border-b border-border px-5 py-2 text-xs text-muted-foreground sm:px-6 lg:px-8">
+                  This comparison’s file inspection is incomplete. Showing the available files.
+                </p>
+              ) : null}
+            </>
+          ) : undefined}
+          onCloseDiff={model.closeDiff}
+          onRetryDiff={model.retryDiff}
+          onSelectCommit={model.selectCommit}
+          onSelectFile={model.selectFile}
+          selectedCommitId={model.selectedCommitId}
+          selectedFilePath={model.selectedFilePath}
+        />
+      )}
     </>
   )
 }
@@ -261,10 +263,10 @@ function useRequestDiscussionReferences({
     loadMore: page.status === 'loaded' && page.value.next_cursor && !page.refreshing && !page.error
       ? loadMore
       : undefined,
-    loading: page.status === 'loading' || page.refreshing,
     retry: page.status === 'failed' || page.status === 'loaded' && page.error
       ? retry
       : undefined,
+    settling: page.status === 'loading',
   }
 }
 
@@ -483,25 +485,6 @@ function RequestRevisionContext({
             </Link>
           ))}
         </Entrance>
-      ) : null}
-      {discussionReferences.loading ? (
-        <PendingSurface
-          className="mt-3 min-h-6"
-          label="Loading discussion references"
-        >
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <BlockSkeleton className="size-3.5" />
-              <TextSkeleton length="long" size="meta" />
-              <TextSkeleton className="ml-auto" length="tiny" size="meta" />
-            </div>
-            <div className="flex items-center gap-2">
-              <BlockSkeleton className="size-3.5" />
-              <TextSkeleton length="medium" size="meta" />
-              <TextSkeleton className="ml-auto" length="tiny" size="meta" />
-            </div>
-          </div>
-        </PendingSurface>
       ) : null}
       {discussionReferences.error ? (
         <div className="mt-3 flex items-center gap-2">

@@ -28,11 +28,7 @@ export function HistoryFeedState({
   if (resource.status !== 'loaded') {
     return (
       <PendingSurface label="Loading history" onRetry={resource.retry}>
-        <div className="grid gap-4 p-3">
-          <TextSkeleton length="long" />
-          <TextSkeleton length="medium" />
-          <TextSkeleton length="long" />
-        </div>
+        <HistoryFeedSkeleton />
       </PendingSurface>
     )
   }
@@ -40,4 +36,14 @@ export function HistoryFeedState({
     return <p className="px-3 py-6 text-center text-xs text-muted-foreground">{empty}</p>
   }
   return children(resource.value)
+}
+
+export function HistoryFeedSkeleton() {
+  return (
+    <div className="grid gap-4 p-3">
+      <TextSkeleton length="long" />
+      <TextSkeleton length="medium" />
+      <TextSkeleton length="long" />
+    </div>
+  )
 }
