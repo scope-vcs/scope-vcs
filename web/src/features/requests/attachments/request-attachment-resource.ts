@@ -72,8 +72,8 @@ export async function loadRequestAttachmentValue(
   return { attachments: list.attachments, limits }
 }
 
-export function warmRequestAttachments(identity: string, loading: Promise<RequestAttachmentResourceValue>) {
-  void requestAttachmentResource.ensure(identity, '', () => loading)
+export function warmRequestAttachments(identity: string, load: (signal: AbortSignal) => Promise<RequestAttachmentResourceValue>) {
+  void requestAttachmentResource.ensure(identity, '', load)
 }
 
 export function refreshRequestAttachments(accessScope: string, requestId: string) {

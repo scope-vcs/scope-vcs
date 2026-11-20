@@ -17,7 +17,7 @@ import { repoChangeGeneration } from '@/features/repo-detail/repo-resource'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import type { RequestParams } from '@/api/types'
 import { getCurrentViewerId } from '@/lib/viewer-state'
-import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
+import { loadRequestAttachmentsForViewer, requestAttachmentActions } from '@/routes/-request-attachment-actions'
 import {
   loadRequestChildrenForViewer,
   loadRequestState,
@@ -56,7 +56,7 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
       ? started.attachments
       : requestAttachmentResource.isCurrent(attachmentsIdentity) ? null : startRequestAttachments(data)
     const discussionAvailable = showsDiscussion
-      ? loadRequestDiscussionRoute(data, scope, viewerId, deps.discussion, started?.discussion)
+      ? loadRequestDiscussionRoute(data, scope, viewerId, deps.discussion, unchanged() ? started?.discussion : undefined)
       : undefined
     const { state } = await loadRequestStateValue(
       requestStateIdentity(scope, data.request_id),
@@ -68,7 +68,12 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
       (cursor, signal) => loadRequestChildrenForViewer({ ...data, cursor }, viewerId, signal),
     )
     if (state && attachments && unchanged()) {
-      warmRequestAttachments(attachmentsIdentity, attachments)
+      warmRequestAttachments(attachmentsIdentity, async (signal) => {
+        const loaded = await attachments
+        return loaded.viewerId === viewerId
+          ? { attachments: loaded.attachments, limits: loaded.limits }
+          : loadRequestAttachmentValue(requestAttachmentActions, data, signal)
+      })
     }
     return { scope, viewerId, discussionAvailable }
   },
@@ -88,7 +93,7 @@ function startRequestPageLoads(data: RequestParams, showsDiscussion: boolean, di
 }
 
 function startRequestAttachments(data: RequestParams) {
-  const attachments = loadRequestAttachmentValue(requestAttachmentActions, data)
+  const attachments = loadRequestAttachmentsForViewer({ data })
   void attachments.catch(() => {})
   return attachments
 }

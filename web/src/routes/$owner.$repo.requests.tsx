@@ -25,9 +25,12 @@ export const Route = createFileRoute('/$owner/$repo/requests')({
 })
 
 async function warmRequestsPageQueue(params: RepoParams, requested: ViewId | undefined) {
-  const live = await loadRepoSummary(repoSummaryIdentity(params), (signal) => loadRepoSummaryState(params, signal))
+  const identity = repoSummaryIdentity(params)
+  const summary = (signal: AbortSignal) => loadRepoSummaryState(params, signal)
+  await loadRepoSummary(identity, summary)
   const viewerId = await whenViewerActive(SESSION_READY_BOUND_MS)
   if (viewerId === undefined) return
+  const live = await loadRepoSummary(identity, summary)
   const view = resolveViewingAs(repoViews(live.repo.views), live.repo.access.view, requested)
   warmRequestQueue(
     requestQueueIdentity(repoResourceScope(live.repo, viewerId), view),
