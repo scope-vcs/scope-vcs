@@ -140,6 +140,16 @@ async fn a_reconnect_replays_the_changes_it_missed_or_resyncs_when_they_are_gone
     let caught_up = next_event(&mut replayed).await;
     assert!(synced_through(&caught_up) >= since, "{caught_up}");
 
+    state.repo_events.publish_event(repository_change_event(
+        &scope_domain::repository::RepositoryIncarnation::new(TEST_REPO_ID, "repoi_deleted")
+            .unwrap(),
+        0,
+        RepoChangeReason::RepoDeleted,
+    ));
+    let recreated = events_since(state.clone(), Some(bearer_header()), since).await;
+    let event = next_event(&mut recreated.into_body().into_data_stream()).await;
+    assert!(event.contains(r#""kind":"Lagged""#), "{event}");
+
     let stale = events_since(state, Some(bearer_header()), 1).await;
     let mut stale = stale.into_body().into_data_stream();
     let event = next_event(&mut stale).await;

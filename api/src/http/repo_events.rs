@@ -55,7 +55,14 @@ pub(crate) async fn repo_events(
         let caught_up_ms = unix_now_ms();
         let mut initial = Vec::new();
         if let Some(since) = query.since {
-            match state.repo_events.changes_since(&repo_id, since) {
+            match state
+                .repo_events
+                .changes_since(&repo_id, since)
+                .filter(|missed| {
+                    missed
+                        .iter()
+                        .all(|event| event.incarnation_id == incarnation.incarnation_id())
+                }) {
                 Some(missed) => {
                     for event in missed {
                         initial.extend(
