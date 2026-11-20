@@ -7,25 +7,28 @@ export function AccountControl() {
   const { isLoaded, isSignedIn } = useAuth()
   const href = useLocation({ select: (location) => location.href })
 
-  if (!isLoaded) return null
-  if (isSignedIn) {
+  if (isLoaded && !isSignedIn) {
     return (
-      <UserButton>
-        <UserButton.MenuItems>
-          <UserButton.Link
-            href="/settings"
-            label="Settings"
-            labelIcon={<Settings className="size-4" />}
-          />
-        </UserButton.MenuItems>
-      </UserButton>
+      <Button asChild size="sm" variant="secondary">
+        <Link params={{ _splat: '' }} search={{ redirect_url: href }} to="/sign-in/$">
+          Sign in
+        </Link>
+      </Button>
     )
   }
   return (
-    <Button asChild size="sm" variant="secondary">
-      <Link params={{ _splat: '' }} search={{ redirect_url: href }} to="/sign-in/$">
-        Sign in
-      </Link>
-    </Button>
+    <div className="flex size-7 items-center justify-center">
+      {isLoaded && (
+        <UserButton>
+          <UserButton.MenuItems>
+            <UserButton.Link
+              href="/settings"
+              label="Settings"
+              labelIcon={<Settings className="size-4" />}
+            />
+          </UserButton.MenuItems>
+        </UserButton>
+      )}
+    </div>
   )
 }

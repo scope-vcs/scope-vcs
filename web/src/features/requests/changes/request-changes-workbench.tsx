@@ -47,6 +47,7 @@ import type {
   RequestDiscussionPage,
 } from '../discussion/request-discussion-types'
 import { actorHandle } from '../detail/request-actor'
+import { Entrance } from '@/components/entrance'
 
 export type RequestChangesSearch = {
   comparison?: 'request' | 'push' | 'commit'
@@ -454,9 +455,9 @@ function RequestRevisionContext({
         </p>
       ) : null}
       {discussions.length > 0 ? (
-        <div
+        <Entrance
           aria-label="Related discussions"
-          className="scope-content-enter mt-3 space-y-2"
+          className="mt-3 space-y-2"
         >
           {discussions.map((discussion) => (
             <Link
@@ -481,7 +482,7 @@ function RequestRevisionContext({
               </span>
             </Link>
           ))}
-        </div>
+        </Entrance>
       ) : null}
       {discussionReferences.loading ? (
         <PendingSurface

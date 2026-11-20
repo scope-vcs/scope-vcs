@@ -54,6 +54,7 @@ import {
 } from '../attachments/request-attachment-context'
 import { useRequestWorkspace } from '../workspace/request-workspace-context'
 import './request-detail.css'
+import { Entrance } from '@/components/entrance'
 
 export function RequestUnavailablePage({ params }: { params: RepoParams }) {
   return (
@@ -199,9 +200,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       requestId={request.id}
       viewerId={viewerId ?? 'anonymous'}
     >
-      <div
-        className="scope-content-enter w-full"
-      >
+      <Entrance className="w-full">
         <RequestDetailHeader
           actions={
             <>
@@ -300,7 +299,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           params={{ ...params, requestId: request.id }}
           returnFocus={moreActions}
         />
-      </div>
+      </Entrance>
     </RequestAttachmentProvider>
   )
 }

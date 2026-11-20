@@ -8,6 +8,7 @@ import { GitCommit, TriangleAlert } from 'lucide-react'
 import { diffStatOfFiles } from '@/lib/diff-stat'
 import type { ReactNode } from 'react'
 import { ChangedFilesWorkbench, useChangedFileNavigation, type ChangedFilesProps } from './changed-files-workbench'
+import { Entrance } from '@/components/entrance'
 
 type CommitDetailPanelProps = ChangedFilesProps & {
   commitContext?: ReactNode
@@ -40,7 +41,7 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
   const filesTruncated = commit.files_truncated
   const diffStat = diffStatOfFiles(commit)
   return (
-    <div className="scope-content-enter min-w-0">
+    <Entrance className="min-w-0">
       <div className="border-b border-border px-(--app-inset) py-4">
         <h3 className="break-words text-sm font-semibold leading-5">
           {historyCommitTitle(commit)}
@@ -89,6 +90,6 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
           ? 'Changed files are outside the bounded file list'
           : undefined}
       />
-    </div>
+    </Entrance>
   )
 }

@@ -44,6 +44,7 @@ import { RepositoryFileNavigator } from './repository-file-navigator'
 import type { RepoFile } from './repo-file-highlight'
 import type { RepositoryVersion } from './repository-version'
 import { useViewingAs } from './use-viewing-as'
+import { Entrance } from '@/components/entrance'
 
 const CODE_TAB_SET_ID = 'repository-code-files'
 
@@ -99,7 +100,7 @@ export function RepositoryCodeView({
           tabIndex={-1}
         >
           {tree ? (
-            <div className="scope-content-enter">
+            <Entrance>
               <RepositoryFileNavigator
                 files={tree.files}
                 onSelectFile={selectFile}
@@ -109,7 +110,7 @@ export function RepositoryCodeView({
                 )}
                 showVisibility={hasMixedVisibility}
               />
-            </div>
+            </Entrance>
           ) : content.error ? (
             <FileNavigatorError error={content.error} retry={content.retry} />
           ) : (
@@ -388,9 +389,9 @@ function SourceContent({
   }
 
   return (
-    <div className="scope-content-enter min-h-full" key={file.oid}>
+    <Entrance className="min-h-full" key={file.oid}>
       <RepositoryFileContent file={file} htmlMode={htmlMode} params={params} version={version} />
-    </div>
+    </Entrance>
   )
 }
 

@@ -2,6 +2,7 @@ import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skel
 import { cn } from '@/lib/utils'
 import { useRouter } from '@tanstack/react-router'
 import { createContext, use, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { enterRef } from './entrance'
 
 const DEFAULT_ROWS: { id: string; length: TextSkeletonLength }[] = [
   { id: 'primary', length: 'long' },
@@ -57,6 +58,7 @@ export function PendingSurface({
           className,
         )}
         data-slot="pending-surface"
+        ref={enterRef}
       >
         {slow ? <SlowNote label={label} onRetry={retry} /> : null}
         {children ?? <DefaultPageSkeleton />}

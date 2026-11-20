@@ -19,6 +19,7 @@ import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 import type { RepoViews } from '@/api/repo-views'
 import type { ReactNode } from 'react'
+import { Entrance } from '@/components/entrance'
 
 export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   resource: CachedResource<HistoryEntryDetailResponse>
@@ -47,7 +48,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   if (!resource.value) return null
   const detail = resource.value
   return (
-    <div className="scope-content-enter min-w-0">
+    <Entrance className="min-w-0">
       <header className="border-b border-border px-(--app-inset) py-5">
         <h1 className="break-words text-lg font-semibold leading-6 tracking-[-0.01em]">
           {historyCommitTitle(detail)}
@@ -64,7 +65,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
       <ViewsChanges transition={detail.views} />
       <NativeCommits detail={detail} />
       <HistoryEntryChanges {...props} detail={detail} navigation={navigation} />
-    </div>
+    </Entrance>
   )
 }
 
