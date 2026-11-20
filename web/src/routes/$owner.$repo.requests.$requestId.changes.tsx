@@ -21,6 +21,7 @@ import { RequestAttachmentProvider } from '@/features/requests/attachments/reque
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
 import { loadDiscussionReferencePage } from '@/features/requests/changes/request-changes-discussion-references'
 import { requestChangesResource, requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges, warmRequestChanges } from '@/features/requests/changes/request-changes-resource'
+import { repoChangeGeneration } from '@/features/repo-detail/repo-resource'
 import { repoSummaryIdentity, retainedRepoScope } from '@/features/repo-detail/repo-summary-resource'
 import { requestStateAvailable, requestStateIdentity } from '@/features/requests/detail/request-state-resource'
 import { useCachedResource } from '@/lib/use-cached-resource'
@@ -95,10 +96,13 @@ export const Route = createFileRoute(
       warmRequestChanges(identity(known), (signal) => loadRevisions({ data, signal }))
       return
     }
+    const generation = known === null ? null : repoChangeGeneration(known)
     const revisions = loadRevisions({ data })
     void revisions.catch(() => {})
     const scope = (await parentMatchPromise.catch(() => null))?.loaderData?.scope
-    if (scope && available(scope)) warmRequestChanges(identity(scope), () => revisions)
+    if (scope && available(scope) && (generation === null || repoChangeGeneration(scope) === generation)) {
+      warmRequestChanges(identity(scope), () => revisions)
+    }
   },
   pendingComponent: RequestChangesPending,
   component: RequestChangesRoute,

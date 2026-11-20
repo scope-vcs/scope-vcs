@@ -13,6 +13,7 @@ import {
   warmRequestAttachments,
 } from '@/features/requests/attachments/request-attachment-resource'
 import { loadRepoSummary, repoSummaryIdentity, retainedRepoScope } from '@/features/repo-detail/repo-summary-resource'
+import { repoChangeGeneration } from '@/features/repo-detail/repo-resource'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import type { RequestParams } from '@/api/types'
 import { getCurrentViewerId } from '@/lib/viewer-state'
@@ -48,6 +49,7 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
     const answered = activeViewerId === undefined && started ? await started.state : null
     const viewerId = answered ? answered.viewerId : activeViewerId ?? null
     const scope = repoResourceScope(live.repo, viewerId)
+    const generation = repoChangeGeneration(scope)
     const attachmentsIdentity = requestAttachmentResourceIdentity(scope, data.request_id)
     const attachments = started
       ? started.attachments
@@ -64,7 +66,9 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
           : (signal) => loadRequestStateForViewer(data, viewerId, signal),
       (cursor, signal) => loadRequestChildrenForViewer({ ...data, cursor }, viewerId, signal),
     )
-    if (state && attachments) warmRequestAttachments(attachmentsIdentity, attachments)
+    if (state && attachments && repoChangeGeneration(scope) === generation) {
+      warmRequestAttachments(attachmentsIdentity, attachments)
+    }
     return { scope, viewerId, discussionAvailable }
   },
   pendingComponent: RequestRoutePending,
