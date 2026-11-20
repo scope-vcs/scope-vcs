@@ -185,11 +185,15 @@ async fn receive_repo_changes(
     on_notifications_lost: impl Fn(),
 ) {
     loop {
-        match listener.recv().await {
-            Ok(notification) if notification.payload() == NOTIFICATIONS_LOST_PAYLOAD => {
+        match listener.try_recv().await {
+            Ok(Some(notification)) if notification.payload() == NOTIFICATIONS_LOST_PAYLOAD => {
                 on_notifications_lost();
             }
-            Ok(notification) => on_payload(notification.payload().to_string()),
+            Ok(Some(notification)) => on_payload(notification.payload().to_string()),
+            Ok(None) => {
+                tracing::warn!("repo change listener reconnected after losing its connection");
+                on_notifications_lost();
+            }
             Err(error) => {
                 tracing::warn!(%error, "repo change listener disconnected");
                 listener = resubscribe(&database_url).await;
@@ -201,17 +205,18 @@ async fn receive_repo_changes(
 
 async fn resubscribe(database_url: &str) -> PgListener {
     loop {
-        tokio::time::sleep(RECONNECT_DELAY).await;
         match subscribe(database_url).await {
             Ok(listener) => return listener,
             Err(error) => tracing::warn!(%error, "repo change listener failed to resubscribe"),
         }
+        tokio::time::sleep(RECONNECT_DELAY).await;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::db::{MetadataStore, RepositoryStore, TestDatabaseTarget};
+    use sea_orm::ConnectionTrait as _;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc;
 
@@ -256,6 +261,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(announced.as_deref(), Some("lost"));
+
+        store
+            .db
+            .execute_unprepared(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+                 WHERE datname = current_database() AND query LIKE 'LISTEN%'",
+            )
+            .await
+            .unwrap();
+        let dropped = tokio::time::timeout(Duration::from_secs(4), payloads.recv())
+            .await
+            .unwrap();
+        assert_eq!(dropped.as_deref(), Some("lost"));
+        store
+            .repositories()
+            .queue_repo_change_notification("after-reconnect".to_string())
+            .unwrap();
+        let resumed = tokio::time::timeout(Duration::from_secs(4), payloads.recv())
+            .await
+            .unwrap();
+        assert_eq!(resumed.as_deref(), Some("after-reconnect"));
 
         listener.shutdown().await;
         assert_eq!(

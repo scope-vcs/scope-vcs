@@ -278,6 +278,7 @@ test('stream recovery follows retryable, protocol, and terminal outcomes', async
     connect: async () => outcomes.shift()!,
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     onEvent,
+    onStopped: () => {},
     random: () => 0,
     signal: new AbortController().signal,
     wait: async (milliseconds) => { waits.push(milliseconds) },
@@ -314,6 +315,7 @@ test('an expired stream token reconnects with a fresh token', async () => {
         signal,
       ),
       onEvent: () => { if (tokens.length === 2) controller.abort() },
+      onStopped: () => {},
       signal: controller.signal,
       random: () => 0,
       wait: async milliseconds => { observedWaits.push(milliseconds) },
@@ -346,6 +348,7 @@ test('third transport failure records once and a healthy event resets the run', 
     },
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     onEvent: () => {},
+    onStopped: () => {},
     random: () => 0,
     signal: new AbortController().signal,
     wait: async (milliseconds) => { waits.push(milliseconds) },
@@ -355,7 +358,7 @@ test('third transport failure records once and a healthy event resets the run', 
   assert.deepEqual(waits, [2_000, 4_000, 8_000, 2_000, 4_000])
 })
 
-test('an active stream connects once and stops on a permanent error while an aborted stream never connects', async () => {
+test('an active stream reports a permanent error as stopped while an aborted stream never connects', async () => {
   for (const aborted of [false, true]) {
     const controller = new AbortController()
     if (aborted) controller.abort()
@@ -367,10 +370,11 @@ test('an active stream connects once and stops on a permanent error while an abo
       },
       onDiagnostic: () => { calls.push('diagnostic') },
       onEvent: () => { calls.push('event') },
+      onStopped: () => { calls.push('stopped') },
       signal: controller.signal,
       wait: async () => { calls.push('wait') },
     })
-    assert.deepEqual(calls, aborted ? [] : ['connect'])
+    assert.deepEqual(calls, aborted ? [] : ['connect', 'stopped'])
   }
 })
 
@@ -395,6 +399,7 @@ test('completed stream reconnect delays release abort listeners before reconnect
       },
       onDiagnostic: () => {},
       onEvent: () => {},
+      onStopped: () => {},
       signal: controller.signal,
     })
     assert.deepEqual(listenersAtConnect, Array.from({ length: 20 }, () => 0))

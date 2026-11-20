@@ -61,6 +61,7 @@ export function useRepoLiveRefresh(live: RepoLiveState | null) {
         signal,
       ),
       onEvent,
+      onStopped: () => invalidateRepoResources(scope, resyncTopics({ versioned })),
       signal: controller.signal,
     })
     return () => controller.abort()

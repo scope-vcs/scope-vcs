@@ -50,6 +50,7 @@ export async function runRepoEventStream({
   connect,
   onDiagnostic = logRepoStreamDiagnostic,
   onEvent,
+  onStopped,
   random = Math.random,
   signal,
   wait = abortableDelay,
@@ -57,6 +58,7 @@ export async function runRepoEventStream({
   connect: ConnectRepoStream
   onDiagnostic?: (diagnostic: RepoStreamDiagnostic) => void
   onEvent: (event: RepoChangeEvent) => void
+  onStopped: () => void
   random?: () => number
   signal: AbortSignal
   wait?: Wait
@@ -85,7 +87,10 @@ export async function runRepoEventStream({
       const delivered = deliveredEvents > deliveredBefore
       if (delivered && outcome.type === 'stream-error' && outcome.error.code === 'unauthorized') continue
 
-      if (outcome.type === 'stream-error' && !outcome.error.retryable && outcome.error.code !== 'unauthorized') return
+      if (outcome.type === 'stream-error' && !outcome.error.retryable && outcome.error.code !== 'unauthorized') {
+        onStopped()
+        return
+      }
 
       if (outcome.type === 'protocol-error') {
         consecutiveTransportFailures = 0
