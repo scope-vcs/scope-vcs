@@ -12,7 +12,7 @@ import {
   requestAttachmentResourceIdentity,
   warmRequestAttachments,
 } from '@/features/requests/attachments/request-attachment-resource'
-import { loadRepoSummary, repoSummaryIdentity, retainedRepoScope } from '@/features/repo-detail/repo-summary-resource'
+import { loadRepoSummary, repoSummaryIdentity, retainedRepoSummary } from '@/features/repo-detail/repo-summary-resource'
 import { repoChangeGeneration } from '@/features/repo-detail/repo-resource'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import type { RequestParams } from '@/api/types'
@@ -42,11 +42,11 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
     const summaryIdentity = repoSummaryIdentity(repoParams)
     const showsDiscussion = !location.pathname.endsWith('/changes')
     const activeViewerId = getCurrentViewerId()
-    const started = retainedRepoScope(summaryIdentity) === null
+    const started = retainedRepoSummary(summaryIdentity) === null
       ? startRequestPageLoads(data, showsDiscussion, deps.discussion)
       : null
     const live = await loadRepoSummary(summaryIdentity, (signal) => loadRepoSummaryState(repoParams, signal))
-    const answered = activeViewerId === undefined && started ? await started.state : null
+    const answered = activeViewerId === undefined ? await (started?.state ?? loadRequestState({ data })) : null
     const viewerId = answered ? answered.viewerId : activeViewerId ?? null
     const scope = repoResourceScope(live.repo, viewerId)
     const generation = repoChangeGeneration(scope)

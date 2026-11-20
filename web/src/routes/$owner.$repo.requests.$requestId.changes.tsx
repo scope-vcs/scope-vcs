@@ -21,8 +21,7 @@ import { RequestAttachmentProvider } from '@/features/requests/attachments/reque
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
 import { loadDiscussionReferencePage } from '@/features/requests/changes/request-changes-discussion-references'
 import { requestChangesResource, requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges, warmRequestChanges } from '@/features/requests/changes/request-changes-resource'
-import { repoChangeGeneration } from '@/features/repo-detail/repo-resource'
-import { repoSummaryIdentity, retainedRepoScope } from '@/features/repo-detail/repo-summary-resource'
+import { repoSummaryIdentity, retainedRepoScope, retainedRepoSummary } from '@/features/repo-detail/repo-summary-resource'
 import { requestStateAvailable, requestStateIdentity } from '@/features/requests/detail/request-state-resource'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import {
@@ -90,19 +89,18 @@ export const Route = createFileRoute(
     const identity = (scope: string) =>
       requestChangesSelectionIdentity(scope, params.requestId, query.revision_id, query.commit_oid, query.comparison)
     const available = (scope: string) => requestStateAvailable(requestStateIdentity(scope, params.requestId))
-    const known = retainedRepoScope(repoSummaryIdentity(params))
+    const summaryIdentity = repoSummaryIdentity(params)
+    const known = retainedRepoScope(summaryIdentity)
     if (known && requestChangesResource.isCurrent(identity(known))) return
     if (known && available(known)) {
       warmRequestChanges(identity(known), (signal) => loadRevisions({ data, signal }))
       return
     }
-    const generation = known === null ? null : repoChangeGeneration(known)
-    const revisions = loadRevisions({ data })
-    void revisions.catch(() => {})
+    const revisions = retainedRepoSummary(summaryIdentity) === null ? loadRevisions({ data }) : null
+    void revisions?.catch(() => {})
     const scope = (await parentMatchPromise.catch(() => null))?.loaderData?.scope
-    if (scope && available(scope) && (generation === null || repoChangeGeneration(scope) === generation)) {
-      warmRequestChanges(identity(scope), () => revisions)
-    }
+    if (!scope || !available(scope)) return
+    warmRequestChanges(identity(scope), revisions ? () => revisions : (signal) => loadRevisions({ data, signal }))
   },
   pendingComponent: RequestChangesPending,
   component: RequestChangesRoute,

@@ -48,7 +48,7 @@ export function acceptRepoSummary(result: RepoSummaryLoadResult) {
   throw new RepoSummaryUnavailable(result.unavailable)
 }
 
-function retainedRepoSummary(identity: string) {
+export function retainedRepoSummary(identity: string) {
   const { value, error } = repoSummaryResource.getSnapshot(identity)
   const retained = error === null || error instanceof StaleBuildError || isRetryableRepoSummaryError(error)
   return retained ? value : null
