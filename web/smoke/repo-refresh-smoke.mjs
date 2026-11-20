@@ -1,8 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
-export async function controlRepositoryEvents(page, { initialConnected = false } = {}) {
-  await page.addInitScript((initialConnected) => {
+export async function controlRepositoryEvents(page) {
+  await page.addInitScript(() => {
     const originalFetch = window.fetch.bind(window)
     const streams = new Set()
     window.__scopeRepositoryStreamCount = () => streams.size
@@ -25,12 +25,11 @@ export async function controlRepositoryEvents(page, { initialConnected = false }
             streams.delete(controller)
             controller.close()
           }, { once: true })
-          if (initialConnected) controller.enqueue(message('Connected'))
         },
       })
       return Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } }))
     }
-  }, initialConnected)
+  })
   return (kind) => page.evaluate((kind) => {
     window.__scopeEmitRepositoryEvent(kind)
   }, kind)

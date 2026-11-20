@@ -333,5 +333,5 @@ test('public repository exposes only its projected source', async () => {
       0,
     )
     assert.equal(await page.getByRole('heading', { name: 'Runners' }).count(), 0)
-  }, { prepare: (page) => controlRepositoryEvents(page, { initialConnected: true }) })
+  }, { prepare: (page) => controlRepositoryEvents(page) })
 })

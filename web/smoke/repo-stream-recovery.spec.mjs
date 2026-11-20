@@ -22,6 +22,12 @@ test('an interrupted stream recovers through failed reloads without replacing re
         return originalFetch(input, { ...init, signal: controller.signal })
       }
     })
+    await page.route((url) => url.pathname.endsWith(`/v1/repos/${repo}/events`), (route) => {
+      if (!interrupted) return route.continue()
+      const stale = new URL(route.request().url())
+      stale.searchParams.set('since', '1')
+      return route.continue({ url: stale.toString() })
+    })
     await page.route('**/_serverFn/**', async (route) => {
       if (interrupted && failedReloads < 2 && serverFunctionName(route.request()) === 'loadRepoLiveState_createServerFn_handler') {
         failedReloads += 1

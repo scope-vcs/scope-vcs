@@ -13,7 +13,7 @@ import {
 import { serverFunctionName } from './server-functions-smoke.mjs'
 import { changesBackLink } from './request-changes-smoke.mjs'
 
-const holdEventStream = (page) => page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
+const holdEventStream = (page) => page.route((url) => /^\/v1\/repos\/[^/]+\/[^/]+\/events$/.test(url.pathname), () => new Promise(() => {}))
 
 test(`sign-in keeps Scope navigation when authentication is ${authEnabled ? 'enabled' : 'disabled'}`, async () => {
   await withPage('/sign-in', async (page) => {
