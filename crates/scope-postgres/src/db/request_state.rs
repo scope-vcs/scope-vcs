@@ -18,6 +18,7 @@ use scope_domain::{
     },
 };
 use sea_orm::DatabaseTransaction;
+use tracing::Instrument as _;
 
 mod rows;
 use std::collections::{BTreeMap, HashMap};
@@ -165,7 +166,14 @@ async fn read_request_state(
         return Err(PostgresError::not_found("request not found"));
     }
     let invitees = if repository.views.anyone() == Some(&request.view) {
-        super::request_invitees::request_invitee_reads(&tx, request_id).await?
+        super::request_invitees::request_invitee_reads(&tx, request_id)
+            .instrument(tracing::info_span!(
+                "request_invitee_reads",
+                otel.kind = "client",
+                db.system.name = "postgresql",
+                db.operation.name = "request_invitee_reads"
+            ))
+            .await?
     } else {
         Vec::new()
     };
@@ -191,6 +199,12 @@ async fn read_request_state(
     let evaluation = row.evaluation()?;
     let results =
         super::request_checks::request_check_results(&tx, &request.repo_id, evaluation.as_ref())
+            .instrument(tracing::info_span!(
+                "request_check_results",
+                otel.kind = "client",
+                db.system.name = "postgresql",
+                db.operation.name = "request_check_results"
+            ))
             .await?;
     let revision = row.revision()?;
     let auto_merge = row.auto_merge()?;
@@ -198,8 +212,22 @@ async fn read_request_state(
     let users = row.users()?;
     let claimer_user_id = row.claimer_user_id()?;
     let github_connection =
-        super::github::connections::repository_github_connection(&tx, &request.repo_id).await?;
-    let github_push = super::github::pushes::latest_github_push(&tx, request_id).await?;
+        super::github::connections::repository_github_connection(&tx, &request.repo_id)
+            .instrument(tracing::info_span!(
+                "repository_github_connection",
+                otel.kind = "client",
+                db.system.name = "postgresql",
+                db.operation.name = "repository_github_connection"
+            ))
+            .await?;
+    let github_push = super::github::pushes::latest_github_push(&tx, request_id)
+        .instrument(tracing::info_span!(
+            "latest_github_push",
+            otel.kind = "client",
+            db.system.name = "postgresql",
+            db.operation.name = "latest_github_push"
+        ))
+        .await?;
     let github_pull_request =
         super::github::pull_requests::github_pull_request(&tx, request_id).await?;
     let bot_reviews = super::github::review_bot_statuses::request_bot_reviews(
@@ -207,6 +235,12 @@ async fn read_request_state(
         &request.repo_id,
         std::slice::from_ref(&request.id),
     )
+    .instrument(tracing::info_span!(
+        "request_bot_reviews",
+        otel.kind = "client",
+        db.system.name = "postgresql",
+        db.operation.name = "request_bot_reviews"
+    ))
     .await?
     .remove(&request.id)
     .unwrap_or_default();
@@ -248,7 +282,14 @@ async fn read_request_state(
         children_limit,
     )
     .await?;
-    tx.commit().await?;
+    tx.commit()
+        .instrument(tracing::info_span!(
+            "commit_read_snapshot",
+            otel.kind = "client",
+            db.system.name = "postgresql",
+            db.operation.name = "commit_read_snapshot"
+        ))
+        .await?;
     Ok(RequestStateSnapshot {
         stack_navigation,
         children,

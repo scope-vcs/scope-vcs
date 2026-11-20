@@ -52,6 +52,7 @@ pub(super) async fn connect_writer_database(
     Ok(SqlxPostgresConnector::from_sqlx_postgres_pool(pool))
 }
 
+#[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "begin_metadata_read_snapshot"))]
 pub(super) async fn begin_metadata_read_snapshot(
     db: &DatabaseConnection,
 ) -> Result<DatabaseTransaction, PostgresError> {

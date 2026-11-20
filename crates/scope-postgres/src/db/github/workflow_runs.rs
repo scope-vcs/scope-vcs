@@ -483,6 +483,7 @@ impl WorkflowRunRow {
 #[cfg(test)]
 mod tests;
 
+#[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_runs_for_check_suites"))]
 pub(in crate::db) async fn github_workflow_runs_for_check_suites<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

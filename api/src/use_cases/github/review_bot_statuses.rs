@@ -170,6 +170,7 @@ async fn publish_change(state: &AppState, reconcile: &GitHubReviewBotReconcile) 
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn reviews_outcomes(
     state: &AppState,
     repo_id: &str,

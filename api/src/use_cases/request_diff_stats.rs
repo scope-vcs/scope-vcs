@@ -34,6 +34,7 @@ use std::{
 const BACKFILL_BATCH_SIZE: u64 = 16;
 const BACKFILL_SWEEP_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn readable_request_diff_stats(
     state: &AppState,
     repository: &RepositoryAccessContext,

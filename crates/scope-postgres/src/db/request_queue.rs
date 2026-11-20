@@ -25,6 +25,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write as _,
 };
+use tracing::Instrument as _;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestQueueCursor {
@@ -80,7 +81,7 @@ struct QueueModel {
 }
 
 impl RequestStore {
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_queue_page"))]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_queue_page", scope.request_queue.section = input.section.as_str()))]
     pub async fn request_queue_page(
         &self,
         input: RequestQueuePageQuery<'_>,
@@ -118,6 +119,13 @@ impl RequestStore {
             ],
         ))
         .all(&snapshot)
+        .instrument(tracing::info_span!(
+            "request_queue_rows",
+            otel.kind = "client",
+            db.system.name = "postgresql",
+            db.operation.name = "request_queue_rows",
+            scope.request_queue.section = input.section.as_str()
+        ))
         .await?;
 
         let mut user_ids = Vec::with_capacity(rows.len() * 2);
@@ -132,7 +140,15 @@ impl RequestStore {
             );
             projected.push(row);
         }
-        let users = load_users_by_ids(&snapshot, user_ids).await?;
+        let users = load_users_by_ids(&snapshot, user_ids)
+            .instrument(tracing::info_span!(
+                "load_users_by_ids",
+                otel.kind = "client",
+                db.system.name = "postgresql",
+                db.operation.name = "load_users_by_ids",
+                scope.request_queue.section = input.section.as_str()
+            ))
+            .await?;
         let next_attention_at_unix = if input.access.is_maintainer() {
             next_snooze_expiry(
                 &snapshot,
@@ -429,6 +445,7 @@ struct NextAttention {
     next_attention_at_unix: Option<i64>,
 }
 
+#[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "next_snooze_expiry"))]
 async fn next_snooze_expiry<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
