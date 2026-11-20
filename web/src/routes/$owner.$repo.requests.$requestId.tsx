@@ -42,6 +42,8 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
     const summaryIdentity = repoSummaryIdentity(repoParams)
     const showsDiscussion = !location.pathname.endsWith('/changes')
     const activeViewerId = getCurrentViewerId()
+    const generation = repoChangeGeneration()
+    const unchanged = () => repoChangeGeneration() === generation
     const started = retainedRepoSummary(summaryIdentity) === null
       ? startRequestPageLoads(data, showsDiscussion, deps.discussion)
       : null
@@ -49,7 +51,6 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
     const answered = activeViewerId === undefined ? await (started?.state ?? loadRequestState({ data })) : null
     const viewerId = answered ? answered.viewerId : activeViewerId ?? null
     const scope = repoResourceScope(live.repo, viewerId)
-    const generation = repoChangeGeneration(scope)
     const attachmentsIdentity = requestAttachmentResourceIdentity(scope, data.request_id)
     const attachments = started
       ? started.attachments
@@ -59,14 +60,14 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
       : undefined
     const { state } = await loadRequestStateValue(
       requestStateIdentity(scope, data.request_id),
-      answered
+      answered && unchanged()
         ? () => Promise.resolve({ state: answered.state })
-        : started
+        : started && unchanged()
           ? () => requestStateForViewer(started.state, viewerId)
           : (signal) => loadRequestStateForViewer(data, viewerId, signal),
       (cursor, signal) => loadRequestChildrenForViewer({ ...data, cursor }, viewerId, signal),
     )
-    if (state && attachments && repoChangeGeneration(scope) === generation) {
+    if (state && attachments && unchanged()) {
       warmRequestAttachments(attachmentsIdentity, attachments)
     }
     return { scope, viewerId, discussionAvailable }

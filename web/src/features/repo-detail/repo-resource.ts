@@ -93,14 +93,14 @@ export function affectsRequestKey(change: RepoChange, key: string[]) {
   return change.requestId === undefined || key[0] === change.requestId
 }
 
-const changeGenerations = new Map<string, number>()
+let changeGeneration = 0
 
-export function repoChangeGeneration(scope: string) {
-  return changeGenerations.get(scope) ?? 0
+export function repoChangeGeneration() {
+  return changeGeneration
 }
 
 export function invalidateRepoResources(scope: string, changes: RepoChange[]) {
-  changeGenerations.set(scope, repoChangeGeneration(scope) + 1)
+  changeGeneration += 1
   let remaining = changes
   for (const resource of repoResources) {
     if (resource.supersedes.length > 0 && resource.invalidateFor(scope, changes)) {

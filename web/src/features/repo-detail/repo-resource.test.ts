@@ -357,11 +357,8 @@ test('retained files count their highlighted markup against the file cache budge
   assert.equal(repoFileResource.peek(key('1.rs'))?.oid, '1.rs')
 })
 
-test('an invalidation advances the change generation of its scope only, even with nothing retained', () => {
-  const before = { a: repoChangeGeneration('viewer-a'), b: repoChangeGeneration('viewer-b') }
+test('an invalidation advances the change generation even with nothing retained', () => {
+  const before = repoChangeGeneration()
   invalidateRepoResources('viewer-a', [{ topic: 'requestAttachments', requestId: 'unloaded' }])
-  assert.deepEqual(
-    { a: repoChangeGeneration('viewer-a'), b: repoChangeGeneration('viewer-b') },
-    { a: before.a + 1, b: before.b },
-  )
+  assert.equal(repoChangeGeneration(), before + 1)
 })
