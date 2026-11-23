@@ -8,6 +8,7 @@ on:
       - .github/actions/install-media-codecs/**
       - .github/actions/install-playwright-chromium/**
       - .github/actions/install-reviewed-git/**
+      - .github/actions/install-rust/**
       - .github/scripts/use-ubuntu-apt-sources.sh
       - dev/install-test-postgres.sh
       - dev/install-test-postgres.asc
@@ -57,7 +58,7 @@ jobs:
             builds=true
             if [[ "$BEFORE" =~ ^[0-9a-f]{40}$ && ! "$BEFORE" =~ ^0+$ ]] &&
               files="$(gh api "repos/$REPOSITORY/compare/$BEFORE...$GITHUB_SHA" --jq '.files[].filename')" &&
-              ! grep -Eq '(^|/)Cargo\.(lock|toml)$|^cli/distribution/targets\.json$|^rust-toolchain\.toml$|^media-worker/Dockerfile$|^dev/checks/(backend|cli)$|^\.github/workflows/(warm-ci-caches|rust-workspace-checks|scope-api-ci|scope-cli-build|scope-media-worker-image)\.yml$|^deploy/scripts/deployment-components\.mjs$|^\.github/scripts/select-cli-distribution-targets\.mjs$' <<< "$files"; then
+              ! grep -Eq '(^|/)Cargo\.(lock|toml)$|^cli/distribution/targets\.json$|^rust-toolchain\.toml$|^\.github/actions/install-rust/|^media-worker/Dockerfile$|^dev/checks/(backend|cli)$|^\.github/workflows/(warm-ci-caches|rust-workspace-checks|scope-api-ci|scope-cli-build|scope-media-worker-image)\.yml$|^deploy/scripts/deployment-components\.mjs$|^\.github/scripts/select-cli-distribution-targets\.mjs$' <<< "$files"; then
               builds=false
             fi
           fi

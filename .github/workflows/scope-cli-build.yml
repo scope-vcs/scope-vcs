@@ -53,7 +53,7 @@ jobs:
         run: node dev/check-git-version.mjs
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        uses: ./.github/actions/install-rust
         with:
           toolchain: 1.100.0
           components: rustfmt, clippy
@@ -90,7 +90,7 @@ jobs:
         run: node dev/check-git-version.mjs
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        uses: ./.github/actions/install-rust
         with:
           toolchain: 1.100.0
 
@@ -156,7 +156,7 @@ jobs:
         run: node dev/check-git-version.mjs
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        uses: ./.github/actions/install-rust
         with:
           toolchain: 1.100.0
           targets: ${{ matrix.target }}

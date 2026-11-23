@@ -1,0 +1,35 @@
+name: Install Rust
+description: Install the pinned Rust toolchain and uninstall every toolchain the runner image preinstalled, so Rust cache keys depend only on the pinned toolchain.
+inputs:
+  toolchain:
+    description: Exact Rust toolchain version.
+    required: true
+  components:
+    description: Comma-separated toolchain components.
+    required: false
+    default: ''
+  targets:
+    description: Comma-separated compilation targets.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: ${{ inputs.components }}
+        targets: ${{ inputs.targets }}
+
+    - shell: bash
+      env:
+        TOOLCHAIN: ${{ inputs.toolchain }}
+      run: |
+        rustup toolchain list --quiet | tr -d '\r' | while read -r installed; do
+          [[ -z "$installed" || "$installed" == "$TOOLCHAIN"-* ]] || rustup toolchain uninstall "$installed"
+        done
+        installed="$(rustup toolchain list --quiet | tr -d '\r')"
+        if [[ "$installed" != "$TOOLCHAIN"-* || "$installed" == *$'\n'* ]]; then
+          echo "::error::Expected only Rust $TOOLCHAIN after pruning, found: ${installed//$'\n'/, }"
+          exit 1
+        fi
