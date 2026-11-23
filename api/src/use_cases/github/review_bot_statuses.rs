@@ -2,7 +2,7 @@ use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     error::ApiError, github::pull_requests::PullRequestCallError, persistence::unix_now,
-    state::AppState,
+    state::AppState, use_cases::github::review_imports::queue_missed_thread_resolutions,
 };
 use scope_domain::{
     requests::{
@@ -33,6 +33,13 @@ pub(crate) async fn reconcile_due_review_bot_statuses(
         .await?;
     let claimed = due.len();
     for reconcile in due {
+        if let Err(error) = queue_missed_thread_resolutions(state, &reconcile).await {
+            tracing::warn!(
+                request_id = reconcile.request_id,
+                error = %error.operator_diagnostic(),
+                "reading review thread resolutions from GitHub failed"
+            );
+        }
         let next_at_unix = now_unix.saturating_add(RECONCILE_EVERY_SECS);
         let (statuses, next_at_unix) = match read_statuses(state, &reconcile, now_unix).await {
             Ok(statuses) => (statuses, next_at_unix),

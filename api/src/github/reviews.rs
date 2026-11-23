@@ -5,7 +5,9 @@ use reqwest::{Method, StatusCode};
 use scope_domain::{
     github::account::{GitHubAccount, GitHubAccountType},
     github::review_bots::{GitHubPermissionGrant, GitHubRepositoryPermission},
-    requests::{GitHubCommentPosition, GitHubCommentSubject, RequestDiffSide},
+    requests::{
+        GitHubCommentPosition, GitHubCommentSubject, GitHubReviewThreadState, RequestDiffSide,
+    },
 };
 use serde::Deserialize;
 
@@ -76,11 +78,65 @@ const REVIEW_THREAD_QUERY: &str = "query($id: ID!) { node(id: $id) { \
     resolvedBy { login databaseId avatarUrl } \
     comments(first: 1) { nodes { fullDatabaseId } } } } }";
 
+const PULL_REQUEST_THREADS_QUERY: &str = "query($owner: String!, $name: String!, \
+    $number: Int!, $after: String) { repository(owner: $owner, name: $name) { \
+    pullRequest(number: $number) { reviewThreads(first: 100, after: $after) { \
+    pageInfo { hasNextPage endCursor } \
+    nodes { id isResolved resolvedBy { databaseId } \
+    comments(first: 1) { nodes { fullDatabaseId } } } } } } }";
+
 #[derive(Deserialize)]
-struct GraphQlAnswer {
-    data: Option<ThreadData>,
+struct GraphQlAnswer<T> {
+    data: Option<T>,
     #[serde(default)]
     errors: Vec<GraphQlError>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PullRequestThreadsData {
+    repository: Option<ThreadsRepository>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadsRepository {
+    pull_request: Option<ThreadsPullRequest>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadsPullRequest {
+    review_threads: ThreadsPage,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadsPage {
+    page_info: PageInfo,
+    nodes: Vec<ListedThread>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageInfo {
+    has_next_page: bool,
+    end_cursor: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListedThread {
+    id: String,
+    is_resolved: bool,
+    resolved_by: Option<ListedResolver>,
+    comments: Option<ThreadComments>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListedResolver {
+    database_id: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -107,6 +163,17 @@ struct GraphQlUser {
     login: String,
     database_id: Option<u64>,
     avatar_url: Option<String>,
+}
+
+impl ThreadComments {
+    fn root_comment_id(self) -> Option<u64> {
+        self.nodes
+            .into_iter()
+            .next()?
+            .full_database_id?
+            .parse()
+            .ok()
+    }
 }
 
 #[derive(Deserialize)]
@@ -289,7 +356,7 @@ impl GitHubApp {
                 "query": REVIEW_THREAD_QUERY,
                 "variables": { "id": node_id },
             }));
-        let Some(answer) = send::<GraphQlAnswer>(request, "/graphql").await? else {
+        let Some(answer) = send::<GraphQlAnswer<ThreadData>>(request, "/graphql").await? else {
             return Ok(None);
         };
         if let Some(error) = answer.errors.first() {
@@ -315,12 +382,68 @@ impl GitHubApp {
                 )
                 .ok()
             }),
-            root_comment_id: node
-                .comments
-                .and_then(|comments| comments.nodes.into_iter().next())
-                .and_then(|comment| comment.full_database_id)
-                .and_then(|id| id.parse().ok()),
+            root_comment_id: node.comments.and_then(ThreadComments::root_comment_id),
         }))
+    }
+
+    pub(crate) async fn pull_request_review_threads(
+        &self,
+        installation_id: u64,
+        full_name: &str,
+        number: u64,
+    ) -> Result<Vec<GitHubReviewThreadState>, ApiError> {
+        let Some((owner, name)) = full_name.split_once('/') else {
+            return Ok(Vec::new());
+        };
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(Vec::new());
+        };
+        let mut threads = Vec::new();
+        let mut after = None::<String>;
+        loop {
+            let request = self
+                .request(Method::POST, "/graphql")
+                .bearer_auth(&token)
+                .json(&serde_json::json!({
+                    "query": PULL_REQUEST_THREADS_QUERY,
+                    "variables": { "owner": owner, "name": name, "number": number, "after": after },
+                }));
+            let Some(answer) =
+                send::<GraphQlAnswer<PullRequestThreadsData>>(request, "/graphql").await?
+            else {
+                return Ok(threads);
+            };
+            if let Some(error) = answer.errors.first() {
+                return Err(unavailable(format!(
+                    "GitHub could not list the review threads of {full_name}#{number}: {}",
+                    error.message
+                )));
+            }
+            let Some(page) = answer
+                .data
+                .and_then(|data| data.repository)
+                .and_then(|repository| repository.pull_request)
+                .map(|pull_request| pull_request.review_threads)
+            else {
+                return Ok(threads);
+            };
+            threads.extend(
+                page.nodes
+                    .into_iter()
+                    .map(|thread| GitHubReviewThreadState {
+                        node_id: thread.id,
+                        root_comment_id: thread.comments.and_then(ThreadComments::root_comment_id),
+                        resolver_github_account_id: thread
+                            .resolved_by
+                            .and_then(|user| user.database_id),
+                        resolved: thread.is_resolved,
+                    }),
+            );
+            match page.page_info.end_cursor {
+                Some(cursor) if page.page_info.has_next_page => after = Some(cursor),
+                _ => return Ok(threads),
+            }
+        }
     }
 
     pub(crate) async fn repository_permission(

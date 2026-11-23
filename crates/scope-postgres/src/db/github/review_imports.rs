@@ -33,6 +33,9 @@ use sea_orm::{
 
 #[cfg(test)]
 mod tests;
+mod thread_resolutions;
+
+use thread_resolutions::record_github_resolution_applied;
 
 const REVIEW: &str = "review";
 const REPLY: &str = "reply";
@@ -458,26 +461,28 @@ impl RequestStore {
             tx.commit().await?;
             return Ok(GitHubThreadTransition::MissingDiscussion);
         };
-        if !transition_github_discussion(
+        let changed = transition_github_discussion(
             &mut request,
             &views,
             &mut discussion,
             command.resolver.id,
             command.status,
             command.now_unix,
-        )? {
-            tx.commit().await?;
-            return Ok(GitHubThreadTransition::Unchanged);
+        )?;
+        if changed {
+            save_request_row(&tx, &request).await?;
+            save_discussion(&tx, &discussion).await?;
         }
-        save_request_row(&tx, &request).await?;
-        save_discussion(&tx, &discussion).await?;
+        record_github_resolution_applied(&tx, &discussion.id, command.status).await?;
         tx.commit().await?;
-        Ok(GitHubThreadTransition::Applied(Box::new(
-            GitHubReviewImport {
+        Ok(if changed {
+            GitHubThreadTransition::Applied(Box::new(GitHubReviewImport {
                 request,
                 discussions: vec![discussion],
-            },
-        )))
+            }))
+        } else {
+            GitHubThreadTransition::Unchanged
+        })
     }
 }
 

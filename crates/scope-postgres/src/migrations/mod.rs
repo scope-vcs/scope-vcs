@@ -67,6 +67,8 @@ mod m0115_github_webhook_deliveries;
 mod m0116_drop_outbox_jobs;
 #[expect(unreachable_pub)]
 mod m0117_github_workflow_run_retention_order;
+#[expect(unreachable_pub)]
+mod m0118_github_discussion_resolution_applied;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -138,6 +140,7 @@ fn migration_registry() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m0115_github_webhook_deliveries::Migration),
         Box::new(m0116_drop_outbox_jobs::Migration),
         Box::new(m0117_github_workflow_run_retention_order::Migration),
+        Box::new(m0118_github_discussion_resolution_applied::Migration),
     ]
 }
 
