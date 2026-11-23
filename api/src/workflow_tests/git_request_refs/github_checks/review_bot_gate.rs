@@ -448,6 +448,13 @@ async fn a_maintainer_reopening_a_github_resolved_thread_keeps_it_open() {
         1
     );
     assert_eq!(thread_discussion(&request).await["status"], "Resolved");
+    reconcile_now(&request).await;
+    assert_eq!(
+        import_due_github_reviews(&request.state, unix_now())
+            .await
+            .unwrap(),
+        0
+    );
     assert_eq!(bot_states(&request).await.1, "Ready");
 
     let reopened = api_request(
