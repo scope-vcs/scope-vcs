@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider, useParams } from '@tanstack/react-router'
 import { RepoShell } from '@/components/repo-shell'
+import { Popover } from '@/components/ui/popover'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
 import { RepoViewingAsPicker } from '@/features/repo-detail/use-viewing-as'
 import { RequestCustomSnoozeDialog } from '@/features/requests/workspace/request-custom-snooze-dialog'
@@ -57,17 +58,18 @@ function Repository() {
 function Workspace() {
   const { owner, repo, requestId } = useParams({ strict: false })
   const [collapsed, setCollapsed] = useState(false)
+  const [focus, setFocus] = useState(false)
   const [queue, setQueue] = useState<{ pages: RequestQueuePages | undefined; maintainer: boolean | null; loading: boolean }>({ pages, maintainer: true, loading: false })
   const [customSnooze, setCustomSnooze] = useState<RequestQueueItemResponse | null>(null)
   Object.assign(window, { setQueue })
-  return <RequestWorkspaceShell collapsed={collapsed} detailOpenOnMobile={Boolean(requestId)}
+  return <RequestWorkspaceShell collapsed={collapsed || focus} focus={focus} detailOpenOnMobile={Boolean(requestId)}
     onCollapsedChange={setCollapsed} sidebar={
-      <RequestWorkspaceSidebar pages={queue.pages} collapsed={collapsed} onCollapsedChange={setCollapsed}
+      <RequestWorkspaceSidebar pages={queue.pages} collapsed={collapsed || focus} onCollapsedChange={setCollapsed}
         loading={queue.loading} skeleton={!queue.pages} error={null} actionError={null}
         maintainer={queue.maintainer} onRetry={noop} onLoadMore={noop}
         onAction={(item, command) => attentionCommands.push({ id: item.request.id, ...command })} onCustomSnooze={setCustomSnooze}
         params={{ owner: owner!, repo: repo! }} pendingId={null} selectedId={requestId}
-        focus={false} onFocusToggle={noop} viewingAs={<RepoViewingAsPicker compact />} />
+        focus={focus} onFocusToggle={() => setFocus((value) => !value)} viewingAs={<RepoViewingAsPicker compact />} />
     }>
     <Outlet />
     {customSnooze && <RequestCustomSnoozeDialog onClose={() => setCustomSnooze(null)}
@@ -85,6 +87,8 @@ function Request() {
       <Link to="/$owner/$repo/requests/$requestId/changes" params={params}
         search={{ file: 'src/main.ts', revision: 'revision-1' }} hash="line-12">Changes</Link>
     </nav>
+    <Popover label="Fixture details" renderPanel={() => <p>Fixture details panel</p>}
+      renderTrigger={(trigger) => <button type="button" {...trigger}>Fixture details</button>} />
     <Outlet />
   </div>
 }

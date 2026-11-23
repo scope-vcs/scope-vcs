@@ -45,6 +45,7 @@ export function Popover({
     }
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
+      event.preventDefault()
       setOpen(false)
       triggerRef.current?.focus()
     }
