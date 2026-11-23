@@ -1,5 +1,6 @@
 use super::super::{
     RequestStore, acquire_aggregate_lock,
+    entities::encode_enum,
     generated_ids::{GeneratedIdKind, generate_id},
     github::skipped_reviews::delete_skipped_reviews,
     integer_columns::{
@@ -347,6 +348,28 @@ impl RequestStore {
                 .await?
                 .is_some(),
         )
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "open_github_discussion_client_ids"))]
+    pub async fn open_github_discussion_client_ids(
+        &self,
+        request_id: &str,
+    ) -> Result<Vec<String>, PostgresError> {
+        self.db
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT client_discussion_id FROM scope_request_discussions
+                  WHERE request_id = $1 AND status = $2
+                    AND author_github_user_id IS NOT NULL",
+                [
+                    request_id.into(),
+                    encode_enum(RequestDiscussionStatus::Open)?.into(),
+                ],
+            ))
+            .await?
+            .into_iter()
+            .map(|row| Ok(row.try_get::<String>("", "client_discussion_id")?))
+            .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "import_github_review"))]

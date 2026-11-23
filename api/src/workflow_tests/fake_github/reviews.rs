@@ -14,9 +14,11 @@ impl FakeGitHub {
         root_comment_id: u64,
         resolved_by: Option<(&str, u64)>,
     ) {
+        let node_id = format!("PRRT_{root_comment_id}");
         self.review_threads.lock().unwrap().insert(
-            format!("PRRT_{root_comment_id}"),
+            node_id.clone(),
             serde_json::json!({
+                "id": node_id,
                 "isResolved": resolved_by.is_some(),
                 "resolvedBy": resolved_by.map(|(login, id)| serde_json::json!({
                     "login": login, "databaseId": id, "avatarUrl": null,
@@ -83,12 +85,19 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             post(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  Json(body): Json<serde_json::Value>| async move {
-                    let node_id = body["variables"]["id"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
-                    let node = fake.review_threads.lock().unwrap().get(&node_id).cloned();
-                    Json(serde_json::json!({ "data": { "node": node } }))
+                    let threads = fake.review_threads.lock().unwrap();
+                    if body["variables"]["number"].is_u64() {
+                        let mut nodes = threads.values().cloned().collect::<Vec<_>>();
+                        nodes.sort_by_key(|thread| thread["id"].as_str().map(str::to_string));
+                        return Json(serde_json::json!({ "data": { "repository": {
+                            "pullRequest": { "reviewThreads": {
+                                "pageInfo": { "hasNextPage": false, "endCursor": null },
+                                "nodes": nodes,
+                            } },
+                        } } }));
+                    }
+                    let node_id = body["variables"]["id"].as_str().unwrap_or_default();
+                    Json(serde_json::json!({ "data": { "node": threads.get(node_id).cloned() } }))
                 },
             ),
         )

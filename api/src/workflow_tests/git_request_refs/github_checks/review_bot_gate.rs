@@ -318,6 +318,90 @@ async fn an_unresolved_bot_discussion_blocks_the_merge_until_it_is_resolved() {
     assert_eq!(bot_states(&request).await.1, "Ready".to_string());
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_thread_resolution_github_had_not_settled_on_reaches_its_discussion() {
+    let request = gated_request("review-bot-late-resolution").await;
+    let head = request.head();
+    codex_comments(
+        &request,
+        "created",
+        &codex_state(&head, "completed", "completed", "false"),
+    )
+    .await;
+    request
+        .fake
+        .report_permission("octo-writer", Some(("write", 502)));
+    let greptile =
+        serde_json::json!({ "id": 77, "login": GREPTILE, "type": "Bot", "avatar_url": null });
+    request.fake.report_pull_review(
+        serde_json::json!({
+            "id": 402,
+            "user": greptile,
+            "body": "Guard this.",
+            "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/pull/1#pullrequestreview-402"),
+            "commit_id": head,
+            "submitted_at": "2026-10-20T12:00:00Z",
+        }),
+        vec![serde_json::json!({
+            "id": 702,
+            "in_reply_to_id": null,
+            "user": greptile,
+            "body": "Check the bound.",
+            "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/pull/1#discussion_r702"),
+            "path": "request.txt",
+            "subject_type": "file",
+            "commit_id": head,
+            "original_commit_id": head,
+            "created_at": "2026-10-20T12:00:00Z",
+        })],
+    );
+    let deliver = async |event: &str, payload: serde_json::Value| {
+        let mut payload = payload;
+        payload["repository"] = serde_json::json!({ "id": GITHUB_REPOSITORY_ID });
+        payload["pull_request"] = serde_json::json!({
+            "number": 1,
+            "head": { "ref": request.branch(), "repo": { "id": GITHUB_REPOSITORY_ID } },
+        });
+        let delivered = webhook(&request.state, event, payload, WEBHOOK_SECRET).await;
+        assert_eq!(delivered.status(), StatusCode::NO_CONTENT);
+        import_due_github_reviews(&request.state, unix_now())
+            .await
+            .unwrap()
+    };
+    let review =
+        serde_json::json!({ "action": "submitted", "review": { "id": 402 }, "sender": greptile });
+    assert_eq!(deliver("pull_request_review", review).await, 1);
+    assert_eq!(bot_states(&request).await.1, "ReviewFindingsOpen");
+
+    request.fake.report_review_thread(702, None);
+    let resolution = serde_json::json!({
+        "action": "resolved",
+        "thread": { "node_id": "PRRT_702", "comments": [{ "id": 702, "in_reply_to_id": null }] },
+        "sender": { "id": 502, "login": "octo-writer", "type": "User", "avatar_url": null },
+    });
+    assert_eq!(deliver("pull_request_review_thread", resolution).await, 1);
+    assert_eq!(bot_states(&request).await.1, "ReviewFindingsOpen");
+
+    request
+        .fake
+        .report_review_thread(702, Some(("octo-writer", 502)));
+    reconcile_now(&request).await;
+    assert_eq!(
+        import_due_github_reviews(&request.state, unix_now())
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(bot_states(&request).await.1, "Ready");
+    reconcile_now(&request).await;
+    assert_eq!(
+        import_due_github_reviews(&request.state, unix_now())
+            .await
+            .unwrap(),
+        0
+    );
+}
+
 fn github_time(unix: u64) -> String {
     time::OffsetDateTime::from_unix_timestamp(i64::try_from(unix).unwrap())
         .unwrap()

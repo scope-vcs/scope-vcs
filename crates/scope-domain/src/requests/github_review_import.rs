@@ -56,6 +56,35 @@ pub fn github_thread_status(
     })
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubReviewThreadState {
+    pub node_id: String,
+    pub root_comment_id: Option<u64>,
+    pub resolver_github_account_id: Option<u64>,
+    pub resolved: bool,
+}
+
+pub fn github_thread_resolutions_to_import(
+    threads: &[GitHubReviewThreadState],
+    open_discussion_client_ids: &[String],
+) -> Vec<GitHubReviewImportSubject> {
+    threads
+        .iter()
+        .filter(|thread| thread.resolved)
+        .filter_map(|thread| {
+            let root_comment_id = thread.root_comment_id?;
+            open_discussion_client_ids
+                .contains(&github_review_comment_client_id(root_comment_id))
+                .then_some(GitHubReviewImportSubject::Thread {
+                    root_comment_id,
+                    node_id: thread.node_id.clone(),
+                    resolved: true,
+                    github_account_id: thread.resolver_github_account_id?,
+                })
+        })
+        .collect()
+}
+
 pub fn accepts_github_reviews(request: &Request, views: &Views) -> bool {
     GitHubCheckTarget::for_request(request, views) == GitHubCheckTarget::Head
         && request.is_submitted()

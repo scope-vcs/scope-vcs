@@ -220,6 +220,42 @@ fn a_thread_delivery_applies_only_when_github_still_agrees_with_it() {
 }
 
 #[test]
+fn only_resolved_threads_of_open_imported_discussions_are_imported_again() {
+    let thread =
+        |root: Option<u64>, resolver: Option<u64>, resolved: bool| GitHubReviewThreadState {
+            node_id: format!("PRRT_{}", root.unwrap_or_default()),
+            root_comment_id: root,
+            resolver_github_account_id: resolver,
+            resolved,
+        };
+    let open = vec![
+        github_review_comment_client_id(1),
+        github_review_comment_client_id(2),
+        github_review_comment_client_id(3),
+        github_review_client_id(4),
+    ];
+    assert_eq!(
+        github_thread_resolutions_to_import(
+            &[
+                thread(Some(1), Some(9), true),
+                thread(Some(2), Some(9), false),
+                thread(Some(3), None, true),
+                thread(Some(4), Some(9), true),
+                thread(Some(5), Some(9), true),
+                thread(None, Some(9), true),
+            ],
+            &open,
+        ),
+        vec![GitHubReviewImportSubject::Thread {
+            root_comment_id: 1,
+            node_id: "PRRT_1".to_string(),
+            resolved: true,
+            github_account_id: 9,
+        }]
+    );
+}
+
+#[test]
 fn only_open_full_view_requests_accept_github_reviews() {
     let (request, views) = full_view_request();
     assert!(accepts_github_reviews(&request, &views));

@@ -20,13 +20,13 @@ use scope_domain::{
         GitHubReviewImportSubject, Request, RequestDiscussion, RequestDiscussionStatus,
         RequestRevision, github_comment_anchors, github_comment_body, github_retry_at,
         github_review_anchor, github_review_body, github_review_client_id,
-        github_review_comment_client_id, github_thread_status,
+        github_review_comment_client_id, github_thread_resolutions_to_import, github_thread_status,
     },
 };
 use scope_postgres::db::{
-    GitHubImportedComment, GitHubReviewImportFinish, GitHubReviewImportJob, GitHubThreadTransition,
-    ImportGitHubReviewCommand, QueueGitHubReviewImport, SkipGitHubReview,
-    TransitionGitHubDiscussionCommand,
+    GitHubImportedComment, GitHubReviewBotReconcile, GitHubReviewImportFinish,
+    GitHubReviewImportJob, GitHubThreadTransition, ImportGitHubReviewCommand,
+    QueueGitHubReviewImport, SkipGitHubReview, TransitionGitHubDiscussionCommand,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -68,6 +68,49 @@ pub(crate) async fn queue_github_review_delivery(
         )
         .await?;
     if accepted {
+        state.after_commit([AfterCommit::Wake(Wakeup::GitHubReviewImports)]);
+    }
+    Ok(())
+}
+
+pub(crate) async fn queue_missed_thread_resolutions(
+    state: &AppState,
+    reconcile: &GitHubReviewBotReconcile,
+) -> Result<(), ApiError> {
+    let Some(app) = state.github.as_ref() else {
+        return Ok(());
+    };
+    let requests = state.metadata.requests();
+    let open = requests
+        .open_github_discussion_client_ids(&reconcile.request_id)
+        .await?;
+    if open.is_empty() {
+        return Ok(());
+    }
+    let threads = app
+        .pull_request_review_threads(
+            reconcile.installation_id,
+            &reconcile.github_full_name,
+            reconcile.number,
+        )
+        .await?;
+    let mut queued = false;
+    for subject in github_thread_resolutions_to_import(&threads, &open) {
+        queued |= requests
+            .queue_github_review_import(
+                &QueueGitHubReviewImport {
+                    request_id: reconcile.request_id.clone(),
+                    repo_id: reconcile.repo_id.clone(),
+                    github_repository_id: reconcile.github_repository_id,
+                    pull_number: reconcile.number,
+                    subject,
+                },
+                &[],
+                unix_now()?,
+            )
+            .await?;
+    }
+    if queued {
         state.after_commit([AfterCommit::Wake(Wakeup::GitHubReviewImports)]);
     }
     Ok(())
