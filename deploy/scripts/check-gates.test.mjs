@@ -140,6 +140,12 @@ test('local and GitHub callers use the shared inventory', () => {
   assert.doesNotMatch(read('.github/workflows/scope-web-ci.yml'), /rust-toolchain|rust-cache/);
 });
 
+test('workflows install Rust only through the action that removes preinstalled toolchains', () => {
+  for (const name of readdirSync(resolve(root, '.github/workflows'))) {
+    assert.doesNotMatch(read(`.github/workflows/${name}`), /dtolnay\/rust-toolchain/, name);
+  }
+});
+
 const publicGates = ['policy', 'backend', 'contract', 'cli', 'cli-bundle', 'web'];
 const operationsInput = /(?:^|[\s"'=])(?:\.\/)?(?:deploy|bench)\/|\.github\/(?:deployment-services|railway-experiments|main-protection)\.json/;
 
