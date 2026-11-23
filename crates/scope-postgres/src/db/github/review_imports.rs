@@ -1,6 +1,5 @@
 use super::super::{
     RequestStore, acquire_aggregate_lock,
-    entities::encode_enum,
     generated_ids::{GeneratedIdKind, generate_id},
     github::skipped_reviews::delete_skipped_reviews,
     integer_columns::{
@@ -34,6 +33,9 @@ use sea_orm::{
 
 #[cfg(test)]
 mod tests;
+mod thread_resolutions;
+
+use thread_resolutions::record_github_resolution_applied;
 
 const REVIEW: &str = "review";
 const REPLY: &str = "reply";
@@ -350,28 +352,6 @@ impl RequestStore {
         )
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "open_github_discussion_client_ids"))]
-    pub async fn open_github_discussion_client_ids(
-        &self,
-        request_id: &str,
-    ) -> Result<Vec<String>, PostgresError> {
-        self.db
-            .query_all_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT client_discussion_id FROM scope_request_discussions
-                  WHERE request_id = $1 AND status = $2
-                    AND author_github_user_id IS NOT NULL",
-                [
-                    request_id.into(),
-                    encode_enum(RequestDiscussionStatus::Open)?.into(),
-                ],
-            ))
-            .await?
-            .into_iter()
-            .map(|row| Ok(row.try_get::<String>("", "client_discussion_id")?))
-            .collect()
-    }
-
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "import_github_review"))]
     pub async fn import_github_review(
         &self,
@@ -481,26 +461,28 @@ impl RequestStore {
             tx.commit().await?;
             return Ok(GitHubThreadTransition::MissingDiscussion);
         };
-        if !transition_github_discussion(
+        let changed = transition_github_discussion(
             &mut request,
             &views,
             &mut discussion,
             command.resolver.id,
             command.status,
             command.now_unix,
-        )? {
-            tx.commit().await?;
-            return Ok(GitHubThreadTransition::Unchanged);
+        )?;
+        if changed {
+            save_request_row(&tx, &request).await?;
+            save_discussion(&tx, &discussion).await?;
         }
-        save_request_row(&tx, &request).await?;
-        save_discussion(&tx, &discussion).await?;
+        record_github_resolution_applied(&tx, &discussion.id, command.status).await?;
         tx.commit().await?;
-        Ok(GitHubThreadTransition::Applied(Box::new(
-            GitHubReviewImport {
+        Ok(if changed {
+            GitHubThreadTransition::Applied(Box::new(GitHubReviewImport {
                 request,
                 discussions: vec![discussion],
-            },
-        )))
+            }))
+        } else {
+            GitHubThreadTransition::Unchanged
+        })
     }
 }
 

@@ -64,17 +64,28 @@ pub struct GitHubReviewThreadState {
     pub resolved: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpenGitHubDiscussion {
+    pub client_discussion_id: String,
+    pub github_resolution_applied: bool,
+}
+
 pub fn github_thread_resolutions_to_import(
     threads: &[GitHubReviewThreadState],
-    open_discussion_client_ids: &[String],
+    open_discussions: &[OpenGitHubDiscussion],
 ) -> Vec<GitHubReviewImportSubject> {
     threads
         .iter()
         .filter(|thread| thread.resolved)
         .filter_map(|thread| {
             let root_comment_id = thread.root_comment_id?;
-            open_discussion_client_ids
-                .contains(&github_review_comment_client_id(root_comment_id))
+            let client_discussion_id = github_review_comment_client_id(root_comment_id);
+            open_discussions
+                .iter()
+                .any(|discussion| {
+                    discussion.client_discussion_id == client_discussion_id
+                        && !discussion.github_resolution_applied
+                })
                 .then_some(GitHubReviewImportSubject::Thread {
                     root_comment_id,
                     node_id: thread.node_id.clone(),

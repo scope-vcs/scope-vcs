@@ -82,7 +82,7 @@ pub(crate) async fn queue_missed_thread_resolutions(
     };
     let requests = state.metadata.requests();
     let open = requests
-        .open_github_discussion_client_ids(&reconcile.request_id)
+        .open_github_discussions(&reconcile.request_id)
         .await?;
     if open.is_empty() {
         return Ok(());

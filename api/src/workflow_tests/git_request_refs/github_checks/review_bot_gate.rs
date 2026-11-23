@@ -6,7 +6,8 @@ use crate::use_cases::{
     github::review_imports::import_due_github_reviews,
 };
 use scope_domain::{
-    github::review_bots::GitHubReviewBotInput, requests::REVIEW_BOT_START_DEADLINE_SECS,
+    github::review_bots::GitHubReviewBotInput,
+    requests::{REVIEW_BOT_START_DEADLINE_SECS, github_review_comment_client_id},
 };
 
 const CODEX: &str = "chatgpt-codex-connector[bot]";
@@ -117,6 +118,14 @@ fn states(codex: &str, greptile: &str) -> Vec<(String, bool, String)> {
 }
 
 async fn discussion_ids(request: &OwnerRequest) -> Vec<String> {
+    timeline_discussions(request)
+        .await
+        .iter()
+        .map(|discussion| discussion["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+async fn timeline_discussions(request: &OwnerRequest) -> Vec<serde_json::Value> {
     let page = expect_json(
         api_request(
             router(request.state.clone()),
@@ -132,12 +141,7 @@ async fn discussion_ids(request: &OwnerRequest) -> Vec<String> {
         StatusCode::OK,
     )
     .await;
-    page["discussions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|discussion| discussion["id"].as_str().unwrap().to_string())
-        .collect()
+    page["discussions"].as_array().unwrap().clone()
 }
 
 async fn listed_status(request: &OwnerRequest) -> serde_json::Value {
@@ -318,9 +322,8 @@ async fn an_unresolved_bot_discussion_blocks_the_merge_until_it_is_resolved() {
     assert_eq!(bot_states(&request).await.1, "Ready".to_string());
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_thread_resolution_github_had_not_settled_on_reaches_its_discussion() {
-    let request = gated_request("review-bot-late-resolution").await;
+async fn greptile_thread_request(label: &str) -> OwnerRequest {
+    let request = gated_request(label).await;
     let head = request.head();
     codex_comments(
         &request,
@@ -331,8 +334,7 @@ async fn a_thread_resolution_github_had_not_settled_on_reaches_its_discussion() 
     request
         .fake
         .report_permission("octo-writer", Some(("write", 502)));
-    let greptile =
-        serde_json::json!({ "id": 77, "login": GREPTILE, "type": "Bot", "avatar_url": null });
+    let greptile = greptile_user();
     request.fake.report_pull_review(
         serde_json::json!({
             "id": 402,
@@ -355,31 +357,64 @@ async fn a_thread_resolution_github_had_not_settled_on_reaches_its_discussion() 
             "created_at": "2026-10-20T12:00:00Z",
         })],
     );
-    let deliver = async |event: &str, payload: serde_json::Value| {
-        let mut payload = payload;
-        payload["repository"] = serde_json::json!({ "id": GITHUB_REPOSITORY_ID });
-        payload["pull_request"] = serde_json::json!({
-            "number": 1,
-            "head": { "ref": request.branch(), "repo": { "id": GITHUB_REPOSITORY_ID } },
-        });
-        let delivered = webhook(&request.state, event, payload, WEBHOOK_SECRET).await;
-        assert_eq!(delivered.status(), StatusCode::NO_CONTENT);
-        import_due_github_reviews(&request.state, unix_now())
-            .await
-            .unwrap()
-    };
     let review =
         serde_json::json!({ "action": "submitted", "review": { "id": 402 }, "sender": greptile });
-    assert_eq!(deliver("pull_request_review", review).await, 1);
+    assert_eq!(
+        deliver_review_event(&request, "pull_request_review", review).await,
+        1
+    );
     assert_eq!(bot_states(&request).await.1, "ReviewFindingsOpen");
+    request
+}
 
-    request.fake.report_review_thread(702, None);
-    let resolution = serde_json::json!({
+fn greptile_user() -> serde_json::Value {
+    serde_json::json!({ "id": 77, "login": GREPTILE, "type": "Bot", "avatar_url": null })
+}
+
+fn thread_resolution() -> serde_json::Value {
+    serde_json::json!({
         "action": "resolved",
         "thread": { "node_id": "PRRT_702", "comments": [{ "id": 702, "in_reply_to_id": null }] },
         "sender": { "id": 502, "login": "octo-writer", "type": "User", "avatar_url": null },
+    })
+}
+
+async fn deliver_review_event(
+    request: &OwnerRequest,
+    event: &str,
+    mut payload: serde_json::Value,
+) -> usize {
+    payload["repository"] = serde_json::json!({ "id": GITHUB_REPOSITORY_ID });
+    payload["pull_request"] = serde_json::json!({
+        "number": 1,
+        "head": { "ref": request.branch(), "repo": { "id": GITHUB_REPOSITORY_ID } },
     });
-    assert_eq!(deliver("pull_request_review_thread", resolution).await, 1);
+    let delivered = webhook(&request.state, event, payload, WEBHOOK_SECRET).await;
+    assert_eq!(delivered.status(), StatusCode::NO_CONTENT);
+    import_due_github_reviews(&request.state, unix_now())
+        .await
+        .unwrap()
+}
+
+async fn thread_discussion(request: &OwnerRequest) -> serde_json::Value {
+    timeline_discussions(request)
+        .await
+        .into_iter()
+        .find(|discussion| {
+            discussion["client_discussion_id"] == github_review_comment_client_id(702)
+        })
+        .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_thread_resolution_github_had_not_settled_on_reaches_its_discussion() {
+    let request = greptile_thread_request("review-bot-late-resolution").await;
+
+    request.fake.report_review_thread(702, None);
+    assert_eq!(
+        deliver_review_event(&request, "pull_request_review_thread", thread_resolution()).await,
+        1
+    );
     assert_eq!(bot_states(&request).await.1, "ReviewFindingsOpen");
 
     request
@@ -400,6 +435,45 @@ async fn a_thread_resolution_github_had_not_settled_on_reaches_its_discussion() 
             .unwrap(),
         0
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_maintainer_reopening_a_github_resolved_thread_keeps_it_open() {
+    let request = greptile_thread_request("review-bot-reopened-resolution").await;
+    request
+        .fake
+        .report_review_thread(702, Some(("octo-writer", 502)));
+    assert_eq!(
+        deliver_review_event(&request, "pull_request_review_thread", thread_resolution()).await,
+        1
+    );
+    assert_eq!(thread_discussion(&request).await["status"], "Resolved");
+    assert_eq!(bot_states(&request).await.1, "Ready");
+
+    let reopened = api_request(
+        router(request.state.clone()),
+        "POST",
+        &format!(
+            "/v1/repos/{TEST_REPO_ID}/requests/{}/threads/{}/reopen",
+            request.request_id,
+            thread_discussion(&request).await["id"].as_str().unwrap()
+        ),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(reopened.status(), StatusCode::OK);
+    assert_eq!(bot_states(&request).await.1, "ReviewFindingsOpen");
+
+    reconcile_now(&request).await;
+    assert_eq!(
+        import_due_github_reviews(&request.state, unix_now())
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(thread_discussion(&request).await["status"], "Open");
+    assert_eq!(bot_states(&request).await.1, "ReviewFindingsOpen");
 }
 
 fn github_time(unix: u64) -> String {

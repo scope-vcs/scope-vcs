@@ -219,36 +219,75 @@ fn a_thread_delivery_applies_only_when_github_still_agrees_with_it() {
     assert_eq!(github_thread_status(false, true), None);
 }
 
+fn review_thread(
+    root: Option<u64>,
+    resolver: Option<u64>,
+    resolved: bool,
+) -> GitHubReviewThreadState {
+    GitHubReviewThreadState {
+        node_id: format!("PRRT_{}", root.unwrap_or_default()),
+        root_comment_id: root,
+        resolver_github_account_id: resolver,
+        resolved,
+    }
+}
+
+fn open_discussion(
+    client_discussion_id: String,
+    github_resolution_applied: bool,
+) -> OpenGitHubDiscussion {
+    OpenGitHubDiscussion {
+        client_discussion_id,
+        github_resolution_applied,
+    }
+}
+
 #[test]
 fn only_resolved_threads_of_open_imported_discussions_are_imported_again() {
-    let thread =
-        |root: Option<u64>, resolver: Option<u64>, resolved: bool| GitHubReviewThreadState {
-            node_id: format!("PRRT_{}", root.unwrap_or_default()),
-            root_comment_id: root,
-            resolver_github_account_id: resolver,
-            resolved,
-        };
     let open = vec![
-        github_review_comment_client_id(1),
-        github_review_comment_client_id(2),
-        github_review_comment_client_id(3),
-        github_review_client_id(4),
+        open_discussion(github_review_comment_client_id(1), false),
+        open_discussion(github_review_comment_client_id(2), false),
+        open_discussion(github_review_comment_client_id(3), false),
+        open_discussion(github_review_client_id(4), false),
     ];
     assert_eq!(
         github_thread_resolutions_to_import(
             &[
-                thread(Some(1), Some(9), true),
-                thread(Some(2), Some(9), false),
-                thread(Some(3), None, true),
-                thread(Some(4), Some(9), true),
-                thread(Some(5), Some(9), true),
-                thread(None, Some(9), true),
+                review_thread(Some(1), Some(9), true),
+                review_thread(Some(2), Some(9), false),
+                review_thread(Some(3), None, true),
+                review_thread(Some(4), Some(9), true),
+                review_thread(Some(5), Some(9), true),
+                review_thread(None, Some(9), true),
             ],
             &open,
         ),
         vec![GitHubReviewImportSubject::Thread {
             root_comment_id: 1,
             node_id: "PRRT_1".to_string(),
+            resolved: true,
+            github_account_id: 9,
+        }]
+    );
+}
+
+#[test]
+fn a_github_resolution_scope_applied_and_a_maintainer_reopened_is_not_imported_again() {
+    let threads = [
+        review_thread(Some(1), Some(9), true),
+        review_thread(Some(2), Some(9), true),
+    ];
+    assert_eq!(
+        github_thread_resolutions_to_import(
+            &threads,
+            &[
+                open_discussion(github_review_comment_client_id(1), true),
+                open_discussion(github_review_comment_client_id(2), false),
+            ],
+        ),
+        vec![GitHubReviewImportSubject::Thread {
+            root_comment_id: 2,
+            node_id: "PRRT_2".to_string(),
             resolved: true,
             github_account_id: 9,
         }]
