@@ -1,5 +1,5 @@
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use scope_api_contract::{RequestQueueSection, ViewId};
+use scope_api_contract::{RequestCloseReason, RequestQueueSection, ViewId};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -79,6 +79,13 @@ pub(super) struct RequestStartArgs {
     pub(super) current_branch: bool,
     #[arg(long, value_parser = parse_view, help = "Request view: any view you can read (defaults to your repository view)")]
     pub(super) view: Option<ViewId>,
+    #[arg(
+        long = "for",
+        value_name = "REQUEST",
+        conflicts_with_all = ["base", "title", "view"],
+        help = "Add the branch to an existing request that has no change yet, by request ID or handle such as gh-142"
+    )]
+    pub(super) for_request: Option<String>,
 }
 
 #[derive(Parser)]
@@ -142,6 +149,21 @@ pub(super) struct RequestCloseArgs {
     pub(super) target: RequestTargetArgs,
     #[arg(long, help = "Confirm closing the request")]
     pub(super) yes: bool,
+    #[arg(
+        long,
+        value_parser = parse_close_reason,
+        help = "Why a request that was opened from an ask is closed: completed, not-planned, or duplicate"
+    )]
+    pub(super) reason: Option<RequestCloseReason>,
+}
+
+fn parse_close_reason(value: &str) -> Result<RequestCloseReason, String> {
+    match value {
+        "completed" => Ok(RequestCloseReason::Completed),
+        "not-planned" => Ok(RequestCloseReason::NotPlanned),
+        "duplicate" => Ok(RequestCloseReason::Duplicate),
+        _ => Err("expected completed, not-planned, or duplicate".to_string()),
+    }
 }
 
 #[derive(Parser)]

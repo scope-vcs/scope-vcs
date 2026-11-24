@@ -1,6 +1,7 @@
 use super::{
-    Request, RequestActor, RequestActorRole, RequestViewer, StartRequestFacts, StartRequestInput,
-    SubmitRequestInput, start_request, submit_request,
+    OpenRequestFromAskFacts, OpenRequestFromAskInput, Request, RequestActor, RequestActorRole,
+    RequestAsk, RequestViewer, StartRequestFacts, StartRequestInput, SubmitRequestInput,
+    open_request_from_ask, start_request, submit_request,
 };
 use crate::repository::access::{RepositoryAccess, RepositoryActor};
 use crate::views::{ViewDefinition, ViewId, ViewIncludes, ViewReaders, Views};
@@ -129,6 +130,31 @@ pub(crate) fn open_request() -> Request {
         &pushed_draft(RequestActorRole::Public),
         author_actor(),
         submit_input(),
+    )
+    .unwrap()
+    .request
+}
+
+pub(crate) fn asked_request() -> Request {
+    open_request_from_ask(
+        OpenRequestFromAskFacts::default(),
+        OpenRequestFromAskInput {
+            id: "request_1".to_string(),
+            repo_id: "owner/repo".to_string(),
+            title: "Login times out after 30 seconds".to_string(),
+            ask: RequestAsk {
+                github_account_id: 7,
+                github_issue_number: 142,
+                source_url: "https://github.com/owner/repo/issues/142".to_string(),
+                text_markdown: "Sign-in gives up before the server answers.".to_string(),
+                asked_at_unix: 3,
+            },
+            view: ViewId::public(),
+            main_oid: "base".to_string(),
+            event_id: "event_started".to_string(),
+            now_unix: 10,
+        },
+        actor_views(),
     )
     .unwrap()
     .request

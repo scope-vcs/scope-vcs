@@ -7,9 +7,9 @@ use scope_api_contract::{
 };
 use scope_domain::{
     requests::{
-        AuthorRecord, DiffStat, Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject,
-        RequestViewMains, RequestViewer, request_list_mergeability, request_mergeability,
-        request_policy,
+        AuthorRecord, DiffStat, Request, RequestChangeSubject, RequestChecksOutcome, RequestEvent,
+        RequestMergeSubject, RequestViewMains, RequestViewer, request_change_visible,
+        request_list_mergeability, request_mergeability, request_policy,
     },
     views::Views,
 };
@@ -24,11 +24,24 @@ fn request_summary_response(
 ) -> Result<RequestSummaryResponse, crate::error::ApiError> {
     let state = request.state();
     let lifecycle = request.lifecycle().clone();
+    let branch_name = request.branch_name().map(str::to_string);
+    let ask = request
+        .ask
+        .map(|ask| scope_api_contract::RequestAskResponse {
+            handle: ask.handle(),
+            suggested_branch_name: ask.suggested_branch_name(&request.title),
+            github_issue_number: ask.github_issue_number,
+            source_url: ask.source_url,
+            text_markdown: ask.text_markdown,
+            asked_at_unix: ask.asked_at_unix,
+        });
     Ok(RequestSummaryResponse {
         id: request.id,
         name: request.name,
+        branch_name,
         title: request.title,
         description_markdown: request.description_markdown,
+        ask,
         author_user_id: request.author_user_id,
         author_role: request.author_role.into(),
         view: request.view.into(),
@@ -43,6 +56,7 @@ fn request_summary_response(
         submitted_at_unix: lifecycle.submitted_at_unix,
         closed_at_unix: lifecycle.closed_at_unix,
         closed_by_user_id: lifecycle.closed_by_user_id,
+        close_reason: lifecycle.close_reason.map(Into::into),
         merged_at_unix: lifecycle.merged_at_unix,
         merged_by_user_id: lifecycle.merged_by_user_id,
         merged_head_oid: lifecycle
@@ -74,10 +88,12 @@ pub(crate) fn request_list_row_subject<'a>(
         view: &request.view,
         state: request.state,
         has_pushed_head: request.has_pushed_head,
+        awaits_change: request.awaits_change,
         stack_status: view_mains.stack_status(
             &request.view,
             &request.main_ancestor_oid,
             request.stack_status,
+            request.awaits_change,
         ),
     }
 }
@@ -124,9 +140,25 @@ pub(crate) fn request_list_item_response(
         facts.outcomes.reviews,
         repository_lifecycle,
     );
-    let request_head_oid = super::git_oid_response(request.head_oid)?;
+    let change_visible = request_change_visible(
+        RequestChangeSubject {
+            view: &request.view,
+            author_user_id: request.author_user_id.as_deref(),
+            submitted: request.submitted_at_unix.is_some(),
+        },
+        viewer,
+        views,
+    );
+    let request_head_oid = super::git_oid_response(if change_visible {
+        request.head_oid
+    } else {
+        request.main_ancestor_oid
+    })?;
     Ok(RequestListItemResponse {
-        diff_stat: facts.diff_stat.map(diff_stat_response),
+        diff_stat: facts
+            .diff_stat
+            .filter(|_| change_visible)
+            .map(diff_stat_response),
         stack_parent: facts
             .parent
             .map(request_stack_parent_response)
@@ -182,6 +214,9 @@ pub(crate) fn request_event_response(
             | scope_api_contract::RequestEventPayload::RevisionPushed { .. }
             | scope_api_contract::RequestEventPayload::Closed { .. }
             | scope_api_contract::RequestEventPayload::IdentityEdited { .. }
+            | scope_api_contract::RequestEventPayload::WorkStarted {}
+            | scope_api_contract::RequestEventPayload::WorkReleased {}
+            | scope_api_contract::RequestEventPayload::ChangeAttached { .. }
             | scope_api_contract::RequestEventPayload::DiscussionResolved { .. }
             | scope_api_contract::RequestEventPayload::DiscussionReopened { .. }
             | scope_api_contract::RequestEventPayload::AutoMergeEnabled { .. }
@@ -209,6 +244,11 @@ pub(crate) fn request_response(
     repository_lifecycle: scope_domain::repository::RepoLifecycleState,
 ) -> Result<RequestSummaryResponse, ApiError> {
     let policy = request_policy(&request, viewer.clone(), views);
+    let request = if policy.change_visible {
+        request
+    } else {
+        request.with_change_hidden()
+    };
     let can_view_activity = policy.activity_stream_visible;
     let decision = policy.permissions;
     let permissions = RequestPermissionsResponse {
@@ -217,9 +257,13 @@ pub(crate) fn request_response(
         can_reply_to_discussion: decision.can_reply_to_discussion,
         can_wait_after_reply: decision.can_wait_after_reply,
         can_edit_identity: decision.can_edit_identity,
+        can_read_change: decision.can_read_change,
         can_pull_branch: decision.can_pull_branch,
         can_push_branch: decision.can_push_branch,
         can_submit: decision.can_submit,
+        can_start_work: decision.can_start_work,
+        can_release_work: decision.can_release_work,
+        can_attach_change: decision.can_attach_change,
         can_manage_invitees: decision.can_manage_invitees,
         can_leave_request: decision.can_leave_request,
         can_close: decision.can_close,

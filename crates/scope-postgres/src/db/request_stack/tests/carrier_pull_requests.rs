@@ -143,6 +143,7 @@ async fn closing_a_parent_moves_its_open_childrens_carriers_onto_main_in_the_sam
         &store.requests(),
         scope_domain::requests::CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: parent.id.clone(),
             actor_user_id: "user_owner".into(),
             event_id: "close".into(),

@@ -301,6 +301,7 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
         &store.requests(),
         scope_domain::requests::CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: parent.id,
             actor_user_id: "user_owner".into(),
             event_id: "close".into(),
@@ -366,6 +367,7 @@ async fn committed_context_receipt_survives_parent_close_and_rejects_changed_pay
         &store.requests(),
         scope_domain::requests::CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: parent.id,
             actor_user_id: "user_owner".into(),
             event_id: "close".into(),

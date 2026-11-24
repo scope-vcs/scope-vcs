@@ -20,6 +20,7 @@ fn detail_lines_render_the_request_summary() {
             author: None,
             author_record: None,
             claimer: None,
+            asker: None,
             stack_navigation: scope_api_contract::RequestStackNavigationResponse {
                 parent: None,
                 ancestors: Vec::new(),
@@ -615,8 +616,8 @@ fn summary() -> RequestSummaryResponse {
             "merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,
             "updated_at_unix":2,"invitees":[],
             "permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,"can_wait_after_reply":false,
-                "can_edit_identity":false,"can_pull_branch":false,"can_push_branch":false,
-                "can_submit":false,
+                "can_edit_identity":false,"can_read_change":true,"can_pull_branch":false,"can_push_branch":false,
+                "can_submit":false, "can_start_work":false,"can_release_work":false,"can_attach_change":false,
                 "can_manage_invitees":false,"can_leave_request":false,
                 "can_close":false,"can_merge":false},
             "mergeability":{"status":"Draft",

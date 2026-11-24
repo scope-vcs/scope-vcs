@@ -99,6 +99,15 @@ pub(super) fn update_demo_git_packs(
             },
             &public_main_oid,
         )?;
+        let asked_draft_oid = seed_request_branch(
+            repo_path,
+            "csv-header-row",
+            SeedGitCommit {
+                files: &[("src/export.ts", UPDATE_DEMO_CSV_EXPORT)],
+                message: "Write the CSV header row",
+            },
+            &public_main_oid,
+        )?;
         seed_git(
             Some(repo_path),
             &["reset", "--hard", &main_oid],
@@ -146,7 +155,19 @@ pub(super) fn update_demo_git_packs(
             &neutral_oid,
             &scope_domain::views::ViewId::public(),
         )?;
-        let gallery = vec![
+        let asked = asked_requests::SeedAskedRequests {
+            public_main_oid: public_main_oid.clone(),
+            draft_pack: store_seed_request_pack(
+                git_segment_store,
+                repository_id,
+                repo_path,
+                "req_demo_asked_draft",
+                &asked_draft_oid,
+                &scope_domain::views::ViewId::public(),
+            )?,
+            draft_head_oid: asked_draft_oid,
+        };
+        let requests = vec![
             SeedRequest {
                 id: "req_demo_working",
                 name: "request-queue-copy",
@@ -226,7 +247,7 @@ pub(super) fn update_demo_git_packs(
                 now_unix: 1_800_000_500,
             },
         ];
-        Ok((main_head, gallery, main_pack))
+        Ok((main_head, SeedRequestGallery { requests, asked }, main_pack))
     })
 }
 

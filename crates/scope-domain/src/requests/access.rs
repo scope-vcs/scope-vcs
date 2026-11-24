@@ -52,11 +52,16 @@ pub struct RequestPermissions {
     pub can_open_discussion: bool,
     pub can_reply_to_discussion: bool,
     pub can_wait_after_reply: bool,
+    pub can_comment_on_change: bool,
     pub can_transition_discussion: bool,
     pub can_edit_identity: bool,
+    pub can_read_change: bool,
     pub can_pull_branch: bool,
     pub can_push_branch: bool,
     pub can_submit: bool,
+    pub can_start_work: bool,
+    pub can_release_work: bool,
+    pub can_attach_change: bool,
     pub can_manage_invitees: bool,
     pub can_leave_request: bool,
     pub can_close: bool,
@@ -67,6 +72,7 @@ pub struct RequestPermissions {
 pub struct RequestPolicyDecision {
     pub listable: bool,
     pub exact_visible: bool,
+    pub change_visible: bool,
     pub discussion_visible: bool,
     pub activity_stream_visible: bool,
     pub branch_mutable: bool,
@@ -80,6 +86,7 @@ pub enum RequestListPredicate<'a> {
     Any(Vec<RequestListPredicate<'a>>),
     View(ViewId),
     Submitted,
+    Asked,
     Author(&'a str),
     Invitee(&'a str),
 }
@@ -92,7 +99,7 @@ pub fn request_list_predicate<'a>(
     let anyone = views.anyone();
     let mut visible = Vec::new();
     if let Some(anyone) = anyone {
-        let mut anyone_access = vec![RequestListPredicate::Submitted];
+        let mut anyone_access = vec![RequestListPredicate::Submitted, RequestListPredicate::Asked];
         if let Some(viewer_user_id) = viewer_user_id {
             anyone_access.push(RequestListPredicate::Author(viewer_user_id));
             anyone_access.push(RequestListPredicate::Invitee(viewer_user_id));
@@ -115,7 +122,7 @@ pub fn request_list_predicate<'a>(
 }
 
 impl RequestListPredicate<'_> {
-    fn matches(&self, request: &Request, viewer_is_invitee: bool) -> bool {
+    pub(super) fn matches(&self, request: &Request, viewer_is_invitee: bool) -> bool {
         match self {
             Self::All(predicates) => predicates
                 .iter()
@@ -125,6 +132,7 @@ impl RequestListPredicate<'_> {
                 .any(|predicate| predicate.matches(request, viewer_is_invitee)),
             Self::View(view) => request.view == *view,
             Self::Submitted => request.is_submitted(),
+            Self::Asked => request.ask.is_some(),
             Self::Author(viewer_user_id) => request.is_author(viewer_user_id),
             Self::Invitee(_) => viewer_is_invitee,
         }
@@ -141,6 +149,28 @@ pub fn request_actor_role(access: RepositoryAccess) -> RequestActorRole {
 
 pub fn request_visible_to_every_maintainer(view: &ViewId, submitted: bool, views: &Views) -> bool {
     views.get(view).is_some() && (submitted || views.anyone() != Some(view))
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RequestChangeSubject<'a> {
+    pub view: &'a ViewId,
+    pub author_user_id: Option<&'a str>,
+    pub submitted: bool,
+}
+
+pub fn request_change_visible(
+    subject: RequestChangeSubject<'_>,
+    viewer: &RequestViewer<'_>,
+    views: &Views,
+) -> bool {
+    if views.anyone() == Some(subject.view) {
+        let author = viewer.user_id.is_some() && viewer.user_id == subject.author_user_id;
+        subject.submitted || author || viewer.is_invitee
+    } else {
+        viewer.access.is_maintainer()
+            && views.get(subject.view).is_some()
+            && views.may_read(&viewer.access.view, subject.view)
+    }
 }
 
 pub fn request_policy(
@@ -167,16 +197,26 @@ pub fn request_policy(
     let submitted = request.is_submitted();
     let terminal = request.is_terminal();
     let open = request.state() == RequestState::Open;
+    let has_branch = request.branch_name().is_some();
+    let unassigned = request.author_user_id.is_none();
+    let may_work = maintainer && reads_request_view;
 
-    let exact_visible = if anyone_view {
-        submitted || author || invitee
-    } else {
-        maintainer && reads_request_view
-    };
+    let change_visible = request_change_visible(
+        RequestChangeSubject {
+            view: &request.view,
+            author_user_id: request.author_user_id.as_deref(),
+            submitted,
+        },
+        &viewer,
+        views,
+    );
+    let asked_draft_anyone_reads = anyone_view && request.ask.is_some() && !submitted;
+    let exact_visible = change_visible || asked_draft_anyone_reads;
     let listable = request_list_predicate(viewer.access.clone(), viewer.user_id, views)
         .matches(request, viewer.is_invitee);
     let branch_actor = author || (anyone_view && invitee) || (maintainer && reads_request_view);
-    let branch_mutable = exact_visible && branch_actor && !terminal;
+    let branch_mutable = change_visible && branch_actor && !terminal && has_branch;
+    let workable = exact_visible && request.ask.is_some() && !terminal;
     let discussion_visible = exact_visible;
     let activity_stream_visible = discussion_visible && listable;
     let can_discuss =
@@ -186,11 +226,21 @@ pub fn request_policy(
         can_open_discussion: can_discuss,
         can_reply_to_discussion: can_discuss,
         can_wait_after_reply: can_discuss && maintainer && open,
+        can_comment_on_change: can_discuss && change_visible && !asked_draft_anyone_reads,
         can_transition_discussion: discussion_visible && authenticated && (!full_view || !terminal),
         can_edit_identity: exact_visible && !terminal && (author || maintainer),
-        can_pull_branch: exact_visible && request.state().advertised_in_git(),
+        can_read_change: change_visible && !request.awaits_change(),
+        can_pull_branch: change_visible && request.state().advertised_in_git() && has_branch,
         can_push_branch: branch_mutable,
-        can_submit: exact_visible && !submitted && author,
+        can_submit: exact_visible && !submitted && author && !request.awaits_change(),
+        can_start_work: workable && unassigned && may_work,
+        can_release_work: workable
+            && request.awaits_change()
+            && !unassigned
+            && (author || maintainer),
+        can_attach_change: workable
+            && request.awaits_change()
+            && (author || (unassigned && may_work)),
         can_manage_invitees: exact_visible && anyone_view && !terminal && (author || maintainer),
         can_leave_request: exact_visible && anyone_view && invitee && !terminal,
         can_close: exact_visible
@@ -203,6 +253,7 @@ pub fn request_policy(
     RequestPolicyDecision {
         listable,
         exact_visible,
+        change_visible,
         discussion_visible,
         activity_stream_visible,
         branch_mutable,

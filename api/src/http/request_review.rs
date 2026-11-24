@@ -4,7 +4,7 @@ use crate::{
     git::request_refs::with_request_revision_store_repo,
     http::{
         file_diffs::binary_content_response,
-        requests::{repo_and_access, visible_request},
+        requests::{repo_and_access, visible_request_change},
         responses::{
             RequestFileDiffRequest, ReviewFileContentResponse, ReviewFileDiffResponse,
             recorded_actor_response,
@@ -53,7 +53,7 @@ pub(crate) async fn list_request_revisions(
 ) -> Result<Json<RequestRevisionListResponse>, ApiError> {
     let (repo, viewer_user_id) = repo_and_access(&state, &viewer, &owner, &repo_name).await?;
     let repo = Arc::new(repo);
-    let (request, _) = visible_request(
+    let (request, _) = visible_request_change(
         &state,
         &repo.context,
         viewer_user_id.as_deref(),
@@ -121,7 +121,7 @@ pub(crate) async fn get_request_revision_commit_file_diff(
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
     let (repo, viewer_user_id) = repo_and_access(&state, &viewer, &owner, &repo_name).await?;
     let repo = Arc::new(repo);
-    let (request, _) = visible_request(
+    let (request, _) = visible_request_change(
         &state,
         &repo.context,
         viewer_user_id.as_deref(),

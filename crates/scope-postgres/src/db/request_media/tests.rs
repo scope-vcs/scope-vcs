@@ -628,6 +628,7 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
         &fixture.store.requests(),
         scope_domain::requests::CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: "deleted_request".to_string(),
             actor_user_id: OWNER_ID.to_string(),
             event_id: "event_delete_request".to_string(),

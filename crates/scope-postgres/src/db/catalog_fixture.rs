@@ -1,6 +1,7 @@
 use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
+    github::account::GitHubAccount,
     landing_file::RepositoryLandingFile,
     repo_actions::RepoStorageCleanup,
     repository::{
@@ -19,6 +20,7 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Default)]
 pub struct CatalogFixture {
     pub users: BTreeMap<String, UserAccount>,
+    pub github_accounts: Vec<GitHubAccount>,
     pub repositories: BTreeMap<String, Repository>,
     pub repository_landing_files: BTreeMap<String, RepositoryLandingFile>,
     pub git_segment_uploads: Vec<GitSegmentUpload>,

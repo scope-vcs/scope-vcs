@@ -25,6 +25,7 @@ pub(crate) mod request_submit;
 #[cfg(test)]
 pub(crate) mod request_test_fixtures;
 pub(crate) mod request_tree;
+pub(crate) mod request_work;
 pub(crate) mod scope_path_input;
 pub(crate) mod view_check_commits;
 

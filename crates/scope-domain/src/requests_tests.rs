@@ -442,6 +442,7 @@ fn close_input(actor: &str, actor_is_maintainer: bool) -> CloseRequestInput {
         request_id: "request_1".to_string(),
         actor_user_id: actor.to_string(),
         actor_is_maintainer,
+        reason: None,
         event_id: "event_closed".to_string(),
         now_unix: 30,
     }

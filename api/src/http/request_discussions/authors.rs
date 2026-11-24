@@ -66,16 +66,9 @@ fn github_account(
     github_account_id: u64,
     actors: &RequestDiscussionActors,
 ) -> Result<GitHubAccountResponse, ApiError> {
-    let account = actors
+    actors
         .github_accounts
         .get(&github_account_id)
-        .ok_or_else(|| {
-            ApiError::internal_message("request discussion GitHub account is missing")
-        })?;
-    Ok(GitHubAccountResponse {
-        github_user_id: account.id,
-        login: account.login.clone(),
-        account_type: account.account_type.into(),
-        avatar_url: account.avatar_url.clone(),
-    })
+        .map(crate::http::responses::github_account_response)
+        .ok_or_else(|| ApiError::internal_message("request discussion GitHub account is missing"))
 }

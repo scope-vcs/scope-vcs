@@ -33,6 +33,7 @@ pub struct Request {
     pub pushed_at_unix: Option<u64>,
     pub title: String,
     pub description_markdown: String,
+    pub ask: Option<super::RequestAsk>,
     pub activity_version: u64,
     pub(in crate::requests) lifecycle: RequestLifecycle,
     pub created_at_unix: u64,
@@ -56,10 +57,19 @@ pub struct StoredRequest {
     pub pushed_at_unix: Option<u64>,
     pub title: String,
     pub description_markdown: String,
+    pub ask: Option<super::RequestAsk>,
     pub activity_version: u64,
     pub lifecycle: RequestLifecycle,
     pub created_at_unix: u64,
     pub updated_at_unix: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestCloseReason {
+    Completed,
+    NotPlanned,
+    Duplicate,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -67,6 +77,7 @@ pub struct RequestLifecycle {
     pub submitted_at_unix: Option<u64>,
     pub closed_at_unix: Option<u64>,
     pub closed_by_user_id: Option<String>,
+    pub close_reason: Option<RequestCloseReason>,
     pub merged_at_unix: Option<u64>,
     pub merged_by_user_id: Option<String>,
     pub merged_head_oid: Option<String>,
@@ -113,6 +124,7 @@ impl Request {
             pushed_at_unix: stored.pushed_at_unix,
             title: stored.title,
             description_markdown: stored.description_markdown,
+            ask: stored.ask,
             activity_version: stored.activity_version,
             lifecycle: stored.lifecycle,
             created_at_unix: stored.created_at_unix,
@@ -139,6 +151,7 @@ impl Request {
             pushed_at_unix: self.pushed_at_unix,
             title: self.title.clone(),
             description_markdown: self.description_markdown.clone(),
+            ask: self.ask.clone(),
             activity_version: self.activity_version,
             lifecycle: self.lifecycle.clone(),
             created_at_unix: self.created_at_unix,
@@ -158,7 +171,28 @@ impl Request {
         &self,
         view_mains: &super::RequestViewMains,
     ) -> super::RequestStackStatus {
-        view_mains.stack_status(&self.view, &self.main_ancestor_oid, self.stack_status)
+        view_mains.stack_status(
+            &self.view,
+            &self.main_ancestor_oid,
+            self.stack_status,
+            self.awaits_change(),
+        )
+    }
+
+    pub fn with_change_hidden(mut self) -> Self {
+        self.head_oid = self.main_ancestor_oid.clone();
+        self
+    }
+
+    pub fn awaits_change(&self) -> bool {
+        self.ask.is_some() && self.pushed_at_unix.is_none()
+    }
+
+    pub fn branch_name(&self) -> Option<&str> {
+        match &self.ask {
+            Some(ask) if ask.handle() == self.name => None,
+            _ => Some(&self.name),
+        }
     }
 
     pub fn state(&self) -> RequestState {
@@ -179,6 +213,10 @@ impl Request {
 
     pub fn closed_by_user_id(&self) -> Option<&str> {
         self.lifecycle.closed_by_user_id.as_deref()
+    }
+
+    pub fn close_reason(&self) -> Option<RequestCloseReason> {
+        self.lifecycle.close_reason
     }
 
     pub fn merged_at_unix(&self) -> Option<u64> {
@@ -231,12 +269,21 @@ pub enum RequestEventKind {
     Merged,
     Closed,
     IdentityEdited,
+    WorkStarted,
+    WorkReleased,
+    ChangeAttached,
     DiscussionResolved,
     DiscussionReopened,
     AutoMergeEnabled,
     AutoMergeCancelled,
     AutoMergeStopped,
     AutoMergeFulfilled,
+}
+
+impl RequestEventKind {
+    pub fn describes_change(self) -> bool {
+        self == Self::RevisionPushed
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -275,6 +322,11 @@ pub enum RequestEventPayload {
     IdentityEdited {
         before: RequestIdentityAuditFact,
         after: RequestIdentityAuditFact,
+    },
+    WorkStarted {},
+    WorkReleased {},
+    ChangeAttached {
+        branch_name: String,
     },
     DiscussionResolved {
         discussion_id: String,
@@ -406,10 +458,31 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
             "request cannot be both closed and merged",
         ));
     }
-    if request.is_terminal() && !request.is_submitted() {
+    let closed_from_ask = request.ask.is_some() && request.lifecycle.closed_at_unix.is_some();
+    if request.is_terminal() && !request.is_submitted() && !closed_from_ask {
         return Err(DomainError::conflict(
             "terminal requests must have been submitted",
         ));
+    }
+    if request.lifecycle.close_reason.is_some() != closed_from_ask {
+        return Err(DomainError::conflict(
+            "a close reason belongs to a closed request that has an ask",
+        ));
+    }
+    if let Some(ask) = &request.ask {
+        super::ask::validate_request_ask(ask)?;
+        if ask.asked_at_unix > request.created_at_unix {
+            return Err(DomainError::conflict(
+                "a request cannot be asked after it was created",
+            ));
+        }
+        if request.branch_name().is_none()
+            && (request.pushed_at_unix.is_some() || request.is_submitted())
+        {
+            return Err(DomainError::conflict(
+                "a request needs a branch before it can hold a change",
+            ));
+        }
     }
     if let Some(submitted_at) = request.lifecycle.submitted_at_unix {
         for (label, terminal_at) in [

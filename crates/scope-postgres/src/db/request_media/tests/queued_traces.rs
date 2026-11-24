@@ -63,6 +63,7 @@ async fn claimed_media_jobs_carry_the_trace_that_queued_them() {
             &fixture.store.requests(),
             scope_domain::requests::CloseRequestInput {
                 actor_is_maintainer: true,
+                reason: None,
                 request_id: "traced_request".to_string(),
                 actor_user_id: OWNER_ID.to_string(),
                 event_id: "event_close_traced_request".to_string(),

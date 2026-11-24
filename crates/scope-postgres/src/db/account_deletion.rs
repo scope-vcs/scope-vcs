@@ -140,6 +140,7 @@ impl AuthStore {
             .column(entities::request::Column::RepoId)
             .filter(entities::request::Column::AuthorUserId.eq(user_id))
             .filter(entities::request::Column::SubmittedAtUnix.is_null())
+            .filter(entities::request::Column::GithubIssueNumber.is_null())
             .into_tuple::<(String, String)>()
             .all(&tx)
             .await
@@ -338,6 +339,7 @@ async fn delete_draft(
             request_id: request_id.to_string(),
             actor_user_id: user_id.to_string(),
             actor_is_maintainer: false,
+            reason: None,
             event_id: format!("event_request_closed_{request_id}"),
             now_unix,
         },

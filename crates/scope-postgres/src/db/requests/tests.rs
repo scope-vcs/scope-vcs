@@ -309,6 +309,7 @@ async fn close_draft_request_deletes_request_and_events() {
         &store.requests(),
         scope_domain::requests::CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: "req_1".to_string(),
             actor_user_id: "user_public".to_string(),
             event_id: "event_closed".to_string(),
@@ -377,6 +378,7 @@ async fn close_open_request_persists_exact_closer() {
         &store.requests(),
         scope_domain::requests::CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: request.id.clone(),
             actor_user_id: request.author_user_id.clone().unwrap(),
             event_id: "event_closed".to_string(),

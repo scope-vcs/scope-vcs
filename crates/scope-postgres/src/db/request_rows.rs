@@ -37,6 +37,7 @@ pub struct RequestListRow {
     pub updated_at_unix: u64,
     pub activity_version: u64,
     pub has_pushed_head: bool,
+    pub awaits_change: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,6 +75,7 @@ pub(super) struct RequestListModel {
     updated_at_unix: i64,
     activity_version: i64,
     has_pushed_head: bool,
+    awaits_change: bool,
 }
 
 impl RequestListModel {
@@ -126,6 +128,7 @@ impl RequestListModel {
                 "request activity version",
             )?,
             has_pushed_head: self.has_pushed_head,
+            awaits_change: self.awaits_change,
         })
     }
 }
@@ -201,6 +204,9 @@ pub(super) fn request_list_condition(
         RequestListPredicate::Submitted => {
             Ok(Condition::all().add(entities::request::Column::SubmittedAtUnix.is_not_null()))
         }
+        RequestListPredicate::Asked => {
+            Ok(Condition::all().add(entities::request::Column::GithubIssueNumber.is_not_null()))
+        }
         RequestListPredicate::Author(viewer_user_id) => {
             Ok(Condition::all().add(entities::request::Column::AuthorUserId.eq(*viewer_user_id)))
         }
@@ -250,6 +256,12 @@ pub(super) fn request_list_projection() -> sea_orm::Select<entities::request::En
             Expr::col(entities::request::Column::PushedAtUnix).is_not_null(),
             "has_pushed_head",
         )
+        .expr_as(
+            Expr::col(entities::request::Column::GithubIssueNumber)
+                .is_not_null()
+                .and(Expr::col(entities::request::Column::PushedAtUnix).is_null()),
+            "awaits_change",
+        )
 }
 
 pub(super) async fn request_by_id<C>(
@@ -277,6 +289,28 @@ where
     entities::request::Entity::find()
         .filter(entities::request::Column::RepoId.eq(repo_id.to_string()))
         .filter(entities::request::Column::Name.eq(request_name.to_string()))
+        .one(conn)
+        .await?
+        .map(entities::request::Model::try_into_domain)
+        .transpose()
+}
+
+pub(super) async fn request_by_github_issue_number<C>(
+    conn: &C,
+    repo_id: &str,
+    github_issue_number: u64,
+) -> Result<Option<Request>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    entities::request::Entity::find()
+        .filter(entities::request::Column::RepoId.eq(repo_id))
+        .filter(
+            entities::request::Column::GithubIssueNumber.eq(integer_columns::u64_to_i64(
+                github_issue_number,
+                "GitHub issue number",
+            )?),
+        )
         .one(conn)
         .await?
         .map(entities::request::Model::try_into_domain)
@@ -524,6 +558,10 @@ where
             Expr::value(row.closed_by_user_id),
         )
         .col_expr(
+            entities::request::Column::CloseReason,
+            Expr::value(row.close_reason),
+        )
+        .col_expr(
             entities::request::Column::MergedAtUnix,
             Expr::value(row.merged_at_unix),
         )
@@ -551,6 +589,30 @@ where
         ));
     }
     Ok(())
+}
+
+pub(super) async fn save_request_branch_and_author<C>(
+    conn: &C,
+    request: &Request,
+) -> Result<(), PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let row = entities::request::Model::from_domain(request)?;
+    entities::request::Entity::update_many()
+        .filter(entities::request::Column::Id.eq(row.id))
+        .col_expr(entities::request::Column::Name, Expr::value(row.name))
+        .col_expr(
+            entities::request::Column::AuthorUserId,
+            Expr::value(row.author_user_id),
+        )
+        .col_expr(
+            entities::request::Column::AuthorRole,
+            Expr::value(row.author_role),
+        )
+        .exec(conn)
+        .await?;
+    save_request_row(conn, request).await
 }
 
 pub(super) async fn insert_request_event_row<C>(
@@ -588,7 +650,7 @@ mod request_list_tests {
         let projection = sql.split(" FROM ").next().unwrap();
 
         assert!(!projection.contains("description_markdown"));
-        assert_eq!(projection.matches("\"pushed_at_unix\"").count(), 1);
+        assert_eq!(projection.matches("\"pushed_at_unix\"").count(), 2);
         assert!(projection.contains("pushed_at_unix\" IS NOT NULL"));
     }
 }

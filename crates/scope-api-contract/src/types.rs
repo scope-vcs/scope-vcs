@@ -1,14 +1,17 @@
+mod request_asks;
 mod request_discussion_anchors;
 mod request_discussion_authors;
 mod request_stacks;
+pub use request_asks::*;
 pub use request_discussion_anchors::*;
 pub use request_discussion_authors::*;
 pub use request_stacks::*;
 
 use crate::{
     FileChangeKind, FirstPushTokenStatus, GitOid, RepoConfig, RepoLifecycleState, RepositoryActor,
-    RequestActorRole, RequestDiscussionStatus, RequestEventKind, RequestEventPayload,
-    RequestMergeabilityStatus, RequestState, SessionIdentity, ViewDefinition, ViewId,
+    RequestActorRole, RequestCloseReason, RequestDiscussionStatus, RequestEventKind,
+    RequestEventPayload, RequestMergeabilityStatus, RequestState, SessionIdentity, ViewDefinition,
+    ViewId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -224,6 +227,7 @@ pub struct RequestDetailResponse {
     pub author: Option<RequestActorSummaryResponse>,
     pub author_record: Option<crate::RequestAuthorRecordResponse>,
     pub claimer: Option<RequestActorSummaryResponse>,
+    pub asker: Option<GitHubAccountResponse>,
     pub diff_stat: Option<RequestDiffStatResponse>,
 }
 
@@ -297,8 +301,10 @@ pub struct RequestCloseResponse {
 pub struct RequestSummaryResponse {
     pub id: String,
     pub name: String,
+    pub branch_name: Option<String>,
     pub title: String,
     pub description_markdown: String,
+    pub ask: Option<RequestAskResponse>,
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub view: ViewId,
@@ -323,6 +329,7 @@ pub struct RequestSummaryResponse {
     pub submitted_at_unix: Option<u64>,
     pub closed_at_unix: Option<u64>,
     pub closed_by_user_id: Option<String>,
+    pub close_reason: Option<RequestCloseReason>,
     pub merged_at_unix: Option<u64>,
     pub merged_by_user_id: Option<String>,
     #[cfg_attr(
@@ -412,9 +419,13 @@ pub struct RequestPermissionsResponse {
     pub can_reply_to_discussion: bool,
     pub can_wait_after_reply: bool,
     pub can_edit_identity: bool,
+    pub can_read_change: bool,
     pub can_pull_branch: bool,
     pub can_push_branch: bool,
     pub can_submit: bool,
+    pub can_start_work: bool,
+    pub can_release_work: bool,
+    pub can_attach_change: bool,
     pub can_manage_invitees: bool,
     pub can_leave_request: bool,
     pub can_close: bool,

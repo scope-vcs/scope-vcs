@@ -6,7 +6,7 @@ use crate::{
         file_diffs::review_content_response_for_blob,
         history::repo_and_view,
         request_review::git_blob_content,
-        requests::{repo_and_access, visible_request},
+        requests::{repo_and_access, visible_request_change},
         responses::{RepoFileContentResponse, RepoFileResponse},
     },
     state::AppState,
@@ -158,7 +158,7 @@ async fn request_reader(
     if !repo.context.can_read_view(&reader) {
         return Err(ApiError::forbidden("view access required"));
     }
-    let (request, _) = visible_request(
+    let (request, _) = visible_request_change(
         read.state,
         &repo.context,
         viewer_user_id.as_deref(),

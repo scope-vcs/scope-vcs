@@ -748,16 +748,17 @@ fn attachment_json(prepare: &Value, state: &str) -> Value {
 }
 
 fn request_json(description: &str) -> Value {
+    let permissions = json!({"can_view_activity":true,"can_open_discussion":true,"can_reply_to_discussion":true,"can_wait_after_reply":false,
+            "can_edit_identity":true,"can_read_change":true,"can_pull_branch":true,"can_push_branch":true,"can_submit":true,"can_start_work":false,"can_release_work":false,"can_attach_change":false,
+            "can_manage_invitees":true,"can_leave_request":false,"can_close":true,"can_merge":true});
     json!({
         "id":"req_one","name":"fix-one","title":"Fix one","description_markdown":description,
-        "author_user_id":"usr_test","author_role":"Owner","view":"private",
+       "author_user_id":"usr_test","author_role":"Owner","view":"private",
         "base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"main_ancestor_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,
         "submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,
         "merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,
         "created_at_unix":1,"updated_at_unix":2,"invitees":[],
-        "permissions":{"can_view_activity":true,"can_open_discussion":true,"can_reply_to_discussion":true,"can_wait_after_reply":false,
-            "can_edit_identity":true,"can_pull_branch":true,"can_push_branch":true,"can_submit":true,
-            "can_manage_invitees":true,"can_leave_request":false,"can_close":true,"can_merge":true},
+        "permissions":permissions,
         "mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}
     })
 }

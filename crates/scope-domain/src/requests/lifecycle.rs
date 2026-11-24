@@ -1,7 +1,7 @@
 use super::{
-    MAIN_PUSH_REQUEST_NAME_PREFIX, PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request,
-    RequestActor, RequestActorRole, RequestEvent, RequestEventKind, RequestEventPayload,
-    RequestRevision, RequestState, advance_request_activity, ensure_event_id_available,
+    PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request, RequestActor, RequestActorRole,
+    RequestCloseReason, RequestEvent, RequestEventKind, RequestEventPayload, RequestRevision,
+    RequestState, advance_request_activity, ask::reserved_request_name, ensure_event_id_available,
     ensure_request_matches, request_identity_audit_fact, validate_body_size, validate_required,
 };
 use crate::error::DomainError;
@@ -95,6 +95,7 @@ pub struct CloseRequestInput {
     pub request_id: String,
     pub actor_user_id: String,
     pub actor_is_maintainer: bool,
+    pub reason: Option<RequestCloseReason>,
     pub event_id: String,
     pub now_unix: u64,
 }
@@ -161,6 +162,7 @@ pub(super) fn open_request(
         pushed_at_unix: None,
         title,
         description_markdown: String::new(),
+        ask: None,
         activity_version: 1,
         lifecycle: super::RequestLifecycle::default(),
         created_at_unix: input.now_unix,
@@ -344,7 +346,20 @@ pub fn close_request(
     validate_required("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
     ensure_request_close_allowed(&request, &input.actor_user_id, input.actor_is_maintainer)?;
-    if !request.is_submitted() {
+    match (request.ask.is_some(), input.reason) {
+        (true, None) => {
+            return Err(DomainError::invalid_input(
+                "closing this request needs a reason: completed, not planned, or duplicate",
+            ));
+        }
+        (false, Some(_)) => {
+            return Err(DomainError::invalid_input(
+                "only a request opened from an ask takes a close reason",
+            ));
+        }
+        (true, Some(_)) | (false, None) => {}
+    }
+    if !request.is_submitted() && request.ask.is_none() {
         let mut removed_events = events
             .into_iter()
             .filter(|event| event.request_id == request.id)
@@ -364,6 +379,7 @@ pub fn close_request(
     ensure_event_id_available(events.iter().any(|event| event.id == input.event_id))?;
     request.lifecycle.closed_at_unix = Some(input.now_unix);
     request.lifecycle.closed_by_user_id = Some(input.actor_user_id.clone());
+    request.lifecycle.close_reason = input.reason;
     request.updated_at_unix = input.now_unix;
     let position = advance_request_activity(&mut request)?;
     request.validate_facts()?;
@@ -388,12 +404,12 @@ pub(super) fn ensure_request_close_allowed(
 ) -> Result<(), DomainError> {
     let actor_is_author = request.is_author(actor_user_id);
     match request.state() {
-        RequestState::Draft if !actor_is_author => {
+        RequestState::Draft if !actor_is_author && request.ask.is_none() => {
             return Err(DomainError::forbidden(
                 "only the request author can delete a draft",
             ));
         }
-        RequestState::Open | RequestState::Closed | RequestState::Merged
+        RequestState::Draft | RequestState::Open | RequestState::Closed | RequestState::Merged
             if !actor_is_author && !actor_is_maintainer =>
         {
             return Err(DomainError::forbidden(
@@ -492,7 +508,7 @@ pub fn validate_request_name(name: &str) -> Result<(), DomainError> {
 
 pub fn validate_chosen_request_name(name: &str) -> Result<(), DomainError> {
     validate_request_name(name)?;
-    if name.starts_with(MAIN_PUSH_REQUEST_NAME_PREFIX) {
+    if reserved_request_name(name) {
         return Err(DomainError::invalid_input("request name is reserved"));
     }
     Ok(())

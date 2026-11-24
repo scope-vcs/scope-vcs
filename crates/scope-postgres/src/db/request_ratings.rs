@@ -213,6 +213,7 @@ mod tests {
             &store.requests(),
             scope_domain::requests::CloseRequestInput {
                 actor_is_maintainer: true,
+                reason: None,
                 request_id: "req_1".to_string(),
                 actor_user_id: "user_owner".to_string(),
                 event_id: "event_closed".to_string(),

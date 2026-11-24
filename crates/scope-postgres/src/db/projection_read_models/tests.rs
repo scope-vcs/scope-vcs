@@ -392,7 +392,8 @@ async fn an_open_requests_view_keeps_its_main_through_a_history_rebuild() {
         mains.stack_status(
             &docs,
             &contained_main,
-            scope_domain::requests::RequestStackStatus::Main
+            scope_domain::requests::RequestStackStatus::Main,
+            false,
         ),
         scope_domain::requests::RequestStackStatus::NeedsMainUpdate,
     );

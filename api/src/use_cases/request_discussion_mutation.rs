@@ -16,8 +16,8 @@ use scope_domain::{
     repository::access::RepositoryAccessContext,
     requests::{
         CreateRequestDiscussionInput, CreateRequestDiscussionReplyMutation,
-        MarkRequestDiscussionReadInput, Request, RequestDiscussionAnchor, RequestViewer,
-        request_actor_role, request_policy,
+        LINE_COMMENTS_NEED_SUBMISSION, MarkRequestDiscussionReadInput, Request,
+        RequestDiscussionAnchor, RequestViewer, request_actor_role, request_policy,
     },
 };
 use scope_postgres::db::{
@@ -96,6 +96,7 @@ pub(crate) struct MarkDiscussionReadResult {
 pub(super) struct MutationContext {
     pub(super) repo: RepositoryAccessContext,
     pub(super) request: Request,
+    can_comment_on_change: bool,
 }
 
 pub(crate) async fn create_discussion(
@@ -111,6 +112,9 @@ pub(crate) async fn create_discussion(
     )
     .await?;
     let anchor = match command.anchor {
+        Some(_) if !context.can_comment_on_change => {
+            return Err(ApiError::forbidden(LINE_COMMENTS_NEED_SUBMISSION));
+        }
         Some(anchor) => Some(anchor::validate(state, &context, anchor).await?),
         None => None,
     };
@@ -339,17 +343,19 @@ async fn mutation_context(
         .requests()
         .request_is_invitee(&request.id, actor_user_id)
         .await?;
-    if request.repo_id != repo.record.id
-        || !request_policy(
-            &request,
-            RequestViewer::new(repo.access.clone(), Some(actor_user_id), is_invitee),
-            &repo.views,
-        )
-        .exact_visible
-    {
+    let policy = request_policy(
+        &request,
+        RequestViewer::new(repo.access.clone(), Some(actor_user_id), is_invitee),
+        &repo.views,
+    );
+    if request.repo_id != repo.record.id || !policy.exact_visible {
         return Err(ApiError::not_found("request not found"));
     }
-    Ok(MutationContext { repo, request })
+    Ok(MutationContext {
+        can_comment_on_change: policy.permissions.can_comment_on_change,
+        repo,
+        request,
+    })
 }
 
 async fn reply_mutation_result(

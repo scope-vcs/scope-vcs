@@ -148,6 +148,7 @@ fn members_list_every_view_they_read_and_the_anyone_view_by_its_participation_ru
         RequestListPredicate::View(ViewId::public()),
         RequestListPredicate::Any(vec![
             RequestListPredicate::Submitted,
+            RequestListPredicate::Asked,
             RequestListPredicate::Author("user"),
             RequestListPredicate::Invitee("user"),
         ]),

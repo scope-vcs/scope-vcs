@@ -8,13 +8,30 @@ pub(super) fn start_request_branch(
 ) -> anyhow::Result<RequestCommandOutcome> {
     let context = load_context(Some(git_repo), api, args.remote.as_deref())?;
     local::require_git_remote(&context)?;
+    let name = args.name.trim().to_string();
+    scope_domain::requests::validate_chosen_request_name(&name)
+        .map_err(|error| crate::error::CliError::usage(error.message))?;
+    if !args.current_branch {
+        let local_ref = format!("refs/heads/{name}");
+        if try_run_git_in_repo(git_repo, &["show-ref", "--verify", "--quiet", &local_ref])? {
+            bail!("local branch '{name}' already exists");
+        }
+    }
+    let attached = args
+        .for_request
+        .as_deref()
+        .map(|reference| attach_request_change(api, api_target(&context, reference), name.clone()))
+        .transpose()?;
     let (view, base, base_oid, rebase_onto) = if let Some(selector) = args.base {
         let (parent, pin) =
             stack::current_parent(git_repo, api, &context, selector, args.view.as_ref(), None)?;
         let oid = parent.head_oid.as_str().to_string();
         (parent.view, Some(pin.base), oid.clone(), oid)
     } else {
-        let view = start_view(&context.repo.access, &context.views, args.view)?;
+        let view = match &attached {
+            Some(attached) => attached.request.view.clone(),
+            None => start_view(&context.repo.access, &context.views, args.view)?,
+        };
         let oid = refresh_main_projection(git_repo, &context.target, &view, api.token)?;
         let rebase_onto = format!(
             "{}/{}",
@@ -23,36 +40,39 @@ pub(super) fn start_request_branch(
         );
         (view, None, oid, rebase_onto)
     };
-    let name = args.name.trim().to_string();
-    scope_domain::requests::validate_chosen_request_name(&name)
-        .map_err(|error| crate::error::CliError::usage(error.message))?;
     let branch = if args.current_branch {
         local::adoptable_current_branch(git_repo, &base_oid, &rebase_onto)?
     } else {
-        let local_ref = format!("refs/heads/{name}");
-        if try_run_git_in_repo(git_repo, &["show-ref", "--verify", "--quiet", &local_ref])? {
-            bail!("local branch '{name}' already exists");
-        }
         name.clone()
     };
-    let response = api_start_request(
-        api,
-        StartRequestParams {
-            base,
-            owner: &context.target.owner,
-            repo: &context.target.repo,
-            name,
-            title: args.title,
-            view: view.clone(),
-        },
-    )?;
+    let keeps_request_on_failure = attached.is_some();
+    let response = match attached {
+        Some(attached) => attached,
+        None => api_start_request(
+            api,
+            StartRequestParams {
+                base,
+                owner: &context.target.owner,
+                repo: &context.target.repo,
+                name,
+                title: args.title,
+                view: view.clone(),
+            },
+        )?,
+    };
     if !args.current_branch
         && let Err(switch_error) = run_git_in_repo(
             git_repo,
             &["switch", "--quiet", "--no-track", "-c", &branch, &base_oid],
         )
     {
-        let cleanup = api_close_request(api, api_target(&context, &response.request.id));
+        if keeps_request_on_failure {
+            return Err(switch_error).context(format!(
+                "create local request branch failed; request {} keeps the branch name, so fix the problem and run the same command again",
+                response.request.id
+            ));
+        }
+        let cleanup = api_close_request(api, api_target(&context, &response.request.id), None);
         return match cleanup {
             Ok(_) => Err(switch_error).context(
                 "create local request branch failed; the empty request was closed and removed, so it is safe to retry",

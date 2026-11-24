@@ -39,10 +39,10 @@ pub use merge_gate::{
 };
 mod access;
 pub use access::{
-    REQUEST_BRANCH_MUTABLE_STATES, RequestActor, RequestListPredicate, RequestPermissions,
-    RequestPolicyDecision, RequestViewer, request_actor_role, request_list_mergeability,
-    request_list_predicate, request_mergeability, request_policy,
-    request_visible_to_every_maintainer,
+    REQUEST_BRANCH_MUTABLE_STATES, RequestActor, RequestChangeSubject, RequestListPredicate,
+    RequestPermissions, RequestPolicyDecision, RequestViewer, request_actor_role,
+    request_change_visible, request_list_mergeability, request_list_predicate,
+    request_mergeability, request_policy, request_visible_to_every_maintainer,
 };
 mod auto_merge;
 mod merge_decision;
@@ -111,12 +111,19 @@ mod discussions;
 pub use discussions::{
     CreateRequestDiscussionInput, CreateRequestDiscussionMutation,
     CreateRequestDiscussionReplyInput, CreateRequestDiscussionReplyMutation,
-    MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput, RequestDiscussion,
-    RequestDiscussionMutation, RequestDiscussionReadState, RequestDiscussionReply,
-    RequestDiscussionStatus, RequestDiscussionTransitionInput, create_request_discussion,
-    create_request_discussion_reply, ensure_request_discussion_transition_allowed,
-    mark_request_discussion_read, reopen_and_reply_to_request_discussion,
-    reopen_request_discussion, resolve_request_discussion,
+    LINE_COMMENTS_NEED_SUBMISSION, MarkRequestDiscussionReadInput,
+    ReopenAndReplyToRequestDiscussionInput, RequestDiscussion, RequestDiscussionMutation,
+    RequestDiscussionReadState, RequestDiscussionReply, RequestDiscussionStatus,
+    RequestDiscussionTransitionInput, create_request_discussion, create_request_discussion_reply,
+    ensure_request_discussion_transition_allowed, mark_request_discussion_read,
+    reopen_and_reply_to_request_discussion, reopen_request_discussion, resolve_request_discussion,
+};
+mod ask;
+pub use ask::{
+    AttachRequestChangeFacts, AttachRequestChangeInput, GITHUB_ISSUE_REQUEST_NAME_PREFIX,
+    OpenRequestFromAskFacts, OpenRequestFromAskInput, RequestAsk, RequestReference,
+    RequestWorkInput, attach_request_change, open_request_from_ask, release_request_work,
+    start_request_work,
 };
 mod lifecycle;
 pub use lifecycle::{
@@ -146,15 +153,16 @@ pub use main_push::{
 };
 mod limits;
 pub use limits::{
-    PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_ACTIVITY_PAGE_MAX_EVENTS, REQUEST_DESCRIPTION_MAX_BYTES,
-    REQUEST_DISCUSSION_BODY_MAX_BYTES, REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES,
-    REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_TITLE_MAX_BYTES,
+    PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_ACTIVITY_PAGE_MAX_EVENTS, REQUEST_ASK_TEXT_MAX_BYTES,
+    REQUEST_DESCRIPTION_MAX_BYTES, REQUEST_DISCUSSION_BODY_MAX_BYTES,
+    REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES, REQUEST_LIST_DEFAULT_PAGE_SIZE,
+    REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_TITLE_MAX_BYTES,
 };
 pub(super) use limits::{validate_body_size, validate_git_oid, validate_required};
 mod model;
 pub use model::{
-    Request, RequestActorRole, RequestEvent, RequestEventKind, RequestEventPayload,
-    RequestIdentityAuditFact, RequestInvitee, RequestLifecycle, RequestState,
+    Request, RequestActorRole, RequestCloseReason, RequestEvent, RequestEventKind,
+    RequestEventPayload, RequestIdentityAuditFact, RequestInvitee, RequestLifecycle, RequestState,
     RequestTimelineMutation, StoredRequest, validate_request_facts,
 };
 mod queue;

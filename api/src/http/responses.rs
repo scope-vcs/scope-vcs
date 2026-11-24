@@ -44,6 +44,17 @@ pub(crate) fn request_actor_summary_response(
     })
 }
 
+pub(crate) fn github_account_response(
+    account: &scope_domain::github::account::GitHubAccount,
+) -> scope_api_contract::GitHubAccountResponse {
+    scope_api_contract::GitHubAccountResponse {
+        github_user_id: account.id,
+        login: account.login.clone(),
+        account_type: account.account_type.into(),
+        avatar_url: account.avatar_url.clone(),
+    }
+}
+
 pub(crate) fn recorded_actor_response(
     user_id: Option<&str>,
     users: &BTreeMap<String, UserAccount>,

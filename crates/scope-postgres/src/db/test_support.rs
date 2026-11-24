@@ -592,6 +592,12 @@ async fn seed_catalog_rows(
             .await?;
         }
     }
+    super::request_discussion_actors::save_github_accounts(
+        tx,
+        &catalog.github_accounts,
+        CATALOG_SEED_NOW_UNIX,
+    )
+    .await?;
     for request in catalog.requests.values() {
         insert_request_row(tx, request).await?;
     }

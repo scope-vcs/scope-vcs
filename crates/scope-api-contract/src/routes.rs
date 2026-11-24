@@ -106,6 +106,12 @@ routes! {
         REPO_REQUEST_CHECKS_APPROVE = "/v1/repos/{owner}/{repo}/requests/{request_id}/checks/approve"
             => "repoRequestChecksApprove",
             repo_request_checks_approve(owner: &str, repo: &str, request_id: &str);
+        REPO_REQUEST_WORK = "/v1/repos/{owner}/{repo}/requests/{request_id}/work"
+            => "repoRequestWork",
+            repo_request_work(owner: &str, repo: &str, request_id: &str);
+        REPO_REQUEST_CHANGE = "/v1/repos/{owner}/{repo}/requests/{request_id}/change"
+            => "repoRequestChange",
+            repo_request_change(owner: &str, repo: &str, request_id: &str);
         REPO_REQUEST_RATINGS = "/v1/repos/{owner}/{repo}/requests/{request_id}/ratings"
             => "repoRequestRatings",
             repo_request_ratings(owner: &str, repo: &str, request_id: &str);
