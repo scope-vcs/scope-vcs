@@ -5,9 +5,10 @@ use scope_domain::{
         ConnectGitHubRepository, GitHubConnection, GitHubConnectionStatus, GitHubDisconnectReason,
         connect_github_repository,
     },
+    github::import::{GitHubImportState, github_import_error},
     github::run_import::{
-        GITHUB_RUN_IMPORT_DEFAULT_COUNT, GitHubRunImport, GitHubRunImportState,
-        github_run_import_error, set_github_run_import_count, start_github_run_import,
+        GITHUB_RUN_IMPORT_DEFAULT_COUNT, GitHubRunImport, set_github_run_import_count,
+        start_github_run_import,
     },
 };
 
@@ -66,7 +67,7 @@ fn connecting_queues_an_import_of_the_linked_repository_unless_it_imports_nothin
             import.state,
             import.attempts
         ),
-        (42, 120, GitHubRunImportState::Queued, 0)
+        (42, 120, GitHubImportState::Queued, 0)
     );
     assert!(import.is_of(&connection) && !import.is_of(&connected(43)));
     assert_eq!(import.remaining(100), 20);
@@ -78,7 +79,7 @@ fn connecting_queues_an_import_of_the_linked_repository_unless_it_imports_nothin
 fn importing_again_needs_a_connected_link_a_count_and_no_import_still_working() {
     let connection = connected(42);
     let running = GitHubRunImport {
-        state: GitHubRunImportState::Running,
+        state: GitHubImportState::Running,
         ..GitHubRunImport::queue(&connection, 50, NOW).unwrap()
     };
     let start = |access, connection: Option<&GitHubConnection>, current, count| {
@@ -122,7 +123,6 @@ fn importing_again_needs_a_connected_link_a_count_and_no_import_still_working() 
         last_error: Some("GitHub answered 502".into()),
         ..running.clone()
     };
-    assert!(!retry_running.is_waiting_to_retry());
     assert_eq!(
         start(owner(), Some(&connection), Some(&retry_running), 50)
             .unwrap_err()
@@ -131,11 +131,10 @@ fn importing_again_needs_a_connected_link_a_count_and_no_import_still_working() 
     );
 
     let retrying = GitHubRunImport {
-        state: GitHubRunImportState::Queued,
+        state: GitHubImportState::Queued,
         last_error: Some("GitHub answered 502".into()),
         ..running.clone()
     };
-    assert!(retrying.is_waiting_to_retry());
     let started = start(member(), Some(&connection), Some(&retrying), 200).unwrap();
     assert_eq!(
         (
@@ -151,8 +150,8 @@ fn importing_again_needs_a_connected_link_a_count_and_no_import_still_working() 
 
 #[test]
 fn a_long_answer_from_github_is_shortened() {
-    assert_eq!(github_run_import_error("  refused \n"), "refused");
-    let long = github_run_import_error(&"x".repeat(600));
+    assert_eq!(github_import_error("  refused \n"), "refused");
+    let long = github_import_error(&"x".repeat(600));
     assert_eq!(long.chars().count(), 500);
     assert!(long.ends_with('…'));
 }

@@ -52,7 +52,7 @@ const githubConnection = {
 }
 repoSettingsResource.write(settingsScope, {
   collaboration: { members, invites: [] },
-  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null },
+  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null, issue_import_default_view: 'private', issue_import: null },
 })
 const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
 const longCheckName = 'test / unit and integration on every supported platform'
@@ -97,7 +97,7 @@ function App() {
         can_confirm_public: true,
         can_publish_main: true,
         run_import_count: 50,
-        run_import: null,
+        run_import: null, issue_import_default_view: null, issue_import: null,
       })}>GitHub uninstalled elsewhere</button>
     </div>
     <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe} summaryIdentity="fixture">
@@ -123,7 +123,7 @@ function App() {
         disconnectGitHub={async (params) => {
           calls.push({ disconnectGitHub: params })
           await hold('disconnect-github')
-          const github = { configured: true, connection: null, required_checks: [], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null }
+          const github = { configured: true, connection: null, required_checks: [], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null, issue_import_default_view: null, issue_import: null }
           retainGitHubConnection(settingsScope, github)
           return github
         }}
@@ -197,6 +197,19 @@ function App() {
           const current = repoSettingsResource.peek(settingsScope)!.github!
           const comment = input.comment.trim() || null
           const github = { ...current, connection: { ...current.connection!, review_request_comment: comment } }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        startGitHubIssueImport={async (input) => {
+          calls.push({ startGitHubIssueImport: input.view })
+          await hold('issue-import')
+          const github = {
+            ...repoSettingsResource.peek(settingsScope)!.github!,
+            issue_import: {
+              state: 'queued' as const, view: input.view, imported_count: 0, already_imported_count: 0,
+              skipped_issues: [], error: null, queued_at_unix: 3, finished_at_unix: null,
+            },
+          }
           retainGitHubConnection(settingsScope, github)
           return github
         }}

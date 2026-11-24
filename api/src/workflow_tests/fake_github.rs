@@ -1,6 +1,7 @@
 use super::*;
 
 pub(super) mod check_sources;
+pub(super) mod issues;
 mod pulls;
 use crate::github::{GitHubApp, config::GitHubAppConfig};
 use axum::{
@@ -89,6 +90,7 @@ pub(super) struct FakeGitHub {
     review_threads: Mutex<HashMap<String, serde_json::Value>>,
     pub(super) pulls: pulls::FakePulls,
     pub(super) check_sources: check_sources::FakeCheckSources,
+    pub(super) issues: issues::FakeIssues,
     git_root: GitRoot,
 }
 
@@ -679,6 +681,7 @@ impl FakeGitHub {
             .merge(reviews::routes())
             .merge(pulls::routes())
             .merge(check_sources::routes())
+            .merge(issues::routes())
             .with_state(self);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());

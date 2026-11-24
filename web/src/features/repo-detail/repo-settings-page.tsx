@@ -9,6 +9,7 @@ import type {
   SetRepoGitHubReviewBotPullRequestsInput,
   SetRepoGitHubReviewRequestCommentInput,
   SetRepoGitHubRunImportCountInput,
+  StartRepoGitHubIssueImportInput,
   UpdateRepoMemberInput,
   UpdateRepoMetadataInput,
 } from '@/api/types'
@@ -69,6 +70,7 @@ export function RepoSettingsPage({
   setGitHubReviewRequestComment,
   setGitHubRunImportCount,
   startGitHubAuthorization,
+  startGitHubIssueImport,
   startGitHubRunImport,
   testGitHubConnection,
   updateMember,
@@ -110,6 +112,9 @@ export function RepoSettingsPage({
     input: SetRepoGitHubRunImportCountInput,
   ) => Promise<GitHubConnectionResponse>
   startGitHubAuthorization: (params: RepoParams) => Promise<GitHubAuthorizeResponse>
+  startGitHubIssueImport: (
+    input: StartRepoGitHubIssueImportInput,
+  ) => Promise<GitHubConnectionResponse>
   startGitHubRunImport: (params: RepoParams) => Promise<GitHubConnectionResponse>
   testGitHubConnection: (params: RepoParams) => Promise<GitHubConnectionTestResponse>
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
@@ -224,6 +229,7 @@ export function RepoSettingsPage({
           setReviewRequestComment={(comment) => setGitHubReviewRequestComment({ ...params, comment })}
           setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}
           startAuthorization={() => startGitHubAuthorization(params)}
+          startIssueImport={(view) => startGitHubIssueImport({ ...params, view })}
           startRunImport={() => startGitHubRunImport(params)}
           testConnection={() => testGitHubConnection(params)}
         />

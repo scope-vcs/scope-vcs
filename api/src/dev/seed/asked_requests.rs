@@ -7,12 +7,12 @@ use scope_domain::{
     requests::{
         AttachRequestChangeFacts, AttachRequestChangeInput, CloseRequestInput,
         CloseRequestMutation, CreateRequestDiscussionInput, CreateRequestDiscussionReplyInput,
-        EditRequestIdentityInput, EditRequestLinksInput, NamedRequest, OpenRequestFromAskFacts,
-        OpenRequestFromAskInput, RecordWorkingRequestUploadInput, Request, RequestActor,
-        RequestAsk, RequestCloseAs, RequestEvent, RequestWorkInput, attach_request_change,
-        close_request, create_request_discussion, create_request_discussion_reply,
-        edit_request_identity, edit_request_links, open_request_from_ask,
-        record_working_request_upload, start_request_work,
+        EditRequestIdentityInput, EditRequestLinksInput, GitHubIssue, GitHubIssueComment,
+        GitHubIssueComments, GitHubIssueImportResult, ImportGitHubIssueInput, NamedRequest,
+        OpenRequestFromAskFacts, RecordWorkingRequestUploadInput, Request, RequestActor,
+        RequestCloseAs, RequestEvent, RequestWorkInput, attach_request_change, close_request,
+        create_request_discussion, create_request_discussion_reply, edit_request_identity,
+        edit_request_links, import_github_issue, record_working_request_upload, start_request_work,
     },
     views::{ViewId, Views},
 };
@@ -31,7 +31,15 @@ struct SeedAsk<'a> {
     title: &'a str,
     text_markdown: &'a str,
     asked_at_unix: u64,
+    comments: &'static [SeedComment],
     now_unix: u64,
+}
+
+struct SeedComment {
+    id: u64,
+    author: (u64, &'static str),
+    body: &'static str,
+    created_at_unix: u64,
 }
 
 const TOMASZ: (u64, &str) = (9_000_142, "tomasz-k");
@@ -70,6 +78,26 @@ const LOGIN_TIMEOUT_TEXT: &str = concat!(
     "Raising the timeout would be enough for me. One retry before the error would be ",
     "better, since the server does answer in the end."
 );
+const LOGIN_TIMEOUT_COMMENTS: &[SeedComment] = &[
+    SeedComment {
+        id: 2_901_114_207,
+        author: INES,
+        body: concat!(
+            "Same here on hotel wifi. The request in the network tab is still pending when ",
+            "the error shows, so the page gives up before the server does."
+        ),
+        created_at_unix: 1_782_086_400,
+    },
+    SeedComment {
+        id: 2_903_550_981,
+        author: TOMASZ,
+        body: concat!(
+            "Confirmed on 2.14.2 as well. Setting `session.timeout_ms` to 60000 in the ",
+            "config works around it for now."
+        ),
+        created_at_unix: 1_782_345_600,
+    },
+];
 const CSV_HEADER_TEXT: &str = concat!(
     "Exporting the retry log to CSV writes the rows but not the header row, so the ",
     "columns have no names when the file opens in a spreadsheet.\n\n",
@@ -84,13 +112,8 @@ pub(super) fn seed(
     repo_id: &str,
     facts: SeedAskedRequests,
 ) -> Result<(), ApiError> {
-    for (id, login) in [TOMASZ, INES, MAREK] {
-        catalog.github_accounts.push(GitHubAccount::new(
-            id,
-            login,
-            GitHubAccountType::User,
-            None,
-        )?);
+    for seeded in [TOMASZ, INES, MAREK] {
+        catalog.github_accounts.push(account(seeded)?);
     }
     facts.draft_pack.add_to(catalog);
     let views = Views::builtin();
@@ -112,6 +135,7 @@ pub(super) fn seed(
             title: "Login times out after 30 seconds on slow connections",
             text_markdown: LOGIN_TIMEOUT_TEXT,
             asked_at_unix: 1_782_000_000,
+            comments: LOGIN_TIMEOUT_COMMENTS,
             now_unix: 1_790_000_600,
         },
     )?;
@@ -129,6 +153,7 @@ pub(super) fn seed(
             title: "Rework sign-in for slow and offline networks",
             text_markdown: "Sign-in should queue while the network is down and finish when it returns.",
             asked_at_unix: 1_777_000_000,
+            comments: &[],
             now_unix: 1_790_000_610,
         },
     )?;
@@ -156,6 +181,7 @@ pub(super) fn seed(
             title: "Export to CSV drops the header row",
             text_markdown: CSV_HEADER_TEXT,
             asked_at_unix: 1_785_000_000,
+            comments: &[],
             now_unix: 1_790_000_620,
         },
     )?;
@@ -216,6 +242,7 @@ pub(super) fn seed(
             title: "Billing page ignores the system theme",
             text_markdown: "The billing page stays light when the system theme is dark.",
             asked_at_unix: 1_779_000_000,
+            comments: &[],
             now_unix: 1_790_000_630,
         },
     )?;
@@ -235,6 +262,7 @@ pub(super) fn seed(
             title: "The docs do not say how to cut a release",
             text_markdown: "I could not find the release steps anywhere in the docs.",
             asked_at_unix: 1_776_000_000,
+            comments: &[],
             now_unix: 1_790_000_700,
         },
     )?;
@@ -258,6 +286,7 @@ pub(super) fn seed(
             title: "Billing settings stay light in dark mode",
             text_markdown: "The billing settings ignore the dark theme.",
             asked_at_unix: 1_780_000_000,
+            comments: &[],
             now_unix: 1_790_000_710,
         },
     )?;
@@ -403,6 +432,7 @@ fn backlog(catalog: &mut CatalogFixture, repo_id: &str, main_oid: &str) -> Resul
                 title: &title,
                 text_markdown: &format!("{title}. Seen on version 2.14.{}.", index % 4),
                 asked_at_unix: 1_770_000_000 + index * 250_000,
+                comments: &[],
                 now_unix: 1_790_000_640 + index,
             },
         )?;
@@ -416,31 +446,74 @@ fn opened(
     main_oid: &str,
     ask: SeedAsk<'_>,
 ) -> Result<Request, ApiError> {
-    let mutation = open_request_from_ask(
+    let source_url = format!(
+        "https://github.com/{repo_id}/issues/{}",
+        ask.github_issue_number
+    );
+    let result = import_github_issue(
         OpenRequestFromAskFacts::default(),
-        OpenRequestFromAskInput {
-            id: ask.id.to_string(),
-            repo_id: repo_id.to_string(),
+        GitHubIssue {
+            number: ask.github_issue_number,
             title: ask.title.to_string(),
-            ask: RequestAsk {
-                github_account_id: ask.asker.0,
-                github_issue_number: ask.github_issue_number,
-                source_url: format!(
-                    "https://github.com/{repo_id}/issues/{}",
-                    ask.github_issue_number
-                ),
-                text_markdown: ask.text_markdown.to_string(),
-                asked_at_unix: ask.asked_at_unix,
-            },
+            body: ask.text_markdown.to_string(),
+            author: account(ask.asker)?,
+            source_url: source_url.clone(),
+            created_at_unix: Some(ask.asked_at_unix),
+        },
+        GitHubIssueComments::Read {
+            comments: ask
+                .comments
+                .iter()
+                .map(|comment| {
+                    Ok(GitHubIssueComment {
+                        id: comment.id,
+                        author: account(comment.author)?,
+                        body: comment.body.to_string(),
+                        source_url: format!("{source_url}#issuecomment-{}", comment.id),
+                        created_at_unix: Some(comment.created_at_unix),
+                    })
+                })
+                .collect::<Result<_, ApiError>>()?,
+            later_comments_unread: false,
+        },
+        ImportGitHubIssueInput {
+            request_id: ask.id.to_string(),
+            repo_id: repo_id.to_string(),
             view: ViewId::public(),
             main_oid: main_oid.to_string(),
-            event_id: format!("event_{}_started", ask.id),
+            started_event_id: format!("event_{}_started", ask.id),
+            discussion_ids: ask
+                .comments
+                .iter()
+                .map(|comment| format!("discussion_{}_{}", ask.id, comment.id))
+                .collect(),
             now_unix: ask.now_unix,
         },
         &Views::builtin(),
     )?;
-    saved(catalog, mutation.request.clone(), [mutation.event]);
-    Ok(mutation.request)
+    let GitHubIssueImportResult::Imported(imported) = result else {
+        return Err(ApiError::internal_message(format!(
+            "seeded issue {} was not imported: {result:?}",
+            ask.github_issue_number
+        )));
+    };
+    catalog.request_discussions.extend(
+        imported
+            .discussions
+            .into_iter()
+            .map(|discussion| (discussion.id.clone(), discussion)),
+    );
+    saved(catalog, imported.request.clone(), [imported.started]);
+    Ok(imported.request)
+}
+
+fn account((id, login): (u64, &str)) -> Result<GitHubAccount, ApiError> {
+    Ok(GitHubAccount::new(
+        id,
+        login,
+        GitHubAccountType::User,
+        None,
+    )?)
 }
 
 fn saved(

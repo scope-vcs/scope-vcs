@@ -1,6 +1,7 @@
 mod check_sources;
 mod client;
 pub(crate) mod config;
+mod issues;
 mod jobs;
 pub(crate) mod pull_requests;
 pub(crate) mod push;
@@ -12,6 +13,7 @@ pub(crate) mod webhook;
 
 pub(crate) use client::{GitHubRepository, RATE_LIMIT_MESSAGE};
 use config::GitHubAppConfig;
+pub(crate) use issues::GitHubIssuePage;
 use jsonwebtoken::EncodingKey;
 pub(crate) use push::GitHubPublishFailure;
 pub(crate) use reviews::{GitHubPermissionAnswer, GitHubPullReview, GitHubPullReviewComment};

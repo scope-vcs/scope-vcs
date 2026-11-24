@@ -496,7 +496,7 @@ async fn revisions_for_commits<'a>(
     Ok(revisions)
 }
 
-async fn full_view_context(
+pub(super) async fn full_view_context(
     state: &AppState,
     repo_id: &str,
 ) -> Result<RepositoryAccessContext, ApiError> {

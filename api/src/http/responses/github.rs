@@ -8,9 +8,12 @@ use scope_domain::{
         GitHubConnectionStatus, GitHubDisconnectReason, GitHubRepositoryVisibility,
     },
     github::connection_test::{GitHubConnectionTestResult, GitHubConnectionTestStep},
-    github::run_import::{GitHubRunImport, GitHubRunImportState},
+    github::import::GitHubImportState,
+    github::issue_import::GitHubIssueImport,
+    github::run_import::GitHubRunImport,
     github::workflow_jobs::GitHubWorkflowJob,
     requests::{GitHubPush, GitHubPushState},
+    views::ViewId,
 };
 use scope_postgres::db::{GitHubConnectionRead, GitHubUnlistedReviewBot, GitHubWorkflowRunRead};
 use serde::{Deserialize, Serialize};
@@ -35,7 +38,7 @@ macro_rules! response_enum {
     };
 }
 
-response_enum!(GitHubRunImportStateResponse => GitHubRunImportState {
+response_enum!(GitHubImportStateResponse => GitHubImportState {
     Queued, Running, Succeeded, Failed,
 });
 response_enum!(GitHubConnectionTestStepResponse => GitHubConnectionTestStep {
@@ -60,12 +63,40 @@ pub(crate) struct GitHubConnectionResponse {
     pub(crate) can_publish_main: bool,
     pub(crate) run_import_count: u32,
     pub(crate) run_import: Option<GitHubRunImportResponse>,
+    pub(crate) issue_import_default_view: Option<String>,
+    pub(crate) issue_import: Option<GitHubIssueImportResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubSkippedIssueResponse {
+    pub(crate) number: u64,
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubIssueImportResponse {
+    pub(crate) state: GitHubImportStateResponse,
+    pub(crate) view: String,
+    pub(crate) imported_count: u32,
+    pub(crate) already_imported_count: u32,
+    pub(crate) skipped_issues: Vec<GitHubSkippedIssueResponse>,
+    pub(crate) error: Option<String>,
+    pub(crate) queued_at_unix: u64,
+    pub(crate) finished_at_unix: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct StartGitHubIssueImportRequest {
+    pub(crate) view: String,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubRunImportResponse {
-    pub(crate) state: GitHubRunImportStateResponse,
+    pub(crate) state: GitHubImportStateResponse,
     pub(crate) run_count: u32,
     pub(crate) imported_count: u32,
     pub(crate) error: Option<String>,
@@ -470,6 +501,8 @@ pub(crate) struct GitHubConnectionParts {
     pub(crate) main_push: Option<GitHubPush>,
     pub(crate) run_import_count: u32,
     pub(crate) run_import: Option<GitHubRunImport>,
+    pub(crate) issue_import_default_view: Option<ViewId>,
+    pub(crate) issue_import: Option<GitHubIssueImport>,
 }
 
 pub(crate) fn github_connection_response(
@@ -484,6 +517,13 @@ pub(crate) fn github_connection_response(
     let run_import = parts
         .run_import
         .filter(|import| linked(import.github_repository_id));
+    let issue_import = parts
+        .issue_import
+        .filter(|import| linked(import.github_repository_id));
+    let issue_import_default_view = parts
+        .issue_import_default_view
+        .filter(|_| read.is_some())
+        .map(Into::into);
     let main_push = parts
         .main_push
         .filter(|push| linked(push.destination.github_repository_id));
@@ -547,6 +587,8 @@ pub(crate) fn github_connection_response(
         can_publish_main: parts.can_publish_main,
         run_import_count: parts.run_import_count,
         run_import: run_import.map(github_run_import_response),
+        issue_import_default_view,
+        issue_import: issue_import.map(github_issue_import_response),
     }
 }
 
@@ -564,6 +606,27 @@ fn github_run_import_response(import: GitHubRunImport) -> GitHubRunImportRespons
         state: import.state.into(),
         run_count: import.run_count,
         imported_count: import.imported_count,
+        error: import.last_error,
+        queued_at_unix: import.queued_at_unix,
+        finished_at_unix: import.finished_at_unix,
+    }
+}
+
+fn github_issue_import_response(import: GitHubIssueImport) -> GitHubIssueImportResponse {
+    GitHubIssueImportResponse {
+        state: import.state.into(),
+        view: import.view.into(),
+        imported_count: import.progress.imported_count,
+        already_imported_count: import.progress.already_imported_count,
+        skipped_issues: import
+            .progress
+            .skipped
+            .into_iter()
+            .map(|skipped| GitHubSkippedIssueResponse {
+                number: skipped.number,
+                reason: skipped.reason,
+            })
+            .collect(),
         error: import.last_error,
         queued_at_unix: import.queued_at_unix,
         finished_at_unix: import.finished_at_unix,

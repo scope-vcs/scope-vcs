@@ -1,5 +1,7 @@
 pub(super) mod check_runs;
 pub(super) mod connections;
+pub(super) mod import_queue;
+pub(super) mod issue_imports;
 pub(super) mod pull_requests;
 pub(super) mod pushes;
 pub(super) mod read_queue;

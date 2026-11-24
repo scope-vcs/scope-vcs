@@ -39,7 +39,7 @@ function github(
     can_publish_main,
    
     run_import_count: 50,
-    run_import: null,
+    run_import: null, issue_import_default_view: null, issue_import: null,
   }
 }
 

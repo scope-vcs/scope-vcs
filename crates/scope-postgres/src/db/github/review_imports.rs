@@ -533,7 +533,7 @@ async fn import_reply(
     Ok(true)
 }
 
-async fn claim_github_comment<C: ConnectionTrait>(
+pub(in crate::db) async fn claim_github_comment<C: ConnectionTrait>(
     conn: &C,
     request_id: &str,
     client_id: &str,

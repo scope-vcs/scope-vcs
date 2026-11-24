@@ -62,6 +62,11 @@ pub(super) fn write_bodies(params: &BTreeMap<&'static str, String>) -> WriteBodi
             json!({ "grant": "unheld", "github_repository_id": 1, "acknowledge_public": false, "run_import_count": 0 }),
         ),
         (
+            "POST",
+            "/v1/repos/{owner}/{repo}/github/issue-import".into(),
+            json!({ "view": "private" }),
+        ),
+        (
             "PUT",
             "/v1/repos/{owner}/{repo}/github/main-publication".into(),
             json!({ "enabled": true }),

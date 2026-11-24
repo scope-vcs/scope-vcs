@@ -1,27 +1,18 @@
 use crate::{
-    error::DomainError, github::connection::GitHubConnection, repository::access::RepositoryAccess,
+    error::DomainError,
+    github::{connection::GitHubConnection, import::GitHubImportState},
+    repository::access::RepositoryAccess,
 };
-use serde::{Deserialize, Serialize};
 
 pub const GITHUB_RUN_IMPORT_DEFAULT_COUNT: u32 = 50;
 pub const GITHUB_RUN_IMPORT_MAX_COUNT: u32 = 1000;
-const GITHUB_RUN_IMPORT_ERROR_MAX_CHARS: usize = 500;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum GitHubRunImportState {
-    Queued,
-    Running,
-    Succeeded,
-    Failed,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubRunImport {
     pub repository_id: String,
     pub github_repository_id: u64,
     pub run_count: u32,
-    pub state: GitHubRunImportState,
+    pub state: GitHubImportState,
     pub attempts: u32,
     pub imported_count: u32,
     pub last_error: Option<String>,
@@ -68,7 +59,7 @@ pub fn start_github_run_import(
         ));
     };
     if current.is_some_and(|current| {
-        current.is_of(connection) && current.in_progress() && !current.is_waiting_to_retry()
+        current.is_of(connection) && current.state.is_working(current.last_error.as_deref())
     }) {
         return Err(DomainError::conflict("An import is already running."));
     }
@@ -83,7 +74,7 @@ impl GitHubRunImport {
             repository_id: connection.repository_id.clone(),
             github_repository_id: connection.github_repository_id,
             run_count: run_count.min(GITHUB_RUN_IMPORT_MAX_COUNT),
-            state: GitHubRunImportState::Queued,
+            state: GitHubImportState::Queued,
             attempts: 0,
             imported_count: 0,
             last_error: None,
@@ -96,31 +87,7 @@ impl GitHubRunImport {
         self.github_repository_id == connection.github_repository_id
     }
 
-    pub fn is_waiting_to_retry(&self) -> bool {
-        self.state == GitHubRunImportState::Queued && self.last_error.is_some()
-    }
-
-    pub fn in_progress(&self) -> bool {
-        matches!(
-            self.state,
-            GitHubRunImportState::Queued | GitHubRunImportState::Running
-        )
-    }
-
     pub fn remaining(&self, read: u32) -> u32 {
         self.run_count.saturating_sub(read)
     }
-}
-
-pub fn github_run_import_error(message: &str) -> String {
-    let message = message.trim();
-    if message.chars().count() <= GITHUB_RUN_IMPORT_ERROR_MAX_CHARS {
-        return message.to_string();
-    }
-    let mut kept = message
-        .chars()
-        .take(GITHUB_RUN_IMPORT_ERROR_MAX_CHARS - 1)
-        .collect::<String>();
-    kept.push('…');
-    kept
 }

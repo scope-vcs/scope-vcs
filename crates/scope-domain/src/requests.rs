@@ -108,6 +108,12 @@ pub use github_review_import::{
     import_github_reply, reactivate_author_attention_for_github_review,
     transition_github_discussion,
 };
+mod github_issue_import;
+pub use github_issue_import::{
+    GitHubIssue, GitHubIssueComment, GitHubIssueComments, GitHubIssueImportResult,
+    ImportGitHubIssueInput, ImportedGitHubIssue, github_issue_comment_client_id,
+    import_github_issue,
+};
 mod discussions;
 pub use discussions::{
     CreateRequestDiscussionInput, CreateRequestDiscussionMutation,
@@ -124,7 +130,7 @@ pub use ask::{
     AttachRequestChangeFacts, AttachRequestChangeInput, DiscardRequestChangeInput,
     GITHUB_ISSUE_REQUEST_NAME_PREFIX, OpenRequestFromAskFacts, OpenRequestFromAskInput, RequestAsk,
     RequestReference, RequestWorkInput, attach_request_change, discard_unsubmitted_change,
-    open_request_from_ask, release_request_work, start_request_work,
+    github_issue_request_name, open_request_from_ask, release_request_work, start_request_work,
 };
 mod backlog;
 pub use backlog::{

@@ -2,23 +2,28 @@ use super::super::{
     RepositoryStore,
     entities::decode_enum,
     github::connections::repository_github_connection,
-    github::read_queue::{GitHubJobOutcome, prefixed_columns},
+    github::import_queue::GitHubImportQueue,
+    github::read_queue::GitHubJobOutcome,
     github::workflow_runs::save_workflow_run,
     integer_columns::{i32_to_u32, i64_to_u64, optional_i64_to_u64, u32_to_i32, u64_to_i64},
 };
 use crate::error::PostgresError;
 use scope_domain::{
     github::run_import::{
-        GITHUB_RUN_IMPORT_DEFAULT_COUNT, GitHubRunImport, github_run_import_error,
-        set_github_run_import_count, start_github_run_import,
+        GITHUB_RUN_IMPORT_DEFAULT_COUNT, GitHubRunImport, set_github_run_import_count,
+        start_github_run_import,
     },
     github::workflow_runs::GitHubWorkflowRun,
     repository::RepositoryIncarnation,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
 
-const SELECT_IMPORT: &str = "repo_id, github_repository_id, run_count, state, attempts, \
-    imported_count, last_error, queued_at_unix, finished_at_unix";
+const RUN_IMPORTS: GitHubImportQueue = GitHubImportQueue {
+    table: "scope_github_run_imports",
+    columns: "repo_id, github_repository_id, run_count, state, attempts, imported_count, \
+        last_error, queued_at_unix, finished_at_unix",
+    label: "GitHub run import",
+};
 
 #[derive(FromQueryResult)]
 struct ImportRow {
@@ -100,35 +105,18 @@ impl RepositoryStore {
         lease_until_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubRunImport>, PostgresError> {
-        ImportRow::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            format!(
-                "UPDATE scope_github_run_imports import
-                    SET state = 'running', lease_until_unix = $2, claim_token = $3,
-                        next_attempt_at_unix = $2, attempts = import.attempts + 1
-                   FROM (SELECT repo_id
-                           FROM scope_github_run_imports
-                          WHERE (state = 'queued' AND next_attempt_at_unix <= $1)
-                             OR (state = 'running' AND lease_until_unix <= $1)
-                          ORDER BY next_attempt_at_unix, repo_id
-                          LIMIT $4
-                          FOR UPDATE SKIP LOCKED) due
-                  WHERE import.repo_id = due.repo_id
-              RETURNING {}",
-                prefixed_columns(SELECT_IMPORT, "import.")
-            ),
-            [
-                u64_to_i64(now_unix, "GitHub run import claim time")?.into(),
-                u64_to_i64(lease_until_unix, "GitHub run import lease")?.into(),
-                claim_token.into(),
-                u64_to_i64(limit, "GitHub run import batch size")?.into(),
-            ],
-        ))
-        .all(self.db.as_ref())
-        .await?
-        .into_iter()
-        .map(ImportRow::into_domain)
-        .collect()
+        RUN_IMPORTS
+            .claim_due::<ImportRow>(
+                self.db.as_ref(),
+                claim_token,
+                now_unix,
+                lease_until_unix,
+                limit,
+            )
+            .await?
+            .into_iter()
+            .map(ImportRow::into_domain)
+            .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "store_github_run_import_page"))]
@@ -140,29 +128,13 @@ impl RepositoryStore {
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
         let tx = self.db.begin().await?;
-        let Some(row) = tx
-            .query_one_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT import.github_repository_id
-                   FROM scope_github_run_imports import
-                   JOIN scope_github_connections connection
-                     ON connection.repo_id = import.repo_id
-                    AND connection.github_repository_id = import.github_repository_id
-                    AND connection.status = 'Connected'
-                  WHERE import.repo_id = $1 AND import.claim_token = $2
-                    AND import.state = 'running'
-                    AND import.lease_until_unix > extract(epoch FROM now())::bigint
-                    FOR UPDATE OF import FOR SHARE OF connection",
-                [repo_id.into(), claim_token.into()],
-            ))
+        let Some(import) = RUN_IMPORTS
+            .lock_claimed::<ImportRow>(&tx, repo_id, claim_token)
             .await?
         else {
             return Ok(false);
         };
-        let github_repository_id = i64_to_u64(
-            row.try_get("", "github_repository_id")?,
-            "GitHub repository id",
-        )?;
+        let github_repository_id = i64_to_u64(import.github_repository_id, "GitHub repository id")?;
         for run in runs {
             save_workflow_run(&tx, repo_id, github_repository_id, run, now_unix).await?;
         }
@@ -178,53 +150,26 @@ impl RepositoryStore {
         outcome: GitHubJobOutcome<u32>,
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
-        let now = u64_to_i64(now_unix, "GitHub run import time")?;
-        let (state, imported, error, retry_at, finished) = match outcome {
-            GitHubJobOutcome::Succeeded(imported) => ("succeeded", imported, None, None, Some(now)),
-            GitHubJobOutcome::Failed {
-                error,
-                retry_at_unix: Some(retry_at),
-            } => (
-                "queued",
-                0,
-                Some(github_run_import_error(&error)),
-                Some(u64_to_i64(retry_at, "GitHub run import retry time")?),
-                None,
-            ),
-            GitHubJobOutcome::Failed {
-                error,
-                retry_at_unix: None,
-            } => (
-                "failed",
-                0,
-                Some(github_run_import_error(&error)),
-                None,
-                Some(now),
-            ),
-        };
-        let result = self
-            .db
-            .execute_raw(Statement::from_sql_and_values(
+        let tx = self.db.begin().await?;
+        if let GitHubJobOutcome::Succeeded(imported) = outcome {
+            tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_github_run_imports
-                    SET state = $3, imported_count = least($4, run_count), last_error = $5,
-                        next_attempt_at_unix = coalesce($6, next_attempt_at_unix),
-                        finished_at_unix = CASE WHEN $7::bigint IS NULL THEN NULL
-                                           ELSE greatest($7, queued_at_unix) END,
-                        lease_until_unix = NULL, claim_token = NULL
+                    SET imported_count = least($3, run_count)
                   WHERE repo_id = $1 AND claim_token = $2 AND state = 'running'",
                 [
                     repo_id.into(),
                     claim_token.into(),
-                    state.into(),
                     u32_to_i32(imported, "GitHub run import count")?.into(),
-                    error.into(),
-                    retry_at.into(),
-                    finished.into(),
                 ],
             ))
             .await?;
-        Ok(result.rows_affected() == 1)
+        }
+        let finished = RUN_IMPORTS
+            .finish(&tx, repo_id, claim_token, &outcome, now_unix)
+            .await?;
+        tx.commit().await?;
+        Ok(finished)
     }
 }
 
@@ -298,28 +243,18 @@ pub(in crate::db) async fn delete_github_run_import<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
 ) -> Result<(), PostgresError> {
-    conn.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "DELETE FROM scope_github_run_imports WHERE repo_id = $1",
-        [repo_id.into()],
-    ))
-    .await?;
-    Ok(())
+    RUN_IMPORTS.delete(conn, repo_id).await
 }
 
 async fn load_import<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
 ) -> Result<Option<GitHubRunImport>, PostgresError> {
-    ImportRow::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        format!("SELECT {SELECT_IMPORT} FROM scope_github_run_imports WHERE repo_id = $1"),
-        [repo_id.into()],
-    ))
-    .one(conn)
-    .await?
-    .map(ImportRow::into_domain)
-    .transpose()
+    RUN_IMPORTS
+        .load::<ImportRow>(conn, repo_id)
+        .await?
+        .map(ImportRow::into_domain)
+        .transpose()
 }
 
 impl ImportRow {

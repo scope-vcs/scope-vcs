@@ -11,6 +11,7 @@ import type {
   SetGitHubReviewBotPullRequestsRequest,
   SetGitHubReviewRequestCommentRequest,
   SetGitHubRunImportCountRequest,
+  StartGitHubIssueImportRequest,
   HistoryEntryFileDiffRequest,
   HistoryEntryRequest,
   HistoryPageRequest,
@@ -149,6 +150,8 @@ export type SetRepoGitHubRequiredChecksInput = RepoParams & SetGitHubRequiredChe
 export type SetRepoGitHubReviewBotsInput = RepoParams & SetGitHubReviewBotsRequest
 
 export type SetRepoGitHubRunImportCountInput = RepoParams & SetGitHubRunImportCountRequest
+
+export type StartRepoGitHubIssueImportInput = RepoParams & StartGitHubIssueImportRequest
 
 export type SetRepoGitHubReviewBotPullRequestsInput = RepoParams & SetGitHubReviewBotPullRequestsRequest
 

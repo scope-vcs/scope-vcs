@@ -8,7 +8,8 @@ use super::responses::{
     SetGitHubMainPublicationRequest, SetGitHubRequiredChecksRequest,
     SetGitHubReviewBotPullRequestsRequest, SetGitHubReviewBotsRequest,
     SetGitHubReviewRequestCommentRequest, SetGitHubRunImportCountRequest,
-    github_connection_response, github_repository_response, github_workflow_run_response,
+    StartGitHubIssueImportRequest, github_connection_response, github_repository_response,
+    github_workflow_run_response,
 };
 use crate::after_commit::{AfterCommit, Wakeup};
 use crate::{
@@ -37,8 +38,10 @@ use scope_domain::{
         ensure_can_manage_github_connection,
     },
     github::connection_test::GitHubInstallationState,
+    github::issue_import::default_github_issue_import_view,
     github::review_bots::GitHubReviewBotInput,
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
+    views::ViewId,
 };
 use scope_postgres::db::{GitHubWorkflowRunCursor, GitHubWorkflowRunPageQuery};
 use serde::Deserialize;
@@ -350,6 +353,28 @@ pub(crate) async fn start_github_run_import(
     changed(&state, &context, &incarnation).await
 }
 
+pub(crate) async fn start_github_issue_import(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<StartGitHubIssueImportRequest>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    state.github_app()?;
+    let (_, incarnation) = state
+        .metadata
+        .repositories()
+        .start_github_issue_import(
+            &context.record.id,
+            &user_id,
+            ViewId::parse(&input.view)?,
+            unix_now()?,
+        )
+        .await?;
+    state.after_commit([AfterCommit::Wake(Wakeup::GitHubIssueImports)]);
+    changed(&state, &context, &incarnation).await
+}
+
 pub(crate) async fn get_github_workflow_runs(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -543,6 +568,11 @@ async fn connection_response(
         .github_run_import_count(&context.record.id)
         .await?;
     let run_import = repositories.github_run_import(&context.record.id).await?;
+    let issue_import = repositories.github_issue_import(&context.record.id).await?;
+    let issue_import_default_view = read
+        .as_ref()
+        .filter(|read| read.connection.is_connected())
+        .map(|read| default_github_issue_import_view(&read.connection, &context.views));
     let main_push = repositories
         .latest_github_main_push(&context.record.id)
         .await?;
@@ -558,6 +588,8 @@ async fn connection_response(
             main_push,
             run_import_count,
             run_import,
+            issue_import_default_view,
+            issue_import,
         },
     ))
 }

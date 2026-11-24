@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::requests::tests::postgres_store;
 use crate::error::PostgresErrorKind;
-use scope_domain::github::run_import::GitHubRunImportState;
+use scope_domain::github::import::GitHubImportState;
 use scope_domain::{
     github::connection::{ConnectGitHubRepository, GitHubInstallationChange},
     requests::{GitHubCheckConclusion, GitHubCheckStatus},
@@ -39,7 +39,7 @@ async fn connecting_queues_an_import_of_the_linked_repository_and_disconnecting_
     let import = repositories.github_run_import(REPO).await.unwrap().unwrap();
     assert_eq!(
         (import.github_repository_id, import.run_count, import.state),
-        (42, 120, GitHubRunImportState::Queued)
+        (42, 120, GitHubImportState::Queued)
     );
     assert_eq!(
         repositories.github_run_import_count(REPO).await.unwrap(),
@@ -86,7 +86,7 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
     assert_eq!(claimed.len(), 1);
     assert_eq!(
         (claimed[0].state, claimed[0].attempts),
-        (GitHubRunImportState::Running, 1)
+        (GitHubImportState::Running, 1)
     );
     assert!(
         repositories
@@ -116,7 +116,7 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
             .unwrap()
     );
     let waiting = repositories.github_run_import(REPO).await.unwrap().unwrap();
-    assert_eq!(waiting.state, GitHubRunImportState::Queued);
+    assert_eq!(waiting.state, GitHubImportState::Queued);
     assert_eq!(
         waiting.last_error.as_deref(),
         Some("GitHub answered 502 Bad Gateway")
@@ -153,7 +153,7 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
             finished.last_error,
             finished.finished_at_unix
         ),
-        (GitHubRunImportState::Succeeded, 50, None, Some(t + 210))
+        (GitHubImportState::Succeeded, 50, None, Some(t + 210))
     );
 
     repositories
@@ -177,7 +177,7 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
         .await
         .unwrap();
     let failed = repositories.github_run_import(REPO).await.unwrap().unwrap();
-    assert_eq!(failed.state, GitHubRunImportState::Failed);
+    assert_eq!(failed.state, GitHubImportState::Failed);
     assert_eq!(
         failed.last_error.as_deref(),
         Some("GitHub answered 403 Forbidden")

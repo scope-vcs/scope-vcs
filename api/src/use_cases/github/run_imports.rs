@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use scope_domain::{github::run_import::GitHubRunImport, requests::github_retry_at};
-use scope_postgres::db::GitHubJobOutcome;
+use scope_postgres::{db::GitHubJobOutcome, error::PostgresError};
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
@@ -55,42 +55,75 @@ async fn run_claimed_import(
     now_unix: u64,
 ) {
     let imported = import_runs(state, import, claim_token, now_unix).await;
+    finish_claimed_import(
+        state,
+        ClaimedImport {
+            subject: "GitHub workflow runs",
+            repo_id: &import.repository_id,
+            attempts: import.attempts,
+        },
+        imported,
+        now_unix,
+        async |outcome, now_unix| {
+            state
+                .metadata
+                .repositories()
+                .finish_github_run_import(&import.repository_id, claim_token, outcome, now_unix)
+                .await
+        },
+    )
+    .await;
+}
+
+pub(super) struct ClaimedImport<'a> {
+    pub(super) subject: &'static str,
+    pub(super) repo_id: &'a str,
+    pub(super) attempts: u32,
+}
+
+pub(super) async fn finish_claimed_import<T>(
+    state: &AppState,
+    import: ClaimedImport<'_>,
+    imported: Result<T, JobFailure>,
+    now_unix: u64,
+    finish: impl AsyncFnOnce(GitHubJobOutcome<T>, u64) -> Result<bool, PostgresError>,
+) {
+    let ClaimedImport {
+        subject,
+        repo_id,
+        attempts,
+    } = import;
     let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
-    let Some(outcome) = job_outcome(imported, github_retry_at(import.attempts, now_unix)) else {
+    let Some(outcome) = job_outcome(imported, github_retry_at(attempts, now_unix)) else {
         return;
     };
     if let GitHubJobOutcome::Failed { error, .. } = &outcome {
-        tracing::warn!(
-            repo_id = import.repository_id,
-            attempts = import.attempts,
-            %error,
-            "importing GitHub workflow runs failed"
-        );
+        tracing::warn!(repo_id, attempts, %error, "importing {subject} failed");
     }
-    let repositories = state.metadata.repositories();
-    match repositories
-        .finish_github_run_import(&import.repository_id, claim_token, outcome, now_unix)
-        .await
-    {
-        Ok(true) => match state.repository_incarnation(&import.repository_id).await {
-            Ok(Some(incarnation)) => {
-                state.after_commit([AfterCommit::request_summary(
-                    &incarnation,
-                    RepoChangeReason::GitHubConnectionChanged,
-                )]);
-            }
-            Ok(None) => {}
-            Err(error) => tracing::warn!(
-                repo_id = import.repository_id,
-                error = %error.operator_diagnostic(),
-                "could not announce a GitHub run import"
-            ),
-        },
+    match finish(outcome, now_unix).await {
+        Ok(true) => announce_import_change(state, repo_id).await,
         Ok(false) => {}
         Err(error) => tracing::warn!(
-            repo_id = import.repository_id,
+            repo_id,
             error = %error,
-            "could not record a GitHub run import; its claim will lapse"
+            "could not record an import of {subject}; its claim will lapse"
+        ),
+    }
+}
+
+pub(super) async fn announce_import_change(state: &AppState, repo_id: &str) {
+    match state.repository_incarnation(repo_id).await {
+        Ok(Some(incarnation)) => {
+            state.after_commit([AfterCommit::request_summary(
+                &incarnation,
+                RepoChangeReason::GitHubConnectionChanged,
+            )]);
+        }
+        Ok(None) => {}
+        Err(error) => tracing::warn!(
+            repo_id,
+            error = %error.operator_diagnostic(),
+            "could not announce a GitHub import"
         ),
     }
 }

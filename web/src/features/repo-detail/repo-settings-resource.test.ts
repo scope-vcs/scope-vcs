@@ -51,7 +51,7 @@ test('a GitHub connection change keeps the rest of the settings and refreshes ev
   const collaboration = { members: [member], invites: [] }
   const scope = (repoId: string, viewer: string) => JSON.stringify([repoId, viewer, { actor: 'Owner' }])
   for (const identity of [scope('owner/repo', 'a'), scope('owner/repo', 'b'), scope('owner/other', 'a')]) {
-    await repoSettingsResource.load(identity, '', async () => ({ collaboration, github: { configured: true, connection: null, required_checks: [], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: false, run_import_count: 50, run_import: null } }))
+    await repoSettingsResource.load(identity, '', async () => ({ collaboration, github: { configured: true, connection: null, required_checks: [], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: false, run_import_count: 50, run_import: null, issue_import_default_view: null, issue_import: null } }))
   }
   const github = {
     configured: true,
@@ -66,7 +66,7 @@ test('a GitHub connection change keeps the rest of the settings and refreshes ev
     can_publish_main: false,
    
     run_import_count: 50,
-    run_import: null,
+    run_import: null, issue_import_default_view: null, issue_import: null,
   }
   retainGitHubConnection(scope('owner/repo', 'a'), github)
   assert.deepEqual(repoSettingsResource.peek(scope('owner/repo', 'a')), { collaboration, github })

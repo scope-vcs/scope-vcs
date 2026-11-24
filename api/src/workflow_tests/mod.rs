@@ -71,6 +71,7 @@ mod git_receive_config;
 mod git_request_refs;
 mod git_transport_access;
 mod github_connection;
+mod github_issue_imports;
 mod github_run_imports;
 mod history;
 mod http;

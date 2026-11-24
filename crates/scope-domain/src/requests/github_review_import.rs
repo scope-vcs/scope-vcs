@@ -254,6 +254,13 @@ pub fn import_github_discussion(
     input: ImportGitHubDiscussionInput,
 ) -> Result<RequestDiscussion, DomainError> {
     ensure_accepts_github_reviews(request, views)?;
+    github_discussion(request, input)
+}
+
+pub(super) fn github_discussion(
+    request: &mut Request,
+    input: ImportGitHubDiscussionInput,
+) -> Result<RequestDiscussion, DomainError> {
     validate_required("discussion id", &input.id)?;
     let author = github_author(input.github_account_id, input.source_url)?;
     validate_client_id("client discussion id", &input.client_discussion_id)?;

@@ -23,12 +23,13 @@ pub struct RequestAsk {
     pub asked_at_unix: u64,
 }
 
+pub fn github_issue_request_name(github_issue_number: u64) -> String {
+    format!("{GITHUB_ISSUE_REQUEST_NAME_PREFIX}{github_issue_number}")
+}
+
 impl RequestAsk {
     pub fn handle(&self) -> String {
-        format!(
-            "{GITHUB_ISSUE_REQUEST_NAME_PREFIX}{}",
-            self.github_issue_number
-        )
+        github_issue_request_name(self.github_issue_number)
     }
 
     pub fn suggested_branch_name(&self, title: &str) -> String {

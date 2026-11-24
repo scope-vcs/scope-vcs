@@ -1,6 +1,7 @@
 use super::super::{
     RepositoryStore, acquire_aggregate_lock,
     entities::{self, decode_enum, encode_enum},
+    github::issue_imports::delete_github_issue_import,
     github::pushes::queue_main_publication,
     github::run_imports::{
         delete_github_run_import, queue_github_run_import, save_run_import_count,
@@ -165,6 +166,7 @@ impl RepositoryStore {
             delete_review_bots(&tx, &connection.repository_id).await?;
         }
         delete_review_imports(&tx, &connection.repository_id).await?;
+        delete_github_issue_import(&tx, &connection.repository_id).await?;
         invalidate_request_check_destinations(&tx, &connection).await?;
         requeue_started_github_evaluations(&tx, &connection).await?;
         save_run_import_count(&tx, &connection.repository_id, run_import_count).await?;
@@ -274,6 +276,7 @@ impl RepositoryStore {
         ))
         .await?;
         delete_github_run_import(&tx, repo_id).await?;
+        delete_github_issue_import(&tx, repo_id).await?;
         delete_review_bots(&tx, repo_id).await?;
         delete_review_imports(&tx, repo_id).await?;
         tx.commit().await?;
@@ -339,6 +342,7 @@ impl RepositoryStore {
             .await
             .map_err(PostgresError::internal)?;
             delete_github_run_import(&tx, &connection.repository_id).await?;
+            delete_github_issue_import(&tx, &connection.repository_id).await?;
             delete_review_bots(&tx, &connection.repository_id).await?;
             delete_review_imports(&tx, &connection.repository_id).await?;
             if let Some(record) = load_repo_record(&tx, &connection.repository_id).await? {
