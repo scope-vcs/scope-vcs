@@ -47,7 +47,7 @@ test('GitHub workflow runs open on Scope, keep their list across navigation and 
     .getByRole('link', { name: 'Requests', exact: true })
     .evaluate((link) => {
       const label = document.createRange()
-      label.selectNode(link.firstChild)
+      label.selectNode([...link.childNodes].find((node) => node.nodeType === Node.TEXT_NODE))
       const text = label.getBoundingClientRect()
       const tab = link.getBoundingClientRect()
       return (tab.right - text.right) - (text.left - tab.left)
