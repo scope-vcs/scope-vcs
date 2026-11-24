@@ -2,12 +2,16 @@ use super::*;
 use crate::db::{
     MetadataStore, RequestListPageQuery, RequestQueuePageQuery,
     request_access::repo_by_id,
+    request_navigation::navigation,
     requests::tests::{postgres_store, start_public_request},
 };
 use scope_domain::{
     github::account::GitHubAccountType,
     repository::access::RepositoryAccess,
-    requests::{RequestAsk, RequestQueueSection, RequestWorkInput, start_request_work},
+    requests::{
+        RecordRequestRevisionInput, RequestAsk, RequestQueueSection, RequestRevisionGitFacts,
+        RequestWorkInput, start_request_work,
+    },
     views::{ViewId, Views},
 };
 
@@ -113,7 +117,7 @@ async fn an_asked_request_is_listed_for_every_reader_and_queued_only_for_its_wor
     );
 
     let stored = requests
-        .request_by_reference("owner/repo", &RequestReference::GitHubIssue(142))
+        .request_by_github_issue_number("owner/repo", 142)
         .await
         .unwrap()
         .unwrap();
@@ -128,6 +132,62 @@ async fn an_asked_request_is_listed_for_every_reader_and_queued_only_for_its_wor
             .login,
         "tomasz-k"
     );
+
+    let parent_head = "a".repeat(40);
+    let pin = requests
+        .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
+            new_base_stack_depth: None,
+            request_id: "req_1".to_string(),
+            actor_user_id: "user_public".to_string(),
+            expected_old_head_oid: Some("head".to_string()),
+            new_head_oid: parent_head.clone(),
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
+            },
+            event_id: "event_parent_revision".to_string(),
+            body: None,
+            now_unix: 4,
+        })
+        .await
+        .unwrap()
+        .revision
+        .id;
+    store
+        .admin()
+        .execute_for_tests(&format!(
+            "UPDATE scope_requests SET submitted_at_unix = 4 WHERE id = 'req_1';
+             UPDATE scope_requests
+                SET name = 'login-timeout', head_oid = 'draft-head', pushed_at_unix = 6,
+                    base_kind = 'Request', review_base_oid = '{parent_head}',
+                    parent_request_id = 'req_1', parent_revision_id = '{pin}',
+                    parent_head_oid = '{parent_head}', stack_status = 'waiting_for_parent',
+                    stack_depth = 2
+              WHERE id = 'req_ask'"
+        ))
+        .await
+        .unwrap();
+    let parent = requests.request_by_id("req_1").await.unwrap().unwrap();
+    for (viewer, head_oid) in [(None, "base"), (Some("user_owner"), "draft-head")] {
+        let repository = repository_access(store.db.as_ref(), "owner/repo", viewer)
+            .await
+            .unwrap()
+            .unwrap();
+        let (_, children) = navigation(store.db.as_ref(), &repository, viewer, &parent, None, 10)
+            .await
+            .unwrap();
+        assert_eq!(
+            children
+                .requests
+                .iter()
+                .map(|node| (node.id.as_str(), node.head_oid.as_str()))
+                .collect::<Vec<_>>(),
+            [("req_ask", head_oid)],
+            "{viewer:?}"
+        );
+    }
 
     let mut again = command();
     again.input.id = "req_ask_again".to_string();

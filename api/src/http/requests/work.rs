@@ -69,16 +69,7 @@ pub(crate) async fn attach_request_change(
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let repo = read_policy(&state, &owner, &repo_name, Some(&user.id)).await?;
-    let request_id = state
-        .metadata
-        .requests()
-        .request_by_reference(
-            &repo.context.record.id,
-            &RequestReference::parse(&reference),
-        )
-        .await?
-        .ok_or_else(|| ApiError::not_found("request not found"))?
-        .id;
+    let request_id = referenced_request_id(&state, &repo.context.record.id, &reference).await?;
     let request = visible_request(&state, &repo.context, Some(&user.id), &request_id)
         .await?
         .0;
@@ -101,6 +92,22 @@ pub(crate) async fn attach_request_change(
     )
     .await?;
     work_response(&state, &repo.context, &user.id, mutation).await
+}
+
+pub(super) async fn referenced_request_id(
+    state: &AppState,
+    repo_id: &str,
+    reference: &str,
+) -> Result<String, ApiError> {
+    match RequestReference::parse(reference) {
+        RequestReference::Id(request_id) => Ok(request_id),
+        RequestReference::GitHubIssue(number) => Ok(state
+            .metadata
+            .requests()
+            .request_by_github_issue_number(repo_id, number)
+            .await?
+            .map_or_else(|| reference.to_string(), |request| request.id)),
+    }
 }
 
 async fn work_response(

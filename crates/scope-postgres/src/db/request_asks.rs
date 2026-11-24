@@ -12,8 +12,8 @@ use crate::error::PostgresError;
 use scope_domain::{
     github::account::GitHubAccount,
     requests::{
-        OpenRequestFromAskFacts, OpenRequestFromAskInput, Request, RequestReference,
-        StartRequestMutation, open_request_from_ask,
+        OpenRequestFromAskFacts, OpenRequestFromAskInput, Request, StartRequestMutation,
+        open_request_from_ask,
     },
 };
 use sea_orm::TransactionTrait;
@@ -65,18 +65,13 @@ impl RequestStore {
         Ok(mutation)
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_by_reference"))]
-    pub async fn request_by_reference(
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_by_github_issue_number"))]
+    pub async fn request_by_github_issue_number(
         &self,
         repo_id: &str,
-        reference: &RequestReference,
+        github_issue_number: u64,
     ) -> Result<Option<Request>, PostgresError> {
-        match reference {
-            RequestReference::Id(request_id) => request_by_id(self.db.as_ref(), request_id).await,
-            RequestReference::GitHubIssue(number) => {
-                request_by_github_issue_number(self.db.as_ref(), repo_id, *number).await
-            }
-        }
+        request_by_github_issue_number(self.db.as_ref(), repo_id, github_issue_number).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_asker"))]

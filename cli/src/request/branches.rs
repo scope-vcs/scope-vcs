@@ -17,19 +17,20 @@ pub(super) fn start_request_branch(
             bail!("local branch '{name}' already exists");
         }
     }
-    let attached = args
+    let for_request = args
         .for_request
         .as_deref()
-        .map(|reference| attach_request_change(api, api_target(&context, reference), name.clone()))
-        .transpose()?;
+        .map(|reference| get_request(api, api_target(&context, reference)))
+        .transpose()?
+        .map(|detail| detail.request);
     let (view, base, base_oid, rebase_onto) = if let Some(selector) = args.base {
         let (parent, pin) =
             stack::current_parent(git_repo, api, &context, selector, args.view.as_ref(), None)?;
         let oid = parent.head_oid.as_str().to_string();
         (parent.view, Some(pin.base), oid.clone(), oid)
     } else {
-        let view = match &attached {
-            Some(attached) => attached.request.view.clone(),
+        let view = match &for_request {
+            Some(request) => request.view.clone(),
             None => start_view(&context.repo.access, &context.views, args.view)?,
         };
         let oid = refresh_main_projection(git_repo, &context.target, &view, api.token)?;
@@ -45,9 +46,9 @@ pub(super) fn start_request_branch(
     } else {
         name.clone()
     };
-    let keeps_request_on_failure = attached.is_some();
-    let response = match attached {
-        Some(attached) => attached,
+    let keeps_request_on_failure = for_request.is_some();
+    let response = match for_request {
+        Some(request) => attach_request_change(api, api_target(&context, &request.id), name)?,
         None => api_start_request(
             api,
             StartRequestParams {

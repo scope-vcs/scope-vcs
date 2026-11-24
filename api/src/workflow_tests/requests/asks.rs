@@ -57,6 +57,25 @@ async fn an_asked_request_shows_its_ask_to_everyone_and_its_draft_change_to_its_
     assert_eq!(request["branch_name"], "login-timeout");
     assert_eq!(request["author_user_id"], test_owner_id());
     assert_eq!(request["permissions"]["can_push_branch"], true);
+    let by_handle = api_request(
+        app.clone(),
+        "GET",
+        "/v1/repos/owner/repo/requests/gh-142",
+        Some(&owner),
+        None,
+    )
+    .await;
+    assert_eq!(
+        expect_json(by_handle, StatusCode::OK).await["request"]["id"],
+        "req_asked"
+    );
+    let mut unreadable = Vec::new();
+    for reference in ["gh-999", "req_missing"] {
+        let path = format!("/v1/repos/owner/missing/requests/{reference}");
+        let response = api_request(app.clone(), "GET", &path, None, None).await;
+        unreadable.push(expect_json(response, StatusCode::NOT_FOUND).await);
+    }
+    assert_eq!(unreadable[0], unreadable[1]);
 
     requests
         .record_working_request_upload(RecordWorkingRequestUploadInput {

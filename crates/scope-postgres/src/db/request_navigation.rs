@@ -3,9 +3,9 @@ use crate::error::PostgresError;
 use scope_domain::{
     repository::access::RepositoryAccessContext,
     requests::{
-        REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_STACK_MAX_ANCESTORS, RequestBase,
-        RequestStackNavigation, RequestStackNode, RequestStackParent, request_list_predicate,
-        request_stack_navigation,
+        REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_STACK_MAX_ANCESTORS, RequestBase, RequestChangeSubject,
+        RequestStackNavigation, RequestStackNode, RequestStackParent, RequestViewer,
+        request_list_predicate, request_stack_navigation,
     },
 };
 use sea_orm::{
@@ -71,7 +71,7 @@ async fn authorized_nodes<C: ConnectionTrait>(
             &request_list_predicate(repository.access.clone(), viewer_user_id, &repository.views),
         )?);
     let rows = request_rows::request_list_rows(conn, query).await?;
-    nodes_for_rows(conn, rows).await
+    nodes_for_rows(conn, repository, viewer_user_id, rows).await
 }
 
 #[derive(FromQueryResult)]
@@ -81,11 +81,14 @@ struct AncestorId {
 
 async fn nodes_for_rows<C: ConnectionTrait>(
     conn: &C,
+    repository: &RepositoryAccessContext,
+    viewer_user_id: Option<&str>,
     rows: Vec<RequestListRow>,
 ) -> Result<AuthorizedNodes, PostgresError> {
     if rows.is_empty() {
         return Ok(BTreeMap::new());
     }
+    let viewer = RequestViewer::new(repository.access.clone(), viewer_user_id, false);
     let request_ids = rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>();
     let revisions = super::request_revision_rows::current_revision_ids(conn, &request_ids).await?;
     Ok(rows
@@ -100,7 +103,17 @@ async fn nodes_for_rows<C: ConnectionTrait>(
                 stack_status: row.stack_status,
                 stack_depth: row.stack_depth,
                 head_oid: row.head_oid,
-            };
+            }
+            .seen_by(
+                RequestChangeSubject {
+                    view: &row.view,
+                    author_user_id: row.author_user_id.as_deref(),
+                    submitted: row.submitted_at_unix.is_some(),
+                },
+                &row.main_ancestor_oid,
+                &viewer,
+                &repository.views,
+            );
             (row.id, (node, row.base, row.view))
         })
         .collect())
@@ -170,7 +183,7 @@ async fn children_page<C: ConnectionTrait>(
     let next_cursor = has_more
         .then(|| rows.last().map(|row| format!("v1:{}", row.id)))
         .flatten();
-    let nodes = nodes_for_rows(conn, rows).await?;
+    let nodes = nodes_for_rows(conn, repository, viewer_user_id, rows).await?;
     Ok(RequestChildrenPage {
         requests: nodes.into_values().map(|(node, _, _)| node).collect(),
         next_cursor,

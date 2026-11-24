@@ -177,6 +177,12 @@ pub(crate) async fn get_request(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     viewer: Viewer,
 ) -> Result<Json<RequestDetailResponse>, ApiError> {
+    let request_id = work::referenced_request_id(
+        &state,
+        &scope_domain::repository::repo_id(&owner, &repo_name),
+        &request_id,
+    )
+    .await?;
     let snapshot =
         super::request_state::load(&state, &viewer, &owner, &repo_name, &request_id).await?;
     let diff_stat = super::request_state::diff_stat(&state, &snapshot).await?;

@@ -188,6 +188,54 @@ fn invalid_request_audience_fails_before_git_fetch() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn start_for_a_request_attaches_only_after_the_current_branch_passes_its_local_checks() {
+    let dir = TempDir::new("request-for-preflight");
+    create_repo_with_head(dir.path());
+    let bare = TempDir::new("request-for-preflight-bare");
+    run_git(bare.path(), ["init", "--bare"]);
+    run_git(
+        dir.path(),
+        [
+            "push",
+            bare.path().to_str().unwrap(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    let server = FixtureServer::start();
+    let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+
+    let output = transport
+        .command(&server, dir.path())
+        .args([
+            "--json",
+            "request",
+            "start",
+            "fix-one-change",
+            "--for",
+            "req_one",
+            "--current-branch",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(
+        error.message,
+        "main cannot become a request branch; switch to the branch that holds the work"
+    );
+    assert!(
+        !server
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event == "POST change")
+    );
+}
+
 #[test]
 fn request_diff_uses_server_revision_and_path_with_no_local_private_data() {
     let dir = TempDir::new("request-diff");
@@ -631,6 +679,8 @@ impl FixtureServer {
         let auto_merge_seen_post = inspected.clone();
         let auto_merge_seen_delete = inspected.clone();
         let aggregate_seen = inspected.clone();
+        let attached_seen = inspected.clone();
+        let attached_detail = start_detail.clone();
         let app = Router::new()
                     .route("/v1/session", get(|| async { Json(crate::support::session_response("usr_test", "owner", "test@example.test")) }))
                     .route("/v1/repos/owner/repo", get(move |headers: axum::http::HeaderMap| {
@@ -639,6 +689,14 @@ impl FixtureServer {
                             let host = headers[axum::http::header::HOST].to_str().unwrap();
                             repo["git_remote_url"] = format!("http://{host}/git/public/owner/repo").into();
                             Json(repo)
+                        }
+                    }))
+                    .route("/v1/repos/owner/repo/requests/req_one/change", post(move || {
+                        let seen = attached_seen.clone();
+                        let detail = attached_detail.clone();
+                        async move {
+                            seen.lock().unwrap().push("POST change".to_string());
+                            Json(json!({ "request": detail }))
                         }
                     }))
                     .route("/v1/repos/owner/repo/requests/req_one/checks", get(move |OriginalUri(uri): OriginalUri| {
