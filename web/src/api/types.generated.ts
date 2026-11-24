@@ -360,7 +360,7 @@ export type RequestBacklogPageResponse = { requests: Array<RequestBacklogItemRes
 
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
-export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, author: RequestActorSummaryResponse | null, author_record: RequestAuthorRecordResponse | null, claimer: RequestActorSummaryResponse | null, asker: GitHubAccountResponse | null, diff_stat: RequestDiffStatResponse | null, };
+export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, author: RequestActorSummaryResponse | null, author_record: RequestAuthorRecordResponse | null, claimer: RequestActorSummaryResponse | null, asker: GitHubAccountResponse | null, diff_stat: RequestDiffStatResponse | null, links: RequestLinksResponse, };
 
 export type RequestDiffStatResponse = { additions: number, deletions: number, changed_files: number, };
 
@@ -403,6 +403,10 @@ export type RequestRevisionContextResponse = { request: RequestSummaryResponse, 
 export type RequestCloseReason = "completed" | "not_planned" | "duplicate";
 
 export type RequestAskResponse = { handle: string, github_issue_number: number, source_url: string, text_markdown: string, asked_at_unix: number, suggested_branch_name: string, };
+
+export type LinkedRequestResponse = { id: string, name: string, title: string, author: RequestActorSummaryResponse | null, status: RequestMergeabilityStatus, };
+
+export type RequestLinksResponse = { resolves: Array<LinkedRequestResponse>, resolved_by: Array<LinkedRequestResponse>, close_named: LinkedRequestResponse | null, };
 
 export type RequestSummaryResponse = { id: string, name: string, branch_name: string | null, title: string, description_markdown: string, ask: RequestAskResponse | null, author_user_id: string | null, author_role: RequestActorRole, view: ViewId, base: RequestBase, base_version: number, stack_status: RequestStackStatus, stack_depth: number, main_ancestor_oid: GitOid, head_oid: GitOid, state: RequestState, activity_version: number, submitted_at_unix: number | null, closed_at_unix: number | null, closed_by_user_id: string | null, close_reason: RequestCloseReason | null, merged_at_unix: number | null, merged_by_user_id: string | null, merged_head_oid: GitOid | null, merged_main_oid: GitOid | null, created_at_unix: number, updated_at_unix: number, invitees: Array<RequestInviteeResponse>, permissions: RequestPermissionsResponse, mergeability: RequestMergeabilityResponse, };
 
@@ -518,9 +522,11 @@ export type RequestActivityPageResponse = { events: Array<RequestEventResponse>,
 
 export type RequestCloseResponse = { deleted: boolean, request: RequestSummaryResponse | null, };
 
-export type StartRequestRequest = { base: RequestBase | null, name: string, title: string | null, view: ViewId, };
+export type StartRequestRequest = { base: RequestBase | null, name: string, title: string | null, view: ViewId, resolves: Array<string>, };
 
 export type AttachRequestChangeRequest = { name: string, };
+
+export type EditRequestLinksRequest = { resolve: Array<string>, stop_resolving: Array<string>, };
 
 export type SubmitRequestRequest = Record<symbol, never>;
 
@@ -583,6 +589,7 @@ export const ApiRouteTemplates = {
   repoRequestChecksApprove: "/v1/repos/{owner}/{repo}/requests/{request_id}/checks/approve",
   repoRequestWork: "/v1/repos/{owner}/{repo}/requests/{request_id}/work",
   repoRequestChange: "/v1/repos/{owner}/{repo}/requests/{request_id}/change",
+  repoRequestLinks: "/v1/repos/{owner}/{repo}/requests/{request_id}/links",
   repoRequestRatings: "/v1/repos/{owner}/{repo}/requests/{request_id}/ratings",
   repoRequestInvitees: "/v1/repos/{owner}/{repo}/requests/{request_id}/invitees",
   repoRequestInviteesMe: "/v1/repos/{owner}/{repo}/requests/{request_id}/invitees/me",

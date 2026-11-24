@@ -163,9 +163,7 @@ pub fn run_request_command(
         RequestCommand::Submit(args) => {
             submit_request_command(git_repo, api, args.target, args.yes)
         }
-        RequestCommand::Close(args) => {
-            close_request_branch(git_repo, api, args.target, args.yes, args.reason)
-        }
+        RequestCommand::Close(args) => close_request_branch(git_repo, api, args),
         RequestCommand::Edit(args) => edit_request(git_repo, api, args),
         RequestCommand::Invite(args) => {
             invite_request(git_repo, api, args.target, args.handle, true)
@@ -367,18 +365,18 @@ fn new_client_mutation_id(kind: &str) -> anyhow::Result<String> {
 fn close_request_branch(
     git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
-    target: RequestTargetArgs,
-    yes: bool,
-    reason: Option<crate::api::RequestCloseReason>,
+    args: args::RequestCloseArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
+    let query = close_query(args.reason, args.duplicate_of, args.fixed_by)?;
+    let yes = args.yes;
+    let (context, request_id, before) = load_exact_request(git_repo, api, args.target)?;
     let prompt = if before.request.submitted_at_unix.is_none() && before.request.ask.is_none() {
         format!("Permanently delete draft request {}", before.request.name)
     } else {
         format!("Close request {}", before.request.name)
     };
     require_confirmation(&prompt, yes)?;
-    let response = api_close_request(api, api_target(&context, &request_id), reason)?;
+    let response = api_close_request(api, api_target(&context, &request_id), query)?;
     let human_line = close_receipt(&request_id, &response);
     Ok(RequestCommandOutcome::new(
         "request.close",
@@ -389,6 +387,33 @@ fn close_request_branch(
         }),
         vec![human_line],
     ))
+}
+
+fn close_query(
+    reason: Option<crate::api::RequestCloseReason>,
+    duplicate_of: Option<String>,
+    fixed_by: Option<String>,
+) -> anyhow::Result<crate::api::CloseRequestQuery> {
+    use crate::api::RequestCloseReason::{Completed, Duplicate, NotPlanned};
+    let named_request = match (reason, duplicate_of, fixed_by) {
+        (_, None, None) => None,
+        (Some(Duplicate), Some(duplicate_of), None) => Some(duplicate_of),
+        (Some(Completed), None, Some(fixed_by)) => Some(fixed_by),
+        (None | Some(Completed | NotPlanned), Some(_), _) => {
+            return Err(
+                crate::error::CliError::usage("--duplicate-of needs --reason duplicate").into(),
+            );
+        }
+        (None | Some(Duplicate | NotPlanned), _, Some(_)) => {
+            return Err(
+                crate::error::CliError::usage("--fixed-by needs --reason completed").into(),
+            );
+        }
+    };
+    Ok(crate::api::CloseRequestQuery {
+        reason,
+        named_request,
+    })
 }
 
 fn start_view(

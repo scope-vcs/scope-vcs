@@ -516,7 +516,7 @@ async fn repository() -> Json<Value> {
 async fn request_detail(State(state): State<Arc<Mutex<FixtureState>>>) -> Json<Value> {
     let description = state.lock().unwrap().current_description.clone();
     Json(
-        json!({"request":request_json(&description),"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})}),
+        json!({"request":request_json(&description),"links":{"resolves":[],"resolved_by":[],"close_named":null},"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})}),
     )
 }
 

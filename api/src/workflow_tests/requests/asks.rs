@@ -1,38 +1,12 @@
 use super::*;
-use scope_domain::{
-    github::account::{GitHubAccount, GitHubAccountType},
-    requests::{OpenRequestFromAskInput, RecordWorkingRequestUploadInput, RequestAsk},
-    views::ViewId,
-};
-use scope_postgres::db::OpenRequestFromAskCommand;
+use scope_domain::requests::RecordWorkingRequestUploadInput;
 
 #[tokio::test]
 async fn an_asked_request_shows_its_ask_to_everyone_and_its_draft_change_to_its_author() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
+    open_asked_request(&state).await;
     let requests = state.metadata.requests();
-    requests
-        .open_request_from_ask(OpenRequestFromAskCommand {
-            input: OpenRequestFromAskInput {
-                id: "req_asked".to_string(),
-                repo_id: TEST_REPO_ID.to_string(),
-                title: "Login times out after 30 seconds".to_string(),
-                ask: RequestAsk {
-                    github_account_id: 7,
-                    github_issue_number: 142,
-                    source_url: "https://github.com/owner/repo/issues/142".to_string(),
-                    text_markdown: "Sign-in gives up before the server answers.".to_string(),
-                    asked_at_unix: 1,
-                },
-                view: ViewId::public(),
-                main_oid: REQUEST_HEAD.to_string(),
-                event_id: "event_req_asked_started".to_string(),
-                now_unix: 2,
-            },
-            asker: GitHubAccount::new(7, "tomasz-k", GitHubAccountType::User, None).unwrap(),
-        })
-        .await
-        .unwrap();
     let app = router(state.clone());
     let owner = bearer_header();
     let state_path = "/v1/repos/owner/repo/requests/req_asked/state";

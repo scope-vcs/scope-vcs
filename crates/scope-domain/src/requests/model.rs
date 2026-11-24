@@ -72,12 +72,22 @@ pub enum RequestCloseReason {
     Duplicate,
 }
 
+impl RequestCloseReason {
+    pub fn names_a_request(self) -> bool {
+        match self {
+            Self::Completed | Self::Duplicate => true,
+            Self::NotPlanned => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RequestLifecycle {
     pub submitted_at_unix: Option<u64>,
     pub closed_at_unix: Option<u64>,
     pub closed_by_user_id: Option<String>,
     pub close_reason: Option<RequestCloseReason>,
+    pub close_named_request_id: Option<String>,
     pub merged_at_unix: Option<u64>,
     pub merged_by_user_id: Option<String>,
     pub merged_head_oid: Option<String>,
@@ -245,6 +255,10 @@ impl Request {
 
     pub fn close_reason(&self) -> Option<RequestCloseReason> {
         self.lifecycle.close_reason
+    }
+
+    pub fn close_named_request_id(&self) -> Option<&str> {
+        self.lifecycle.close_named_request_id.as_deref()
     }
 
     pub fn merged_at_unix(&self) -> Option<u64> {
@@ -516,6 +530,20 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
         return Err(DomainError::conflict(
             "a close reason belongs to a closed request that has an ask",
         ));
+    }
+    if let Some(named) = &request.lifecycle.close_named_request_id {
+        if !request
+            .lifecycle
+            .close_reason
+            .is_some_and(RequestCloseReason::names_a_request)
+        {
+            return Err(DomainError::conflict(
+                "only a request closed as completed or duplicate names another request",
+            ));
+        }
+        if named == &request.id {
+            return Err(DomainError::conflict("a request cannot name itself"));
+        }
     }
     if let Some(ask) = &request.ask {
         super::ask::validate_request_ask(ask)?;

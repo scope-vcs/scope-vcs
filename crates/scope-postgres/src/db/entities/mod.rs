@@ -84,7 +84,7 @@ pub(super) use request_auto_merge::request_auto_merge_intent;
 pub(super) use requests::{
     request, request_attention_state, request_check_evaluation, request_claim, request_discussion,
     request_discussion_read_state, request_discussion_reply, request_event, request_invitee,
-    request_rating, request_revision, revision_context_receipt,
+    request_link, request_rating, request_revision, revision_context_receipt,
 };
 
 #[cfg(test)]

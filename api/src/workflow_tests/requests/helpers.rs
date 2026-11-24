@@ -36,7 +36,18 @@ pub(crate) async fn start_private_request(
     name: &str,
     base: Option<serde_json::Value>,
 ) -> String {
-    let body = serde_json::json!({ "name": name, "title": name, "view": "private", "base": base });
+    start_private_request_resolving(state, name, base, &[]).await
+}
+
+pub(crate) async fn start_private_request_resolving(
+    state: &AppState,
+    name: &str,
+    base: Option<serde_json::Value>,
+    resolves: &[&str],
+) -> String {
+    let body = serde_json::json!({
+        "name": name, "title": name, "view": "private", "base": base, "resolves": resolves
+    });
     let response = api_request(
         router(state.clone()),
         "POST",
@@ -50,6 +61,39 @@ pub(crate) async fn start_private_request(
         .as_str()
         .unwrap()
         .to_string()
+}
+
+pub(crate) async fn open_asked_request(state: &AppState) {
+    state
+        .metadata
+        .requests()
+        .open_request_from_ask(scope_postgres::db::OpenRequestFromAskCommand {
+            input: scope_domain::requests::OpenRequestFromAskInput {
+                id: "req_asked".to_string(),
+                repo_id: TEST_REPO_ID.to_string(),
+                title: "Login times out after 30 seconds".to_string(),
+                ask: scope_domain::requests::RequestAsk {
+                    github_account_id: 7,
+                    github_issue_number: 142,
+                    source_url: "https://github.com/owner/repo/issues/142".to_string(),
+                    text_markdown: "Sign-in gives up before the server answers.".to_string(),
+                    asked_at_unix: 1,
+                },
+                view: ViewId::public(),
+                main_oid: REQUEST_HEAD.to_string(),
+                event_id: "event_req_asked_started".to_string(),
+                now_unix: 2,
+            },
+            asker: scope_domain::github::account::GitHubAccount::new(
+                7,
+                "tomasz-k",
+                scope_domain::github::account::GitHubAccountType::User,
+                None,
+            )
+            .unwrap(),
+        })
+        .await
+        .unwrap();
 }
 
 async fn create_request(

@@ -131,14 +131,20 @@ pub use backlog::{
     RequestBacklogSearch, RequestBacklogSort, RequestBacklogWorking, backlog_request_closable,
     request_backlog_predicate,
 };
+mod links;
+pub use links::{
+    EditRequestLinksInput, LinkedRequest, NAMED_REQUEST_NOT_FOUND, NamedRequest,
+    REQUEST_RESOLVES_LIMIT, RequestLink, RequestLinks, RequestLinksMutation, StoredRequestLinks,
+    edit_request_links, ensure_named_requests_within_limit,
+};
 mod lifecycle;
 pub use lifecycle::{
     CloseRequestInput, CloseRequestMutation, RecordRequestRevisionInput,
-    RecordWorkingRequestUploadInput, RequestRevisionGitFacts, RequestRevisionMutation,
-    StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
-    close_request, record_request_revision, record_working_request_upload,
-    request_main_ancestor_after_revision, start_request, validate_chosen_request_name,
-    validate_request_name, validate_start_request_view,
+    RecordWorkingRequestUploadInput, RequestCloseAs, RequestRevisionGitFacts,
+    RequestRevisionMutation, StartRequestFacts, StartRequestInput, StartRequestMutation,
+    WorkingRequestUploadMutation, close_request, record_request_revision,
+    record_working_request_upload, request_main_ancestor_after_revision, start_request,
+    validate_chosen_request_name, validate_request_name, validate_start_request_view,
 };
 mod lifecycle_effects;
 pub use lifecycle_effects::{

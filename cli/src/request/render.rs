@@ -17,6 +17,7 @@ use scope_domain::views::Views;
 
 mod auto_merge;
 mod discussions;
+mod links;
 mod navigation;
 mod review_bots;
 use auto_merge::activity_line as auto_merge_activity_line;
@@ -24,6 +25,7 @@ pub(super) use auto_merge::{
     receipt_lines as auto_merge_receipt_lines, status_lines as auto_merge_status_lines,
 };
 pub(super) use discussions::list_lines as discussion_list_lines;
+pub(super) use links::links_lines;
 pub(super) use navigation::parent_label;
 pub(super) use review_bots::detail_lines as review_bots_detail_lines;
 
@@ -275,6 +277,7 @@ pub(super) fn request_detail_lines(
                 .join(", ")
         )
     });
+    lines.extend(links_lines(detail));
     lines.push(format!(
         "  capabilities: {}",
         capabilities_label(&request.permissions)

@@ -62,6 +62,60 @@ pub(super) fn edit_request(
     let supplied_description = args.description_file.map(text::read_markdown).transpose()?;
     let (context, request_id, before) = load_exact_request(git_repo, api, args.target)?;
     let has_attachments = !args.attachments.paths.is_empty();
+    let linked = if args.resolves.is_empty() && args.stop_resolving.is_empty() {
+        None
+    } else {
+        Some(crate::api::edit_request_links(
+            api,
+            api_target(&context, &request_id),
+            crate::api::EditRequestLinksRequest {
+                resolve: args.resolves,
+                stop_resolving: args.stop_resolving,
+            },
+        )?)
+    };
+    let link_lines = linked.as_ref().map(render::links_lines).unwrap_or_default();
+    let (Some(linked), None, None, false) =
+        (linked, &args.title, &supplied_description, has_attachments)
+    else {
+        return edit_request_identity_command(
+            api,
+            (context, request_id, before),
+            args.title,
+            supplied_description,
+            args.attachments,
+            link_lines,
+        );
+    };
+    let response = crate::api::RequestMutationResponse {
+        request: linked.request,
+    };
+    let mut human_lines = request_mutation_receipt_lines("Edited request", &response);
+    human_lines.extend(link_lines);
+    Ok(RequestCommandOutcome::new(
+        "request.edit",
+        RequestCommandResult::Mutation(MutationResult {
+            repo: context.repo,
+            response,
+            attachments: Vec::new(),
+        }),
+        human_lines,
+    ))
+}
+
+fn edit_request_identity_command(
+    api: ApiSession<'_>,
+    (context, request_id, before): (
+        local::RequestContext,
+        String,
+        crate::api::RequestDetailResponse,
+    ),
+    title: Option<String>,
+    supplied_description: Option<String>,
+    attachments: args::RequestAttachmentArgs,
+    link_lines: Vec<String>,
+) -> anyhow::Result<RequestCommandOutcome> {
+    let has_attachments = !attachments.paths.is_empty();
     let uploaded = attachments::upload(
         api,
         api_target(&context, &request_id),
@@ -69,7 +123,7 @@ pub(super) fn edit_request(
             kind: scope_api_contract::attachments::RequestAttachmentTargetKind::Description,
             discussion_id: None,
         },
-        args.attachments.paths,
+        attachments.paths,
     )?;
     let description = if has_attachments {
         let base =
@@ -90,16 +144,17 @@ pub(super) fn edit_request(
     let response = edit_request_identity(
         api,
         api_target(&context, &request_id),
-        args.title,
+        title,
         description,
         has_attachments.then(|| before.request.description_markdown.clone()),
     )?;
     let mut human_lines = request_mutation_receipt_lines("Edited request", &response);
+    human_lines.extend(link_lines);
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
     let attachments = uploaded.complete_saved(
         api,
         api_target(&context, &request_id),
-        args.attachments.wait,
+        attachments.wait,
         None,
         serde_json::json!({
             "operation": "request.edit",

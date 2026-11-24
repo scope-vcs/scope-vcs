@@ -1,11 +1,12 @@
 import type { RepoParams } from '@/api/types'
-import type { RequestCloseReason, RequestSummaryResponse } from '@/api/types.generated'
+import type { LinkedRequestResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
 import { Link } from '@tanstack/react-router'
 import { Code, Ellipsis, History } from 'lucide-react'
 import { type RefObject, useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
+import { requestCloseCommand, requestCloseDraft } from './request-close-model'
 import { RequestCloseReasonField } from './request-close-reason-field'
 import { RequestOutcomeIcon } from './request-outcome-icon'
 import type { RequestActionController } from './use-request-actions'
@@ -21,6 +22,7 @@ export function RequestMoreMenu({
   onViewActivity,
   params,
   request,
+  resolvedBy,
   triggerRef,
 }: {
   actions: RequestActionController
@@ -28,10 +30,11 @@ export function RequestMoreMenu({
   onViewActivity: () => void
   params: RepoParams
   request: RequestSummaryResponse
+  resolvedBy: readonly LinkedRequestResponse[]
   triggerRef: RefObject<HTMLButtonElement | null>
 }) {
   const [closing, setClosing] = useState(false)
-  const [reason, setReason] = useState<RequestCloseReason | null>(null)
+  const [draft, setDraft] = useState(() => requestCloseDraft(resolvedBy))
   const [align, setAlign] = useState<'start' | 'end'>('end')
   const {
     can_close: canClose,
@@ -39,6 +42,7 @@ export function RequestMoreMenu({
     can_view_activity: canViewActivity,
   } = request.permissions
   const needsReason = Boolean(request.ask)
+  const command = requestCloseCommand(draft, resolvedBy)
 
   return (
     <>
@@ -79,6 +83,7 @@ export function RequestMoreMenu({
                 disabled={disabled}
                 onClick={() => {
                   close()
+                  setDraft(requestCloseDraft(resolvedBy))
                   setClosing(true)
                 }}
                 type="button"
@@ -112,10 +117,10 @@ export function RequestMoreMenu({
         )}
       />
       <RequestConfirmDialog
-        confirmDisabled={needsReason && reason === null}
+        confirmDisabled={needsReason && command === null}
         confirmLabel="Close request"
         destructive
-        onConfirm={() => actions.run(reason ? { action: 'close', reason } : { action: 'close' })}
+        onConfirm={() => actions.run({ action: 'close', ...(needsReason ? command : null) })}
         onOpenChange={setClosing}
         open={closing}
         pending={actions.pending === 'close'}
@@ -125,7 +130,13 @@ export function RequestMoreMenu({
         {needsReason ? (
           <>
             <p>This request will close and remain in request history.</p>
-            <RequestCloseReasonField legend="Why is it closing?" onChange={setReason} value={reason} />
+            <RequestCloseReasonField
+              draft={draft}
+              legend="Why is it closing?"
+              onChange={setDraft}
+              resolvedBy={resolvedBy}
+            />
+            {actions.error ? <p className="text-danger-strong first-letter:uppercase" role="alert">{actions.error}</p> : null}
           </>
         ) : request.submitted_at_unix === null ? (
           <p>This draft request will be permanently deleted.</p>

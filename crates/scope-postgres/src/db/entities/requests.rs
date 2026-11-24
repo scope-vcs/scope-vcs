@@ -8,8 +8,8 @@ use scope_domain::requests::{
     RequestAttentionState, RequestBase, RequestCheckEvaluation, RequestClaim, RequestDiffSide,
     RequestDiscussion, RequestDiscussionAnchor, RequestDiscussionLines, RequestDiscussionReadState,
     RequestDiscussionReply, RequestDiscussionStatus, RequestEvent, RequestEventKind,
-    RequestEventPayload, RequestInvitee, RequestLineRange, RequestRating, RequestRevision,
-    RequestStackStatus,
+    RequestEventPayload, RequestInvitee, RequestLineRange, RequestLink, RequestRating,
+    RequestRevision, RequestStackStatus,
 };
 use scope_domain::views::ViewId;
 
@@ -205,6 +205,43 @@ pub(crate) mod request_invitee {
                 user_id: self.user_id,
                 invited_by_user_id: self.invited_by_user_id,
                 created_at_unix: i64_to_u64(self.created_at_unix, "request invitee creation time")?,
+            })
+        }
+    }
+}
+
+pub(crate) mod request_link {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "scope_request_links")]
+    pub(crate) struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub resolving_request_id: String,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub resolved_request_id: String,
+        pub created_at_unix: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub(crate) enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+
+    impl Model {
+        pub(crate) fn from_domain(link: &RequestLink) -> Result<Self, PostgresError> {
+            Ok(Self {
+                resolving_request_id: link.resolving_request_id.clone(),
+                resolved_request_id: link.resolved_request_id.clone(),
+                created_at_unix: u64_to_i64(link.created_at_unix, "request link creation time")?,
+            })
+        }
+
+        pub(crate) fn try_into_domain(self) -> Result<RequestLink, PostgresError> {
+            Ok(RequestLink {
+                resolving_request_id: self.resolving_request_id,
+                resolved_request_id: self.resolved_request_id,
+                created_at_unix: i64_to_u64(self.created_at_unix, "request link creation time")?,
             })
         }
     }

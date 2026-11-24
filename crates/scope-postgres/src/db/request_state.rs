@@ -40,6 +40,7 @@ pub struct RequestStateSnapshot {
     pub users: BTreeMap<String, UserAccount>,
     pub claimer_user_id: Option<String>,
     pub asker: Option<scope_domain::github::account::GitHubAccount>,
+    pub links: scope_domain::requests::RequestLinks,
     pub github_connection: Option<GitHubConnection>,
     pub github_push: Option<GitHubPush>,
     pub github_pull_request: Option<GitHubPullRequest>,
@@ -216,9 +217,33 @@ async fn read_request_state(
     let revision = row.revision()?.filter(|_| reads_change);
     let auto_merge = row.auto_merge()?.filter(|_| reads_change);
     let auto_merge_actor_access = row.auto_merge_actor_access(&repository, auto_merge.as_ref())?;
-    let users = row.users()?;
+    let mut users = row.users()?;
     let claimer_user_id = row.claimer_user_id()?;
     let asker = super::request_asks::asker(&tx, &request).await?;
+    let links = if row.names_requests()? {
+        super::request_links::stored_links(&tx, &request, viewer_user_id)
+            .await?
+            .seen_by(
+                &request,
+                &repository.access,
+                viewer_user_id,
+                &repository.views,
+            )
+    } else {
+        scope_domain::requests::RequestLinks::default()
+    };
+    users.extend(
+        super::auth::load_users_by_ids(
+            &tx,
+            links
+                .resolves
+                .iter()
+                .chain(&links.resolved_by)
+                .chain(&links.close_named)
+                .filter_map(|linked| linked.request.author_user_id.clone()),
+        )
+        .await?,
+    );
     let github_connection =
         super::github::connections::repository_github_connection(&tx, &request.repo_id)
             .instrument(tracing::info_span!(
@@ -322,6 +347,7 @@ async fn read_request_state(
         users,
         claimer_user_id,
         asker,
+        links,
         github_connection,
         github_push,
         github_pull_request,

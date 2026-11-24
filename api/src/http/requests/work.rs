@@ -16,6 +16,7 @@ use scope_domain::{
     repository::access::RepositoryAccessContext,
     requests::{
         AttachRequestChangeInput, RequestReference, RequestTimelineMutation, RequestWorkInput,
+        ensure_named_requests_within_limit,
     },
 };
 
@@ -108,6 +109,19 @@ pub(super) async fn referenced_request_id(
             .await?
             .map_or_else(|| reference.to_string(), |request| request.id)),
     }
+}
+
+pub(crate) async fn referenced_request_ids(
+    state: &AppState,
+    repo_id: &str,
+    references: &[String],
+) -> Result<Vec<String>, ApiError> {
+    ensure_named_requests_within_limit(references.len())?;
+    let mut request_ids = Vec::with_capacity(references.len());
+    for reference in references {
+        request_ids.push(referenced_request_id(state, repo_id, reference).await?);
+    }
+    Ok(request_ids)
 }
 
 async fn work_response(

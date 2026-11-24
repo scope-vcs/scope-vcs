@@ -58,6 +58,7 @@ pub(super) fn start_request_branch(
                 name,
                 title: args.title,
                 view: view.clone(),
+                resolves: args.resolves,
             },
         )?,
     };
@@ -73,7 +74,11 @@ pub(super) fn start_request_branch(
                 response.request.id
             ));
         }
-        let cleanup = api_close_request(api, api_target(&context, &response.request.id), None);
+        let cleanup = api_close_request(
+            api,
+            api_target(&context, &response.request.id),
+            crate::api::CloseRequestQuery::default(),
+        );
         return match cleanup {
             Ok(_) => Err(switch_error).context(
                 "create local request branch failed; the empty request was closed and removed, so it is safe to retry",

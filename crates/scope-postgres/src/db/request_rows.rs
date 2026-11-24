@@ -316,6 +316,10 @@ where
             Expr::value(row.close_reason),
         )
         .col_expr(
+            entities::request::Column::CloseNamedRequestId,
+            Expr::value(row.close_named_request_id),
+        )
+        .col_expr(
             entities::request::Column::MergedAtUnix,
             Expr::value(row.merged_at_unix),
         )

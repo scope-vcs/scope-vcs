@@ -1,4 +1,4 @@
-use crate::RequestCloseReason;
+use crate::{RequestCloseReason, RequestSummaryResponse};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -21,4 +21,12 @@ pub struct AttachRequestChangeRequest {
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct CloseRequestQuery {
     pub reason: Option<RequestCloseReason>,
+    pub named_request: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestCloseResponse {
+    pub deleted: bool,
+    pub request: Option<RequestSummaryResponse>,
 }

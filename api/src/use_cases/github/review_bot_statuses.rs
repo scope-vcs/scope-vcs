@@ -1,5 +1,6 @@
 use crate::after_commit::{AfterCommit, Wakeup};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
+use crate::use_cases::request_checks::GatedHead;
 use crate::{
     error::ApiError, github::pull_requests::PullRequestCallError, persistence::unix_now,
     state::AppState, use_cases::github::review_imports::queue_missed_thread_resolutions,
@@ -11,7 +12,7 @@ use scope_domain::{
     },
     views::Views,
 };
-use scope_postgres::db::{GitHubReviewBotReconcile, QueueGitHubReviewImport, RequestListRow};
+use scope_postgres::db::{GitHubReviewBotReconcile, QueueGitHubReviewImport};
 use std::{collections::HashMap, time::Duration};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
@@ -182,25 +183,28 @@ pub(crate) async fn reviews_outcomes(
     state: &AppState,
     repo_id: &str,
     views: &Views,
-    rows: &[RequestListRow],
+    heads: &[GatedHead<'_>],
 ) -> Result<HashMap<String, RequestReviewsOutcome>, ApiError> {
     let mut reviews = state
         .metadata
         .requests()
         .request_bot_reviews(
             repo_id,
-            &rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>(),
+            &heads
+                .iter()
+                .map(|head| head.request_id.to_string())
+                .collect::<Vec<_>>(),
         )
         .await?;
-    Ok(rows
+    Ok(heads
         .iter()
-        .map(|row| {
+        .map(|head| {
             let outcome = reviews
-                .remove(&row.id)
+                .remove(head.request_id)
                 .map_or(RequestReviewsOutcome::Clear, |reviews| {
-                    request_reviews_outcome(&row.view, &row.head_oid, views, &reviews)
+                    request_reviews_outcome(head.view, head.head_oid, views, &reviews)
                 });
-            (row.id.clone(), outcome)
+            (head.request_id.to_string(), outcome)
         })
         .collect())
 }

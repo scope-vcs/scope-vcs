@@ -15,6 +15,7 @@ pub struct StartRequestParams<'a> {
     pub name: String,
     pub title: Option<String>,
     pub view: ViewId,
+    pub resolves: Vec<String>,
 }
 
 pub struct CreateRequestDiscussionParams<'a> {
@@ -230,11 +231,11 @@ pub fn approve_request_checks(
 pub fn close_request(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
-    reason: Option<RequestCloseReason>,
+    query: CloseRequestQuery,
 ) -> anyhow::Result<RequestCloseResponse> {
     execute(
         api.request(reqwest::Method::DELETE, request_path(target))
-            .query(&CloseRequestQuery { reason }),
+            .query(&query),
         format!(
             "close request {} for {}/{}",
             target.request_id, target.owner, target.repo
@@ -255,6 +256,7 @@ pub fn start_request(
                 name: params.name,
                 title: params.title,
                 view: params.view,
+                resolves: params.resolves,
             }),
         format!("start request for {owner}/{repo}"),
     )
@@ -413,6 +415,24 @@ pub fn edit_request_identity(
             }),
         format!(
             "edit request identity {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
+    )
+}
+
+pub fn edit_request_links(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+    links: EditRequestLinksRequest,
+) -> anyhow::Result<RequestDetailResponse> {
+    execute(
+        api.request(
+            reqwest::Method::POST,
+            routes::repo_request_links(target.owner, target.repo, target.request_id),
+        )
+        .json(&links),
+        format!(
+            "edit what request {} resolves for {}/{}",
             target.request_id, target.owner, target.repo
         ),
     )

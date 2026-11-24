@@ -605,6 +605,7 @@ async fn assert_removed_view_pool_isolation(prepare_before_removal: bool) {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
             reason: None,
+            named_request_id: None,
             event_id: "close_before_view_removal".to_string(),
             now_unix: unix_now(),
         },

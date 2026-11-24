@@ -258,9 +258,12 @@ export function parseRequestActionInput(input: unknown): RequestActionInput {
       return { ...params, action: data.action, expected_head_oid }
     }
     case 'close':
-      return data.reason === undefined
-        ? { ...params, action: data.action }
-        : { ...params, action: data.action, reason: closeReason(data.reason) }
+      return {
+        ...params,
+        action: data.action,
+        ...(data.reason === undefined ? {} : { reason: closeReason(data.reason) }),
+        ...(data.named_request === undefined ? {} : { named_request: id(data.named_request, 'named_request') }),
+      }
     case 'leave':
     case 'release_work':
     case 'start_work':

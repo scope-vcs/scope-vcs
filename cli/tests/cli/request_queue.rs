@@ -275,7 +275,7 @@ impl QueueServer {
                         }
                         _ => request_detail(LOADED_VERSION, "Open"),
                     };
-                    async move { Json(json!({"request": detail,"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})})) }
+                    async move { Json(json!({"request": detail,"links":{"resolves":[],"resolved_by":[],"close_named":null},"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})})) }
                 }),
             )
             .route(

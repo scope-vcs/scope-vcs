@@ -130,13 +130,14 @@ pub(crate) async fn request_queue(
         .iter()
         .map(|row| row.request.clone())
         .collect::<Vec<_>>();
+    let heads = rows.iter().map(Into::into).collect::<Vec<_>>();
     let checks =
-        crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &rows).await?;
+        crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &heads).await?;
     let reviews = crate::use_cases::github::review_bot_statuses::reviews_outcomes(
         &state,
         &repo.record.id,
         &repo.views,
-        &rows,
+        &heads,
     )
     .await?;
     let mut parents = state
