@@ -1,0 +1,272 @@
+.request-backlog {
+  container: request-backlog / inline-size;
+  padding-bottom: 32px;
+}
+
+.request-backlog-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 16px var(--app-inset) 12px;
+}
+
+.request-backlog-search {
+  position: relative;
+  display: flex;
+  flex: 1 1 260px;
+  max-width: 380px;
+  min-width: 0;
+  align-items: center;
+}
+
+.request-backlog-search > svg {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.request-backlog-search > input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px 0 32px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--secondary);
+  box-shadow: var(--shadow-card);
+  font-size: 13px;
+}
+
+.request-backlog-search > input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.request-backlog-search > input:focus-visible {
+  border-color: var(--ring);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.request-backlog-select {
+  flex: none;
+}
+
+.request-backlog-select > select {
+  font-size: 13px;
+}
+
+.request-backlog-picked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.request-backlog-list {
+  --request-backlog-grid: minmax(0, 1fr) 130px 72px 56px;
+  border-top: 1px solid var(--border);
+}
+
+.request-backlog[data-selectable] .request-backlog-list {
+  --request-backlog-grid: 16px minmax(0, 1fr) 130px 72px 56px;
+}
+
+.request-backlog-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--request-backlog-grid);
+  column-gap: 16px;
+  align-items: center;
+  padding: 10px var(--app-inset);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  transition: background-color 120ms ease;
+}
+
+.request-backlog-row:not(.request-backlog-columns):hover {
+  background: color-mix(in srgb, var(--foreground) 4%, var(--background));
+}
+
+.request-backlog-row[data-picked] {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--background));
+}
+
+.request-backlog-row:has(.request-backlog-link:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.request-backlog-columns {
+  padding-block: 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.request-backlog-check {
+  position: relative;
+  z-index: 1;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--foreground);
+}
+
+.request-backlog-name {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.request-backlog-link {
+  overflow: hidden;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  outline: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-backlog-link::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+}
+
+.request-backlog-facts {
+  display: contents;
+}
+
+.request-backlog-select-all {
+  display: none;
+}
+
+.request-backlog-source,
+.request-backlog-worker,
+.request-backlog-opened,
+.request-backlog-replies {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-backlog-source {
+  font-size: 12px;
+}
+
+.request-backlog-worker {
+  color: var(--foreground);
+}
+
+.request-backlog-failure {
+  color: var(--danger-strong);
+  font-size: 12px;
+}
+
+.request-backlog-opened,
+.request-backlog-replies {
+  font-variant-numeric: tabular-nums;
+}
+
+.request-backlog-replies {
+  text-align: right;
+}
+
+.request-backlog-fact-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.request-backlog-more {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 4px;
+  padding: 12px var(--app-inset) 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+@container request-backlog (max-width: 560px) {
+  .request-backlog-list {
+    --request-backlog-grid: minmax(0, 1fr);
+  }
+
+  .request-backlog[data-selectable] .request-backlog-list {
+    --request-backlog-grid: 16px minmax(0, 1fr);
+  }
+
+  .request-backlog-row {
+    column-gap: 12px;
+    row-gap: 3px;
+    align-items: start;
+  }
+
+  .request-backlog-row > .request-backlog-check {
+    margin-top: 2px;
+  }
+
+  .request-backlog-columns > span:not(.request-backlog-select-all),
+  .request-backlog:not([data-selectable]) .request-backlog-columns {
+    display: none;
+  }
+
+  .request-backlog-select-all {
+    display: block;
+  }
+
+  .request-backlog-name,
+  .request-backlog-facts {
+    grid-column: -2 / -1;
+  }
+
+  .request-backlog-link {
+    white-space: normal;
+  }
+
+  .request-backlog-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 6px;
+    color: var(--muted-foreground);
+    font-size: 12px;
+  }
+
+  .request-backlog-facts > :empty {
+    display: none;
+  }
+
+  .request-backlog-facts > :not(:empty) ~ :not(:empty)::before {
+    margin-right: 6px;
+    content: "·" / "";
+  }
+
+  .request-backlog-worker {
+    color: inherit;
+  }
+
+  .request-backlog-replies {
+    text-align: left;
+  }
+
+  .request-backlog-fact-label {
+    position: static;
+    width: auto;
+    height: auto;
+    clip-path: none;
+  }
+
+  .request-backlog-replies-count {
+    display: none;
+  }
+}

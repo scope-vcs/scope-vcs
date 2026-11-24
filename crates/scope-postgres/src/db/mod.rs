@@ -65,6 +65,7 @@ mod request_asks;
 pub use request_asks::OpenRequestFromAskCommand;
 mod request_attention;
 mod request_auto_merge;
+mod request_backlog;
 mod request_check_commits;
 mod request_check_recovery;
 mod request_checks;
@@ -167,6 +168,9 @@ pub use request_auto_merge::{
     AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand,
     ClaimDueRequestAutoMergesCommand, ClaimedRequestAutoMerge, ReleaseRequestAutoMergeClaimCommand,
     StopClaimedRequestAutoMergeCommand,
+};
+pub use request_backlog::{
+    RequestBacklogCursor, RequestBacklogPage, RequestBacklogPageQuery, RequestBacklogRow,
 };
 pub use request_check_commits::RebuildCheckCommitCommand;
 pub use request_checks::{

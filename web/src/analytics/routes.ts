@@ -37,6 +37,10 @@ const routeDecisions = {
     'repository_requests',
     '/repository/requests',
   ),
+  '/$owner/$repo/requests/backlog': tracked(
+    'repository_request_backlog',
+    '/repository/requests/backlog',
+  ),
   '/$owner/$repo/requests/$requestId': excluded,
   '/$owner/$repo/requests/$requestId/_discussion': excluded,
   '/$owner/$repo/requests/$requestId/_discussion/': tracked(

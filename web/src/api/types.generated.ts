@@ -350,6 +350,14 @@ export type RequestQueueItemResponse = { attention_at_unix: number, request: Req
 
 export type RequestQueuePageResponse = { requests: Array<RequestQueueItemResponse>, next_cursor: string | null, next_attention_at_unix: number | null, };
 
+export type RequestBacklogWorking = "anyone" | "nobody" | "me";
+
+export type RequestBacklogSort = "oldest" | "newest";
+
+export type RequestBacklogItemResponse = { id: string, title: string, github_issue_number: number, asker_login: string, asked_at_unix: number, worker: RequestActorSummaryResponse | null, message_count: number, can_close: boolean, };
+
+export type RequestBacklogPageResponse = { requests: Array<RequestBacklogItemResponse>, next_cursor: string | null, total: number, };
+
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
 export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, author: RequestActorSummaryResponse | null, author_record: RequestAuthorRecordResponse | null, claimer: RequestActorSummaryResponse | null, asker: GitHubAccountResponse | null, diff_stat: RequestDiffStatResponse | null, };
@@ -563,6 +571,7 @@ export const ApiRouteTemplates = {
   repoPushIntents: "/v1/repos/{owner}/{repo}/push-intents",
   repoRequests: "/v1/repos/{owner}/{repo}/requests",
   repoRequestQueue: "/v1/repos/{owner}/{repo}/requests/queue",
+  repoRequestBacklog: "/v1/repos/{owner}/{repo}/requests/backlog",
   repoRequestAttention: "/v1/repos/{owner}/{repo}/requests/{request_id}/attention",
   repoRequest: "/v1/repos/{owner}/{repo}/requests/{request_id}",
   repoRequestChildren: "/v1/repos/{owner}/{repo}/requests/{request_id}/children",

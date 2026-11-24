@@ -3,6 +3,7 @@ import { requestRoute } from './paths'
 import { renderReviewFileDiff } from '@/features/code-render/code-render-server'
 import type { ApproveRequestChecksInput, ReviewDiffRenderBudget, ReviewFileDiff, RequestParams } from './types'
 import type {
+  RequestBacklogPageResponse,
   RequestChecksResponse,
   RequestComparisonMode,
   RequestQueuePageResponse,
@@ -12,6 +13,7 @@ import type {
 } from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import {
+  RequestBacklogPageResponseValidator,
   RequestChecksResponseValidator,
   RequestQueuePageResponseValidator,
   RequestRatingResponseValidator,
@@ -21,6 +23,7 @@ import {
   RequestChildrenPageResponseValidator,
   ReviewFileDiffResponseValidator,
 } from './validators.generated'
+import type { LoadRequestBacklogInput } from './request-backlog-input'
 import type { LoadRequestQueueInput } from './request-queue-input'
 
 export async function loadRequestQueueForRequest(
@@ -30,6 +33,26 @@ export async function loadRequestQueueForRequest(
   return createApiClient().get(
     requestQueuePath(data),
     RequestQueuePageResponseValidator,
+    { auth: 'optional', signal },
+  )
+}
+
+export async function loadRequestBacklogForRequest(
+  data: LoadRequestBacklogInput,
+  signal?: AbortSignal,
+): Promise<RequestBacklogPageResponse> {
+  const path = buildApiPath(ApiRouteTemplates.repoRequestBacklog, {
+    owner: data.owner,
+    repo: data.repo,
+  })
+  const search = new URLSearchParams({ working: data.working, sort: data.sort })
+  if (data.search) search.set('search', data.search)
+  if (data.cursor) search.set('cursor', data.cursor)
+  if (data.limit) search.set('limit', String(data.limit))
+  if (data.view) search.set('view', data.view)
+  return createApiClient().get(
+    `${path}?${search}`,
+    RequestBacklogPageResponseValidator,
     { auth: 'optional', signal },
   )
 }

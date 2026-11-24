@@ -37,7 +37,7 @@ const CURSOR_NONCE_BYTES: usize = 12;
 const CURSOR_MAX_ENCODED_BYTES: usize = 2_048;
 const CURSOR_KEY_DOMAIN: &[u8] = b"scope.request-queue-cursor.key.v2\0";
 const CURSOR_AAD_DOMAIN: &str = "scope.request-queue-cursor.aad.v2";
-const SEARCH_MAX_CHARS: usize = 200;
+pub(super) const SEARCH_MAX_CHARS: usize = 200;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RequestQueueQuery {
@@ -56,13 +56,7 @@ pub(crate) async fn request_queue(
 ) -> Result<Json<RequestQueuePageResponse>, ApiError> {
     let (repo, viewer_user_id) =
         repo_metadata_and_access(&state, &viewer, &owner, &repo_name).await?;
-    let request_views = match query.view.clone().map(scope_domain::views::ViewId::from) {
-        Some(view) if repo.can_read_view(&view) => {
-            Some(repo.views.labels(&view).into_iter().collect())
-        }
-        Some(_) => return Err(ApiError::forbidden("view access required")),
-        None => None,
-    };
+    let request_views = requested_request_views(&repo, query.view.clone())?;
     let after = query
         .cursor
         .as_deref()
@@ -246,6 +240,19 @@ pub(crate) async fn request_queue(
         next_cursor,
         next_attention_at_unix: page.next_attention_at_unix,
     }))
+}
+
+pub(super) fn requested_request_views(
+    repo: &scope_domain::repository::access::RepositoryAccessContext,
+    view: Option<scope_api_contract::ViewId>,
+) -> Result<Option<Vec<scope_domain::views::ViewId>>, ApiError> {
+    match view.map(scope_domain::views::ViewId::from) {
+        Some(view) if repo.can_read_view(&view) => {
+            Ok(Some(repo.views.labels(&view).into_iter().collect()))
+        }
+        Some(_) => Err(ApiError::forbidden("view access required")),
+        None => Ok(None),
+    }
 }
 
 pub(crate) async fn apply_attention(

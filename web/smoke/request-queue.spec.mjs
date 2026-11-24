@@ -96,3 +96,26 @@ test('requests sidebar resizes, collapses, and pins again by dragging or keyboar
     assert.equal(await separator.isVisible(), false)
   })
 })
+
+test('a signed-out visitor searches the Backlog on a phone without selection or overflow', async () => {
+  await withPage(
+    `${requestRepoPath}/requests`,
+    async (page) => {
+      await page.getByRole('navigation', { name: 'Backlog' }).getByRole('link').click()
+      await page.getByRole('heading', { level: 1, name: 'Backlog' }).waitFor()
+      await page.getByRole('searchbox').fill('#142')
+      await page.getByText('Showing 1 of 1.').waitFor()
+      await page.getByRole('link', { name: 'Login times out after 30 seconds on slow connections' }).waitFor()
+      assert.equal(await page.getByRole('checkbox').count(), 0)
+      assert.equal(
+        await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        ),
+        true,
+      )
+    },
+    { viewport: { height: 844, width: 390 } },
+  )
+})

@@ -30,6 +30,7 @@ import { Route as OwnerRepoCodeIndexRouteImport } from './routes/$owner.$repo._c
 import { Route as OwnerRepoCodeCodeRouteImport } from './routes/$owner.$repo._code.code'
 import { Route as OwnerRepoRequestsIndexRouteImport } from './routes/$owner.$repo.requests.index'
 import { Route as OwnerRepoRequestsRequestIdRouteImport } from './routes/$owner.$repo.requests.$requestId'
+import { Route as OwnerRepoRequestsBacklogRouteImport } from './routes/$owner.$repo.requests.backlog'
 import { Route as OwnerRepoRunsIndexRouteImport } from './routes/$owner.$repo.runs.index'
 import { Route as OwnerRepoRunsRunIdRouteImport } from './routes/$owner.$repo.runs.$runId'
 import { Route as OwnerRepoUpdatesEntryIdRouteImport } from './routes/$owner.$repo.updates.$entryId'
@@ -142,6 +143,12 @@ const OwnerRepoRequestsRequestIdRoute =
     path: '/$requestId',
     getParentRoute: () => OwnerRepoRequestsRoute,
   } as any)
+const OwnerRepoRequestsBacklogRoute =
+  OwnerRepoRequestsBacklogRouteImport.update({
+    id: '/backlog',
+    path: '/backlog',
+    getParentRoute: () => OwnerRepoRequestsRoute,
+  } as any)
 const OwnerRepoRunsIndexRoute = OwnerRepoRunsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -194,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/$owner/$repo/settings': typeof OwnerRepoSettingsRoute
   '/$owner/$repo/code': typeof OwnerRepoCodeCodeRoute
   '/$owner/$repo/requests/$requestId': typeof OwnerRepoRequestsRequestIdRouteWithChildren
+  '/$owner/$repo/requests/backlog': typeof OwnerRepoRequestsBacklogRoute
   '/$owner/$repo/runs/$runId': typeof OwnerRepoRunsRunIdRoute
   '/$owner/$repo/updates/$entryId': typeof OwnerRepoUpdatesEntryIdRoute
   '/$owner/$repo/': typeof OwnerRepoCodeIndexRoute
@@ -218,6 +226,7 @@ export interface FileRoutesByTo {
   '/$owner/$repo/settings': typeof OwnerRepoSettingsRoute
   '/$owner/$repo/code': typeof OwnerRepoCodeCodeRoute
   '/$owner/$repo/requests/$requestId': typeof OwnerRepoRequestsRequestIdDiscussionIndexRoute
+  '/$owner/$repo/requests/backlog': typeof OwnerRepoRequestsBacklogRoute
   '/$owner/$repo/runs/$runId': typeof OwnerRepoRunsRunIdRoute
   '/$owner/$repo/updates/$entryId': typeof OwnerRepoUpdatesEntryIdRoute
   '/$owner/$repo/requests': typeof OwnerRepoRequestsIndexRoute
@@ -245,6 +254,7 @@ export interface FileRoutesById {
   '/$owner/$repo/settings': typeof OwnerRepoSettingsRoute
   '/$owner/$repo/_code/code': typeof OwnerRepoCodeCodeRoute
   '/$owner/$repo/requests/$requestId': typeof OwnerRepoRequestsRequestIdRouteWithChildren
+  '/$owner/$repo/requests/backlog': typeof OwnerRepoRequestsBacklogRoute
   '/$owner/$repo/runs/$runId': typeof OwnerRepoRunsRunIdRoute
   '/$owner/$repo/updates/$entryId': typeof OwnerRepoUpdatesEntryIdRoute
   '/$owner/$repo/_code/': typeof OwnerRepoCodeIndexRoute
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/$owner/$repo/settings'
     | '/$owner/$repo/code'
     | '/$owner/$repo/requests/$requestId'
+    | '/$owner/$repo/requests/backlog'
     | '/$owner/$repo/runs/$runId'
     | '/$owner/$repo/updates/$entryId'
     | '/$owner/$repo/'
@@ -299,6 +310,7 @@ export interface FileRouteTypes {
     | '/$owner/$repo/settings'
     | '/$owner/$repo/code'
     | '/$owner/$repo/requests/$requestId'
+    | '/$owner/$repo/requests/backlog'
     | '/$owner/$repo/runs/$runId'
     | '/$owner/$repo/updates/$entryId'
     | '/$owner/$repo/requests'
@@ -325,6 +337,7 @@ export interface FileRouteTypes {
     | '/$owner/$repo/settings'
     | '/$owner/$repo/_code/code'
     | '/$owner/$repo/requests/$requestId'
+    | '/$owner/$repo/requests/backlog'
     | '/$owner/$repo/runs/$runId'
     | '/$owner/$repo/updates/$entryId'
     | '/$owner/$repo/_code/'
@@ -498,6 +511,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerRepoRequestsRequestIdRouteImport
       parentRoute: typeof OwnerRepoRequestsRoute
     }
+    '/$owner/$repo/requests/backlog': {
+      id: '/$owner/$repo/requests/backlog'
+      path: '/backlog'
+      fullPath: '/$owner/$repo/requests/backlog'
+      preLoaderRoute: typeof OwnerRepoRequestsBacklogRouteImport
+      parentRoute: typeof OwnerRepoRequestsRoute
+    }
     '/$owner/$repo/runs/': {
       id: '/$owner/$repo/runs/'
       path: '/'
@@ -592,11 +612,13 @@ const OwnerRepoRequestsRequestIdRouteWithChildren =
 
 interface OwnerRepoRequestsRouteChildren {
   OwnerRepoRequestsRequestIdRoute: typeof OwnerRepoRequestsRequestIdRouteWithChildren
+  OwnerRepoRequestsBacklogRoute: typeof OwnerRepoRequestsBacklogRoute
   OwnerRepoRequestsIndexRoute: typeof OwnerRepoRequestsIndexRoute
 }
 
 const OwnerRepoRequestsRouteChildren: OwnerRepoRequestsRouteChildren = {
   OwnerRepoRequestsRequestIdRoute: OwnerRepoRequestsRequestIdRouteWithChildren,
+  OwnerRepoRequestsBacklogRoute: OwnerRepoRequestsBacklogRoute,
   OwnerRepoRequestsIndexRoute: OwnerRepoRequestsIndexRoute,
 }
 

@@ -3,6 +3,7 @@ import type { RequestQueueItemResponse } from '@/api/types.generated'
 
 type RequestWorkspaceContextValue = {
   selected: RequestQueueItemResponse | null
+  backlogTotal: number | null
   claim: () => void
   release: () => void
 }
