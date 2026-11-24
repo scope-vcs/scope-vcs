@@ -378,7 +378,7 @@ fn closing_an_asked_request_keeps_it_and_records_the_reason() {
     let priya = maintainer();
     let drafted = pushed(
         attach_request_change(
-            request.clone(),
+            request,
             acting(&priya),
             AttachRequestChangeFacts::default(),
             attach("priya", "login-timeout"),
