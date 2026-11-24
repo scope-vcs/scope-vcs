@@ -375,6 +375,39 @@ fn closing_an_asked_request_keeps_it_and_records_the_reason() {
     assert_eq!(closed.close_reason(), Some(RequestCloseReason::NotPlanned));
     assert!(!closed.is_submitted());
 
+    let priya = maintainer();
+    let drafted = pushed(
+        attach_request_change(
+            request.clone(),
+            acting(&priya),
+            AttachRequestChangeFacts::default(),
+            attach("priya", "login-timeout"),
+        )
+        .unwrap()
+        .request,
+        &priya,
+        "priya",
+    );
+    assert!(acting(&priya).permissions(&drafted, "priya").can_submit);
+    let CloseRequestMutation::Closed {
+        request: closed_draft,
+        ..
+    } = close(
+        &drafted,
+        "priya",
+        true,
+        Some(RequestCloseReason::NotPlanned),
+    )
+    .unwrap()
+    else {
+        panic!("a request with an ask is never deleted");
+    };
+    assert!(
+        !acting(&priya)
+            .permissions(&closed_draft, "priya")
+            .can_submit
+    );
+
     let error = close(
         &working_request(),
         "author",

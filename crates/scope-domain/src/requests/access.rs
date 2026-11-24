@@ -232,7 +232,7 @@ pub fn request_policy(
         can_read_change: change_visible && !request.awaits_change(),
         can_pull_branch: change_visible && request.state().advertised_in_git() && has_branch,
         can_push_branch: branch_mutable,
-        can_submit: exact_visible && !submitted && author && !request.awaits_change(),
+        can_submit: exact_visible && !submitted && !terminal && author && !request.awaits_change(),
         can_start_work: workable && unassigned && may_work,
         can_release_work: workable
             && request.awaits_change()
