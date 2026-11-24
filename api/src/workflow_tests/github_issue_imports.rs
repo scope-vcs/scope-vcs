@@ -5,7 +5,6 @@ use super::fake_github::{
 };
 use super::*;
 use crate::use_cases::github::issue_imports::import_due_github_issues;
-use scope_domain::requests::RequestReference;
 use std::sync::atomic::Ordering;
 
 const CREATED: u64 = 1_780_000_000;
@@ -48,7 +47,7 @@ async fn request_json(state: &AppState, issue_number: u64, path: &str) -> serde_
     let request = state
         .metadata
         .requests()
-        .request_by_reference(TEST_REPO_ID, &RequestReference::GitHubIssue(issue_number))
+        .request_by_github_issue_number(TEST_REPO_ID, issue_number)
         .await
         .unwrap()
         .unwrap();
@@ -166,7 +165,7 @@ async fn a_maintainer_imports_open_issues_once_as_requests_with_their_comments()
             state
                 .metadata
                 .requests()
-                .request_by_reference(TEST_REPO_ID, &RequestReference::GitHubIssue(not_imported))
+                .request_by_github_issue_number(TEST_REPO_ID, not_imported)
                 .await
                 .unwrap(),
             None

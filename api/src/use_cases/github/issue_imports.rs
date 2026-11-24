@@ -14,7 +14,7 @@ use crate::{
 };
 use scope_domain::{
     github::{connection::GitHubConnection, issue_import::GitHubIssueImport},
-    requests::{GitHubIssue, GitHubIssueImportResult, RequestReference},
+    requests::{GitHubIssue, GitHubIssueImportResult},
 };
 use scope_postgres::db::ImportGitHubIssueCommand;
 use std::time::Duration;
@@ -159,7 +159,7 @@ async fn import_issue(
     let repo_id = connection.repository_id.as_str();
     let issue_number = issue.number;
     let comments = if requests
-        .request_by_reference(repo_id, &RequestReference::GitHubIssue(issue_number))
+        .request_by_github_issue_number(repo_id, issue_number)
         .await?
         .is_some()
     {

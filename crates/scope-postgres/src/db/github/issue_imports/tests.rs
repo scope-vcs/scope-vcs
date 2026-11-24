@@ -6,7 +6,7 @@ use scope_domain::{
     github::connection::ConnectGitHubRepository,
     github::import::GitHubImportState,
     github::issue_import::GitHubIssueImportStep,
-    requests::{RequestDiscussionAuthor, RequestReference},
+    requests::RequestDiscussionAuthor,
 };
 
 const REPO: &str = "owner/repo";
@@ -127,7 +127,7 @@ async fn an_issue_is_stored_once_with_its_comments_and_every_issue_read_is_count
         panic!("expected the issue to be imported, got {first:?}");
     };
     let stored = requests
-        .request_by_reference(REPO, &RequestReference::GitHubIssue(142))
+        .request_by_github_issue_number(REPO, 142)
         .await
         .unwrap()
         .unwrap();
@@ -180,7 +180,7 @@ async fn an_issue_is_stored_once_with_its_comments_and_every_issue_read_is_count
 
     assert_eq!(
         requests
-            .request_by_reference(REPO, &RequestReference::GitHubIssue(142))
+            .request_by_github_issue_number(REPO, 142)
             .await
             .unwrap()
             .unwrap(),
@@ -188,7 +188,7 @@ async fn an_issue_is_stored_once_with_its_comments_and_every_issue_read_is_count
     );
     assert_eq!(
         requests
-            .request_by_reference(REPO, &RequestReference::GitHubIssue(143))
+            .request_by_github_issue_number(REPO, 143)
             .await
             .unwrap(),
         None
@@ -332,7 +332,7 @@ async fn an_issue_is_stored_only_while_its_claim_holds_and_the_repository_stays_
     );
     assert_eq!(
         requests
-            .request_by_reference(REPO, &RequestReference::GitHubIssue(1))
+            .request_by_github_issue_number(REPO, 1)
             .await
             .unwrap(),
         None
