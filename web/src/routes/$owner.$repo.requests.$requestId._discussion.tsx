@@ -4,7 +4,6 @@ import {
   parseAuthorizeRequestAutoMergeInput,
   parseCancelRequestAutoMergeInput,
   parseUpdateDescriptionInput,
-  parseRequestActionInput,
   parseRateRequestInput,
 } from '@/api/request-inputs'
 import {
@@ -17,10 +16,7 @@ import {
   authorizeRequestAutoMergeForRequest,
   cancelRequestAutoMergeForRequest,
 } from '@/features/requests/checks/request-auto-merge-api'
-import {
-  type RequestActionCommand,
-  performRequestActionForRequest,
-} from '@/features/requests/detail/request-actions-api'
+import type { RequestActionCommand } from '@/features/requests/detail/request-actions-api'
 import {
   loadRequestActivityForRequest,
   updateRequestDescriptionForRequest,
@@ -31,6 +27,7 @@ import { reconcileRequestState, requestStateResource } from '@/features/requests
 import { RequestDetailPage } from '@/features/requests/detail/request-detail-page'
 import { RequestDetailPagePending } from '@/features/requests/detail/request-page-pending'
 import { loadRequestDiscussionRoute } from '@/routes/-request-discussion-loader'
+import { runRequestAction } from '@/routes/-request-state-actions'
 import { requestParamsForRoute } from '@/features/requests/detail/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
@@ -58,10 +55,6 @@ const cancelAutoMerge = createServerFn({ method: 'POST' })
 const updateDescription = createServerFn({ method: 'POST' })
   .validator(parseUpdateDescriptionInput)
   .handler(({ data }) => updateRequestDescriptionForRequest(data))
-
-const runRequestAction = createServerFn({ method: 'POST' })
-  .validator(parseRequestActionInput)
-  .handler(({ data }) => performRequestActionForRequest(data))
 
 const loadRatings = createServerFn({ method: 'GET' })
   .validator(parseRequestParams)

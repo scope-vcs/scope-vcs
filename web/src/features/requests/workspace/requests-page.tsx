@@ -1,12 +1,18 @@
 import type { RepoParams } from '@/api/types'
 import type { RequestQueueItemResponse } from '@/api/types.generated'
 import { useAuth } from '@clerk/tanstack-react-start'
-import { useParams } from '@tanstack/react-router'
+import { useMatch, useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { requestQueuePageLoader } from '@/routes/-request-workspace-actions'
+import { requestBacklogPageLoader, requestQueuePageLoader } from '@/routes/-request-workspace-actions'
 import { useRepoLayout } from '../../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../../repo-detail/repo-resource-scope'
 import { RepoViewingAsPicker, useViewingAs } from '../../repo-detail/use-viewing-as'
+import {
+  DEFAULT_REQUEST_BACKLOG_QUERY,
+  type RequestBacklogRouteSearch,
+} from '../backlog/request-backlog-model'
+import { requestBacklogIdentity } from '../backlog/request-backlog-resource'
+import { useRequestBacklog } from '../backlog/use-request-backlog'
 import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
 import {
   loadMoreRequestQueue,
@@ -70,6 +76,29 @@ function RequestWorkspaceContent({
     [params.owner, params.repo, view],
   )
   const queue = useRequestQueue(identity, version, load)
+  const loadBacklog = useMemo(
+    () => requestBacklogPageLoader({ owner: params.owner, repo: params.repo }, view, DEFAULT_REQUEST_BACKLOG_QUERY),
+    [params.owner, params.repo, view],
+  )
+  const backlogTotal = useRequestBacklog(
+    scope && requestBacklogIdentity(scope, view, DEFAULT_REQUEST_BACKLOG_QUERY),
+    version,
+    loadBacklog,
+  ).value?.total ?? null
+  const openBacklogSearch = useMatch({
+    from: '/$owner/$repo/requests/backlog',
+    select: (match) => match.search,
+    shouldThrow: false,
+  })
+  const [backlogSearch, setBacklogSearch] = useState<RequestBacklogRouteSearch>({})
+  if (
+    openBacklogSearch
+    && (openBacklogSearch.q !== backlogSearch.q
+      || openBacklogSearch.working !== backlogSearch.working
+      || openBacklogSearch.sort !== backlogSearch.sort)
+  ) {
+    setBacklogSearch(openBacklogSearch)
+  }
   const loadedPages = queue.value?.pages
   const { act, error, moves, pendingId } = useRequestAttentionActions(
     identity,
@@ -95,12 +124,17 @@ function RequestWorkspaceContent({
   return (
     <RequestWorkspaceShell
       collapsed={collapsed || focus}
-      detailOpenOnMobile={Boolean(selectedId)}
+      detailOpenOnMobile={Boolean(selectedId) || openBacklogSearch !== undefined}
       focus={focus}
       onCollapsedChange={changeCollapsed}
       sidebar={
         <RequestWorkspaceSidebar
           actionError={error}
+          backlog={{
+            count: backlogTotal ?? 0,
+            search: backlogSearch,
+            selected: openBacklogSearch !== undefined,
+          }}
           collapsed={collapsed || focus}
           focus={focus}
           error={queue.error ? 'Could not load requests. Try again.' : null}
@@ -126,6 +160,7 @@ function RequestWorkspaceContent({
       <RequestWorkspaceProvider
         value={{
           selected,
+          backlogTotal,
           claim: () => {
             if (selected) void act(selected, { action: 'claim' })
           },

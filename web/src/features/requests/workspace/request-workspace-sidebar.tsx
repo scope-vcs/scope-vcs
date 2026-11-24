@@ -9,6 +9,7 @@ import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { overlayIsOpen } from '@/lib/keyboard-target'
 import { cn } from '@/lib/utils'
+import { Link } from '@tanstack/react-router'
 import { ChevronRight, CircleCheck, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import {
   useCallback,
@@ -21,6 +22,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
+import { REQUEST_BACKLOG_NAME, type RequestBacklogRouteSearch } from '../backlog/request-backlog-model'
 import { REQUEST_QUEUE_SECTION_ORDER, type RequestQueuePages } from './request-list-model'
 import {
   RequestWorkspaceList,
@@ -64,6 +66,7 @@ const EMPTY_LABELS: Record<RequestAttentionGroup, string> = {
 }
 
 export function RequestWorkspaceSidebar({
+  backlog,
   pages,
   collapsed,
   onCollapsedChange,
@@ -86,6 +89,7 @@ export function RequestWorkspaceSidebar({
   RequestWorkspaceListProps,
   'loading' | 'skeleton' | 'error' | 'onRetry' | 'onAction' | 'onCustomSnooze' | 'pendingId' | 'selectedId'
 > & {
+  backlog?: { count: number; search: RequestBacklogRouteSearch; selected: boolean }
   focus: boolean
   onFocusToggle: () => void
   pages: RequestQueuePages | undefined
@@ -438,6 +442,20 @@ export function RequestWorkspaceSidebar({
                       />
                     </RequestWorkspaceDisclosure>
                   ))}
+                  {backlog && backlog.count > 0 && pages && !skeleton && (
+                    <nav aria-label={REQUEST_BACKLOG_NAME} className="request-workspace-backlog">
+                      <Link
+                        aria-current={backlog.selected ? 'page' : undefined}
+                        params={params}
+                        search={backlog.search}
+                        to="/$owner/$repo/requests/backlog"
+                      >
+                        <span>{REQUEST_BACKLOG_NAME}</span>
+                        <span className="tabular-nums">{backlog.count}</span>
+                        <ChevronRight aria-hidden="true" />
+                      </Link>
+                    </nav>
+                  )}
                 </div>
               </>
             )}

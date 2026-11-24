@@ -402,15 +402,35 @@ pub(super) fn ensure_request_close_allowed(
     actor_user_id: &str,
     actor_is_maintainer: bool,
 ) -> Result<(), DomainError> {
-    let actor_is_author = request.is_author(actor_user_id);
-    match request.state() {
-        RequestState::Draft if !actor_is_author && request.ask.is_none() => {
+    ensure_close_allowed(
+        RequestCloseSubject {
+            state: request.state(),
+            asked: request.ask.is_some(),
+            actor_is_author: request.is_author(actor_user_id),
+        },
+        actor_is_maintainer,
+    )
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct RequestCloseSubject {
+    pub(super) state: RequestState,
+    pub(super) asked: bool,
+    pub(super) actor_is_author: bool,
+}
+
+pub(super) fn ensure_close_allowed(
+    subject: RequestCloseSubject,
+    actor_is_maintainer: bool,
+) -> Result<(), DomainError> {
+    match subject.state {
+        RequestState::Draft if !subject.actor_is_author && !subject.asked => {
             return Err(DomainError::forbidden(
                 "only the request author can delete a draft",
             ));
         }
         RequestState::Draft | RequestState::Open | RequestState::Closed | RequestState::Merged
-            if !actor_is_author && !actor_is_maintainer =>
+            if !subject.actor_is_author && !actor_is_maintainer =>
         {
             return Err(DomainError::forbidden(
                 "request author or repo maintainer required",

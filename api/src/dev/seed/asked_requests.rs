@@ -6,11 +6,12 @@ use scope_domain::{
     repository::access::RepositoryAccess,
     requests::{
         AttachRequestChangeFacts, AttachRequestChangeInput, CloseRequestInput,
-        CloseRequestMutation, EditRequestIdentityInput, OpenRequestFromAskFacts,
-        OpenRequestFromAskInput, RecordWorkingRequestUploadInput, Request, RequestActor,
-        RequestAsk, RequestCloseReason, RequestEvent, RequestWorkInput, attach_request_change,
-        close_request, edit_request_identity, open_request_from_ask, record_working_request_upload,
-        start_request_work,
+        CloseRequestMutation, CreateRequestDiscussionInput, CreateRequestDiscussionReplyInput,
+        EditRequestIdentityInput, OpenRequestFromAskFacts, OpenRequestFromAskInput,
+        RecordWorkingRequestUploadInput, Request, RequestActor, RequestAsk, RequestCloseReason,
+        RequestEvent, RequestWorkInput, attach_request_change, close_request,
+        create_request_discussion, create_request_discussion_reply, edit_request_identity,
+        open_request_from_ask, record_working_request_upload, start_request_work,
     },
     views::{ViewId, Views},
 };
@@ -22,18 +23,38 @@ pub(super) struct SeedAskedRequests {
     pub(super) draft_pack: SeedPoolPack,
 }
 
-struct SeedAsk {
-    id: &'static str,
+struct SeedAsk<'a> {
+    id: &'a str,
     asker: (u64, &'static str),
     github_issue_number: u64,
-    title: &'static str,
-    text_markdown: &'static str,
+    title: &'a str,
+    text_markdown: &'a str,
     asked_at_unix: u64,
     now_unix: u64,
 }
 
 const TOMASZ: (u64, &str) = (9_000_142, "tomasz-k");
 const INES: (u64, &str) = (9_000_151, "ines-r");
+const MAREK: (u64, &str) = (9_000_098, "marek-w");
+const BACKLOG_PLACES: [&str; 9] = [
+    "billing page",
+    "retry log",
+    "sign-in form",
+    "settings page",
+    "CSV export",
+    "search results",
+    "webhook list",
+    "audit log",
+    "invite dialog",
+];
+const BACKLOG_PROBLEMS: [&str; 6] = [
+    "Keyboard focus gets lost in the",
+    "Dark mode colors are wrong in the",
+    "Text overflows at 320px in the",
+    "Screen readers skip headings in the",
+    "Timestamps ignore the time zone in the",
+    "The loading state flickers in the",
+];
 const LOGIN_TIMEOUT_TEXT: &str = concat!(
     "On a slow connection the sign-in page gives up before the server answers. ",
     "I get “Session check failed” and have to reload.\n\n",
@@ -62,7 +83,7 @@ pub(super) fn seed(
     repo_id: &str,
     facts: SeedAskedRequests,
 ) -> Result<(), ApiError> {
-    for (id, login) in [TOMASZ, INES] {
+    for (id, login) in [TOMASZ, INES, MAREK] {
         catalog.github_accounts.push(GitHubAccount::new(
             id,
             login,
@@ -79,7 +100,7 @@ pub(super) fn seed(
         views: &views,
     };
 
-    opened(
+    let asked = opened(
         catalog,
         repo_id,
         &facts.public_main_oid,
@@ -93,6 +114,8 @@ pub(super) fn seed(
             now_unix: 1_790_000_600,
         },
     )?;
+    discussed(catalog, asked, actor, &owner.id)?;
+    backlog(catalog, repo_id, &facts.public_main_oid)?;
 
     let taken = opened(
         catalog,
@@ -217,11 +240,84 @@ pub(super) fn seed(
     Ok(())
 }
 
+fn discussed(
+    catalog: &mut CatalogFixture,
+    request: Request,
+    actor: RequestActor<'_>,
+    owner_id: &str,
+) -> Result<(), ApiError> {
+    let opened = create_request_discussion(
+        request,
+        actor,
+        false,
+        CreateRequestDiscussionInput {
+            request_id: "req_demo_asked".to_string(),
+            id: "discussion_demo_asked_timeout".to_string(),
+            actor_user_id: owner_id.to_string(),
+            client_discussion_id: "seed_asked_timeout".to_string(),
+            body_markdown: "Does this also happen on the token refresh, or only on first sign-in?"
+                .to_string(),
+            anchor: None,
+            now_unix: 1_790_000_601,
+        },
+    )?;
+    let replied = create_request_discussion_reply(
+        opened.request,
+        actor,
+        opened.discussion,
+        None,
+        false,
+        CreateRequestDiscussionReplyInput {
+            request_id: "req_demo_asked".to_string(),
+            discussion_id: "discussion_demo_asked_timeout".to_string(),
+            id: "discussion_reply_demo_asked_timeout".to_string(),
+            actor_user_id: owner_id.to_string(),
+            client_reply_id: "seed_asked_timeout_reply".to_string(),
+            body_markdown: "Reproduced on first sign-in with the network throttled.".to_string(),
+            reply_to_reply_id: None,
+            now_unix: 1_790_000_602,
+        },
+    )?;
+    catalog
+        .request_discussions
+        .insert(replied.discussion.id.clone(), replied.discussion);
+    catalog
+        .request_discussion_replies
+        .insert(replied.reply.id.clone(), replied.reply);
+    saved(catalog, replied.request, replied.activity_event);
+    Ok(())
+}
+
+fn backlog(catalog: &mut CatalogFixture, repo_id: &str, main_oid: &str) -> Result<(), ApiError> {
+    let titles = BACKLOG_PLACES.iter().flat_map(|place| {
+        BACKLOG_PROBLEMS
+            .iter()
+            .map(move |problem| format!("{problem} {place}"))
+    });
+    for (index, title) in (0_u64..).zip(titles) {
+        opened(
+            catalog,
+            repo_id,
+            main_oid,
+            SeedAsk {
+                id: &format!("req_demo_backlog_{index}"),
+                asker: [TOMASZ, INES, MAREK][index as usize % 3],
+                github_issue_number: 200 + index,
+                title: &title,
+                text_markdown: &format!("{title}. Seen on version 2.14.{}.", index % 4),
+                asked_at_unix: 1_770_000_000 + index * 250_000,
+                now_unix: 1_790_000_640 + index,
+            },
+        )?;
+    }
+    Ok(())
+}
+
 fn opened(
     catalog: &mut CatalogFixture,
     repo_id: &str,
     main_oid: &str,
-    ask: SeedAsk,
+    ask: SeedAsk<'_>,
 ) -> Result<Request, ApiError> {
     let mutation = open_request_from_ask(
         OpenRequestFromAskFacts::default(),

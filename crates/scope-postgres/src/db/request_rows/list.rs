@@ -256,6 +256,10 @@ pub(in crate::db) fn request_list_condition(
         RequestListPredicate::Submitted => {
             Ok(Condition::all().add(entities::request::Column::SubmittedAtUnix.is_not_null()))
         }
+        RequestListPredicate::Draft => Ok(Condition::all()
+            .add(entities::request::Column::SubmittedAtUnix.is_null())
+            .add(entities::request::Column::ClosedAtUnix.is_null())
+            .add(entities::request::Column::MergedAtUnix.is_null())),
         RequestListPredicate::Asked => {
             Ok(Condition::all().add(entities::request::Column::GithubIssueNumber.is_not_null()))
         }

@@ -14,6 +14,8 @@ use scope_domain::{
         RequestActorRole as DomainRequestActorRole,
         RequestAttentionReason as DomainRequestAttentionReason,
         RequestAttentionState as DomainRequestAttentionState,
+        RequestBacklogSort as DomainRequestBacklogSort,
+        RequestBacklogWorking as DomainRequestBacklogWorking,
         RequestCheckEvaluationState as DomainRequestCheckEvaluationState,
         RequestChecksOutcome as DomainRequestChecksOutcome,
         RequestCloseReason as DomainRequestCloseReason, RequestDiffSide as DomainRequestDiffSide,
@@ -272,6 +274,16 @@ wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
     RequestQueueSection => DomainRequestQueueSection { Active, Unclaimed, SetAside, Done }
+);
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestBacklogWorking => DomainRequestBacklogWorking { Anyone, Nobody, Me }
+);
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestBacklogSort => DomainRequestBacklogSort { Oldest, Newest }
 );
 wire_enum!(
     #[serde(rename_all = "snake_case")]

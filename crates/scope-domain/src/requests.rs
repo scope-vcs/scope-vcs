@@ -126,6 +126,11 @@ pub use ask::{
     RequestReference, RequestWorkInput, attach_request_change, discard_unsubmitted_change,
     open_request_from_ask, release_request_work, start_request_work,
 };
+mod backlog;
+pub use backlog::{
+    RequestBacklogSearch, RequestBacklogSort, RequestBacklogWorking, backlog_request_closable,
+    request_backlog_predicate,
+};
 mod lifecycle;
 pub use lifecycle::{
     CloseRequestInput, CloseRequestMutation, RecordRequestRevisionInput,

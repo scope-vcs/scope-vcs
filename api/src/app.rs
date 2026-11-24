@@ -197,6 +197,10 @@ pub fn router(state: AppState) -> Router {
             get(http::request_queue::request_queue),
         )
         .route(
+            routes::REPO_REQUEST_BACKLOG,
+            get(http::request_backlog::request_backlog),
+        )
+        .route(
             routes::REPO_REQUEST_ATTENTION,
             axum::routing::put(http::request_queue::apply_attention),
         )

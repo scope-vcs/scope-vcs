@@ -343,8 +343,20 @@ fn queue_sql(
     views: &Views,
     request_views: Option<&[scope_domain::views::ViewId]>,
 ) -> String {
-    let visible = request_queue_visibility_predicate(access, viewer_user_id, views);
-    let predicate = match request_views {
+    let predicate = restricted_to_request_views(
+        request_queue_visibility_predicate(access, viewer_user_id, views),
+        request_views,
+    );
+    QUEUE_SQL
+        .replace("{request_visibility}", &request_visibility_sql(&predicate))
+        .replace("{queue_placement}", &queue_placement_sql())
+}
+
+pub(super) fn restricted_to_request_views<'a>(
+    visible: RequestListPredicate<'a>,
+    request_views: Option<&[scope_domain::views::ViewId]>,
+) -> RequestListPredicate<'a> {
+    match request_views {
         Some(views) => RequestListPredicate::All(vec![
             visible,
             RequestListPredicate::Any(
@@ -356,18 +368,18 @@ fn queue_sql(
             ),
         ]),
         None => visible,
-    };
-    QUEUE_SQL
-        .replace("{request_visibility}", &request_visibility_sql(&predicate))
-        .replace("{queue_placement}", &queue_placement_sql())
+    }
 }
 
-fn request_visibility_sql(predicate: &RequestListPredicate<'_>) -> String {
+pub(super) fn request_visibility_sql(predicate: &RequestListPredicate<'_>) -> String {
     match predicate {
         RequestListPredicate::All(predicates) => join_sql_predicates(predicates, " AND ", "TRUE"),
         RequestListPredicate::Any(predicates) => join_sql_predicates(predicates, " OR ", "FALSE"),
         RequestListPredicate::View(view) => format!("r.audience = '{}'", view.as_str()),
         RequestListPredicate::Submitted => "r.submitted_at_unix IS NOT NULL".into(),
+        RequestListPredicate::Draft => "(r.submitted_at_unix IS NULL \
+            AND r.closed_at_unix IS NULL AND r.merged_at_unix IS NULL)"
+            .into(),
         RequestListPredicate::Asked => "r.github_issue_number IS NOT NULL".into(),
         RequestListPredicate::Closed => "r.closed_at_unix IS NOT NULL".into(),
         RequestListPredicate::Author(_) => "r.author_user_id = $2".into(),

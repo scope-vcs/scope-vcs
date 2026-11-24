@@ -6,7 +6,7 @@ import { Link } from '@tanstack/react-router'
 import { Code, Ellipsis, History } from 'lucide-react'
 import { type RefObject, useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
-import { REQUEST_CLOSE_REASONS, requestCloseReasonLabel } from './request-labels'
+import { RequestCloseReasonField } from './request-close-reason-field'
 import { RequestOutcomeIcon } from './request-outcome-icon'
 import type { RequestActionController } from './use-request-actions'
 
@@ -125,22 +125,7 @@ export function RequestMoreMenu({
         {needsReason ? (
           <>
             <p>This request will close and remain in request history.</p>
-            <fieldset className="grid gap-1.5">
-              <legend className="mb-1.5 text-foreground">Why is it closing?</legend>
-              {REQUEST_CLOSE_REASONS.map((option) => (
-                <label className="flex items-center gap-2 text-foreground" key={option}>
-                  <input
-                    checked={reason === option}
-                    className="accent-foreground"
-                    name="close-reason"
-                    onChange={() => setReason(option)}
-                    type="radio"
-                    value={option}
-                  />
-                  <span className="first-letter:uppercase">{requestCloseReasonLabel(option)}</span>
-                </label>
-              ))}
-            </fieldset>
+            <RequestCloseReasonField legend="Why is it closing?" onChange={setReason} value={reason} />
           </>
         ) : request.submitted_at_unix === null ? (
           <p>This draft request will be permanently deleted.</p>

@@ -1,7 +1,8 @@
 import { loadOptionalResource } from '@/api/http'
-import { parseLoadRequestChildrenInput, parseRequestParams } from '@/api/request-inputs'
+import { parseLoadRequestChildrenInput, parseRequestActionInput, parseRequestParams } from '@/api/request-inputs'
 import { loadRequestChildrenForRequest, loadRequestStateForRequest } from '@/api/requests'
 import type { RequestParams } from '@/api/types'
+import { performRequestActionForRequest } from '@/features/requests/detail/request-actions-api'
 import type { RequestStateValue } from '@/features/requests/detail/request-state-resource'
 import { auth } from '@clerk/tanstack-react-start/server'
 import { createServerFn } from '@tanstack/react-start'
@@ -46,3 +47,7 @@ export async function loadRequestChildrenForViewer(data: RequestParams & { curso
   if (loaded.viewerId !== viewerId) throw new Error('The account changed while loading this request.')
   return loaded.children
 }
+
+export const runRequestAction = createServerFn({ method: 'POST' })
+  .validator(parseRequestActionInput)
+  .handler(({ data }) => performRequestActionForRequest(data))
