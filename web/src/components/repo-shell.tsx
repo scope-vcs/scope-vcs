@@ -48,6 +48,9 @@ export function RepoShell({
     (section) => ({
       active: active === section.key,
       label: section.label,
+      outsidePill: section.key === 'requests' && openRequestCount === 0
+        ? <span aria-hidden="true" className="w-[calc(0.375rem_+_1ch)] shrink-0 text-xs" />
+        : null,
       node: (
         <>
           <Link
@@ -61,9 +64,9 @@ export function RepoShell({
             hash={section.key === 'requests' && returnToRequest ? returnToRequest.hash : ''}
           >
             {section.label}
-            {section.key === 'requests' && (
+            {section.key === 'requests' && openRequestCount > 0 && (
               <span aria-hidden="true" className="min-w-[1ch] text-xs tabular-nums text-muted-foreground">
-                {openRequestCount > 0 ? openRequestCount : null}
+                {openRequestCount}
               </span>
             )}
           </Link>

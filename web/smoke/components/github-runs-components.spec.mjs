@@ -43,6 +43,16 @@ test('GitHub workflow runs open on Scope, keep their list across navigation and 
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 })
+  const requestsLabelOffset = await page.getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Requests', exact: true })
+    .evaluate((link) => {
+      const label = document.createRange()
+      label.selectNode([...link.childNodes].find((node) => node.nodeType === Node.TEXT_NODE))
+      const text = label.getBoundingClientRect()
+      const tab = link.getBoundingClientRect()
+      return (tab.right - text.right) - (text.left - tab.left)
+    })
+  assert.ok(Math.abs(requestsLabelOffset) <= 1, `Requests with no open requests is off center by ${requestsLabelOffset}px`)
 
   await rows.first().getByRole('link', { name: 'scope/requests/req_1', exact: true }).click()
   await page.getByRole('heading', { name: 'Request req_1' }).waitFor()
