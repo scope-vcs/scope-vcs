@@ -105,6 +105,9 @@ pub(super) fn activity_line(payload: &RequestEventPayload) -> String {
         | RequestEventPayload::Merged { .. }
         | RequestEventPayload::Closed { .. }
         | RequestEventPayload::IdentityEdited { .. }
+        | RequestEventPayload::WorkStarted {}
+        | RequestEventPayload::WorkReleased {}
+        | RequestEventPayload::ChangeAttached { .. }
         | RequestEventPayload::DiscussionResolved { .. }
         | RequestEventPayload::DiscussionReopened { .. } => {
             unreachable!("only auto-merge activity is rendered here")

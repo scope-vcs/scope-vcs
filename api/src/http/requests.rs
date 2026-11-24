@@ -18,7 +18,7 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{
-    AddRequestInviteeRequest, EditRequestIdentityRequest, LeaveRequestResponse,
+    AddRequestInviteeRequest, CloseRequestQuery, EditRequestIdentityRequest, LeaveRequestResponse,
     MergeRequestRequest, RemoveRequestInviteeRequest, RequestActorSummaryResponse,
     RequestCloseResponse, RequestDetailResponse, RequestInviteeMutationResponse,
     RequestInviteeResponse, RequestListResponse, RequestMutationResponse, StartRequestRequest,
@@ -39,7 +39,9 @@ use scope_postgres::db::RepositoryReadPolicy;
 use serde::Deserialize;
 
 mod summary;
+mod work;
 use summary::request_response_for_viewer;
+pub(crate) use work::{attach_request_change, release_request_work, start_request_work};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RequestListQuery {
@@ -112,6 +114,7 @@ pub(crate) async fn list_requests(
         .requests()
         .request_stack_parents(&repo, viewer_user_id.as_deref(), &requests)
         .await?;
+    let list_viewer = RequestViewer::new(repo.access.clone(), viewer_user_id.as_deref(), false);
     let mut diff_stats = crate::use_cases::request_diff_stats::readable_request_diff_stats(
         &state,
         &repo,
@@ -139,7 +142,7 @@ pub(crate) async fn list_requests(
             };
             request_list_item_response(
                 request,
-                &RequestViewer::new(repo.access.clone(), viewer_user_id.as_deref(), false),
+                &list_viewer,
                 &repo.views,
                 RequestMains {
                     viewer_main_oid: current_main_oid.as_deref(),
@@ -174,6 +177,12 @@ pub(crate) async fn get_request(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     viewer: Viewer,
 ) -> Result<Json<RequestDetailResponse>, ApiError> {
+    let request_id = work::referenced_request_id(
+        &state,
+        &scope_domain::repository::repo_id(&owner, &repo_name),
+        &request_id,
+    )
+    .await?;
     let snapshot =
         super::request_state::load(&state, &viewer, &owner, &repo_name, &request_id).await?;
     let diff_stat = super::request_state::diff_stat(&state, &snapshot).await?;
@@ -264,11 +273,18 @@ pub(crate) async fn close_request(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
+    Query(query): Query<CloseRequestQuery>,
 ) -> Result<Json<RequestCloseResponse>, ApiError> {
     let (user, repo, request) =
         actor_request(&state, &headers, &owner, &repo_name, &request_id).await?;
-    let mutation =
-        crate::use_cases::request_close::close_request(&state, &repo, &request, &user.id).await?;
+    let mutation = crate::use_cases::request_close::close_request(
+        &state,
+        &repo,
+        &request,
+        &user.id,
+        query.reason.map(Into::into),
+    )
+    .await?;
     match mutation {
         CloseRequestMutation::DeletedDraft { .. } => Ok(Json(RequestCloseResponse {
             deleted: true,
@@ -563,6 +579,19 @@ pub(crate) async fn visible_request<'a>(
     if request.repo_id != repo.record.id
         || !request_policy(&request, viewer.clone(), &repo.views).exact_visible
     {
+        return Err(ApiError::not_found("request not found"));
+    }
+    Ok((request, viewer))
+}
+
+pub(crate) async fn visible_request_change<'a>(
+    state: &AppState,
+    repo: &RepositoryAccessContext,
+    viewer_user_id: Option<&'a str>,
+    request_id: &str,
+) -> Result<(Request, RequestViewer<'a>), ApiError> {
+    let (request, viewer) = visible_request(state, repo, viewer_user_id, request_id).await?;
+    if !request_policy(&request, viewer.clone(), &repo.views).change_visible {
         return Err(ApiError::not_found("request not found"));
     }
     Ok((request, viewer))

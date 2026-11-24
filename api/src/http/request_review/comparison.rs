@@ -14,7 +14,7 @@ pub(crate) async fn get_request_revision_file_diff(
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
     let (repo, viewer_user_id) = repo_and_access(&state, &viewer, &owner, &repo_name).await?;
     let mode = selected_mode(input.comparison, false)?;
-    let (request, _) = visible_request(
+    let (request, _) = visible_request_change(
         &state,
         &repo.context,
         viewer_user_id.as_deref(),

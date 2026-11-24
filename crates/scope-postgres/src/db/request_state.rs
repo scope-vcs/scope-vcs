@@ -39,6 +39,7 @@ pub struct RequestStateSnapshot {
     pub auto_merge_actor_access: Option<RepositoryAccess>,
     pub users: BTreeMap<String, UserAccount>,
     pub claimer_user_id: Option<String>,
+    pub asker: Option<scope_domain::github::account::GitHubAccount>,
     pub github_connection: Option<GitHubConnection>,
     pub github_push: Option<GitHubPush>,
     pub github_pull_request: Option<GitHubPullRequest>,
@@ -165,7 +166,7 @@ async fn read_request_state(
     if !policy.exact_visible {
         return Err(PostgresError::not_found("request not found"));
     }
-    let invitees = if repository.views.anyone() == Some(&request.view) {
+    let invitees = if policy.invitees_visible {
         super::request_invitees::request_invitee_reads(&tx, request_id)
             .instrument(tracing::info_span!(
                 "request_invitee_reads",
@@ -196,7 +197,13 @@ async fn read_request_state(
         }
         None => None,
     };
-    let evaluation = row.evaluation()?;
+    let reads_change = policy.change_visible;
+    let request = if reads_change {
+        request
+    } else {
+        request.with_change_hidden()
+    };
+    let evaluation = row.evaluation()?.filter(|_| reads_change);
     let results =
         super::request_checks::request_check_results(&tx, &request.repo_id, evaluation.as_ref())
             .instrument(tracing::info_span!(
@@ -206,11 +213,12 @@ async fn read_request_state(
                 db.operation.name = "request_check_results"
             ))
             .await?;
-    let revision = row.revision()?;
-    let auto_merge = row.auto_merge()?;
+    let revision = row.revision()?.filter(|_| reads_change);
+    let auto_merge = row.auto_merge()?.filter(|_| reads_change);
     let auto_merge_actor_access = row.auto_merge_actor_access(&repository, auto_merge.as_ref())?;
     let users = row.users()?;
     let claimer_user_id = row.claimer_user_id()?;
+    let asker = super::request_asks::asker(&tx, &request).await?;
     let github_connection =
         super::github::connections::repository_github_connection(&tx, &request.repo_id)
             .instrument(tracing::info_span!(
@@ -227,9 +235,11 @@ async fn read_request_state(
             db.system.name = "postgresql",
             db.operation.name = "latest_github_push"
         ))
-        .await?;
-    let github_pull_request =
-        super::github::pull_requests::github_pull_request(&tx, request_id).await?;
+        .await?
+        .filter(|_| reads_change);
+    let github_pull_request = super::github::pull_requests::github_pull_request(&tx, request_id)
+        .await?
+        .filter(|_| reads_change);
     let bot_reviews = super::github::review_bot_statuses::request_bot_reviews(
         &tx,
         &request.repo_id,
@@ -243,6 +253,7 @@ async fn read_request_state(
     ))
     .await?
     .remove(&request.id)
+    .filter(|_| reads_change)
     .unwrap_or_default();
     let suites = evaluation
         .iter()
@@ -273,15 +284,19 @@ async fn read_request_state(
     } else {
         projection.and_then(|projection| projection.head_oid)
     };
-    let (stack_navigation, children) = super::request_navigation::navigation(
-        &tx,
-        &repository,
-        viewer_user_id,
-        &request,
-        children_after_id,
-        children_limit,
-    )
-    .await?;
+    let (stack_navigation, children) = if reads_change {
+        super::request_navigation::navigation(
+            &tx,
+            &repository,
+            viewer_user_id,
+            &request,
+            children_after_id,
+            children_limit,
+        )
+        .await?
+    } else {
+        Default::default()
+    };
     tx.commit()
         .instrument(tracing::info_span!(
             "commit_read_snapshot",
@@ -306,6 +321,7 @@ async fn read_request_state(
         auto_merge_actor_access,
         users,
         claimer_user_id,
+        asker,
         github_connection,
         github_push,
         github_pull_request,

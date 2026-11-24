@@ -94,6 +94,7 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
         CloseRequestCommand {
             request_id: "request_reply".to_string(),
             actor_user_id: "owner".to_string(),
+            reason: None,
             event_id: "event_request_deleted".to_string(),
             now_unix: 4,
         },

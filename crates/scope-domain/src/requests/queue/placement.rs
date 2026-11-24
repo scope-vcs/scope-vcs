@@ -177,7 +177,13 @@ pub fn request_queue_visibility_predicate<'a>(
     viewer_user_id: Option<&'a str>,
     views: &Views,
 ) -> RequestListPredicate<'a> {
-    let mut participant_or_submitted = vec![RequestListPredicate::Submitted];
+    let mut participant_or_submitted = vec![
+        RequestListPredicate::Submitted,
+        RequestListPredicate::All(vec![
+            RequestListPredicate::Asked,
+            RequestListPredicate::Closed,
+        ]),
+    ];
     if let Some(viewer_user_id) = viewer_user_id {
         participant_or_submitted.push(RequestListPredicate::Author(viewer_user_id));
         participant_or_submitted.push(RequestListPredicate::Invitee(viewer_user_id));

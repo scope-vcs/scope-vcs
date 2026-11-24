@@ -7,8 +7,8 @@ use scope_domain::{
     repository::access::RepositoryAccessContext,
     requests::{
         CloseRequestInput, CloseRequestMutation, Request, RequestAutoMergeStopReason,
-        close_request as close, request_actor_role, request_auto_merge_event_id,
-        stop_request_auto_merge,
+        RequestCloseReason, close_request as close, request_actor_role,
+        request_auto_merge_event_id, stop_request_auto_merge,
     },
 };
 use scope_postgres::{db::RequestStore, error::PostgresError};
@@ -20,12 +20,14 @@ pub(crate) async fn close_request(
     repo: &RepositoryAccessContext,
     request: &Request,
     user_id: &str,
+    reason: Option<RequestCloseReason>,
 ) -> Result<CloseRequestMutation, ApiError> {
     let mutation = crate::use_cases::request_close::persist_close(
         &state.metadata.requests(),
         CloseRequestCommand {
             request_id: request.id.clone(),
             actor_user_id: user_id.to_string(),
+            reason,
             event_id: generate_prefixed_id("event_request_closed_")?,
             now_unix: unix_now()?,
         },
@@ -58,6 +60,7 @@ pub(crate) async fn close_request(
 pub(crate) struct CloseRequestCommand {
     pub(crate) request_id: String,
     pub(crate) actor_user_id: String,
+    pub(crate) reason: Option<RequestCloseReason>,
     pub(crate) event_id: String,
     pub(crate) now_unix: u64,
 }
@@ -79,6 +82,7 @@ pub(crate) async fn persist_close(
             request_id: command.request_id,
             actor_user_id: command.actor_user_id,
             actor_is_maintainer: tx.repository().access.is_maintainer(),
+            reason: command.reason,
             event_id: command.event_id,
             now_unix,
         },

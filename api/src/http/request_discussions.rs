@@ -406,7 +406,8 @@ pub(crate) async fn activity(
         repo_metadata_and_access(&state, &viewer, &owner, &repo_name).await?;
     let (request, viewer) =
         visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
-    if !request_policy(&request, viewer, &repo.views).activity_stream_visible {
+    let policy = request_policy(&request, viewer, &repo.views);
+    if !policy.activity_stream_visible {
         return Err(ApiError::not_found("request not found"));
     }
     let latest = query.latest.unwrap_or(false);
@@ -414,7 +415,7 @@ pub(crate) async fn activity(
         .limit
         .unwrap_or(REQUEST_ACTIVITY_PAGE_MAX_EVENTS)
         .clamp(1, REQUEST_ACTIVITY_PAGE_MAX_EVENTS);
-    let events = if latest {
+    let mut events = if latest {
         state
             .metadata
             .requests()
@@ -427,6 +428,13 @@ pub(crate) async fn activity(
             .request_events_after_position(&request.id, query.after.unwrap_or(0), limit as u64)
             .await?
     };
+    let last_position = events.last().map(|event| event.position);
+    if !policy.change_visible {
+        events = events
+            .into_iter()
+            .filter_map(|event| event.with_change_hidden(&request.main_ancestor_oid))
+            .collect();
+    }
     let users = state
         .metadata
         .auth()
@@ -439,10 +447,7 @@ pub(crate) async fn activity(
     let through_position = if latest {
         request.activity_version
     } else {
-        events
-            .last()
-            .map(|event| event.position)
-            .unwrap_or(request.activity_version)
+        last_position.unwrap_or(request.activity_version)
     };
     let events = events
         .into_iter()

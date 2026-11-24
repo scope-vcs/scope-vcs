@@ -15,8 +15,8 @@ use super::{
     request_media::replace_bindings_for_markdown,
     request_revision_rows::revisions_for_request_ids,
     request_rows::{
-        insert_request_event_row, request_by_id, request_event_by_id, request_events_by_request_id,
-        save_request_row,
+        insert_request_event_row, request_by_id, request_by_name, request_event_by_id,
+        request_events_by_request_id, save_request_branch_and_author, save_request_row,
     },
 };
 use crate::error::PostgresError;
@@ -97,7 +97,7 @@ impl RequestStore {
 }
 
 impl RequestTransaction {
-    async fn lock(
+    pub(super) async fn lock(
         tx: DatabaseTransaction,
         request_id: &str,
         actor_user_id: &str,
@@ -188,6 +188,20 @@ impl RequestTransaction {
             .await?;
         }
         Ok(())
+    }
+
+    pub async fn another_request_has_name(&self, name: &str) -> Result<bool, PostgresError> {
+        Ok(request_by_name(&self.tx, &self.request.repo_id, name)
+            .await?
+            .is_some_and(|request| request.id != self.request.id))
+    }
+
+    pub async fn save_work_change(
+        &self,
+        mutation: &RequestTimelineMutation,
+    ) -> Result<(), PostgresError> {
+        save_request_branch_and_author(&self.tx, &mutation.request).await?;
+        insert_request_event_row(&self.tx, &mutation.event).await
     }
 
     pub async fn close_facts(&self) -> Result<RequestCloseFacts, PostgresError> {

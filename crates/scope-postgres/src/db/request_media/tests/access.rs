@@ -227,6 +227,7 @@ async fn retry_replay_returns_the_saved_attachment_only_to_viewers_who_can_see_i
         &fixture.store.requests(),
         scope_domain::requests::CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: "retry_request".to_string(),
             actor_user_id: OWNER_ID.to_string(),
             event_id: "event_close_retry".to_string(),

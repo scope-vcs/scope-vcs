@@ -210,7 +210,7 @@ try {
 async function api(path, body, method = body === undefined ? 'GET' : 'POST') {
   const response = await fetch(`${apiOrigin}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${token}`, 'x-scope-cli-protocol': '2', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    headers: { Authorization: `Bearer ${token}`, 'x-scope-cli-protocol': '3', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(30000),
   })

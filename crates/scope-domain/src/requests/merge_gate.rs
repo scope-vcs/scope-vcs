@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub enum RequestMergeabilityStatus {
     Ready,
     RepositoryNotReady,
+    NoChangeYet,
     Draft,
     Closed,
     Merged,
@@ -168,6 +169,7 @@ pub struct RequestMergeSubject<'a> {
     pub view: &'a ViewId,
     pub state: RequestState,
     pub has_pushed_head: bool,
+    pub awaits_change: bool,
     pub stack_status: super::RequestStackStatus,
 }
 
@@ -178,6 +180,7 @@ impl<'a> RequestMergeSubject<'a> {
             view: &request.view,
             state: request.state(),
             has_pushed_head: request.pushed_at_unix.is_some(),
+            awaits_change: request.awaits_change(),
             stack_status: request.stack_status_at(view_mains),
         }
     }
@@ -261,6 +264,10 @@ pub(super) fn evaluate_request_readiness(
     let (status, reason) = match subject.state {
         RequestState::Closed => (RequestMergeabilityStatus::Closed, Some("request is closed")),
         RequestState::Merged => (RequestMergeabilityStatus::Merged, Some("request is merged")),
+        RequestState::Draft if subject.awaits_change => (
+            RequestMergeabilityStatus::NoChangeYet,
+            Some("request has no change yet"),
+        ),
         RequestState::Draft => (
             RequestMergeabilityStatus::Draft,
             Some("request is not submitted"),

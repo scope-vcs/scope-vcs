@@ -1,12 +1,14 @@
 use super::request_rows::{
-    delete_request_rows, insert_request_event_row, request_event_by_id, save_request_row,
+    delete_request_rows, insert_request_event_row, request_event_by_id,
+    save_request_branch_and_author, save_request_row,
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
-    DELETED_DRAFT_EFFECTS, DeletedDraftEffect, EndedRequestEffect, Request, RequestCarrierFacts,
-    RequestEvent, ended_request_effects,
+    DELETED_DRAFT_EFFECTS, DISCARDED_CHANGE_EFFECTS, DeletedDraftEffect, DiscardedChangeEffect,
+    EndedRequestEffect, Request, RequestCarrierFacts, RequestEvent, RequestTimelineMutation,
+    ended_request_effects,
 };
-use sea_orm::DatabaseTransaction;
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement};
 
 pub(super) async fn persist_lifecycle_mutation(
     tx: &DatabaseTransaction,
@@ -102,4 +104,53 @@ pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
         }
     }
     Ok(())
+}
+
+pub(super) async fn persist_discarded_change<C: ConnectionTrait>(
+    tx: &C,
+    mutation: &RequestTimelineMutation,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    let request = &mutation.request;
+    for effect in DISCARDED_CHANGE_EFFECTS {
+        match effect {
+            DiscardedChangeEffect::RetirePoolPacks => {
+                super::git_segments::retire_request_pool_packs(tx, &request.id, now_unix).await?;
+            }
+            DiscardedChangeEffect::DeleteGitHubBranch => {
+                super::github::pushes::queue_github_branch_deletion(
+                    tx,
+                    &request.repo_id,
+                    &request.id,
+                    now_unix,
+                )
+                .await?;
+            }
+            DiscardedChangeEffect::PurgeInvitees => {
+                super::request_invitees::delete_request_invitees(tx, &request.id).await?;
+            }
+            DiscardedChangeEffect::DeleteChangeRows => {
+                tx.execute_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "WITH packs AS (DELETE FROM scope_git_pool_packs WHERE request_id = $1),
+                          checks AS (
+                              DELETE FROM scope_request_check_evaluations WHERE request_id = $1
+                          ),
+                          carriers AS (
+                              DELETE FROM scope_github_pull_requests WHERE request_id = $1
+                          ),
+                          events AS (
+                              DELETE FROM scope_request_events
+                               WHERE request_id = $1
+                                 AND kind IN ('RevisionPushed', 'BaseRetargeted')
+                          )
+                     DELETE FROM scope_request_revisions WHERE request_id = $1",
+                    [request.id.clone().into()],
+                ))
+                .await?;
+            }
+        }
+    }
+    save_request_branch_and_author(tx, request).await?;
+    insert_request_event_row(tx, &mutation.event).await
 }

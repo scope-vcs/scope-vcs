@@ -1,4 +1,6 @@
 use scope_domain::views::{ViewId, Views};
+#[path = "seed/asked_requests.rs"]
+mod asked_requests;
 #[path = "seed/git_fixtures.rs"]
 mod git_fixtures;
 use git_fixtures::*;
@@ -182,6 +184,7 @@ const UPDATE_DEMO_QUEUE_DRAFT: &str =
     "# Request queue copy\n\nTighten the language before asking for review.\n";
 const UPDATE_DEMO_CACHE_NOTE: &str =
     "# Cache note\n\nRecord the tradeoff without changing repository behavior.\n";
+const UPDATE_DEMO_CSV_EXPORT: &str = "export function toCsv(columns: string[], rows: string[][]) {\n  return [columns, ...rows].map((row) => row.join(',')).join('\\n')\n}\n";
 
 pub(crate) async fn catalog(
     object_store: &dyn ObjectStore,
@@ -371,7 +374,10 @@ fn populate_seed_live_files(repo: &mut Repository) {
     }
 }
 
-type SeedRequestGallery = Vec<SeedRequest>;
+struct SeedRequestGallery {
+    requests: Vec<SeedRequest>,
+    asked: asked_requests::SeedAskedRequests,
+}
 
 struct SeedRequest {
     id: &'static str,
@@ -405,10 +411,10 @@ fn seed_request_gallery(
         .record
         .id
         .clone();
-    for request in gallery {
+    for request in gallery.requests {
         seed_owner_request(catalog, owner, &repo_id, request)?;
     }
-    Ok(())
+    asked_requests::seed(catalog, owner, &repo_id, gallery.asked)
 }
 
 fn seed_owner_request(

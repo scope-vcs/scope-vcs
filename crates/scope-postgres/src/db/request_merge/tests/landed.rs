@@ -239,6 +239,7 @@ async fn main_push_skips_candidates_that_moved_closed_or_disappeared() {
                     &store.requests(),
                     scope_domain::requests::CloseRequestInput {
                         actor_is_maintainer: true,
+                        reason: None,
                         request_id: "req_1".into(),
                         actor_user_id: "user_owner".into(),
                         event_id: "event_closed_before_push".into(),

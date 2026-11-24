@@ -19,7 +19,7 @@ pub(super) async fn request_response_for_viewer(
     repository_lifecycle: scope_domain::repository::RepoLifecycleState,
 ) -> Result<RequestSummaryResponse, ApiError> {
     let policy = request_policy(&request, viewer.clone(), views);
-    let invitees = if views.anyone() == Some(&request.view) && policy.exact_visible {
+    let invitees = if policy.invitees_visible {
         state
             .metadata
             .requests()

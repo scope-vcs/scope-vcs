@@ -1,6 +1,6 @@
 pub(crate) use super::base::BaseColumns;
 use super::*;
-use scope_domain::requests::{RequestLifecycle, StoredRequest};
+use scope_domain::requests::{RequestAsk, RequestLifecycle, StoredRequest};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "scope_requests")]
@@ -26,10 +26,16 @@ pub(crate) struct Model {
     pub pushed_at_unix: Option<i64>,
     pub title: String,
     pub description_markdown: String,
+    pub asker_github_user_id: Option<i64>,
+    pub github_issue_number: Option<i64>,
+    pub ask_source_url: Option<String>,
+    pub ask_text_markdown: Option<String>,
+    pub asked_at_unix: Option<i64>,
     pub activity_version: i64,
     pub submitted_at_unix: Option<i64>,
     pub closed_at_unix: Option<i64>,
     pub closed_by_user_id: Option<String>,
+    pub close_reason: Option<String>,
     pub merged_at_unix: Option<i64>,
     pub merged_by_user_id: Option<String>,
     pub merged_head_oid: Option<String>,
@@ -47,6 +53,7 @@ impl Model {
     pub(crate) fn from_domain(request: &Request) -> Result<Self, PostgresError> {
         request.validate_facts()?;
         let base = base::BaseColumns::from_domain(&request.base);
+        let ask = request.ask.as_ref();
         Ok(Self {
             id: request.id.clone(),
             repo_id: request.repo_id.clone(),
@@ -71,6 +78,17 @@ impl Model {
             pushed_at_unix: optional_u64_to_i64(request.pushed_at_unix, "request push time")?,
             title: request.title.clone(),
             description_markdown: request.description_markdown.clone(),
+            asker_github_user_id: ask
+                .map(|ask| u64_to_i64(ask.github_account_id, "GitHub account id"))
+                .transpose()?,
+            github_issue_number: ask
+                .map(|ask| u64_to_i64(ask.github_issue_number, "GitHub issue number"))
+                .transpose()?,
+            ask_source_url: ask.map(|ask| ask.source_url.clone()),
+            ask_text_markdown: ask.map(|ask| ask.text_markdown.clone()),
+            asked_at_unix: ask
+                .map(|ask| u64_to_i64(ask.asked_at_unix, "request ask time"))
+                .transpose()?,
             activity_version: u64_to_i64(request.activity_version, "request activity version")?,
             submitted_at_unix: optional_u64_to_i64(
                 request.submitted_at_unix(),
@@ -78,6 +96,7 @@ impl Model {
             )?,
             closed_at_unix: optional_u64_to_i64(request.closed_at_unix(), "request close time")?,
             closed_by_user_id: request.closed_by_user_id().map(str::to_string),
+            close_reason: request.close_reason().map(encode_enum).transpose()?,
             merged_at_unix: optional_u64_to_i64(request.merged_at_unix(), "request merge time")?,
             merged_by_user_id: request.merged_by_user_id().map(str::to_string),
             merged_head_oid: request.merged_head_oid().map(str::to_string),
@@ -88,6 +107,33 @@ impl Model {
     }
 
     pub(crate) fn try_into_domain(self) -> Result<Request, PostgresError> {
+        let ask = match (
+            self.asker_github_user_id,
+            self.github_issue_number,
+            self.ask_source_url,
+            self.ask_text_markdown,
+            self.asked_at_unix,
+        ) {
+            (None, None, None, None, None) => None,
+            (
+                Some(account_id),
+                Some(issue_number),
+                Some(source_url),
+                Some(text_markdown),
+                Some(asked_at_unix),
+            ) => Some(RequestAsk {
+                github_account_id: i64_to_u64(account_id, "GitHub account id")?,
+                github_issue_number: i64_to_u64(issue_number, "GitHub issue number")?,
+                source_url,
+                text_markdown,
+                asked_at_unix: i64_to_u64(asked_at_unix, "request ask time")?,
+            }),
+            _ => {
+                return Err(PostgresError::internal_message(
+                    "request ask columns are incomplete",
+                ));
+            }
+        };
         Ok(Request::restore(StoredRequest {
             id: self.id,
             repo_id: self.repo_id,
@@ -114,6 +160,7 @@ impl Model {
             pushed_at_unix: optional_i64_to_u64(self.pushed_at_unix, "request push time")?,
             title: self.title,
             description_markdown: self.description_markdown,
+            ask,
             activity_version: i64_to_u64(self.activity_version, "request activity version")?,
             lifecycle: RequestLifecycle {
                 submitted_at_unix: optional_i64_to_u64(
@@ -122,6 +169,7 @@ impl Model {
                 )?,
                 closed_at_unix: optional_i64_to_u64(self.closed_at_unix, "request close time")?,
                 closed_by_user_id: self.closed_by_user_id,
+                close_reason: self.close_reason.map(decode_enum).transpose()?,
                 merged_at_unix: optional_i64_to_u64(self.merged_at_unix, "request merge time")?,
                 merged_by_user_id: self.merged_by_user_id,
                 merged_head_oid: self.merged_head_oid,

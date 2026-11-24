@@ -35,6 +35,9 @@ pub fn eligible_rating_subject_user_id<'a>(
     {
         return None;
     }
+    if !request.is_submitted() {
+        return None;
+    }
     let terminal_actor = request
         .lifecycle
         .merged_by_user_id

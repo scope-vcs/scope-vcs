@@ -52,6 +52,7 @@ fn request_fixture() -> Request {
         pushed_at_unix: None,
         title: "request".into(),
         description_markdown: String::new(),
+        ask: None,
         activity_version: 1,
         lifecycle: scope_domain::requests::RequestLifecycle::default(),
         created_at_unix: 1,

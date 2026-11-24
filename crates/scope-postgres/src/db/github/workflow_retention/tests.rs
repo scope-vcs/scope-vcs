@@ -264,6 +264,7 @@ async fn retention_deletes_runs_thirty_days_after_they_finish_and_keeps_an_open_
         &store.requests(),
         CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: "request-a".into(),
             actor_user_id: "user_public".into(),
             event_id: "request-a-closed".into(),

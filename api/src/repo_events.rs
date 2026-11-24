@@ -27,6 +27,7 @@ pub(crate) enum RepoChangeReason {
     RequestClosed,
     RequestStarted,
     RequestIdentityEdited,
+    RequestWorkChanged,
     RequestInviteeLeft,
     RequestRevised,
     RequestChecksUpdated,
@@ -60,6 +61,7 @@ impl RepoChangeReason {
             Self::RequestClosed => "request-closed",
             Self::RequestStarted => "request-started",
             Self::RequestIdentityEdited => "request-identity-edited",
+            Self::RequestWorkChanged => "request-work-changed",
             Self::RequestInviteeLeft => "request-invitee-left",
             Self::RequestRevised => "request-revised",
             Self::RequestChecksUpdated => "request-checks-updated",
@@ -291,6 +293,7 @@ pub(crate) fn repository_change_event(
             | RepoChangeReason::RequestClosed
             | RepoChangeReason::RequestStarted
             | RepoChangeReason::RequestIdentityEdited
+            | RepoChangeReason::RequestWorkChanged
             | RepoChangeReason::RequestInviteeLeft
             | RepoChangeReason::RequestRevised
             | RepoChangeReason::RequestChecksUpdated

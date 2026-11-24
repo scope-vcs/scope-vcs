@@ -6,9 +6,9 @@ use super::{
     repo_lifecycle::delete_locked_repository,
     repository_access::load_repo_record,
     repository_from_model,
-    request_lifecycle_effects::persist_deleted_draft,
+    request_lifecycle_effects::{persist_deleted_draft, persist_discarded_change},
     request_revision_rows::revisions_for_request_ids,
-    request_rows::{request_by_id, request_events_by_request_id},
+    request_rows::{request_by_id, request_event_by_id, request_events_by_request_id},
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -17,7 +17,10 @@ use scope_domain::{
         RepositoryIncarnation,
         collaboration::{CollaborationState, normalize_repository_invite_email},
     },
-    requests::{CloseRequestInput, CloseRequestMutation, close_request},
+    requests::{
+        CloseRequestInput, CloseRequestMutation, DiscardRequestChangeInput, close_request,
+        discard_unsubmitted_change,
+    },
 };
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
@@ -138,13 +141,14 @@ impl AuthStore {
             .select_only()
             .column(entities::request::Column::Id)
             .column(entities::request::Column::RepoId)
+            .column(entities::request::Column::GithubIssueNumber)
             .filter(entities::request::Column::AuthorUserId.eq(user_id))
             .filter(entities::request::Column::SubmittedAtUnix.is_null())
-            .into_tuple::<(String, String)>()
+            .into_tuple::<(String, String, Option<i64>)>()
             .all(&tx)
             .await
             .map_err(PostgresError::internal)?;
-        repository_ids.extend(drafts.iter().map(|(_, repo_id)| repo_id.clone()));
+        repository_ids.extend(drafts.iter().map(|(_, repo_id, _)| repo_id.clone()));
 
         let mut owned = Vec::new();
         let mut others = Vec::new();
@@ -206,8 +210,13 @@ impl AuthStore {
             .map(|row| row.try_get::<String>("", "repo_id"))
             .collect::<Result<_, _>>()
             .map_err(PostgresError::internal)?;
-        for (request_id, repo_id) in drafts {
-            if others.iter().any(|repo| repo.record.id == repo_id) {
+        for (request_id, repo_id, github_issue_number) in drafts {
+            if !others.iter().any(|repo| repo.record.id == repo_id) {
+                continue;
+            }
+            if github_issue_number.is_some() {
+                discard_change(&tx, &request_id, now_unix).await?;
+            } else {
                 delete_draft(&tx, &request_id, user_id, now_unix).await?;
             }
         }
@@ -338,6 +347,7 @@ async fn delete_draft(
             request_id: request_id.to_string(),
             actor_user_id: user_id.to_string(),
             actor_is_maintainer: false,
+            reason: None,
             event_id: format!("event_request_closed_{request_id}"),
             now_unix,
         },
@@ -348,6 +358,27 @@ async fn delete_draft(
         ));
     };
     persist_deleted_draft(tx, &request, now_unix).await
+}
+
+async fn discard_change(
+    tx: &DatabaseTransaction,
+    request_id: &str,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    acquire_aggregate_lock(tx, "request", request_id).await?;
+    let Some(request) = request_by_id(tx, request_id).await? else {
+        return Ok(());
+    };
+    let event_id = format!(
+        "event_request_change_discarded_{request_id}_{}",
+        request.activity_version
+    );
+    let mutation = discard_unsubmitted_change(
+        request,
+        request_event_by_id(tx, &event_id).await?.is_some(),
+        DiscardRequestChangeInput { event_id, now_unix },
+    )?;
+    persist_discarded_change(tx, &mutation, now_unix).await
 }
 
 #[cfg(test)]

@@ -207,6 +207,14 @@ pub fn router(state: AppState) -> Router {
                 .delete(http::requests::close_request),
         )
         .route(
+            routes::REPO_REQUEST_WORK,
+            post(http::requests::start_request_work).delete(http::requests::release_request_work),
+        )
+        .route(
+            routes::REPO_REQUEST_CHANGE,
+            post(http::requests::attach_request_change),
+        )
+        .route(
             routes::REPO_REQUEST_CHILDREN,
             get(http::request_children::get),
         )

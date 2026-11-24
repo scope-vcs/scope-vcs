@@ -408,6 +408,7 @@ async fn parent_extensions_preserve_child_intents_and_hard_dependencies_stop_wit
                     &store.requests(),
                     scope_domain::requests::CloseRequestInput {
                         actor_is_maintainer: true,
+                        reason: None,
                         request_id: parent.id.clone(),
                         actor_user_id: "user_owner".into(),
                         event_id: "close_parent".into(),

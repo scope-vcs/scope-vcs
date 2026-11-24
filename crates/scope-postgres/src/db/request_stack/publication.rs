@@ -181,7 +181,7 @@ async fn authorize_ancestors<C: ConnectionTrait>(
         if parent.repo_id != repo.record.id
             || !request_policy_for_user(conn, repo, parent, actor_user_id)
                 .await?
-                .exact_visible
+                .change_visible
         {
             return Err(PostgresError::not_found("parent request not found"));
         }

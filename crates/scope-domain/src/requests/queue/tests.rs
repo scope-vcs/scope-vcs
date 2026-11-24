@@ -91,6 +91,7 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
         (Status::Ready, contributor, Step::Wait),
         (Status::ChecksFailed, maintainer, Step::FixChecks),
         (Status::IntegrationConflict, maintainer, Step::Update),
+        (Status::NoChangeYet, maintainer, Step::Update),
         (Status::ChecksPending, maintainer, Step::Wait),
         (
             Status::ChecksAwaitingApproval,

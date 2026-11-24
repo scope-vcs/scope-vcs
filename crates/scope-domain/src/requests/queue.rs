@@ -147,7 +147,8 @@ fn next_step_for(
             | Status::NeedsMainUpdate
             | Status::ParentRewritten
             | Status::ParentClosed
-            | Status::MissingRequestBranch => RequestQueueNextStep::Update,
+            | Status::MissingRequestBranch
+            | Status::NoChangeYet => RequestQueueNextStep::Update,
             Status::Draft => RequestQueueNextStep::Submit,
             Status::Closed | Status::Merged => RequestQueueNextStep::Done,
             Status::Ready

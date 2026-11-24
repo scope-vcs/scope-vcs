@@ -100,7 +100,11 @@ impl RequestViewMains {
         view: &ViewId,
         contained_main_oid: &str,
         recorded: RequestStackStatus,
+        awaits_change: bool,
     ) -> RequestStackStatus {
+        if awaits_change {
+            return recorded;
+        }
         let contains_view_main = self
             .0
             .get(view)

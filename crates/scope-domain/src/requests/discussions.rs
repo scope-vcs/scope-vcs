@@ -128,6 +128,9 @@ pub struct MarkRequestDiscussionReadInput {
     pub now_unix: u64,
 }
 
+pub const LINE_COMMENTS_NEED_SUBMISSION: &str =
+    "comments on lines open once this request's change is submitted";
+
 pub fn create_request_discussion(
     mut request: Request,
     actor: RequestActor<'_>,
@@ -146,11 +149,12 @@ pub fn create_request_discussion(
         .as_ref()
         .map(RequestDiscussionAnchor::validate)
         .transpose()?;
-    if !actor
-        .permissions(&request, &input.actor_user_id)
-        .can_open_discussion
-    {
+    let permissions = actor.permissions(&request, &input.actor_user_id);
+    if !permissions.can_open_discussion {
         return Err(DomainError::forbidden("request discussion access required"));
+    }
+    if input.anchor.is_some() && !permissions.can_comment_on_change {
+        return Err(DomainError::forbidden(LINE_COMMENTS_NEED_SUBMISSION));
     }
     if discussion_id_exists {
         return Err(DomainError::conflict("request discussion already exists"));

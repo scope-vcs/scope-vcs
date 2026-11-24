@@ -37,6 +37,7 @@ async fn rolling_back_terminal_persistence_restores_request_invitees_push_and_ev
             request_id: "req_1".into(),
             actor_user_id: "user_public".into(),
             actor_is_maintainer: false,
+            reason: None,
             event_id: "event_rolled_back_close".into(),
             now_unix: 4,
         },

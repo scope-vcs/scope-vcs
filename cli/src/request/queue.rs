@@ -181,6 +181,7 @@ fn queue_row_line(row: &QueueRow, now_unix: u64) -> String {
         | RequestMergeabilityStatus::NeedsMainUpdate
         | RequestMergeabilityStatus::Ready
         | RequestMergeabilityStatus::RepositoryNotReady
+        | RequestMergeabilityStatus::NoChangeYet
         | RequestMergeabilityStatus::Draft
         | RequestMergeabilityStatus::Closed
         | RequestMergeabilityStatus::Merged

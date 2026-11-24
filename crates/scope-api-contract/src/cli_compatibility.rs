@@ -1,6 +1,6 @@
 use crate::{ErrorCode, ErrorResponse};
 
-pub const CLI_PROTOCOL_VERSION: u32 = 2;
+pub const CLI_PROTOCOL_VERSION: u32 = 3;
 pub const CLI_PROTOCOL_HEADER: &str = "x-scope-cli-protocol";
 pub const CLI_VERSION_HEADER: &str = "x-scope-cli-version";
 pub const CLI_BUILD_HEADER: &str = "x-scope-cli-build";

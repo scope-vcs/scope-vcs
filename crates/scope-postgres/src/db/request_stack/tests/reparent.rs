@@ -138,6 +138,7 @@ async fn reparenting_recovers_from_closed_or_rewritten_parent_to_main_or_other_p
                 &store.requests(),
                 scope_domain::requests::CloseRequestInput {
                     actor_is_maintainer: true,
+                    reason: None,
                     request_id: old.id.clone(),
                     actor_user_id: "user_owner".into(),
                     event_id: "close_old_parent".into(),
@@ -403,6 +404,7 @@ async fn reparenting_rejects_changed_parent_and_cycles_without_committing() {
         &store.requests(),
         scope_domain::requests::CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: parent.id,
             actor_user_id: "user_owner".into(),
             event_id: "close_new_parent".into(),
@@ -544,6 +546,7 @@ async fn context_receipt_replays_after_main_reparent_and_requires_current_edit_r
         &store.requests(),
         scope_domain::requests::CloseRequestInput {
             actor_is_maintainer: true,
+            reason: None,
             request_id: parent.id,
             actor_user_id: "user_owner".into(),
             event_id: "closed_after_detach".into(),

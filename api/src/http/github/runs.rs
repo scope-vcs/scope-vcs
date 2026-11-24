@@ -1,5 +1,5 @@
 use super::super::{
-    requests::{repo_metadata_and_access, visible_request},
+    requests::{repo_metadata_and_access, visible_request_change},
     responses::{
         GitHubWorkflowJobLogResponse, GitHubWorkflowRunDetailResponse,
         github_workflow_job_response, github_workflow_run_response,
@@ -118,7 +118,8 @@ async fn open_run(
         .ok_or_else(not_found)?;
     let request_visible = match detail.read.request_id.as_deref() {
         Some(request_id) if !repo.reads_full_view() => {
-            match visible_request(state, &repo, viewer_user_id.as_deref(), request_id).await {
+            match visible_request_change(state, &repo, viewer_user_id.as_deref(), request_id).await
+            {
                 Ok(_) => true,
                 Err(error) if error.status() == StatusCode::NOT_FOUND => false,
                 Err(error) => return Err(error),

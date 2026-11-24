@@ -230,9 +230,11 @@ pub fn approve_request_checks(
 pub fn close_request(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
+    reason: Option<RequestCloseReason>,
 ) -> anyhow::Result<RequestCloseResponse> {
     execute(
-        api.request(reqwest::Method::DELETE, request_path(target)),
+        api.request(reqwest::Method::DELETE, request_path(target))
+            .query(&CloseRequestQuery { reason }),
         format!(
             "close request {} for {}/{}",
             target.request_id, target.owner, target.repo
@@ -255,6 +257,24 @@ pub fn start_request(
                 view: params.view,
             }),
         format!("start request for {owner}/{repo}"),
+    )
+}
+
+pub fn attach_request_change(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+    name: String,
+) -> anyhow::Result<RequestMutationResponse> {
+    execute(
+        api.request(
+            reqwest::Method::POST,
+            routes::repo_request_change(target.owner, target.repo, target.request_id),
+        )
+        .json(&AttachRequestChangeRequest { name }),
+        format!(
+            "add a change to request {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 

@@ -61,6 +61,8 @@ mod repo_reads;
 mod repository_access;
 mod repository_rows;
 mod request_access;
+mod request_asks;
+pub use request_asks::OpenRequestFromAskCommand;
 mod request_attention;
 mod request_auto_merge;
 mod request_check_commits;

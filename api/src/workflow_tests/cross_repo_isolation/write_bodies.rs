@@ -143,6 +143,11 @@ pub(super) fn write_bodies(params: &BTreeMap<&'static str, String>) -> WriteBodi
         ),
         (
             "POST",
+            format!("{request}/change"),
+            json!({ "name": "isolation-change" }),
+        ),
+        (
+            "POST",
             format!("{request}/merge"),
             json!({ "expected_head_oid": params["commit_oid"] }),
         ),

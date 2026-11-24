@@ -34,5 +34,6 @@
   "m0115_github_webhook_deliveries.rs": "25fab7329674088c906c6e3a4f6740ded84f4d1c2783ea05945190ef0d932f78",
   "m0116_drop_outbox_jobs.rs": "0f6d565683196291dbdedde4ea6d227639d176550055e4afed4268fc16cacb39",
   "m0117_github_workflow_run_retention_order.rs": "f8773b0ad3e9407e597141beb8c8b8bb8f14331f2730e8376d43012c31e020b0",
-  "m0118_github_discussion_resolution_applied.rs": "1b69fae38c1424923a1e79c5fe110c3d8e8f6f21209717f2c9e5b1a56e5ca39e"
+  "m0118_github_discussion_resolution_applied.rs": "1b69fae38c1424923a1e79c5fe110c3d8e8f6f21209717f2c9e5b1a56e5ca39e",
+  "m0119_request_asks.rs": "cca79b56c0aae4444910c64f347b36e601504fa2a222f3ea5c25be4b232b2274"
 }

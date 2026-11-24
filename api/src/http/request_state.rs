@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, State},
 };
 use scope_api_contract::{RequestDetailResponse, RequestStateResponse};
-use scope_domain::requests::{DiffStat, RequestViewer};
+use scope_domain::requests::{DiffStat, RequestViewer, request_policy};
 use scope_postgres::db::RequestStateSnapshot;
 
 pub(crate) async fn get(
@@ -51,6 +51,14 @@ pub(crate) async fn diff_stat(
     state: &AppState,
     snapshot: &RequestStateSnapshot,
 ) -> Result<Option<DiffStat>, ApiError> {
+    let policy = request_policy(
+        &snapshot.request,
+        viewer(snapshot),
+        &snapshot.repository.views,
+    );
+    if !policy.change_visible {
+        return Ok(None);
+    }
     Ok(
         crate::use_cases::request_diff_stats::readable_request_diff_stats(
             state,
@@ -88,6 +96,10 @@ pub(crate) fn detail_response(
             snapshot.claimer_user_id.as_deref(),
             &snapshot.users,
         )?,
+        asker: snapshot
+            .asker
+            .as_ref()
+            .map(super::responses::github_account_response),
         diff_stat: diff_stat.map(super::responses::diff_stat_response),
         stack_navigation: scope_api_contract::RequestStackNavigationResponse {
             parent: snapshot

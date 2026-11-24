@@ -118,7 +118,9 @@ pub fn request_readable_in_git(
     views: &Views,
     view: &ViewId,
 ) -> bool {
-    request_policy(request, viewer, views).exact_visible && views.may_read(view, &request.view)
+    request.branch_name().is_some()
+        && request_policy(request, viewer, views).change_visible
+        && views.may_read(view, &request.view)
 }
 
 pub fn retain_git_fetch_heads(

@@ -2,8 +2,9 @@ use crate::api::ApiSession;
 use crate::{
     api::{
         CreateRequestDiscussionParams, CreateRequestDiscussionReplyParams, RequestActivityParams,
-        RequestTarget, StartRequestParams, add_request_invitee, authorize_request_auto_merge,
-        cancel_request_auto_merge, close_request as api_close_request, create_request_discussion,
+        RequestTarget, StartRequestParams, add_request_invitee, attach_request_change,
+        authorize_request_auto_merge, cancel_request_auto_merge,
+        close_request as api_close_request, create_request_discussion,
         create_request_discussion_reply, edit_request_identity, get_request, get_request_activity,
         get_request_auto_merge, leave_request, merge_request, rate_request, remove_request_invitee,
         reopen_and_reply_to_request_discussion, resolve_request_discussion,
@@ -162,7 +163,9 @@ pub fn run_request_command(
         RequestCommand::Submit(args) => {
             submit_request_command(git_repo, api, args.target, args.yes)
         }
-        RequestCommand::Close(args) => close_request_branch(git_repo, api, args.target, args.yes),
+        RequestCommand::Close(args) => {
+            close_request_branch(git_repo, api, args.target, args.yes, args.reason)
+        }
         RequestCommand::Edit(args) => edit_request(git_repo, api, args),
         RequestCommand::Invite(args) => {
             invite_request(git_repo, api, args.target, args.handle, true)
@@ -366,15 +369,16 @@ fn close_request_branch(
     api: ApiSession<'_>,
     target: RequestTargetArgs,
     yes: bool,
+    reason: Option<crate::api::RequestCloseReason>,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
-    let prompt = if before.request.submitted_at_unix.is_none() {
+    let prompt = if before.request.submitted_at_unix.is_none() && before.request.ask.is_none() {
         format!("Permanently delete draft request {}", before.request.name)
     } else {
-        format!("Close published request {}", before.request.name)
+        format!("Close request {}", before.request.name)
     };
     require_confirmation(&prompt, yes)?;
-    let response = api_close_request(api, api_target(&context, &request_id))?;
+    let response = api_close_request(api, api_target(&context, &request_id), reason)?;
     let human_line = close_receipt(&request_id, &response);
     Ok(RequestCommandOutcome::new(
         "request.close",

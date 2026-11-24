@@ -19,7 +19,7 @@ mod stacks;
 use crate::support::*;
 use axum::{
     Json, Router,
-    extract::{OriginalUri, Query},
+    extract::{OriginalUri, Path, Query},
     routing::{get, post},
 };
 use serde_json::{Value, json};
@@ -185,6 +185,54 @@ fn invalid_request_audience_fails_before_git_fetch() {
             .unwrap()
             .iter()
             .any(|event| event == "POST request")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn start_for_a_request_attaches_only_after_the_current_branch_passes_its_local_checks() {
+    let dir = TempDir::new("request-for-preflight");
+    create_repo_with_head(dir.path());
+    let bare = TempDir::new("request-for-preflight-bare");
+    run_git(bare.path(), ["init", "--bare"]);
+    run_git(
+        dir.path(),
+        [
+            "push",
+            bare.path().to_str().unwrap(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    let server = FixtureServer::start();
+    let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+
+    let output = transport
+        .command(&server, dir.path())
+        .args([
+            "--json",
+            "request",
+            "start",
+            "fix-one-change",
+            "--for",
+            "req_one",
+            "--current-branch",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(
+        error.message,
+        "main cannot become a request branch; switch to the branch that holds the work"
+    );
+    assert!(
+        !server
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event == "POST change")
     );
 }
 
@@ -534,7 +582,7 @@ fn dirty_request_checkout_fails_before_authentication_or_api_calls() {
 }
 
 #[test]
-fn request_edit_reads_description_stdin_outside_checkout() {
+fn request_edit_finds_a_request_by_its_handle_and_reads_description_stdin_outside_checkout() {
     use std::io::Write;
     let dir = TempDir::new("request-description");
     let server = FixtureServer::start();
@@ -547,7 +595,7 @@ fn request_edit_reads_description_stdin_outside_checkout() {
             "request",
             "edit",
             "--request",
-            "req_one",
+            "gh-142",
             "--description-file",
             "-",
         ])
@@ -631,6 +679,8 @@ impl FixtureServer {
         let auto_merge_seen_post = inspected.clone();
         let auto_merge_seen_delete = inspected.clone();
         let aggregate_seen = inspected.clone();
+        let attached_seen = inspected.clone();
+        let attached_detail = start_detail.clone();
         let app = Router::new()
                     .route("/v1/session", get(|| async { Json(crate::support::session_response("usr_test", "owner", "test@example.test")) }))
                     .route("/v1/repos/owner/repo", get(move |headers: axum::http::HeaderMap| {
@@ -639,6 +689,14 @@ impl FixtureServer {
                             let host = headers[axum::http::header::HOST].to_str().unwrap();
                             repo["git_remote_url"] = format!("http://{host}/git/public/owner/repo").into();
                             Json(repo)
+                        }
+                    }))
+                    .route("/v1/repos/owner/repo/requests/req_one/change", post(move || {
+                        let seen = attached_seen.clone();
+                        let detail = attached_detail.clone();
+                        async move {
+                            seen.lock().unwrap().push("POST change".to_string());
+                            Json(json!({ "request": detail }))
                         }
                     }))
                     .route("/v1/repos/owner/repo/requests/req_one/checks", get(move |OriginalUri(uri): OriginalUri| {
@@ -682,7 +740,7 @@ impl FixtureServer {
                         }
                     }))
                     .route("/v1/repos/owner/repo/requests", get(|Query(query): Query<HashMap<String,String>>| async move { Json(json!({"requests":([list_item("req_one", "fix-one", "Open"), list_item("req_two", "fix-two", "Closed"), list_item("req_three", "fix-three", "Open")].into_iter().filter(|item| query.get("name").is_none_or(|name| item["name"] == name.as_str())).collect::<Vec<_>>()), "next_cursor":null})) }).post(move || { let started=started.clone(); let detail=start_detail.clone(); async move { started.lock().unwrap().push("POST request".to_string()); Json(json!({"request":detail})) } }))
-                    .route("/v1/repos/owner/repo/requests/req_one", get(move || { let detail=show_detail.clone(); let navigation=navigation.clone(); async move { Json(json!({"request":detail,"stack_navigation":navigation})) } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { *captured.lock().unwrap()=body; Json(json!({"request":request()})) } }))
+                    .route("/v1/repos/owner/repo/requests/{reference}", get(move |Path(reference): Path<String>| { let detail=show_detail.clone(); let navigation=navigation.clone(); async move { if reference == "req_one" || reference == "gh-142" { Ok(Json(json!({"request":detail,"stack_navigation":navigation}))) } else { Err(axum::http::StatusCode::NOT_FOUND) } } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { *captured.lock().unwrap()=body; Json(json!({"request":request()})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one/changes", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=revisions_seen.clone(); let revision_base=revision_base.clone(); let comparison_base=comparison_base.clone(); let comparison_head=comparison_head.clone(); async move { inspected.lock().unwrap().push(uri.to_string());
                     let mode = query.get("comparison").map(String::as_str).unwrap_or(if query.contains_key("commit") { "commit" } else { "request" });
                     (axum::http::StatusCode::OK, Json(json!({"comparison":if mode == "request" || mode == "push" { json!({"revision_id":"rev_old","mode":mode,"base_oid":comparison_base,"head_oid":comparison_head,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public","lines":{"kind":"text","additions":1,"deletions":1}}],"inspection":"Complete"}) } else {Value::Null},"review_revision_id":query.get("revision").map(String::as_str).unwrap_or("rev_old"), "revisions":[{"id":"rev_old","base":revision_base,"base_version":1,"position":1,"actor":{"id":"usr_test","handle":"owner"},"old_head_oid":null,"new_head_oid":OID,"commits":[{"oid":OID,"parent_oids":[],"author":"owner","authored_at_unix":1,"message":"Old revision","change_count":1,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public","lines":{"kind":"text","additions":1,"deletions":1}},{"path":"unselected.txt","kind":"Added","old_mode":null,"new_mode":"100644","old_oid":null,"new_oid":OID,"label":"public","lines":{"kind":"binary"}}],"files_truncated":false}],"inspection":"Complete","created_at_unix":1}],"has_earlier_revisions":false}))) } }))
@@ -795,7 +853,8 @@ fn list_item(id: &str, name: &str, state: &str) -> Value {
     json!({"id":id,"name":name,"title":name,"base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"stack_parent":null,"author_role":"Public","view":"public","head_oid":OID,"state":state,"submitted_at_unix":1,"updated_at_unix":2,"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
 }
 fn request() -> Value {
-    json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_test","author_role":"Public","view":"public","base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"main_ancestor_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,"submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,"can_wait_after_reply":false,"can_edit_identity":true,"can_pull_branch":false,"can_push_branch":true,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":false,"can_merge":false},"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
+    let permissions = json!({"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,"can_wait_after_reply":false, "can_comment_on_change":false,"can_edit_identity":true,"can_read_change":true,"can_pull_branch":false,"can_push_branch":true,"can_submit":false,"can_start_work":false,"can_release_work":false,"can_attach_change":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":false,"can_merge":false});
+    json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_test","author_role":"Public","view":"public","base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"main_ancestor_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,"submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":permissions,"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
 }
 
 fn auto_merge_response(status: Option<&str>) -> Value {

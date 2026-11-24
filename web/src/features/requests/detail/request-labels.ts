@@ -21,6 +21,9 @@ const EVENT_LABELS = {
   Merged: 'Merged',
   Closed: 'Closed',
   IdentityEdited: 'Request edited',
+  WorkStarted: 'Work started',
+  WorkReleased: 'Work released',
+  ChangeAttached: 'Branch added',
   DiscussionResolved: 'Discussion resolved',
   DiscussionReopened: 'Discussion reopened',
   AutoMergeEnabled: 'Auto-merge enabled',
@@ -31,6 +34,7 @@ const EVENT_LABELS = {
 
 const MERGEABILITY = {
   Ready: { label: 'Ready to merge', tone: 'success' },
+  NoChangeYet: { label: 'No change yet', tone: 'neutral' },
   Draft: { label: 'Draft', tone: 'neutral' },
   Closed: { label: 'Closed', tone: 'neutral' },
   Merged: { label: 'Merged', tone: 'success' },
@@ -158,6 +162,8 @@ export function requestEventBody(event: RequestEventResponse) {
   if ('IdentityEdited' in payload) {
     return 'The request title or description was updated.'
   }
+  if ('WorkStarted' in payload || 'WorkReleased' in payload) return null
+  if ('ChangeAttached' in payload) return payload.ChangeAttached.branch_name
   if ('DiscussionResolved' in payload) {
     return discussionText(payload.DiscussionResolved.discussion_id)
   }

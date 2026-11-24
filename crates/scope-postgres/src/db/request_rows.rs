@@ -1,256 +1,22 @@
 use super::entities;
 use super::integer_columns;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
-    FromQueryResult, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    sea_query::{Expr, Query},
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
 use {
     crate::error::PostgresError,
-    scope_domain::repository::access::RepositoryAccess,
-    scope_domain::requests::{
-        REQUEST_LIST_MAX_PAGE_SIZE, Request, RequestActorRole, RequestBase, RequestEvent,
-        RequestListPredicate, RequestStackStatus, RequestState, request_list_predicate,
-    },
-    scope_domain::views::{ViewId, Views},
+    scope_domain::requests::{Request, RequestActorRole, RequestEvent},
+    scope_domain::views::ViewId,
     std::collections::BTreeMap,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RequestListRow {
-    pub id: String,
-    pub name: String,
-    pub title: String,
-    pub author_user_id: Option<String>,
-    pub author_role: RequestActorRole,
-    pub view: ViewId,
-    pub head_oid: String,
-    pub base: RequestBase,
-    pub base_version: u64,
-    pub main_ancestor_oid: String,
-    pub stack_status: RequestStackStatus,
-    pub stack_depth: u32,
-    pub state: RequestState,
-    pub submitted_at_unix: Option<u64>,
-    pub closed_at_unix: Option<u64>,
-    pub merged_at_unix: Option<u64>,
-    pub updated_at_unix: u64,
-    pub activity_version: u64,
-    pub has_pushed_head: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RequestListPageQuery<'a> {
-    pub repo_id: &'a str,
-    pub viewer_user_id: Option<&'a str>,
-    pub access: RepositoryAccess,
-    pub views: &'a Views,
-    pub after_id: Option<&'a str>,
-    pub name: Option<&'a str>,
-    pub limit: u64,
-}
-
-#[derive(Clone, Debug, FromQueryResult)]
-pub(super) struct RequestListModel {
-    pub(super) id: String,
-    name: String,
-    title: String,
-    author_user_id: Option<String>,
-    author_role: String,
-    audience: String,
-    head_oid: String,
-    base_kind: String,
-    review_base_oid: String,
-    parent_request_id: Option<String>,
-    parent_revision_id: Option<String>,
-    parent_head_oid: Option<String>,
-    base_version: i64,
-    main_ancestor_oid: String,
-    stack_status: String,
-    stack_depth: i32,
-    submitted_at_unix: Option<i64>,
-    closed_at_unix: Option<i64>,
-    merged_at_unix: Option<i64>,
-    updated_at_unix: i64,
-    activity_version: i64,
-    has_pushed_head: bool,
-}
-
-impl RequestListModel {
-    pub(super) fn try_into_read_model(self) -> Result<RequestListRow, PostgresError> {
-        let submitted_at_unix = self
-            .submitted_at_unix
-            .map(|value| integer_columns::i64_to_u64(value, "request submission time"))
-            .transpose()?;
-        let closed_at_unix = self
-            .closed_at_unix
-            .map(|value| integer_columns::i64_to_u64(value, "request close time"))
-            .transpose()?;
-        let merged_at_unix = self
-            .merged_at_unix
-            .map(|value| integer_columns::i64_to_u64(value, "request merge time"))
-            .transpose()?;
-        Ok(RequestListRow {
-            id: self.id,
-            name: self.name,
-            title: self.title,
-            author_user_id: self.author_user_id,
-            author_role: entities::decode_enum(self.author_role)?,
-            view: ViewId::parse(&self.audience).map_err(PostgresError::internal)?,
-            head_oid: self.head_oid,
-            base: entities::request::BaseColumns {
-                kind: self.base_kind,
-                review_base_oid: self.review_base_oid,
-                parent_request_id: self.parent_request_id,
-                parent_revision_id: self.parent_revision_id,
-                parent_head_oid: self.parent_head_oid,
-            }
-            .try_into_domain()?,
-            base_version: integer_columns::i64_to_u64(self.base_version, "request base version")?,
-            main_ancestor_oid: self.main_ancestor_oid,
-            stack_status: entities::decode_enum(self.stack_status)?,
-            stack_depth: self
-                .stack_depth
-                .try_into()
-                .map_err(PostgresError::internal)?,
-            state: RequestState::from_timestamps(merged_at_unix, closed_at_unix, submitted_at_unix),
-            submitted_at_unix,
-            closed_at_unix,
-            merged_at_unix,
-            updated_at_unix: integer_columns::i64_to_u64(
-                self.updated_at_unix,
-                "request update time",
-            )?,
-            activity_version: integer_columns::i64_to_u64(
-                self.activity_version,
-                "request activity version",
-            )?,
-            has_pushed_head: self.has_pushed_head,
-        })
-    }
-}
-
-pub(super) async fn request_list_page<C>(
-    conn: &C,
-    input: RequestListPageQuery<'_>,
-) -> Result<Vec<RequestListRow>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    request_list_rows(conn, request_list_select(&input)?).await
-}
-
-pub(super) async fn request_list_rows<C>(
-    conn: &C,
-    query: sea_orm::Select<entities::request::Entity>,
-) -> Result<Vec<RequestListRow>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    query
-        .into_model::<RequestListModel>()
-        .all(conn)
-        .await?
-        .into_iter()
-        .map(RequestListModel::try_into_read_model)
-        .collect()
-}
-
-fn request_list_select(
-    input: &RequestListPageQuery<'_>,
-) -> Result<sea_orm::Select<entities::request::Entity>, PostgresError> {
-    let mut query = request_list_projection()
-        .filter(entities::request::Column::RepoId.eq(input.repo_id))
-        .order_by_asc(entities::request::Column::Id)
-        .limit(std::cmp::min(
-            input.limit,
-            (REQUEST_LIST_MAX_PAGE_SIZE + 1) as u64,
-        ));
-    if let Some(after_id) = input.after_id {
-        query = query.filter(entities::request::Column::Id.gt(after_id));
-    }
-    if let Some(name) = input.name {
-        query = query.filter(entities::request::Column::Name.eq(name));
-    }
-    query = query.filter(request_list_condition(&request_list_predicate(
-        input.access.clone(),
-        input.viewer_user_id,
-        input.views,
-    ))?);
-    Ok(query)
-}
-
-pub(super) fn request_list_condition(
-    predicate: &RequestListPredicate<'_>,
-) -> Result<Condition, PostgresError> {
-    match predicate {
-        RequestListPredicate::All(predicates) => predicates
-            .iter()
-            .try_fold(Condition::all(), |condition, predicate| {
-                Ok(condition.add(request_list_condition(predicate)?))
-            }),
-        RequestListPredicate::Any(predicates) => predicates
-            .iter()
-            .try_fold(Condition::any(), |condition, predicate| {
-                Ok(condition.add(request_list_condition(predicate)?))
-            }),
-        RequestListPredicate::View(view) => {
-            Ok(Condition::all()
-                .add(entities::request::Column::Audience.eq(view.as_str().to_string())))
-        }
-        RequestListPredicate::Submitted => {
-            Ok(Condition::all().add(entities::request::Column::SubmittedAtUnix.is_not_null()))
-        }
-        RequestListPredicate::Author(viewer_user_id) => {
-            Ok(Condition::all().add(entities::request::Column::AuthorUserId.eq(*viewer_user_id)))
-        }
-        RequestListPredicate::Invitee(viewer_user_id) => {
-            let invitee = Query::select()
-                .expr(Expr::val(1))
-                .from(entities::request_invitee::Entity)
-                .and_where(
-                    Expr::col((
-                        entities::request_invitee::Entity,
-                        entities::request_invitee::Column::RequestId,
-                    ))
-                    .equals((entities::request::Entity, entities::request::Column::Id)),
-                )
-                .and_where(entities::request_invitee::Column::UserId.eq(*viewer_user_id))
-                .to_owned();
-            Ok(Condition::all().add(Expr::exists(invitee)))
-        }
-    }
-}
-
-pub(super) fn request_list_projection() -> sea_orm::Select<entities::request::Entity> {
-    entities::request::Entity::find()
-        .select_only()
-        .column(entities::request::Column::Id)
-        .column(entities::request::Column::Name)
-        .column(entities::request::Column::Title)
-        .column(entities::request::Column::AuthorUserId)
-        .column(entities::request::Column::AuthorRole)
-        .column(entities::request::Column::Audience)
-        .column(entities::request::Column::HeadOid)
-        .column(entities::request::Column::BaseKind)
-        .column(entities::request::Column::ReviewBaseOid)
-        .column(entities::request::Column::ParentRequestId)
-        .column(entities::request::Column::ParentRevisionId)
-        .column(entities::request::Column::ParentHeadOid)
-        .column(entities::request::Column::BaseVersion)
-        .column(entities::request::Column::MainAncestorOid)
-        .column(entities::request::Column::StackStatus)
-        .column(entities::request::Column::StackDepth)
-        .column(entities::request::Column::SubmittedAtUnix)
-        .column(entities::request::Column::ClosedAtUnix)
-        .column(entities::request::Column::MergedAtUnix)
-        .column(entities::request::Column::UpdatedAtUnix)
-        .column(entities::request::Column::ActivityVersion)
-        .expr_as(
-            Expr::col(entities::request::Column::PushedAtUnix).is_not_null(),
-            "has_pushed_head",
-        )
-}
+mod list;
+pub(super) use list::{
+    RequestListModel, RequestListReader, request_list_condition, request_list_page,
+    request_list_projection, request_list_rows,
+};
+pub use list::{RequestListPageQuery, RequestListRow};
 
 pub(super) async fn request_by_id<C>(
     conn: &C,
@@ -277,6 +43,28 @@ where
     entities::request::Entity::find()
         .filter(entities::request::Column::RepoId.eq(repo_id.to_string()))
         .filter(entities::request::Column::Name.eq(request_name.to_string()))
+        .one(conn)
+        .await?
+        .map(entities::request::Model::try_into_domain)
+        .transpose()
+}
+
+pub(super) async fn request_by_github_issue_number<C>(
+    conn: &C,
+    repo_id: &str,
+    github_issue_number: u64,
+) -> Result<Option<Request>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    entities::request::Entity::find()
+        .filter(entities::request::Column::RepoId.eq(repo_id))
+        .filter(
+            entities::request::Column::GithubIssueNumber.eq(integer_columns::u64_to_i64(
+                github_issue_number,
+                "GitHub issue number",
+            )?),
+        )
         .one(conn)
         .await?
         .map(entities::request::Model::try_into_domain)
@@ -524,6 +312,10 @@ where
             Expr::value(row.closed_by_user_id),
         )
         .col_expr(
+            entities::request::Column::CloseReason,
+            Expr::value(row.close_reason),
+        )
+        .col_expr(
             entities::request::Column::MergedAtUnix,
             Expr::value(row.merged_at_unix),
         )
@@ -553,6 +345,30 @@ where
     Ok(())
 }
 
+pub(super) async fn save_request_branch_and_author<C>(
+    conn: &C,
+    request: &Request,
+) -> Result<(), PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let row = entities::request::Model::from_domain(request)?;
+    entities::request::Entity::update_many()
+        .filter(entities::request::Column::Id.eq(row.id))
+        .col_expr(entities::request::Column::Name, Expr::value(row.name))
+        .col_expr(
+            entities::request::Column::AuthorUserId,
+            Expr::value(row.author_user_id),
+        )
+        .col_expr(
+            entities::request::Column::AuthorRole,
+            Expr::value(row.author_role),
+        )
+        .exec(conn)
+        .await?;
+    save_request_row(conn, request).await
+}
+
 pub(super) async fn insert_request_event_row<C>(
     conn: &C,
     event: &RequestEvent,
@@ -565,30 +381,4 @@ where
         .insert(conn)
         .await?;
     Ok(())
-}
-
-#[cfg(test)]
-mod request_list_tests {
-    use super::*;
-    use sea_orm::{DatabaseBackend, QueryTrait};
-
-    #[test]
-    fn request_list_does_not_fetch_unbounded_payloads() {
-        let query = request_list_select(&RequestListPageQuery {
-            repo_id: "repo-1",
-            viewer_user_id: Some("viewer-1"),
-            access: RepositoryAccess::public(),
-            views: &Views::builtin(),
-            after_id: None,
-            name: None,
-            limit: 1,
-        })
-        .unwrap();
-        let sql = query.build(DatabaseBackend::Postgres).to_string();
-        let projection = sql.split(" FROM ").next().unwrap();
-
-        assert!(!projection.contains("description_markdown"));
-        assert_eq!(projection.matches("\"pushed_at_unix\"").count(), 1);
-        assert!(projection.contains("pushed_at_unix\" IS NOT NULL"));
-    }
 }

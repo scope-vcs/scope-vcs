@@ -207,7 +207,9 @@ pub fn request_auto_merge_readiness(gate: super::MergeGateDecision) -> RequestAu
         RequestMergeabilityStatus::IntegrationConflict => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::MergeConflict)
         }
-        RequestMergeabilityStatus::Draft | RequestMergeabilityStatus::Merged => {
+        RequestMergeabilityStatus::NoChangeYet
+        | RequestMergeabilityStatus::Draft
+        | RequestMergeabilityStatus::Merged => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::RequestChanged)
         }
     }
@@ -578,6 +580,9 @@ fn transition(
         | RequestEventPayload::Merged { .. }
         | RequestEventPayload::Closed { .. }
         | RequestEventPayload::IdentityEdited { .. }
+        | RequestEventPayload::WorkStarted {}
+        | RequestEventPayload::WorkReleased {}
+        | RequestEventPayload::ChangeAttached { .. }
         | RequestEventPayload::DiscussionResolved { .. }
         | RequestEventPayload::DiscussionReopened { .. } => {
             unreachable!("auto-merge transition creates only auto-merge events")

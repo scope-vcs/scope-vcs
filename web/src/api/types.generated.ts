@@ -108,7 +108,7 @@ export type RequestAttachmentUploadGrantClaims = { attachment_id: string, reposi
 
 export type GitOid = string;
 
-export type RequestEventKind = "BaseRetargeted" | "Started" | "Submitted" | "RevisionPushed" | "Merged" | "Closed" | "IdentityEdited" | "DiscussionResolved" | "DiscussionReopened" | "AutoMergeEnabled" | "AutoMergeCancelled" | "AutoMergeStopped" | "AutoMergeFulfilled";
+export type RequestEventKind = "BaseRetargeted" | "Started" | "Submitted" | "RevisionPushed" | "Merged" | "Closed" | "IdentityEdited" | "WorkStarted" | "WorkReleased" | "ChangeAttached" | "DiscussionResolved" | "DiscussionReopened" | "AutoMergeEnabled" | "AutoMergeCancelled" | "AutoMergeStopped" | "AutoMergeFulfilled";
 
 export type AccountSessionResponse = { identity: SessionIdentity | null, user: UserResponse | null, };
 
@@ -352,7 +352,7 @@ export type RequestQueuePageResponse = { requests: Array<RequestQueueItemRespons
 
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
-export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, author: RequestActorSummaryResponse | null, author_record: RequestAuthorRecordResponse | null, claimer: RequestActorSummaryResponse | null, diff_stat: RequestDiffStatResponse | null, };
+export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, author: RequestActorSummaryResponse | null, author_record: RequestAuthorRecordResponse | null, claimer: RequestActorSummaryResponse | null, asker: GitHubAccountResponse | null, diff_stat: RequestDiffStatResponse | null, };
 
 export type RequestDiffStatResponse = { additions: number, deletions: number, changed_files: number, };
 
@@ -392,7 +392,11 @@ export type RequestRevisionContextRequest = { operation_key: string, base: Reque
 
 export type RequestRevisionContextResponse = { request: RequestSummaryResponse, revision_id: string, };
 
-export type RequestSummaryResponse = { id: string, name: string, title: string, description_markdown: string, author_user_id: string | null, author_role: RequestActorRole, view: ViewId, base: RequestBase, base_version: number, stack_status: RequestStackStatus, stack_depth: number, main_ancestor_oid: GitOid, head_oid: GitOid, state: RequestState, activity_version: number, submitted_at_unix: number | null, closed_at_unix: number | null, closed_by_user_id: string | null, merged_at_unix: number | null, merged_by_user_id: string | null, merged_head_oid: GitOid | null, merged_main_oid: GitOid | null, created_at_unix: number, updated_at_unix: number, invitees: Array<RequestInviteeResponse>, permissions: RequestPermissionsResponse, mergeability: RequestMergeabilityResponse, };
+export type RequestCloseReason = "completed" | "not_planned" | "duplicate";
+
+export type RequestAskResponse = { handle: string, github_issue_number: number, source_url: string, text_markdown: string, asked_at_unix: number, suggested_branch_name: string, };
+
+export type RequestSummaryResponse = { id: string, name: string, branch_name: string | null, title: string, description_markdown: string, ask: RequestAskResponse | null, author_user_id: string | null, author_role: RequestActorRole, view: ViewId, base: RequestBase, base_version: number, stack_status: RequestStackStatus, stack_depth: number, main_ancestor_oid: GitOid, head_oid: GitOid, state: RequestState, activity_version: number, submitted_at_unix: number | null, closed_at_unix: number | null, closed_by_user_id: string | null, close_reason: RequestCloseReason | null, merged_at_unix: number | null, merged_by_user_id: string | null, merged_head_oid: GitOid | null, merged_main_oid: GitOid | null, created_at_unix: number, updated_at_unix: number, invitees: Array<RequestInviteeResponse>, permissions: RequestPermissionsResponse, mergeability: RequestMergeabilityResponse, };
 
 export type RequestInviteeResponse = { user: RequestActorSummaryResponse, invited_by_user_id: string | null, created_at_unix: number, };
 
@@ -404,9 +408,9 @@ export type RequestInviteeMutationResponse = { request: RequestSummaryResponse, 
 
 export type LeaveRequestResponse = { invitee: RequestInviteeResponse, };
 
-export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
+export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_comment_on_change: boolean, can_edit_identity: boolean, can_read_change: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_start_work: boolean, can_release_work: boolean, can_attach_change: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
 
-export type RequestMergeabilityStatus = "WaitingForParent" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "IntegrationConflict" | "NeedsMainUpdate" | "Ready" | "RepositoryNotReady" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError" | "ReviewsPending" | "ReviewFindingsOpen";
+export type RequestMergeabilityStatus = "WaitingForParent" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "IntegrationConflict" | "NeedsMainUpdate" | "Ready" | "RepositoryNotReady" | "NoChangeYet" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError" | "ReviewsPending" | "ReviewFindingsOpen";
 
 export type RequestMergeabilityResponse = { status: RequestMergeabilityStatus, current_main_oid: GitOid | null, request_head_oid: GitOid, reason: string | null, };
 
@@ -450,7 +454,7 @@ export type RequestChecksResponse = { request_id: string, head_oid: GitOid, stat
 
 export type RequestEventResponse = { id: string, position: number, actor: RequestActorSummaryResponse | null, kind: RequestEventKind, payload: RequestEventPayload, created_at_unix: number, };
 
-export type RequestEventPayload = { "BaseRetargeted": { old_base: RequestBase, landed_head_oid: string, main_oid: string | null, } } | { "Started": { identity: RequestIdentityAuditFact, } } | { "Submitted": { head_oid: string, } } | { "RevisionPushed": { old_head_oid: string, new_head_oid: string, note: string | null, } } | { "Merged": { head_oid: string, main_oid: string | null, } } | { "Closed": { head_oid: string, } } | { "IdentityEdited": { before: RequestIdentityAuditFact, after: RequestIdentityAuditFact, } } | { "DiscussionResolved": { discussion_id: string, } } | { "DiscussionReopened": { discussion_id: string, } } | { "AutoMergeEnabled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeCancelled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeStopped": { intent_id: string, revision_id: string, head_oid: string, reason: RequestAutoMergeStopReason, } } | { "AutoMergeFulfilled": { intent_id: string, revision_id: string, head_oid: string, main_oid: string | null, } };
+export type RequestEventPayload = { "BaseRetargeted": { old_base: RequestBase, landed_head_oid: string, main_oid: string | null, } } | { "Started": { identity: RequestIdentityAuditFact, } } | { "Submitted": { head_oid: string, } } | { "RevisionPushed": { old_head_oid: string, new_head_oid: string, note: string | null, } } | { "Merged": { head_oid: string, main_oid: string | null, } } | { "Closed": { head_oid: string, } } | { "IdentityEdited": { before: RequestIdentityAuditFact, after: RequestIdentityAuditFact, } } | { "WorkStarted": Record<symbol, never> } | { "WorkReleased": Record<symbol, never> } | { "ChangeAttached": { branch_name: string, } } | { "DiscussionResolved": { discussion_id: string, } } | { "DiscussionReopened": { discussion_id: string, } } | { "AutoMergeEnabled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeCancelled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeStopped": { intent_id: string, revision_id: string, head_oid: string, reason: RequestAutoMergeStopReason, } } | { "AutoMergeFulfilled": { intent_id: string, revision_id: string, head_oid: string, main_oid: string | null, } };
 
 export type RequestIdentityAuditFact = { title_sha256: string, title_byte_count: number, description_sha256: string, description_byte_count: number, };
 
@@ -507,6 +511,8 @@ export type RequestActivityPageResponse = { events: Array<RequestEventResponse>,
 export type RequestCloseResponse = { deleted: boolean, request: RequestSummaryResponse | null, };
 
 export type StartRequestRequest = { base: RequestBase | null, name: string, title: string | null, view: ViewId, };
+
+export type AttachRequestChangeRequest = { name: string, };
 
 export type SubmitRequestRequest = Record<symbol, never>;
 
@@ -566,6 +572,8 @@ export const ApiRouteTemplates = {
   repoRequestAutoMerge: "/v1/repos/{owner}/{repo}/requests/{request_id}/auto-merge",
   repoRequestChecks: "/v1/repos/{owner}/{repo}/requests/{request_id}/checks",
   repoRequestChecksApprove: "/v1/repos/{owner}/{repo}/requests/{request_id}/checks/approve",
+  repoRequestWork: "/v1/repos/{owner}/{repo}/requests/{request_id}/work",
+  repoRequestChange: "/v1/repos/{owner}/{repo}/requests/{request_id}/change",
   repoRequestRatings: "/v1/repos/{owner}/{repo}/requests/{request_id}/ratings",
   repoRequestInvitees: "/v1/repos/{owner}/{repo}/requests/{request_id}/invitees",
   repoRequestInviteesMe: "/v1/repos/{owner}/{repo}/requests/{request_id}/invitees/me",

@@ -4,7 +4,7 @@ use scope_domain::{
     repository::access::RepositoryAccessContext,
     requests::{
         REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_STACK_MAX_ANCESTORS, RequestBase,
-        RequestStackNavigation, RequestStackNode, RequestStackParent, request_list_predicate,
+        RequestStackNavigation, RequestStackNode, RequestStackParent, request_change_predicate,
         request_stack_navigation,
     },
 };
@@ -14,6 +14,7 @@ use sea_orm::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Default)]
 pub struct RequestChildrenPage {
     pub requests: Vec<RequestStackNode>,
     pub next_cursor: Option<String>,
@@ -64,14 +65,42 @@ async fn authorized_nodes<C: ConnectionTrait>(
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let query = request_rows::request_list_projection()
+    let query = readable_changes(repository, viewer_user_id)?
+        .filter(entities::request::Column::Id.is_in(ids.iter().cloned()));
+    nodes_for_rows(
+        conn,
+        list_rows(conn, repository, viewer_user_id, query).await?,
+    )
+    .await
+}
+
+fn readable_changes(
+    repository: &RepositoryAccessContext,
+    viewer_user_id: Option<&str>,
+) -> Result<sea_orm::Select<entities::request::Entity>, PostgresError> {
+    Ok(request_rows::request_list_projection(viewer_user_id)
         .filter(entities::request::Column::RepoId.eq(&repository.record.id))
-        .filter(entities::request::Column::Id.is_in(ids.iter().cloned()))
         .filter(request_rows::request_list_condition(
-            &request_list_predicate(repository.access.clone(), viewer_user_id, &repository.views),
-        )?);
-    let rows = request_rows::request_list_rows(conn, query).await?;
-    nodes_for_rows(conn, rows).await
+            &request_change_predicate(repository.access.clone(), viewer_user_id, &repository.views),
+        )?))
+}
+
+async fn list_rows<C: ConnectionTrait>(
+    conn: &C,
+    repository: &RepositoryAccessContext,
+    viewer_user_id: Option<&str>,
+    query: sea_orm::Select<entities::request::Entity>,
+) -> Result<Vec<RequestListRow>, PostgresError> {
+    request_rows::request_list_rows(
+        conn,
+        query,
+        request_rows::RequestListReader {
+            access: &repository.access,
+            user_id: viewer_user_id,
+            views: &repository.views,
+        },
+    )
+    .await
 }
 
 #[derive(FromQueryResult)]
@@ -152,19 +181,15 @@ async fn children_page<C: ConnectionTrait>(
     limit: usize,
 ) -> Result<RequestChildrenPage, PostgresError> {
     let limit = limit.clamp(1, REQUEST_LIST_MAX_PAGE_SIZE);
-    let mut query = request_rows::request_list_projection()
-        .filter(entities::request::Column::RepoId.eq(&repository.record.id))
+    let mut query = readable_changes(repository, viewer_user_id)?
         .filter(entities::request::Column::Audience.eq(request.view.as_str()))
         .filter(entities::request::Column::ParentRequestId.eq(&request.id))
-        .filter(request_rows::request_list_condition(
-            &request_list_predicate(repository.access.clone(), viewer_user_id, &repository.views),
-        )?)
         .order_by_asc(entities::request::Column::Id)
         .limit((limit + 1) as u64);
     if let Some(id) = after_id {
         query = query.filter(entities::request::Column::Id.gt(id));
     }
-    let mut rows = request_rows::request_list_rows(conn, query).await?;
+    let mut rows = list_rows(conn, repository, viewer_user_id, query).await?;
     let has_more = rows.len() > limit;
     rows.truncate(limit);
     let next_cursor = has_more

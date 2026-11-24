@@ -16,7 +16,7 @@ use scope_domain::{
         RequestAttentionState as DomainRequestAttentionState,
         RequestCheckEvaluationState as DomainRequestCheckEvaluationState,
         RequestChecksOutcome as DomainRequestChecksOutcome,
-        RequestDiffSide as DomainRequestDiffSide,
+        RequestCloseReason as DomainRequestCloseReason, RequestDiffSide as DomainRequestDiffSide,
         RequestDiscussionStatus as DomainRequestDiscussionStatus,
         RequestEventKind as DomainRequestEventKind,
         RequestEventPayload as DomainRequestEventPayload,
@@ -189,6 +189,11 @@ impl From<RepositoryMemberPermissions> for DomainRepositoryMemberPermissions {
 wire_enum!(RequestActorRole => DomainRequestActorRole { Public, Member, Owner });
 
 wire_enum!(RequestState => DomainRequestState { Draft, Open, Closed, Merged });
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestCloseReason => DomainRequestCloseReason { Completed, NotPlanned, Duplicate }
+);
 wire_enum!(RequestEventKind => DomainRequestEventKind {
     BaseRetargeted,
     Started,
@@ -197,6 +202,9 @@ wire_enum!(RequestEventKind => DomainRequestEventKind {
     Merged,
     Closed,
     IdentityEdited,
+    WorkStarted,
+    WorkReleased,
+    ChangeAttached,
     DiscussionResolved,
     DiscussionReopened,
     AutoMergeEnabled,
@@ -213,6 +221,7 @@ wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
     NeedsMainUpdate,
     Ready,
     RepositoryNotReady,
+    NoChangeYet,
     Draft,
     Closed,
     Merged,
@@ -352,6 +361,11 @@ pub enum RequestEventPayload {
         before: RequestIdentityAuditFact,
         after: RequestIdentityAuditFact,
     },
+    WorkStarted {},
+    WorkReleased {},
+    ChangeAttached {
+        branch_name: String,
+    },
     DiscussionResolved {
         discussion_id: String,
     },
@@ -418,6 +432,11 @@ impl TryFrom<DomainRequestEventPayload> for RequestEventPayload {
                 before: before.into(),
                 after: after.into(),
             },
+            DomainRequestEventPayload::WorkStarted {} => Self::WorkStarted {},
+            DomainRequestEventPayload::WorkReleased {} => Self::WorkReleased {},
+            DomainRequestEventPayload::ChangeAttached { branch_name } => {
+                Self::ChangeAttached { branch_name }
+            }
             DomainRequestEventPayload::DiscussionResolved { discussion_id } => {
                 Self::DiscussionResolved { discussion_id }
             }

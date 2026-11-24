@@ -186,6 +186,7 @@ async fn insert_private_request_for_public_user(state: &AppState) {
                 pushed_at_unix: None,
                 title: "Former member request".to_string(),
                 description_markdown: String::new(),
+                ask: None,
                 activity_version: 0,
                 lifecycle: scope_domain::requests::RequestLifecycle::default(),
                 created_at_unix: 2,

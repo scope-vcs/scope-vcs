@@ -19,7 +19,7 @@ pub enum RequestStackParent {
     Unavailable,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RequestStackNavigation {
     pub parent: Option<RequestStackParent>,
     pub ancestors: Vec<RequestStackNode>,

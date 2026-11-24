@@ -346,6 +346,11 @@ fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String>
                 format!("Closed · head {}", short_oid(head_oid))
             }
             RequestEventPayload::IdentityEdited { .. } => "Edited title or description".to_string(),
+            RequestEventPayload::WorkStarted {} => "Started working on it".to_string(),
+            RequestEventPayload::WorkReleased {} => "Released it".to_string(),
+            RequestEventPayload::ChangeAttached { branch_name } => {
+                format!("Added branch {}", terminal_text(branch_name))
+            }
             RequestEventPayload::DiscussionResolved { discussion_id } => {
                 format!("Resolved discussion {}", terminal_text(discussion_id))
             }
@@ -576,6 +581,7 @@ pub(super) fn mergeability_label(mergeability: &RequestMergeabilityResponse) -> 
         RequestMergeabilityStatus::Closed => "closed".to_string(),
         RequestMergeabilityStatus::Merged => "merged".to_string(),
         RequestMergeabilityStatus::Draft => "draft".to_string(),
+        RequestMergeabilityStatus::NoChangeYet => "no change yet".to_string(),
         RequestMergeabilityStatus::RepositoryNotReady => "repository not ready".to_string(),
         RequestMergeabilityStatus::NotMaintainer => mergeability
             .reason
