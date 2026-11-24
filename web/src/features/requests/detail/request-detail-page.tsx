@@ -237,6 +237,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               <RequestMoreMenu
                 actions={requestActions}
                 disabled={requestActions.pending !== null || autoMerge.pending !== null}
+                key={request.id}
                 onViewActivity={history.openHistory}
                 params={params}
                 request={request}
