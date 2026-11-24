@@ -34,6 +34,20 @@ export function selectCliDistributionTargets(configuration, mode) {
   };
 }
 
+export function selectNativeArtifactChecks(plan) {
+  const include = plan.include.filter(({ native_runner }) => native_runner);
+  return include.length === 0 ? null : { include };
+}
+
+export function workflowOutputs(configuration, mode) {
+  const plan = selectCliDistributionTargets(configuration, mode);
+  const nativeChecks = selectNativeArtifactChecks(plan);
+  return [
+    `matrix=${JSON.stringify(plan)}`,
+    `native_checks=${nativeChecks ? JSON.stringify(nativeChecks) : ""}`,
+  ].join("\n");
+}
+
 function argument(name, fallback = "") {
   const index = process.argv.indexOf(name);
   return index === -1 ? fallback : process.argv[index + 1] ?? fallback;
@@ -43,7 +57,7 @@ function main() {
   const targetsPath = argument("--targets", "cli/distribution/targets.json");
   const mode = argument("--mode");
   const configuration = JSON.parse(readFileSync(targetsPath, "utf8"));
-  process.stdout.write(`${JSON.stringify(selectCliDistributionTargets(configuration, mode))}\n`);
+  process.stdout.write(`${workflowOutputs(configuration, mode)}\n`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) main();

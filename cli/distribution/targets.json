@@ -22,7 +22,8 @@
       "runner": "ubuntu-24.04",
       "executable": "scope",
       "builder": "cross",
-      "smoke": false
+      "smoke": false,
+      "native_runner": "ubuntu-24.04-arm"
     },
     {
       "triple": "x86_64-apple-darwin",

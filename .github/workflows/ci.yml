@@ -37,10 +37,16 @@ jobs:
           run_id=""
           for attempt in {1..8}; do
             (( attempt == 1 )) || sleep 30
-            candidate="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
-              .state == \"open\" and .head.sha == \"$SHA\" and .base.ref == \"main\" and
-              .head.repo.full_name == \"$REPOSITORY\" and .user.login != \"dependabot[bot]\")][0].number // empty")" || continue
-            [[ -n "$candidate" ]] || continue
+            pull="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
+              .state == \"open\" and .head.sha == \"$SHA\" and
+              .head.repo.full_name == \"$REPOSITORY\" and .user.login != \"dependabot[bot]\")]
+              | (map(select(.base.ref == \"main\")) + .)[0] // empty | \"\(.number) \(.base.ref)\"")" || continue
+            [[ -n "$pull" ]] || continue
+            read -r candidate base <<< "$pull"
+            if [[ "$base" != main ]]; then
+              echo "Pull request #$candidate targets $base, not main, so this push validates itself."
+              break
+            fi
             run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
               --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $candidate))][0].id // empty")" || continue
             if [[ -n "$run" ]]; then
