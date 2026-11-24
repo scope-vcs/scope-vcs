@@ -17,17 +17,18 @@ workspace() { cargo test --workspace --exclude api --locked; }
 api-git-refs() { cargo test -p api --locked --lib -- "$api_git_refs"; }
 api() { cargo test -p api --locked -- --skip "$api_git_refs"; }
 
-features() {
-  cargo test -p api --features local-dev --locked dev::
+local-dev-features() { cargo test -p api --features local-dev --locked dev::; }
+
+smoke-seed-features() {
   env -u SCOPE_OBJECT_ENCRYPTION_KEY -u SCOPE_BUCKET_ENDPOINT \
     cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests
 }
 
 case "${1:-all}" in
-  all) lint; workspace; api-git-refs; api; features ;;
-  lint | workspace | api-git-refs | api | features) "$1" ;;
+  all) lint; workspace; api-git-refs; api; local-dev-features; smoke-seed-features ;;
+  lint | workspace | api-git-refs | api | local-dev-features | smoke-seed-features) "$1" ;;
   *)
-    echo "usage: dev/checks/backend [all|lint|workspace|api-git-refs|api|features]" >&2
+    echo "usage: dev/checks/backend [all|lint|workspace|api-git-refs|api|local-dev-features|smoke-seed-features]" >&2
     exit 2
     ;;
 esac

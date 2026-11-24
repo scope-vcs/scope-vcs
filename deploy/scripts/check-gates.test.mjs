@@ -567,7 +567,7 @@ test("a Scope request revision that an open pull request tests reports that pull
 test('a Scope request revision reuses an open pull request run, waiting briefly for GitHub to start it', () => {
   const ci = read('.github/workflows/ci.yml');
   const script = stepScript(ci.slice(ci.indexOf('\n  pull-request:\n')), 'Find a pull request run that tests this commit');
-  const find = ({ pulls = ['7'], runs = ['123'] }) => {
+  const find = ({ pulls = ['7 main'], runs = ['123'] }) => {
     const dir = mkdtempSync(resolve(tmpdir(), 'scope-ci-find-'));
     try {
       writeFileSync(resolve(dir, 'pulls'), pulls.join('\n') + '\n');
@@ -587,11 +587,12 @@ test('a Scope request revision reuses an open pull request run, waiting briefly 
     }
   };
   assert.deepEqual(find({}), { output: 'number=7\nrun_id=123\n', slept: 0 });
-  assert.deepEqual(find({ pulls: ['', '7'], runs: ['', '123'] }), { output: 'number=7\nrun_id=123\n', slept: 2 }, 'the pull request and its run can appear after the push');
+  assert.deepEqual(find({ pulls: ['', '7 main'], runs: ['', '123'] }), { output: 'number=7\nrun_id=123\n', slept: 2 }, 'the pull request and its run can appear after the push');
   assert.deepEqual(find({ pulls: [''] }), { output: 'number=\nrun_id=\n', slept: 7 });
   assert.deepEqual(find({ runs: [''] }), { output: 'number=\nrun_id=\n', slept: 7 }, 'a pull request with conflicts never gets a run to wait for');
-  assert.deepEqual(find({ pulls: ['error', '7'] }), { output: 'number=7\nrun_id=123\n', slept: 1 }, 'a failed pull request lookup moves on to the next attempt');
+  assert.deepEqual(find({ pulls: ['error', '7 main'] }), { output: 'number=7\nrun_id=123\n', slept: 1 }, 'a failed pull request lookup moves on to the next attempt');
   assert.deepEqual(find({ runs: ['error', '123'] }), { output: 'number=7\nrun_id=123\n', slept: 1 }, 'a failed run lookup moves on to the next attempt');
+  assert.deepEqual(find({ pulls: ['7 scope/requests/req_parent'] }), { output: 'number=\nrun_id=\n', slept: 0 }, 'a stacked request never gets a main-based run, so its push validates at once');
 });
 
 test('validation gate allows unselected jobs but fails selected jobs and cancellation', () => {
