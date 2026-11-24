@@ -16,6 +16,7 @@ import { Toaster } from 'sonner'
 import { scopeClerkAppearance } from '../clerk-appearance'
 import { ViewerSessionBoundary } from '@/components/viewer-session-boundary'
 import '../styles.css'
+import fontFaces from '../fonts.css?url'
 import commitMono400 from '@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2?url'
 import commitMono500 from '@fontsource/commit-mono/files/commit-mono-latin-500-normal.woff2?url'
 import inter from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url'
@@ -36,6 +37,7 @@ export const Route = createRootRoute({
       },
       { rel: 'icon', type: 'image/png', sizes: '32x32', href: scopeBrand.faviconPng },
       { rel: 'apple-touch-icon', sizes: '180x180', href: scopeBrand.touchIcon },
+      { rel: 'stylesheet', href: fontFaces },
       ...preloadedFonts.map((href) => ({
         rel: 'preload',
         as: 'font',
