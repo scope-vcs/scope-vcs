@@ -26,6 +26,21 @@ pub const DELETED_DRAFT_EFFECTS: [DeletedDraftEffect; 4] = [
     DeletedDraftEffect::DeleteRequestRows,
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiscardedChangeEffect {
+    RetirePoolPacks,
+    DeleteGitHubBranch,
+    PurgeInvitees,
+    DeleteChangeRows,
+}
+
+pub const DISCARDED_CHANGE_EFFECTS: [DiscardedChangeEffect; 4] = [
+    DiscardedChangeEffect::RetirePoolPacks,
+    DiscardedChangeEffect::DeleteGitHubBranch,
+    DiscardedChangeEffect::PurgeInvitees,
+    DiscardedChangeEffect::DeleteChangeRows,
+];
+
 #[derive(Clone, Copy, Debug)]
 pub struct RequestCarrierFacts<'a> {
     pub connection: Option<&'a GitHubConnection>,

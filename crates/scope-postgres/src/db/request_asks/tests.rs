@@ -38,7 +38,15 @@ fn command() -> OpenRequestFromAskCommand {
 }
 
 async fn queued_ids(store: &MetadataStore, section: RequestQueueSection) -> Vec<String> {
-    let repo = repo_by_id(store.db.as_ref(), "owner/repo", "user_owner")
+    queued_ids_for(store, section, "user_owner").await
+}
+
+async fn queued_ids_for(
+    store: &MetadataStore,
+    section: RequestQueueSection,
+    viewer_user_id: &str,
+) -> Vec<String> {
+    let repo = repo_by_id(store.db.as_ref(), "owner/repo", viewer_user_id)
         .await
         .unwrap();
     store
@@ -46,7 +54,7 @@ async fn queued_ids(store: &MetadataStore, section: RequestQueueSection) -> Vec<
         .request_queue_page(RequestQueuePageQuery {
             repo_id: "owner/repo",
             section,
-            viewer_user_id: Some("user_owner"),
+            viewer_user_id: Some(viewer_user_id),
             access: repo.access,
             views: &repo.views,
             request_views: None,
@@ -170,7 +178,20 @@ async fn an_asked_request_is_listed_for_every_reader_and_queued_only_for_its_wor
         .await
         .unwrap();
     let parent = requests.request_by_id("req_1").await.unwrap().unwrap();
-    for (viewer, head_oid) in [(None, "base"), (Some("user_owner"), "draft-head")] {
+    store
+        .admin()
+        .execute_for_tests(
+            "INSERT INTO scope_users VALUES ('user_invited', 'invited', 'invited@scope.test', TRUE);
+             INSERT INTO scope_request_invitees VALUES ('req_ask', 'user_invited', 'user_owner', 6)",
+        )
+        .await
+        .unwrap();
+    for (viewer, reads_change) in [
+        (None, false),
+        (Some("user_public"), false),
+        (Some("user_invited"), true),
+        (Some("user_owner"), true),
+    ] {
         let repository = repository_access(store.db.as_ref(), "owner/repo", viewer)
             .await
             .unwrap()
@@ -184,10 +205,70 @@ async fn an_asked_request_is_listed_for_every_reader_and_queued_only_for_its_wor
                 .iter()
                 .map(|node| (node.id.as_str(), node.head_oid.as_str()))
                 .collect::<Vec<_>>(),
-            [("req_ask", head_oid)],
+            if reads_change {
+                vec![("req_ask", "draft-head")]
+            } else {
+                Vec::new()
+            },
+            "{viewer:?}"
+        );
+        let listed = requests
+            .request_list_page(RequestListPageQuery {
+                repo_id: "owner/repo",
+                viewer_user_id: viewer,
+                access: repository.access.clone(),
+                views: &repository.views,
+                after_id: None,
+                name: Some("login-timeout"),
+                limit: 10,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|row| (
+                    row.viewer_reads_change,
+                    row.head_oid.as_str(),
+                    row.base.parent_request_id(),
+                    row.stack_depth
+                ))
+                .collect::<Vec<_>>(),
+            [if reads_change {
+                (true, "draft-head", Some("req_1"), 2)
+            } else {
+                (false, "base", None, 1)
+            }],
             "{viewer:?}"
         );
     }
+
+    let mut stacked = crate::db::requests::tests::public_start_input();
+    stacked.id = "req_stacked".to_string();
+    stacked.name = "on-the-draft".to_string();
+    stacked.event_id = "event_stacked".to_string();
+    stacked.base = scope_domain::requests::RequestBase::Request {
+        request_id: "req_ask".to_string(),
+        revision_id: "any".to_string(),
+        head_oid: "draft-head".to_string(),
+    };
+    let error = requests.start_request(stacked).await.unwrap_err();
+    assert_eq!(error.message, "parent request not found");
+
+    store
+        .admin()
+        .execute_for_tests(
+            "UPDATE scope_requests
+                SET closed_at_unix = 7, closed_by_user_id = 'user_owner',
+                    close_reason = 'not_planned', updated_at_unix = 7
+              WHERE id = 'req_ask'",
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        queued_ids_for(&store, RequestQueueSection::Done, "user_public").await,
+        ["req_ask"]
+    );
 
     let mut again = command();
     again.input.id = "req_ask_again".to_string();

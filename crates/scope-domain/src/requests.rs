@@ -41,8 +41,9 @@ mod access;
 pub use access::{
     REQUEST_BRANCH_MUTABLE_STATES, RequestActor, RequestChangeSubject, RequestListPredicate,
     RequestPermissions, RequestPolicyDecision, RequestViewer, request_actor_role,
-    request_change_visible, request_list_mergeability, request_list_predicate,
-    request_mergeability, request_policy, request_visible_to_every_maintainer,
+    request_change_predicate, request_change_visible, request_list_mergeability,
+    request_list_predicate, request_mergeability, request_policy,
+    request_visible_to_every_maintainer,
 };
 mod auto_merge;
 mod merge_decision;
@@ -120,10 +121,10 @@ pub use discussions::{
 };
 mod ask;
 pub use ask::{
-    AttachRequestChangeFacts, AttachRequestChangeInput, GITHUB_ISSUE_REQUEST_NAME_PREFIX,
-    OpenRequestFromAskFacts, OpenRequestFromAskInput, RequestAsk, RequestReference,
-    RequestWorkInput, attach_request_change, open_request_from_ask, release_request_work,
-    start_request_work,
+    AttachRequestChangeFacts, AttachRequestChangeInput, DiscardRequestChangeInput,
+    GITHUB_ISSUE_REQUEST_NAME_PREFIX, OpenRequestFromAskFacts, OpenRequestFromAskInput, RequestAsk,
+    RequestReference, RequestWorkInput, attach_request_change, discard_unsubmitted_change,
+    open_request_from_ask, release_request_work, start_request_work,
 };
 mod lifecycle;
 pub use lifecycle::{
@@ -136,8 +137,8 @@ pub use lifecycle::{
 };
 mod lifecycle_effects;
 pub use lifecycle_effects::{
-    DELETED_DRAFT_EFFECTS, DeletedDraftEffect, EndedRequestEffect, RequestCarrierFacts,
-    ended_request_effects,
+    DELETED_DRAFT_EFFECTS, DISCARDED_CHANGE_EFFECTS, DeletedDraftEffect, DiscardedChangeEffect,
+    EndedRequestEffect, RequestCarrierFacts, ended_request_effects,
 };
 mod invitees;
 pub use invitees::{
@@ -161,9 +162,9 @@ pub use limits::{
 pub(super) use limits::{validate_body_size, validate_git_oid, validate_required};
 mod model;
 pub use model::{
-    Request, RequestActorRole, RequestCloseReason, RequestEvent, RequestEventKind,
-    RequestEventPayload, RequestIdentityAuditFact, RequestInvitee, RequestLifecycle, RequestState,
-    RequestTimelineMutation, StoredRequest, validate_request_facts,
+    Request, RequestActorRole, RequestChangePlacement, RequestCloseReason, RequestEvent,
+    RequestEventKind, RequestEventPayload, RequestIdentityAuditFact, RequestInvitee,
+    RequestLifecycle, RequestState, RequestTimelineMutation, StoredRequest, validate_request_facts,
 };
 mod queue;
 pub use queue::{

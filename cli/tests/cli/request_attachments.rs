@@ -748,7 +748,7 @@ fn attachment_json(prepare: &Value, state: &str) -> Value {
 }
 
 fn request_json(description: &str) -> Value {
-    let permissions = json!({"can_view_activity":true,"can_open_discussion":true,"can_reply_to_discussion":true,"can_wait_after_reply":false,
+    let permissions = json!({"can_view_activity":true,"can_open_discussion":true,"can_reply_to_discussion":true,"can_wait_after_reply":false, "can_comment_on_change":false,
             "can_edit_identity":true,"can_read_change":true,"can_pull_branch":true,"can_push_branch":true,"can_submit":true,"can_start_work":false,"can_release_work":false,"can_attach_change":false,
             "can_manage_invitees":true,"can_leave_request":false,"can_close":true,"can_merge":true});
     json!({

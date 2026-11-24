@@ -251,7 +251,7 @@ fn request_summary(
     head_oid: &str,
 ) -> crate::api::RequestSummaryResponse {
     let permissions = serde_json::json!({"can_view_activity":false,"can_open_discussion":false,
-                "can_reply_to_discussion":false,"can_wait_after_reply":false,"can_edit_identity":false,"can_read_change":true,
+                "can_reply_to_discussion":false,"can_wait_after_reply":false, "can_comment_on_change":false,"can_edit_identity":false,"can_read_change":true,
                 "can_pull_branch":false,"can_push_branch":true,"can_submit":false, "can_start_work":false,"can_release_work":false,"can_attach_change":false,
                 "can_manage_invitees":false,"can_leave_request":false,
                 "can_close":false,"can_merge":false});

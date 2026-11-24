@@ -408,7 +408,7 @@ export type RequestInviteeMutationResponse = { request: RequestSummaryResponse, 
 
 export type LeaveRequestResponse = { invitee: RequestInviteeResponse, };
 
-export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_edit_identity: boolean, can_read_change: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_start_work: boolean, can_release_work: boolean, can_attach_change: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
+export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_comment_on_change: boolean, can_edit_identity: boolean, can_read_change: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_start_work: boolean, can_release_work: boolean, can_attach_change: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
 
 export type RequestMergeabilityStatus = "WaitingForParent" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "IntegrationConflict" | "NeedsMainUpdate" | "Ready" | "RepositoryNotReady" | "NoChangeYet" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError" | "ReviewsPending" | "ReviewFindingsOpen";
 

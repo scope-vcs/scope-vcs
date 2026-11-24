@@ -9,11 +9,13 @@ use crate::{
         CloseRequestInput, CloseRequestMutation, RecordWorkingRequestUploadInput,
         RequestChecksOutcome, RequestCloseReason, RequestMergeabilityStatus, RequestReviewsOutcome,
         RequestState, RequestViewMains, RequestViewer, SubmitRequestInput, close_request,
+        eligible_rating_subject_user_id,
         fixtures::{
             access, actor_views, asked_request, author_actor, owner_actor, working_request,
         },
-        record_working_request_upload, request_mergeability, request_policy,
-        request_queue_visibility_predicate, request_readable_in_git, submit_request,
+        record_working_request_upload, request_change_predicate, request_mergeability,
+        request_policy, request_queue_visibility_predicate, request_readable_in_git,
+        submit_request,
     },
 };
 
@@ -91,6 +93,7 @@ fn an_ask_makes_a_request_visible_and_discussable_without_submitting_it() {
         assert!(!decision.counts_as_open);
         assert!(!decision.permissions.can_submit);
         assert!(!decision.permissions.can_merge);
+        assert!(!decision.permissions.can_manage_invitees, "{user_id:?}");
     }
     assert!(!in_review_queue(&request, "dana"));
 
@@ -116,12 +119,27 @@ fn an_ask_makes_a_request_visible_and_discussable_without_submitting_it() {
         assert_eq!(decision.change_visible, reads_change, "{user_id:?}");
         assert_eq!(decision.permissions.can_read_change, reads_change);
         assert_eq!(decision.permissions.can_pull_branch, reads_change);
+        assert_eq!(decision.permissions.can_manage_invitees, reads_change);
+        assert_eq!(decision.invitees_visible, reads_change, "{user_id:?}");
         assert!(!decision.permissions.can_comment_on_change, "{user_id:?}");
+        assert_eq!(
+            request_change_predicate(viewer.access.clone(), user_id, actor_views())
+                .matches(&draft, false),
+            reads_change,
+            "{user_id:?}"
+        );
         assert_eq!(
             request_readable_in_git(&draft, viewer, actor_views(), &ViewId::public()),
             reads_change
         );
     }
+
+    let invited = RequestViewer::new(RepositoryAccess::public(), Some("visitor"), true);
+    assert!(
+        request_change_predicate(invited.access.clone(), invited.user_id, actor_views())
+            .matches(&draft, true)
+    );
+    assert!(request_policy(&draft, invited, actor_views()).change_visible);
 
     let mut without_ask = request;
     without_ask.ask = None;
@@ -133,6 +151,177 @@ fn an_ask_makes_a_request_visible_and_discussable_without_submitting_it() {
         )
         .exact_visible
     );
+}
+
+#[test]
+fn a_hidden_change_shows_neither_its_place_in_a_stack_nor_the_events_that_describe_it() {
+    let priya = maintainer();
+    let mut stacked = pushed(
+        attach_request_change(
+            asked_request(),
+            acting(&priya),
+            AttachRequestChangeFacts::default(),
+            attach("priya", "login-timeout"),
+        )
+        .unwrap()
+        .request,
+        &priya,
+        "priya",
+    );
+    let parent = RequestBase::Request {
+        request_id: "parent".to_string(),
+        revision_id: "parent-revision".to_string(),
+        head_oid: "parent-head".to_string(),
+    };
+    stacked.base = parent.clone();
+    stacked.base_version = 3;
+    stacked.stack_status = RequestStackStatus::WaitingForParent;
+    stacked.stack_depth = 2;
+    stacked.validate_facts().unwrap();
+
+    let hidden = stacked.with_change_hidden();
+    assert_eq!(
+        hidden.base,
+        RequestBase::Main {
+            review_base_oid: "main-now".to_string()
+        }
+    );
+    assert_eq!(
+        (
+            hidden.head_oid.as_str(),
+            hidden.base_version,
+            hidden.stack_status,
+            hidden.stack_depth
+        ),
+        ("main-now", 1, RequestStackStatus::Main, 1)
+    );
+    assert_eq!(hidden.branch_name(), Some("login-timeout"));
+    assert_eq!(hidden.author_user_id.as_deref(), Some("priya"));
+
+    let event = |payload| RequestEvent {
+        id: "event".to_string(),
+        request_id: "request_1".to_string(),
+        actor_user_id: Some("priya".to_string()),
+        kind: RequestEventKind::Closed,
+        position: 4,
+        payload,
+        created_at_unix: 30,
+    };
+    for payload in [
+        RequestEventPayload::RevisionPushed {
+            old_head_oid: "main-now".to_string(),
+            new_head_oid: "head".to_string(),
+            note: None,
+        },
+        RequestEventPayload::BaseRetargeted {
+            old_base: parent,
+            landed_head_oid: "parent-head".to_string(),
+            main_oid: "newer-main".to_string(),
+        },
+    ] {
+        assert_eq!(event(payload).with_change_hidden("main-now"), None);
+    }
+    for (payload, shown) in [
+        (
+            RequestEventPayload::Closed {
+                head_oid: "head".to_string(),
+            },
+            RequestEventPayload::Closed {
+                head_oid: "main-now".to_string(),
+            },
+        ),
+        (
+            RequestEventPayload::WorkStarted {},
+            RequestEventPayload::WorkStarted {},
+        ),
+    ] {
+        assert_eq!(
+            event(payload)
+                .with_change_hidden("main-now")
+                .unwrap()
+                .payload,
+            shown
+        );
+    }
+}
+
+#[test]
+fn a_change_left_without_its_worker_is_discarded_and_the_request_can_be_taken_again() {
+    let priya = maintainer();
+    let attached = attach_request_change(
+        asked_request(),
+        acting(&priya),
+        AttachRequestChangeFacts::default(),
+        attach("priya", "login-timeout"),
+    )
+    .unwrap()
+    .request;
+    let drafted = pushed(attached.clone(), &priya, "priya");
+    for mut abandoned in [attached, drafted.clone()] {
+        abandoned.author_user_id = None;
+        abandoned.author_role = RequestActorRole::Public;
+        assert_eq!(
+            abandoned.validate_facts().unwrap_err().message,
+            "an unsubmitted change needs the person working on it"
+        );
+        assert_eq!(
+            owner_actor().permissions(&abandoned, "dana").can_start_work,
+            abandoned.awaits_change()
+        );
+    }
+
+    let discard = |request: Request| {
+        discard_unsubmitted_change(
+            request,
+            false,
+            DiscardRequestChangeInput {
+                event_id: "event_discarded".to_string(),
+                now_unix: 40,
+            },
+        )
+    };
+    let discarded = discard(drafted.clone()).unwrap();
+    let request = discarded.request;
+    assert_eq!(request.branch_name(), None);
+    assert_eq!(request.name, "gh-142");
+    assert_eq!(request.author_user_id, None);
+    assert_eq!(request.pushed_at_unix, None);
+    assert_eq!(request.head_oid, request.main_ancestor_oid);
+    assert!(request.awaits_change());
+    assert_eq!(discarded.event.kind, RequestEventKind::WorkReleased);
+    assert_eq!(discarded.event.actor_user_id, None);
+    assert!(owner_actor().permissions(&request, "dana").can_start_work);
+
+    let submitted = submit_request(
+        &drafted,
+        acting(&priya),
+        SubmitRequestInput {
+            request_id: "request_1".to_string(),
+            actor_user_id: "priya".to_string(),
+            event_id: "event_submitted".to_string(),
+            now_unix: 23,
+        },
+    )
+    .unwrap()
+    .request;
+    for kept in [submitted, working_request()] {
+        assert_eq!(discard(kept).unwrap_err().kind, DomainErrorKind::Conflict);
+    }
+}
+
+#[test]
+fn an_ask_links_only_to_an_https_source() {
+    for (source_url, accepted) in [
+        ("https://github.com/owner/repo/issues/142", true),
+        ("http://github.com/owner/repo/issues/142", false),
+        ("javascript:alert(1)", false),
+        ("https://", false),
+        ("github.com/owner/repo/issues/142", false),
+    ] {
+        let mut request = asked_request();
+        request.ask.as_mut().unwrap().source_url = source_url.to_string();
+        assert_eq!(request.validate_facts().is_ok(), accepted, "{source_url}");
+    }
 }
 
 #[test]
@@ -374,6 +563,11 @@ fn closing_an_asked_request_keeps_it_and_records_the_reason() {
     assert_eq!(closed.state(), RequestState::Closed);
     assert_eq!(closed.close_reason(), Some(RequestCloseReason::NotPlanned));
     assert!(!closed.is_submitted());
+    assert!(in_review_queue(&closed, "priya"));
+    assert!(
+        request_queue_visibility_predicate(RepositoryAccess::public(), None, actor_views())
+            .matches(&closed, false)
+    );
 
     let priya = maintainer();
     let drafted = pushed(
@@ -407,6 +601,19 @@ fn closing_an_asked_request_keeps_it_and_records_the_reason() {
             .permissions(&closed_draft, "priya")
             .can_submit
     );
+    let CloseRequestMutation::Closed {
+        request: closed_by_dana,
+        ..
+    } = close(&drafted, "dana", true, Some(RequestCloseReason::NotPlanned)).unwrap()
+    else {
+        panic!("a request with an ask is never deleted");
+    };
+    for rater in ["priya", "dana"] {
+        assert_eq!(
+            eligible_rating_subject_user_id(&closed_by_dana, rater, &[]),
+            None
+        );
+    }
 
     let error = close(
         &working_request(),

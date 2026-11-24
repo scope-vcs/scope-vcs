@@ -375,7 +375,7 @@ fn close_request_branch(
     let prompt = if before.request.submitted_at_unix.is_none() && before.request.ask.is_none() {
         format!("Permanently delete draft request {}", before.request.name)
     } else {
-        format!("Close published request {}", before.request.name)
+        format!("Close request {}", before.request.name)
     };
     require_confirmation(&prompt, yes)?;
     let response = api_close_request(api, api_target(&context, &request_id), reason)?;

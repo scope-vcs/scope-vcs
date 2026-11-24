@@ -1,8 +1,4 @@
-use super::{
-    REQUEST_STACK_MAX_ANCESTORS, RequestBase, RequestChangeSubject, RequestStackStatus,
-    RequestState, RequestViewer, request_change_visible,
-};
-use crate::views::Views;
+use super::{REQUEST_STACK_MAX_ANCESTORS, RequestBase, RequestStackStatus, RequestState};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,29 +13,13 @@ pub struct RequestStackNode {
     pub current_revision_id: Option<String>,
 }
 
-impl RequestStackNode {
-    pub fn seen_by(
-        mut self,
-        change: RequestChangeSubject<'_>,
-        main_ancestor_oid: &str,
-        viewer: &RequestViewer<'_>,
-        views: &Views,
-    ) -> Self {
-        if !request_change_visible(change, viewer, views) {
-            self.head_oid = main_ancestor_oid.to_string();
-            self.current_revision_id = None;
-        }
-        self
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestStackParent {
     Available { request: RequestStackNode },
     Unavailable,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RequestStackNavigation {
     pub parent: Option<RequestStackParent>,
     pub ancestors: Vec<RequestStackNode>,
@@ -106,42 +86,6 @@ mod tests {
             request_id: id.into(),
             revision_id: "pin".into(),
             head_oid: "pin-head".into(),
-        }
-    }
-
-    #[test]
-    fn a_stack_node_hides_the_head_and_revision_of_a_change_its_viewer_cannot_read() {
-        use crate::{
-            repository::access::RepositoryAccess, requests::fixtures::actor_views, views::ViewId,
-        };
-        let view = ViewId::public();
-        let draft = RequestChangeSubject {
-            view: &view,
-            author_user_id: Some("priya"),
-            submitted: false,
-        };
-        for (user_id, submitted, reads_change) in [
-            (Some("priya"), false, true),
-            (Some("visitor"), false, false),
-            (None, false, false),
-            (None, true, true),
-        ] {
-            let viewer = RequestViewer::new(RepositoryAccess::public(), user_id, false);
-            let seen = node("draft").seen_by(
-                RequestChangeSubject { submitted, ..draft },
-                "main",
-                &viewer,
-                actor_views(),
-            );
-            assert_eq!(
-                (seen.head_oid.as_str(), seen.current_revision_id.as_deref()),
-                if reads_change {
-                    ("head", Some("revision"))
-                } else {
-                    ("main", None)
-                },
-                "{user_id:?} submitted={submitted}"
-            );
         }
     }
 

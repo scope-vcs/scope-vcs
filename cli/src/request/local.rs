@@ -1,7 +1,10 @@
 use crate::api::ApiSession;
 use crate::display::short_oid;
 use crate::{
-    api::{RepoSummaryResponse, RequestSummaryResponse, get_repo, request_named},
+    api::{
+        RepoSummaryResponse, RequestSummaryResponse, RequestTarget, get_repo, get_request,
+        request_named,
+    },
     error::CliError,
     git_repo::{
         GitRepo, GitSnapshot, StaleRefLease, branch_config_value, current_branch,
@@ -14,7 +17,7 @@ use crate::{
 };
 use anyhow::{Context, bail};
 use scope_api_contract::ViewId;
-use scope_domain::views::Views;
+use scope_domain::{requests::RequestReference, views::Views};
 
 pub(crate) const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
 pub(crate) const REQUEST_ID_KEY: &str = "scopeRequestId";
@@ -250,6 +253,12 @@ pub(super) fn maybe_request_id_for_context(
     {
         return Ok(Some(request_id.to_string()));
     }
+    let named_by_handle = explicit.as_deref().is_some_and(|value| {
+        matches!(
+            RequestReference::parse(value),
+            RequestReference::GitHubIssue(_)
+        )
+    });
     let request_name = if let Some(request_name) = explicit {
         request_name
     } else if let Some(checkout) = &context.checkout {
@@ -269,13 +278,21 @@ pub(super) fn maybe_request_id_for_context(
     } else {
         return Ok(None);
     };
-    Ok(request_named(
+    let named = request_named(
         api,
         &context.target.owner,
         &context.target.repo,
         &request_name,
-    )?
-    .map(|request| request.id))
+    )?;
+    if named.is_none() && named_by_handle {
+        let target = RequestTarget {
+            owner: &context.target.owner,
+            repo: &context.target.repo,
+            request_id: &request_name,
+        };
+        return Ok(Some(get_request(api, target)?.request.id));
+    }
+    Ok(named.map(|request| request.id))
 }
 
 fn inferred_request_name(

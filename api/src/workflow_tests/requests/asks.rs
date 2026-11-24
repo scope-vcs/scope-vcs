@@ -120,7 +120,7 @@ async fn an_asked_request_shows_its_ask_to_everyone_and_its_draft_change_to_its_
     let refused = api_request(app.clone(), "DELETE", close_path, Some(&owner), None).await;
     assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
     let closed = api_request(
-        app,
+        app.clone(),
         "DELETE",
         &format!("{close_path}?reason=not_planned"),
         Some(&owner),
@@ -131,4 +131,17 @@ async fn an_asked_request_shows_its_ask_to_everyone_and_its_draft_change_to_its_
     assert_eq!(closed["deleted"], false);
     assert_eq!(closed["request"]["state"], "Closed");
     assert_eq!(closed["request"]["close_reason"], "not_planned");
+    let activity = api_request(
+        app,
+        "GET",
+        "/v1/repos/owner/repo/requests/req_asked/activity?latest=true",
+        None,
+        None,
+    )
+    .await;
+    let activity = expect_json(activity, StatusCode::OK).await;
+    assert_eq!(
+        activity["events"].as_array().unwrap().last().unwrap()["payload"]["Closed"]["head_oid"],
+        visitor["detail"]["request"]["main_ancestor_oid"]
+    );
 }

@@ -418,6 +418,7 @@ pub struct RequestPermissionsResponse {
     pub can_open_discussion: bool,
     pub can_reply_to_discussion: bool,
     pub can_wait_after_reply: bool,
+    pub can_comment_on_change: bool,
     pub can_edit_identity: bool,
     pub can_read_change: bool,
     pub can_pull_branch: bool,

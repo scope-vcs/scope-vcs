@@ -81,7 +81,13 @@ pub(super) fn validate_request_ask(ask: &RequestAsk) -> Result<(), DomainError> 
             "an ask needs its GitHub account and issue number",
         ));
     }
-    validate_required("ask source url", &ask.source_url)?;
+    if !url::Url::parse(&ask.source_url)
+        .is_ok_and(|url| url.scheme() == "https" && url.host_str().is_some())
+    {
+        return Err(DomainError::invalid_input(
+            "an ask's source must be an https URL",
+        ));
+    }
     validate_body_size("ask text", &ask.text_markdown, REQUEST_ASK_TEXT_MAX_BYTES)
 }
 
@@ -245,6 +251,58 @@ pub fn release_request_work(
     )
 }
 
+#[derive(Clone, Debug)]
+pub struct DiscardRequestChangeInput {
+    pub event_id: String,
+    pub now_unix: u64,
+}
+
+pub fn discard_unsubmitted_change(
+    mut request: Request,
+    event_id_exists: bool,
+    input: DiscardRequestChangeInput,
+) -> Result<RequestTimelineMutation, DomainError> {
+    validate_required("event id", &input.event_id)?;
+    ensure_event_id_available(event_id_exists)?;
+    let Some(ask) = &request.ask else {
+        return Err(DomainError::conflict(
+            "only a request opened from an ask outlives its change",
+        ));
+    };
+    if request.is_submitted() {
+        return Err(DomainError::conflict(
+            "a submitted change stays with its request",
+        ));
+    }
+    request.name = ask.handle();
+    request.author_user_id = None;
+    request.author_role = RequestActorRole::Public;
+    let base = RequestBase::Main {
+        review_base_oid: request.main_ancestor_oid.clone(),
+    };
+    if base != request.base {
+        request.base_version = request
+            .base_version
+            .checked_add(1)
+            .ok_or_else(|| DomainError::conflict("request base version overflow"))?;
+        request.base = base;
+    }
+    request.stack_status = RequestStackStatus::Main;
+    request.stack_depth = 1;
+    request.head_oid = request.main_ancestor_oid.clone();
+    request.pushed_at_unix = None;
+    record_event(
+        request,
+        input.event_id,
+        None,
+        input.now_unix,
+        (
+            RequestEventKind::WorkReleased,
+            RequestEventPayload::WorkReleased {},
+        ),
+    )
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AttachRequestChangeFacts {
     pub event_id_exists: bool,
@@ -348,22 +406,38 @@ fn validate_work_command(
 }
 
 fn record_work_event(
-    mut request: Request,
+    request: Request,
     input: RequestWorkInput,
     kind: RequestEventKind,
     payload: RequestEventPayload,
 ) -> Result<RequestTimelineMutation, DomainError> {
-    request.updated_at_unix = input.now_unix;
+    record_event(
+        request,
+        input.event_id,
+        Some(input.actor_user_id),
+        input.now_unix,
+        (kind, payload),
+    )
+}
+
+fn record_event(
+    mut request: Request,
+    event_id: String,
+    actor_user_id: Option<String>,
+    now_unix: u64,
+    (kind, payload): (RequestEventKind, RequestEventPayload),
+) -> Result<RequestTimelineMutation, DomainError> {
+    request.updated_at_unix = now_unix;
     let position = advance_request_activity(&mut request)?;
     request.validate_facts()?;
     let event = RequestEvent {
-        id: input.event_id,
+        id: event_id,
         request_id: request.id.clone(),
-        actor_user_id: Some(input.actor_user_id),
+        actor_user_id,
         kind,
         position,
         payload,
-        created_at_unix: input.now_unix,
+        created_at_unix: now_unix,
     };
     Ok(RequestTimelineMutation { request, event })
 }

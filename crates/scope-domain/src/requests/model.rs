@@ -84,6 +84,29 @@ pub struct RequestLifecycle {
     pub merged_main_oid: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestChangePlacement {
+    pub head_oid: String,
+    pub base: super::RequestBase,
+    pub base_version: u64,
+    pub stack_status: super::RequestStackStatus,
+    pub stack_depth: u32,
+}
+
+impl RequestChangePlacement {
+    pub fn hidden(main_ancestor_oid: &str) -> Self {
+        Self {
+            head_oid: main_ancestor_oid.to_string(),
+            base: super::RequestBase::Main {
+                review_base_oid: main_ancestor_oid.to_string(),
+            },
+            base_version: 1,
+            stack_status: super::RequestStackStatus::Main,
+            stack_depth: 1,
+        }
+    }
+}
+
 impl RequestState {
     pub fn advertised_in_git(self) -> bool {
         matches!(self, Self::Draft | Self::Open)
@@ -180,7 +203,12 @@ impl Request {
     }
 
     pub fn with_change_hidden(mut self) -> Self {
-        self.head_oid = self.main_ancestor_oid.clone();
+        let hidden = RequestChangePlacement::hidden(&self.main_ancestor_oid);
+        self.head_oid = hidden.head_oid;
+        self.base = hidden.base;
+        self.base_version = hidden.base_version;
+        self.stack_status = hidden.stack_status;
+        self.stack_depth = hidden.stack_depth;
         self
     }
 
@@ -280,12 +308,6 @@ pub enum RequestEventKind {
     AutoMergeFulfilled,
 }
 
-impl RequestEventKind {
-    pub fn describes_change(self) -> bool {
-        self == Self::RevisionPushed
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestIdentityAuditFact {
     pub title_sha256: String,
@@ -367,6 +389,32 @@ pub struct RequestEvent {
     pub position: u64,
     pub payload: RequestEventPayload,
     pub created_at_unix: u64,
+}
+
+impl RequestEvent {
+    pub fn with_change_hidden(mut self, main_ancestor_oid: &str) -> Option<Self> {
+        match &mut self.payload {
+            RequestEventPayload::RevisionPushed { .. }
+            | RequestEventPayload::BaseRetargeted { .. } => return None,
+            RequestEventPayload::Closed { head_oid } => {
+                *head_oid = main_ancestor_oid.to_string();
+            }
+            RequestEventPayload::Started { .. }
+            | RequestEventPayload::Submitted { .. }
+            | RequestEventPayload::Merged { .. }
+            | RequestEventPayload::IdentityEdited { .. }
+            | RequestEventPayload::WorkStarted {}
+            | RequestEventPayload::WorkReleased {}
+            | RequestEventPayload::ChangeAttached { .. }
+            | RequestEventPayload::DiscussionResolved { .. }
+            | RequestEventPayload::DiscussionReopened { .. }
+            | RequestEventPayload::AutoMergeEnabled { .. }
+            | RequestEventPayload::AutoMergeCancelled { .. }
+            | RequestEventPayload::AutoMergeStopped { .. }
+            | RequestEventPayload::AutoMergeFulfilled { .. } => {}
+        }
+        Some(self)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -481,6 +529,14 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
         {
             return Err(DomainError::conflict(
                 "a request needs a branch before it can hold a change",
+            ));
+        }
+        if request.author_user_id.is_none()
+            && !request.is_submitted()
+            && (request.branch_name().is_some() || request.pushed_at_unix.is_some())
+        {
+            return Err(DomainError::conflict(
+                "an unsubmitted change needs the person working on it",
             ));
         }
     }

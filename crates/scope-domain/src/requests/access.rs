@@ -74,6 +74,7 @@ pub struct RequestPolicyDecision {
     pub exact_visible: bool,
     pub change_visible: bool,
     pub discussion_visible: bool,
+    pub invitees_visible: bool,
     pub activity_stream_visible: bool,
     pub branch_mutable: bool,
     pub counts_as_open: bool,
@@ -87,6 +88,7 @@ pub enum RequestListPredicate<'a> {
     View(ViewId),
     Submitted,
     Asked,
+    Closed,
     Author(&'a str),
     Invitee(&'a str),
 }
@@ -96,10 +98,30 @@ pub fn request_list_predicate<'a>(
     viewer_user_id: Option<&'a str>,
     views: &Views,
 ) -> RequestListPredicate<'a> {
+    readable_requests(access, viewer_user_id, views, true)
+}
+
+pub fn request_change_predicate<'a>(
+    access: RepositoryAccess,
+    viewer_user_id: Option<&'a str>,
+    views: &Views,
+) -> RequestListPredicate<'a> {
+    readable_requests(access, viewer_user_id, views, false)
+}
+
+fn readable_requests<'a>(
+    access: RepositoryAccess,
+    viewer_user_id: Option<&'a str>,
+    views: &Views,
+    asks_are_public: bool,
+) -> RequestListPredicate<'a> {
     let anyone = views.anyone();
     let mut visible = Vec::new();
     if let Some(anyone) = anyone {
-        let mut anyone_access = vec![RequestListPredicate::Submitted, RequestListPredicate::Asked];
+        let mut anyone_access = vec![RequestListPredicate::Submitted];
+        if asks_are_public {
+            anyone_access.push(RequestListPredicate::Asked);
+        }
         if let Some(viewer_user_id) = viewer_user_id {
             anyone_access.push(RequestListPredicate::Author(viewer_user_id));
             anyone_access.push(RequestListPredicate::Invitee(viewer_user_id));
@@ -133,6 +155,7 @@ impl RequestListPredicate<'_> {
             Self::View(view) => request.view == *view,
             Self::Submitted => request.is_submitted(),
             Self::Asked => request.ask.is_some(),
+            Self::Closed => request.state() == RequestState::Closed,
             Self::Author(viewer_user_id) => request.is_author(viewer_user_id),
             Self::Invitee(_) => viewer_is_invitee,
         }
@@ -233,7 +256,7 @@ pub fn request_policy(
         can_pull_branch: change_visible && request.state().advertised_in_git() && has_branch,
         can_push_branch: branch_mutable,
         can_submit: exact_visible && !submitted && !terminal && author && !request.awaits_change(),
-        can_start_work: workable && unassigned && may_work,
+        can_start_work: workable && request.awaits_change() && unassigned && may_work,
         can_release_work: workable
             && request.awaits_change()
             && !unassigned
@@ -241,7 +264,7 @@ pub fn request_policy(
         can_attach_change: workable
             && request.awaits_change()
             && (author || (unassigned && may_work)),
-        can_manage_invitees: exact_visible && anyone_view && !terminal && (author || maintainer),
+        can_manage_invitees: change_visible && anyone_view && !terminal && (author || maintainer),
         can_leave_request: exact_visible && anyone_view && invitee && !terminal,
         can_close: exact_visible
             && viewer.user_id.is_some_and(|user_id| {
@@ -255,6 +278,7 @@ pub fn request_policy(
         exact_visible,
         change_visible,
         discussion_visible,
+        invitees_visible: anyone_view && change_visible,
         activity_stream_visible,
         branch_mutable,
         counts_as_open: open && exact_visible,

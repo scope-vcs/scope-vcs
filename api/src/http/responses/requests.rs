@@ -7,9 +7,9 @@ use scope_api_contract::{
 };
 use scope_domain::{
     requests::{
-        AuthorRecord, DiffStat, Request, RequestChangeSubject, RequestChecksOutcome, RequestEvent,
-        RequestMergeSubject, RequestViewMains, RequestViewer, request_change_visible,
-        request_list_mergeability, request_mergeability, request_policy,
+        AuthorRecord, DiffStat, Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject,
+        RequestViewMains, RequestViewer, request_list_mergeability, request_mergeability,
+        request_policy,
     },
     views::Views,
 };
@@ -140,24 +140,11 @@ pub(crate) fn request_list_item_response(
         facts.outcomes.reviews,
         repository_lifecycle,
     );
-    let change_visible = request_change_visible(
-        RequestChangeSubject {
-            view: &request.view,
-            author_user_id: request.author_user_id.as_deref(),
-            submitted: request.submitted_at_unix.is_some(),
-        },
-        viewer,
-        views,
-    );
-    let request_head_oid = super::git_oid_response(if change_visible {
-        request.head_oid
-    } else {
-        request.main_ancestor_oid
-    })?;
+    let request_head_oid = super::git_oid_response(request.head_oid)?;
     Ok(RequestListItemResponse {
         diff_stat: facts
             .diff_stat
-            .filter(|_| change_visible)
+            .filter(|_| request.viewer_reads_change)
             .map(diff_stat_response),
         stack_parent: facts
             .parent
@@ -256,6 +243,7 @@ pub(crate) fn request_response(
         can_open_discussion: decision.can_open_discussion,
         can_reply_to_discussion: decision.can_reply_to_discussion,
         can_wait_after_reply: decision.can_wait_after_reply,
+        can_comment_on_change: decision.can_comment_on_change,
         can_edit_identity: decision.can_edit_identity,
         can_read_change: decision.can_read_change,
         can_pull_branch: decision.can_pull_branch,

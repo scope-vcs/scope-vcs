@@ -166,7 +166,7 @@ async fn read_request_state(
     if !policy.exact_visible {
         return Err(PostgresError::not_found("request not found"));
     }
-    let invitees = if repository.views.anyone() == Some(&request.view) {
+    let invitees = if policy.invitees_visible {
         super::request_invitees::request_invitee_reads(&tx, request_id)
             .instrument(tracing::info_span!(
                 "request_invitee_reads",
@@ -284,15 +284,19 @@ async fn read_request_state(
     } else {
         projection.and_then(|projection| projection.head_oid)
     };
-    let (stack_navigation, children) = super::request_navigation::navigation(
-        &tx,
-        &repository,
-        viewer_user_id,
-        &request,
-        children_after_id,
-        children_limit,
-    )
-    .await?;
+    let (stack_navigation, children) = if reads_change {
+        super::request_navigation::navigation(
+            &tx,
+            &repository,
+            viewer_user_id,
+            &request,
+            children_after_id,
+            children_limit,
+        )
+        .await?
+    } else {
+        Default::default()
+    };
     tx.commit()
         .instrument(tracing::info_span!(
             "commit_read_snapshot",

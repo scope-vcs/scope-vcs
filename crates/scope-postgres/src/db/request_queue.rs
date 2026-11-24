@@ -1,7 +1,10 @@
 use super::{
-    RequestListRow, RequestStore, auth::load_users_by_ids, begin_metadata_read_snapshot, entities,
-    repository_access::repository_access, request_ratings::author_standings,
-    request_rows::RequestListModel,
+    RequestListRow, RequestStore,
+    auth::load_users_by_ids,
+    begin_metadata_read_snapshot, entities,
+    repository_access::repository_access,
+    request_ratings::author_standings,
+    request_rows::{RequestListModel, RequestListReader},
 };
 use crate::{
     db::integer_columns::{i64_to_u64, u64_to_i64},
@@ -68,7 +71,6 @@ struct QueueModel {
     #[sea_orm(nested)]
     request: RequestListModel,
     attention_at_unix: i64,
-    viewer_is_invitee: bool,
     attention_state: Option<String>,
     attention_reason: Option<String>,
     through_activity_version: Option<i64>,
@@ -223,14 +225,19 @@ impl QueueModel {
     ) -> Result<RequestQueueRow, PostgresError> {
         let attention = self.attention(input.viewer_user_id)?;
         let claim = self.claim()?;
-        let request = self.request.try_into_read_model()?;
+        let viewer_is_invitee = self.request.viewer_is_invitee;
+        let request = self.request.try_into_read_model(RequestListReader {
+            access: &input.access,
+            user_id: input.viewer_user_id,
+            views: input.views,
+        })?;
         let classification = classify_request_queue_item(RequestQueueFacts {
             request_state: request.state,
             request_activity_version: request.activity_version,
             request_author_user_id: request.author_user_id.as_deref(),
             viewer_user_id: input.viewer_user_id,
             viewer_is_maintainer: input.access.is_maintainer(),
-            viewer_is_invitee: self.viewer_is_invitee,
+            viewer_is_invitee,
             attention: attention.as_ref(),
             claim: claim.as_ref(),
             now_unix: input.now_unix,
@@ -362,6 +369,7 @@ fn request_visibility_sql(predicate: &RequestListPredicate<'_>) -> String {
         RequestListPredicate::View(view) => format!("r.audience = '{}'", view.as_str()),
         RequestListPredicate::Submitted => "r.submitted_at_unix IS NOT NULL".into(),
         RequestListPredicate::Asked => "r.github_issue_number IS NOT NULL".into(),
+        RequestListPredicate::Closed => "r.closed_at_unix IS NOT NULL".into(),
         RequestListPredicate::Author(_) => "r.author_user_id = $2".into(),
         RequestListPredicate::Invitee(_) => "EXISTS (
             SELECT 1 FROM scope_request_invitees visible_invitee

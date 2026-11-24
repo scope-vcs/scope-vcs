@@ -430,14 +430,10 @@ pub(crate) async fn activity(
     };
     let last_position = events.last().map(|event| event.position);
     if !policy.change_visible {
-        events.retain(|event| !event.kind.describes_change());
-        for event in &mut events {
-            if let scope_domain::requests::RequestEventPayload::Closed { head_oid } =
-                &mut event.payload
-            {
-                head_oid.clone_from(&request.main_ancestor_oid);
-            }
-        }
+        events = events
+            .into_iter()
+            .filter_map(|event| event.with_change_hidden(&request.main_ancestor_oid))
+            .collect();
     }
     let users = state
         .metadata

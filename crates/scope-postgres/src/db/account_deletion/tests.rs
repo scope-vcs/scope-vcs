@@ -218,7 +218,7 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
 }
 
 #[tokio::test]
-async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions() {
+async fn deleting_an_account_removes_its_drafts_keeps_the_asks_and_announces_its_contributions() {
     let owner = user("owner", "owner");
     let leaver = user("leaver", "leaver");
     let store = store_with_repositories([
@@ -247,7 +247,31 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
                 ('submitted', 'owner/public', 'submitted', 'leaver', 'Public', 'public', 'Main', repeat('a', 40), 1, 'main', 1,
                     repeat('a', 40), repeat('b', 40), 'Submitted', '', 1, 2, 1, 2),
                 ('draft', 'owner/public', 'draft', 'leaver', 'Public', 'public', 'Main', repeat('a', 40), 1, 'main', 1,
-                    repeat('a', 40), repeat('b', 40), 'Draft', '', 1, NULL, 1, 1)",
+                    repeat('a', 40), repeat('b', 40), 'Draft', '', 1, NULL, 1, 1);
+            INSERT INTO scope_github_accounts VALUES (7, 'asker', 'User', NULL, 1);
+            INSERT INTO scope_requests (id, repo_id, name, author_user_id, author_role, audience,
+                base_kind, review_base_oid, base_version, stack_status, stack_depth,
+                main_ancestor_oid, head_oid, pushed_at_unix, title, description_markdown,
+                activity_version, asker_github_user_id, github_issue_number, ask_source_url,
+                ask_text_markdown, asked_at_unix, created_at_unix, updated_at_unix)
+            VALUES ('asked', 'owner/public', 'fix-thing', 'leaver', 'Member', 'public', 'Main',
+                repeat('a', 40), 1, 'main', 1, repeat('a', 40), repeat('b', 40), 1, 'Asked', '',
+                1, 7, 7, 'https://github.com/octo/public/issues/7', '', 1, 1, 1);
+            INSERT INTO scope_request_events (id, request_id, actor_user_id, kind, position,
+                payload, created_at_unix)
+            VALUES ('pushed', 'asked', 'leaver', 'RevisionPushed', 1,
+                jsonb_build_object('RevisionPushed', jsonb_build_object(
+                    'old_head_oid', repeat('a', 40), 'new_head_oid', repeat('b', 40),
+                    'note', NULL)), 1);
+            INSERT INTO scope_request_revisions (id, request_id, position, actor_user_id,
+                old_head_oid, new_head_oid, main_ancestor_oid, base_kind, review_base_oid,
+                base_version, rewrote_history, created_at_unix)
+            VALUES ('asked-revision', 'asked', 1, 'leaver', repeat('a', 40), repeat('b', 40),
+                repeat('a', 40), 'Main', repeat('a', 40), 1, FALSE, 1);
+            INSERT INTO scope_request_invitees VALUES ('asked', 'owner', 'leaver', 1);
+            INSERT INTO scope_git_pool_packs (id, repo_id, request_id, head_oid, prerequisites,
+                sealed_pack, created_at_unix)
+            VALUES ('pack', 'owner/public', 'asked', repeat('b', 40), '{}', '\\x00', 1)",
         )
         .await
         .unwrap();
@@ -274,11 +298,32 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
     assert_eq!(
         query_json(
             &store,
-            "SELECT jsonb_agg(jsonb_build_array(id, author_user_id)) FROM scope_requests"
+            "SELECT jsonb_agg(jsonb_build_array(id, author_user_id) ORDER BY id)
+               FROM scope_requests"
         )
         .await,
-        json!([["submitted", null]])
+        json!([["asked", null], ["submitted", null]])
     );
+    assert_eq!(
+        query_json(
+            &store,
+            "SELECT jsonb_build_array(name, pushed_at_unix, head_oid = main_ancestor_oid,
+                (SELECT jsonb_agg(kind) FROM scope_request_events WHERE request_id = 'asked'),
+                (SELECT count(*) FROM scope_request_revisions WHERE request_id = 'asked')
+                    + (SELECT count(*) FROM scope_request_invitees WHERE request_id = 'asked')
+                    + (SELECT count(*) FROM scope_git_pool_packs WHERE request_id = 'asked'))
+               FROM scope_requests WHERE id = 'asked'"
+        )
+        .await,
+        json!(["gh-7", null, true, ["WorkReleased"], 0])
+    );
+    let asked = store
+        .requests()
+        .request_for_tests("asked")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(asked.awaits_change());
 }
 
 #[tokio::test]
