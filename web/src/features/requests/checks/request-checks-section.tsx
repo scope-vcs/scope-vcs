@@ -34,7 +34,7 @@ export function RequestChecksSection({
       aria-label="CI"
       className={CHECKS_SECTION_CLASS}
     >
-      <div className="request-checks-line border-t border-border pt-2.5 text-[13px] leading-5">
+      <div className="request-checks-line pt-2.5 text-[13px] leading-5">
         <RequestCheckTrack params={params} summary={summary} />
         <RequestReviewBots bots={reviewBots} pullRequest={pullRequest} />
       </div>
