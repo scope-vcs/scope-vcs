@@ -85,3 +85,12 @@
     padding-bottom: var(--request-action-clearance, 0);
   }
 }
+
+.request-original-ask-folded::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 3rem;
+  background: linear-gradient(to bottom, transparent, var(--background));
+  pointer-events: none;
+}

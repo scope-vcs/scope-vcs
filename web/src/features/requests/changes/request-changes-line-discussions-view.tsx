@@ -31,7 +31,7 @@ type RequestParams = { owner: string; repo: string; request_id: string }
 export type CreateLineDiscussion = (input: CreateDiscussionInput) => Promise<RequestDiscussionMutation>
 
 export function useLineDiscussionAnnotations({
-  canOpenDiscussion,
+  canCommentOnChange,
   comparison,
   createDiscussion,
   diff,
@@ -39,7 +39,7 @@ export function useLineDiscussionAnnotations({
   onCreated,
   params,
 }: {
-  canOpenDiscussion: boolean
+  canCommentOnChange: boolean
   comparison: LineDiscussionComparison | null
   createDiscussion: CreateLineDiscussion
   diff: ReviewFileDiff | null
@@ -58,7 +58,7 @@ export function useLineDiscussionAnnotations({
       : { fileLevel: [], placed: [] },
     [comparison, discussions, rendered],
   )
-  const selectable = Boolean(comparison && html !== null && canOpenDiscussion && canStartLineDiscussion(comparison.mode))
+  const selectable = Boolean(comparison && html !== null && canCommentOnChange && canStartLineDiscussion(comparison.mode))
   const onSelectLine = useCallback((line: { side: RequestDiscussionLineRange['side']; line: number }, extend: boolean) => {
     if (!comparisonKey) return
     setDraft((current) => ({

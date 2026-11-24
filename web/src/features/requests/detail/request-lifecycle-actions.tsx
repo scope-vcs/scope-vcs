@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { shortOid } from '@/lib/short-oid'
 import { cn } from '@/lib/utils'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, GitBranch } from 'lucide-react'
 import { type Ref, useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
 import { RequestAutoMergeActions } from '../checks/request-auto-merge-actions'
@@ -53,6 +53,17 @@ export function RequestLifecycleActions({
   return (
     <>
       <div className={cn('flex flex-wrap items-center gap-2', className)} ref={ref}>
+        {permissions.can_start_work ? (
+          <Button disabled={busy} onClick={() => void actions.run({ action: 'start_work' })} size="sm" type="button">
+            <GitBranch />
+            Work on this
+          </Button>
+        ) : null}
+        {permissions.can_release_work ? (
+          <Button disabled={busy} onClick={() => void actions.run({ action: 'release_work' })} size="sm" type="button" variant="secondary">
+            Release
+          </Button>
+        ) : null}
         {permissions.can_submit ? (
           <Button disabled={busy} onClick={() => setDialog('submit')} size="sm" type="button">
             <CheckCircle2 />

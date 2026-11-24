@@ -2,7 +2,7 @@ import { parseRepoParams, parseRepoVersionViewInput } from './repo-params'
 import { parseFilePath } from './file-path-input'
 import { parseReviewDiffRenderBudget } from './review-diff-budget-input'
 import type { ApproveRequestChecksInput, RequestParams } from './types'
-import type { RequestDiscussionLineRange } from './types.generated'
+import type { RequestCloseReason, RequestDiscussionLineRange } from './types.generated'
 import type { RequestActionInput } from '../features/requests/detail/request-actions-api'
 import type {
   AuthorizeRequestAutoMergeInput,
@@ -258,12 +258,30 @@ export function parseRequestActionInput(input: unknown): RequestActionInput {
       return { ...params, action: data.action, expected_head_oid }
     }
     case 'close':
+      return data.reason === undefined
+        ? { ...params, action: data.action }
+        : { ...params, action: data.action, reason: closeReason(data.reason) }
     case 'leave':
+    case 'release_work':
+    case 'start_work':
     case 'submit':
       return { ...params, action: data.action }
     default:
       throw new Error('Unsupported request action.')
   }
+}
+
+const CLOSE_REASONS = {
+  completed: true,
+  not_planned: true,
+  duplicate: true,
+} satisfies Record<RequestCloseReason, true>
+
+function closeReason(value: unknown): RequestCloseReason {
+  if (typeof value === 'string' && Object.hasOwn(CLOSE_REASONS, value)) {
+    return value as RequestCloseReason
+  }
+  throw new Error('Unsupported close reason.')
 }
 
 export function parseApproveRequestChecksInput(input: unknown): ApproveRequestChecksInput {

@@ -9,16 +9,22 @@ import { requestChecksSummary, requestFailedCheck } from '../checks/request-chec
 import { actorHandle } from './request-actor'
 import { authorRecordSummary } from './request-author-record-model'
 import { RequestAuthorRecordSummary } from './request-author-record'
-import { requestMergeabilityLabel, requestPublicChecksNote, requestStateMark } from './request-labels'
+import {
+  requestCloseReasonLabel,
+  requestMergeabilityLabel,
+  requestPublicChecksNote,
+  requestStateMark,
+} from './request-labels'
 import { RequestStateMark } from './request-state-mark'
 
 const DETAIL_CLASS = 'text-sm leading-6 text-muted-foreground'
+const FACT_LINK_CLASS = 'rounded-sm underline decoration-border-strong underline-offset-[3px] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring'
 
 export function RequestDetailHeader({
   actions,
   backLink,
   checks,
-  detail: { author, author_record: authorRecord, claimer, request },
+  detail: { asker, author, author_record: authorRecord, claimer, request },
   params,
   stateActions,
 }: {
@@ -29,7 +35,7 @@ export function RequestDetailHeader({
   params: RepoParams
   stateActions: ReactNode
 }) {
-  const publicNote = requestPublicChecksNote(checks)
+  const publicNote = request.permissions.can_read_change ? requestPublicChecksNote(checks) : null
   const settledAt = request.merged_at_unix ?? request.closed_at_unix
 
   return (
@@ -46,7 +52,14 @@ export function RequestDetailHeader({
               {requestMergeabilityLabel(request)}
             </span>
             {settledAt !== null
-              ? <RelativeTimestamp className={DETAIL_CLASS} value={settledAt} />
+              ? request.close_reason
+                ? (
+                  <span className={DETAIL_CLASS}>
+                    {requestCloseReasonLabel(request.close_reason)}{' '}
+                    <RelativeTimestamp value={settledAt} />
+                  </span>
+                )
+                : <RelativeTimestamp className={DETAIL_CLASS} value={settledAt} />
               : request.mergeability.status === 'ChecksFailed'
                 ? <FailedCheckLink checks={checks} params={params} />
                 : null}
@@ -56,22 +69,42 @@ export function RequestDetailHeader({
       </div>
       <div className="request-detail-header-facts mt-2">
         <div className="request-detail-header-meta min-w-0 text-xs leading-5 text-muted-foreground">
-          <span className="flex flex-wrap items-baseline gap-x-1.5">
-            <span className="font-medium text-foreground">{actorHandle(author)}</span>
-            {authorRecord ? <RequestAuthorRecordSummary handle={actorHandle(author)} summary={authorRecordSummary(authorRecord)} /> : null}
-            <span>opened</span>
-            <RelativeTimestamp
-              value={request.submitted_at_unix ?? request.created_at_unix}
-            />
-            {claimer ? (
-              <>
-                <span aria-hidden="true">·</span>
-                <span>reviewing:</span>
-                <span className="text-foreground">{claimer.handle}</span>
-              </>
-            ) : null}
-          </span>
-          <span className="request-detail-header-branch truncate font-mono" title={request.name}>{request.name}</span>
+          {request.ask ? (
+            <>
+              <span className="flex flex-wrap items-baseline gap-x-1.5">
+                <span className="font-medium text-foreground">{asker?.login}</span>
+                <span>opened</span>
+                <RelativeTimestamp value={request.ask.asked_at_unix} />
+              </span>
+              <span>
+                from{' '}
+                <a className={FACT_LINK_CLASS} href={request.ask.source_url} rel="noreferrer" target="_blank">
+                  GitHub #{request.ask.github_issue_number}
+                </a>
+              </span>
+              {author ? <span>working on it: <span className="text-foreground">{author.handle}</span></span> : null}
+              {claimer ? <span>reviewing: <span className="text-foreground">{claimer.handle}</span></span> : null}
+            </>
+          ) : (
+            <span className="flex flex-wrap items-baseline gap-x-1.5">
+              <span className="font-medium text-foreground">{actorHandle(author)}</span>
+              {authorRecord ? <RequestAuthorRecordSummary handle={actorHandle(author)} summary={authorRecordSummary(authorRecord)} /> : null}
+              <span>opened</span>
+              <RelativeTimestamp
+                value={request.submitted_at_unix ?? request.created_at_unix}
+              />
+              {claimer ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>reviewing:</span>
+                  <span className="text-foreground">{claimer.handle}</span>
+                </>
+              ) : null}
+            </span>
+          )}
+          {request.branch_name ? (
+            <span className="request-detail-header-branch truncate font-mono" title={request.branch_name}>{request.branch_name}</span>
+          ) : null}
           {publicNote ? <PublicChecksLabel note={publicNote} /> : null}
         </div>
         <div className="request-detail-header-actions">{actions}</div>
@@ -111,7 +144,7 @@ function FailedCheckLink({ checks, params }: { checks: RequestChecksResponse; pa
     <span className={`${DETAIL_CLASS} [overflow-wrap:anywhere]`}>
       {check.run ? (
         <Link
-          className="rounded-sm underline decoration-border-strong underline-offset-[3px] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          className={FACT_LINK_CLASS}
           hash={check.run.hash}
           params={{ ...params, runId: check.run.id }}
           to="/$owner/$repo/runs/$runId"

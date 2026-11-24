@@ -4,6 +4,7 @@ import { shortOid } from '../../../lib/short-oid'
 import type {
   RequestCheckEvaluationState,
   RequestChecksResponse,
+  RequestCloseReason,
   RequestEventResponse,
   RequestListItemResponse,
   RequestMergeabilityStatus,
@@ -58,6 +59,18 @@ const MERGEABILITY = {
   RequestSummaryResponse['mergeability']['status'],
   { label: string; tone: BadgeVariant }
 >
+
+const CLOSE_REASONS = {
+  completed: 'completed',
+  not_planned: 'not planned',
+  duplicate: 'duplicate',
+} as const satisfies Record<RequestCloseReason, string>
+
+export const REQUEST_CLOSE_REASONS = Object.keys(CLOSE_REASONS) as RequestCloseReason[]
+
+export function requestCloseReasonLabel(reason: RequestCloseReason) {
+  return CLOSE_REASONS[reason]
+}
 
 const CHECK_EVALUATION_NOTES = {
   'no-checks': null,

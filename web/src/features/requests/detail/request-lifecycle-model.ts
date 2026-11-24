@@ -15,8 +15,9 @@ export function requestMergeHeld(request: RequestSummaryResponse) {
 }
 
 export function hasRequestLifecycleActions(request: RequestSummaryResponse) {
-  return request.permissions.can_submit || canMergeRequest(request) ||
-    requestMergeHeld(request)
+  const { can_release_work, can_start_work, can_submit } = request.permissions
+  return can_submit || can_start_work || can_release_work ||
+    canMergeRequest(request) || requestMergeHeld(request)
 }
 
 export function hasRequestAutoMergeActions(

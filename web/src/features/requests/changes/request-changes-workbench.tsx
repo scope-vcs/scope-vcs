@@ -65,7 +65,7 @@ type DiscussionReferenceState = {
 
 export function RequestChangesWorkbench({
   accessScope,
-  canOpenDiscussion,
+  canCommentOnChange,
   createDiscussion,
   view,
   loadDiff,
@@ -77,7 +77,7 @@ export function RequestChangesWorkbench({
   search,
 }: {
   accessScope: string | null
-  canOpenDiscussion: boolean
+  canCommentOnChange: boolean
   createDiscussion: CreateLineDiscussion
   view: ViewId
   loadDiff: (
@@ -136,7 +136,7 @@ export function RequestChangesWorkbench({
     if (accessScope) refreshRequestDiscussionReferences(accessScope, requestId)
   }, [accessScope, requestId])
   const diffAnnotations = useLineDiscussionAnnotations({
-    canOpenDiscussion,
+    canCommentOnChange,
     comparison: lineComparison,
     createDiscussion,
     diff: model.fileDiffState.diff,

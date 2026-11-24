@@ -24,6 +24,9 @@ test('only a ready request merges, and checks hold the merge from a viewer who c
   assert.equal(requestMergeHeld(request('ChecksFailed', false)), false)
   assert.equal(hasRequestLifecycleActions(request('ChecksFailed')), true)
   assert.equal(hasRequestLifecycleActions(request('ChecksFailed', false)), false)
+  const untaken = request('NoChangeYet', false)
+  untaken.permissions.can_start_work = true
+  assert.equal(hasRequestLifecycleActions(untaken), true)
 })
 
 test('auto-merge actions require an available action or unended authorization, or an open dialog', () => {

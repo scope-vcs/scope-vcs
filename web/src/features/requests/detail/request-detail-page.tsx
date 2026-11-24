@@ -34,6 +34,7 @@ import { loadMoreRequestChildren } from './request-state-resource'
 import { RequestStackContext } from './request-stack-context'
 import { RequestChecksSection } from '../checks/request-checks-section'
 import { RequestCiApproval } from '../checks/request-ci-approval'
+import { RequestChangeCommand } from './request-change-command'
 import { RequestDetailHeader } from './request-detail-header'
 import { RequestDetailsMenu } from './request-details'
 import type { RequestActivityPage } from '../discussion/request-discussion-types'
@@ -133,7 +134,8 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       setChildrenLoading(false)
     }
   }
-  const { request } = state.detail
+  const { asker, request } = state.detail
+  const { can_attach_change: canAttachChange, can_read_change: canReadChange } = request.permissions
   const serverDescription = request.description_markdown
   const activity = {
     identity: request.permissions.can_view_activity
@@ -204,11 +206,13 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
         <RequestDetailHeader
           actions={
             <>
-              <RequestChangesMenu
-                activity={activity}
-                diffStat={state.detail.diff_stat}
-                params={{ ...params, requestId: request.id }}
-              />
+              {canReadChange ? (
+                <RequestChangesMenu
+                  activity={activity}
+                  diffStat={state.detail.diff_stat}
+                  params={{ ...params, requestId: request.id }}
+                />
+              ) : null}
               <RequestDetailsMenu
                 actions={requestActions}
                 key={identity}
@@ -233,6 +237,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               <RequestMoreMenu
                 actions={requestActions}
                 disabled={requestActions.pending !== null || autoMerge.pending !== null}
+                key={request.id}
                 onViewActivity={history.openHistory}
                 params={params}
                 request={request}
@@ -254,7 +259,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           params={params}
           stateActions={
             <>
-              <RequestCiApproval controller={checks} key={identity} />
+              {canReadChange ? <RequestCiApproval controller={checks} key={identity} /> : null}
               <RequestLifecycleActions
                 actions={requestActions}
                 autoMerge={autoMerge}
@@ -275,13 +280,17 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           </p>
         ) : null}
         <RequestStackContext detail={state.detail} params={params} childrenLoading={childrenLoading} childrenError={childrenError} onLoadChildren={() => { void loadChildren() }} />
-        <RequestChecksSection
-          checks={checks.checks}
-          error={checks.error}
-          params={params}
-        />
+        {request.ask && canAttachChange ? <RequestChangeCommand ask={request.ask} /> : null}
+        {canReadChange ? (
+          <RequestChecksSection
+            checks={checks.checks}
+            error={checks.error}
+            params={params}
+          />
+        ) : null}
         <div className="min-w-0 pt-4">
           <RequestDescription
+            ask={request.ask && asker ? { login: asker.login, text: request.ask.text_markdown } : null}
             canEdit={request.permissions.can_edit_identity}
             description={description}
             onSave={saveDescription}
