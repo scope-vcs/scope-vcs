@@ -39,6 +39,7 @@ export function RepoShell({
     ? repoSectionsForActor(repo.access.actor)
     : pendingRepoSections(Boolean(userId))
   const openRequestCount = repo?.open_request_count ?? 0
+  const holdsRequestCountSlot = !repo || openRequestCount > 0
   const active = activeRepoSection((to) => {
     const target = router.buildLocation({ params, to }).pathname
     return pathname === target || pathname.startsWith(`${target}/`)
@@ -61,7 +62,7 @@ export function RepoShell({
             hash={section.key === 'requests' && returnToRequest ? returnToRequest.hash : ''}
           >
             {section.label}
-            {section.key === 'requests' && (
+            {section.key === 'requests' && holdsRequestCountSlot && (
               <span aria-hidden="true" className="min-w-[1ch] text-xs tabular-nums text-muted-foreground">
                 {openRequestCount > 0 ? openRequestCount : null}
               </span>
