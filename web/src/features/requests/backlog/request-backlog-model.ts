@@ -38,6 +38,12 @@ export function requestBacklogQuery(search: { q?: unknown; working?: unknown; so
   })
 }
 
+export function requestBacklogQueryFor(query: RequestBacklogQuery, signedOut: boolean): RequestBacklogQuery {
+  return signedOut && query.working === 'me'
+    ? { ...query, working: DEFAULT_REQUEST_BACKLOG_QUERY.working }
+    : query
+}
+
 export function requestBacklogRouteSearch(query: RequestBacklogQuery): RequestBacklogRouteSearch {
   const defaults = DEFAULT_REQUEST_BACKLOG_QUERY
   return {

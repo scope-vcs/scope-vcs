@@ -14,6 +14,7 @@ export type RequestBacklogQuery = {
 
 export type LoadRequestBacklogInput = RepoParams & RequestBacklogQuery & {
   cursor: string | null
+  limit: number | null
   view: ViewId | null
 }
 
@@ -31,6 +32,7 @@ export function parseLoadRequestBacklogInput(input: unknown): LoadRequestBacklog
     ...parseRepoParams(data),
     ...parseRequestBacklogQuery(data),
     cursor: typeof data.cursor === 'string' && data.cursor.trim() ? data.cursor.trim() : null,
+    limit: typeof data.limit === 'number' && Number.isInteger(data.limit) && data.limit > 0 ? data.limit : null,
     view: typeof data.view === 'string' && data.view ? parseViewId(data.view) : null,
   }
 }

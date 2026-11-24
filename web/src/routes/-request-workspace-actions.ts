@@ -5,6 +5,7 @@ import { parseLoadRequestBacklogInput, type RequestBacklogQuery } from '@/api/re
 import { parseLoadRequestQueueInput } from '@/api/request-queue-input'
 import type { RepoParams } from '@/api/types'
 import type { ViewId } from '@/api/types.generated'
+import { DEFAULT_REQUEST_BACKLOG_QUERY } from '@/features/requests/backlog/request-backlog-model'
 import type { LoadRequestBacklogPage } from '@/features/requests/backlog/request-backlog-resource'
 import type { LoadRequestQueuePage } from '@/features/requests/workspace/request-queue-cache'
 import { createServerFn } from '@tanstack/react-start'
@@ -28,9 +29,18 @@ export function requestQueuePageLoader({ owner, repo }: RepoParams, view: ViewId
   })
 }
 
-export function requestBacklogPageLoader({ owner, repo }: RepoParams, view: ViewId, query: RequestBacklogQuery): LoadRequestBacklogPage {
+export function requestBacklogPageLoader(
+  { owner, repo }: RepoParams,
+  view: ViewId,
+  query: RequestBacklogQuery,
+  limit: number | null = null,
+): LoadRequestBacklogPage {
   return (cursor, signal) => loadRequestBacklogPage({
-    data: { owner, repo, ...query, cursor, view },
+    data: { owner, repo, ...query, cursor, limit, view },
     signal,
   })
+}
+
+export function requestBacklogTotalLoader(params: RepoParams, view: ViewId) {
+  return requestBacklogPageLoader(params, view, DEFAULT_REQUEST_BACKLOG_QUERY, 1)
 }

@@ -3,15 +3,12 @@ import type { RequestQueueItemResponse } from '@/api/types.generated'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useMatch, useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { requestBacklogPageLoader, requestQueuePageLoader } from '@/routes/-request-workspace-actions'
+import { requestBacklogTotalLoader, requestQueuePageLoader } from '@/routes/-request-workspace-actions'
 import { useRepoLayout } from '../../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../../repo-detail/repo-resource-scope'
 import { RepoViewingAsPicker, useViewingAs } from '../../repo-detail/use-viewing-as'
-import {
-  DEFAULT_REQUEST_BACKLOG_QUERY,
-  type RequestBacklogRouteSearch,
-} from '../backlog/request-backlog-model'
-import { requestBacklogIdentity } from '../backlog/request-backlog-resource'
+import type { RequestBacklogRouteSearch } from '../backlog/request-backlog-model'
+import { requestBacklogTotalIdentity } from '../backlog/request-backlog-resource'
 import { useRequestBacklog } from '../backlog/use-request-backlog'
 import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
 import {
@@ -76,14 +73,14 @@ function RequestWorkspaceContent({
     [params.owner, params.repo, view],
   )
   const queue = useRequestQueue(identity, version, load)
-  const loadBacklog = useMemo(
-    () => requestBacklogPageLoader({ owner: params.owner, repo: params.repo }, view, DEFAULT_REQUEST_BACKLOG_QUERY),
+  const loadBacklogTotal = useMemo(
+    () => requestBacklogTotalLoader({ owner: params.owner, repo: params.repo }, view),
     [params.owner, params.repo, view],
   )
   const backlogTotal = useRequestBacklog(
-    scope && requestBacklogIdentity(scope, view, DEFAULT_REQUEST_BACKLOG_QUERY),
+    scope && requestBacklogTotalIdentity(scope, view),
     version,
-    loadBacklog,
+    loadBacklogTotal,
   ).value?.total ?? null
   const openBacklogSearch = useMatch({
     from: '/$owner/$repo/requests/backlog',

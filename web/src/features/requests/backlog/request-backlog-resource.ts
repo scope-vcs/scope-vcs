@@ -16,6 +16,10 @@ export function requestBacklogIdentity(scope: string, view: ViewId, query: Reque
   return repoResourceKey(scope, view, query.working, query.sort, query.search)
 }
 
+export function requestBacklogTotalIdentity(scope: string, view: ViewId) {
+  return repoResourceKey(scope, view, 'total')
+}
+
 export async function refreshRequestBacklog(key: string, load: LoadRequestBacklogPage, signal: AbortSignal) {
   const depth = requestBacklogResource.peek(key)?.requests.length ?? 0
   let page = await load(null, signal)

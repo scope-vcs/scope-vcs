@@ -48,6 +48,7 @@ export async function loadRequestBacklogForRequest(
   const search = new URLSearchParams({ working: data.working, sort: data.sort })
   if (data.search) search.set('search', data.search)
   if (data.cursor) search.set('cursor', data.cursor)
+  if (data.limit) search.set('limit', String(data.limit))
   if (data.view) search.set('view', data.view)
   return createApiClient().get(
     `${path}?${search}`,

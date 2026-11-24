@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { parseLoadRequestBacklogInput } from './request-backlog-input'
 import { parseLoadRequestQueueInput, type LoadRequestQueueInput } from './request-queue-input'
 
 test('parseLoadRequestQueueInput normalizes pagination, search and empty optional values', () => {
@@ -38,4 +39,10 @@ test('parseLoadRequestQueueInput rejects unknown sections', () => {
       }),
     /section is invalid/,
   )
+})
+
+test('parseLoadRequestBacklogInput keeps a whole positive page size and drops any other', () => {
+  const sized = (limit: unknown) => parseLoadRequestBacklogInput({ owner: 'scope', repo: 'vcs', limit }).limit
+  assert.equal(sized(1), 1)
+  for (const limit of [0, -1, 1.5, '1', undefined]) assert.equal(sized(limit), null)
 })

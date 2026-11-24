@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   closeBacklogRequests,
   requestBacklogQuery,
+  requestBacklogQueryFor,
   requestBacklogRouteSearch,
 } from './request-backlog-model'
 
@@ -30,4 +31,12 @@ test('the backlog link keeps only the search, filter, and sort that differ from 
     requestBacklogRouteSearch(requestBacklogQuery({ q: '  ', working: 'everyone', sort: 'oldest' })),
     { q: undefined, working: undefined, sort: undefined },
   )
+})
+
+test('a signed-out visitor asking for their own work gets everyone\'s, with the rest of the query kept', () => {
+  const mine = requestBacklogQuery({ q: 'login', working: 'me', sort: 'newest' })
+  assert.deepEqual(requestBacklogQueryFor(mine, true), { search: 'login', working: 'anyone', sort: 'newest' })
+  assert.equal(requestBacklogQueryFor(mine, false), mine)
+  const untaken = requestBacklogQuery({ working: 'nobody' })
+  assert.equal(requestBacklogQueryFor(untaken, true), untaken)
 })

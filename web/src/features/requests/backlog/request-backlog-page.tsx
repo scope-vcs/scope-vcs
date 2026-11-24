@@ -27,6 +27,7 @@ import {
   REQUEST_BACKLOG_SORT_LABELS,
   REQUEST_BACKLOG_WORKING_LABELS,
   requestBacklogCountLabel,
+  requestBacklogQueryFor,
   requestBacklogRepliesLabel,
   requestBacklogSource,
   type BacklogCloseFailures,
@@ -47,13 +48,15 @@ type Picks = {
 export function RequestBacklogPage({
   onQueryChange,
   params,
-  query,
+  query: requested,
 }: {
   onQueryChange: (query: RequestBacklogQuery) => void
   params: RepoParams
   query: RequestBacklogQuery
 }) {
   const { isLoaded, userId } = useAuth()
+  const signedOut = isLoaded && !userId
+  const query = useMemo(() => requestBacklogQueryFor(requested, signedOut), [requested, signedOut])
   const { repo } = useRepoLayout()
   const { view } = useViewingAs()
   const backlogTotal = useRequestWorkspace()?.backlogTotal ?? null
@@ -147,7 +150,7 @@ export function RequestBacklogPage({
           })}
           value={query.working}
         >
-          {REQUEST_BACKLOG_WORKING.filter((working) => working !== 'me' || userId).map((working) => (
+          {REQUEST_BACKLOG_WORKING.filter((working) => working !== 'me' || !signedOut).map((working) => (
             <option key={working} value={working}>{REQUEST_BACKLOG_WORKING_LABELS[working]}</option>
           ))}
         </Select>
