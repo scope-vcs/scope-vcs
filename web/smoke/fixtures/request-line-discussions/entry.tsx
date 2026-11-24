@@ -77,7 +77,7 @@ function Changes() {
         </ul>
         <RequestChangesWorkbench
           accessScope="fixture:private:adam"
-          canOpenDiscussion
+          canCommentOnChange
           createDiscussion={async (input) => {
             createCalls.push(input)
             const created = discussion(`created-${createCalls.length}`, 10 + createCalls.length, {

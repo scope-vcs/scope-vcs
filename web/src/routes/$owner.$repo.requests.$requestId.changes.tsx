@@ -159,7 +159,7 @@ function RequestChangesRoute() {
             >
               <RequestChangesWorkbench
                 accessScope={scope}
-                canOpenDiscussion={page.state.detail.request.permissions.can_open_discussion}
+                canCommentOnChange={page.state.detail.request.permissions.can_comment_on_change}
                 createDiscussion={createDiscussionForView}
                 view={live.repo.access.view}
                 loadDiff={loadDiffForView}
