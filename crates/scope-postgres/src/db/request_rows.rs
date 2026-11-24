@@ -340,7 +340,8 @@ where
             Expr::value(row.updated_at_unix),
         )
         .exec(conn)
-        .await?;
+        .await
+        .map_err(super::request_links::named_request_gone)?;
     if result.rows_affected == 0 {
         return Err(PostgresError::internal_message(
             "request row missing during update",

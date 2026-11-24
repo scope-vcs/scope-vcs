@@ -236,10 +236,7 @@ async fn read_request_state(
         super::auth::load_users_by_ids(
             &tx,
             links
-                .resolves
-                .iter()
-                .chain(&links.resolved_by)
-                .chain(&links.close_named)
+                .shown()
                 .filter_map(|linked| linked.request.author_user_id.clone()),
         )
         .await?,

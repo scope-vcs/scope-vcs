@@ -210,7 +210,7 @@ fn each_side_of_a_link_shows_only_the_requests_its_viewer_may_see() {
             })
             .collect(),
     };
-    let ids = |linked: &[LinkedRequest]| {
+    let ids = |linked: &[VisibleLinkedRequest]| {
         linked
             .iter()
             .map(|linked| linked.request.id.clone())
@@ -250,19 +250,41 @@ fn each_side_of_a_link_shows_only_the_requests_its_viewer_may_see() {
         ["request_submitted", "request_draft"]
     );
 
-    let asked_draft = Request {
-        head_oid: "draft-head".to_string(),
-        ..with_id(asked_request(), "request_asked_draft")
-    };
-    let hidden_change = StoredRequestLinks {
+    let asked_draft = by(
+        Request {
+            head_oid: "draft-head".to_string(),
+            ..with_id(asked_request(), "request_asked_draft")
+        },
+        "lee",
+    );
+    let asked_draft_links = StoredRequestLinks {
         links: vec![link("request_asked_draft", "request_1", 1)],
         requests: vec![LinkedRequest {
-            request: asked_draft,
+            request: asked_draft.clone(),
             viewer_is_invitee: false,
         }],
+    };
+    for (user_id, reads_change) in [(Some("visitor"), false), (None, false), (Some("lee"), true)] {
+        let seen = asked_draft_links
+            .clone()
+            .seen_by(&ask, &public, user_id, actor_views());
+        let shown = &seen.resolved_by[0];
+        assert_eq!(
+            shown.readable_change(),
+            reads_change.then_some(&asked_draft),
+            "{user_id:?}"
+        );
+        assert_eq!(
+            shown.request,
+            if reads_change {
+                asked_draft.clone()
+            } else {
+                asked_draft.clone().with_change_hidden()
+            },
+            "{user_id:?}"
+        );
+        assert_eq!(seen.shown().collect::<Vec<_>>(), [shown]);
     }
-    .seen_by(&ask, &public, Some("visitor"), actor_views());
-    assert_eq!(hidden_change.resolved_by[0].request.head_oid, "base");
 }
 
 fn close(

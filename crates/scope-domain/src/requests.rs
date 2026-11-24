@@ -135,7 +135,7 @@ mod links;
 pub use links::{
     EditRequestLinksInput, LinkedRequest, NAMED_REQUEST_NOT_FOUND, NamedRequest,
     REQUEST_RESOLVES_LIMIT, RequestLink, RequestLinks, RequestLinksMutation, StoredRequestLinks,
-    edit_request_links, ensure_named_requests_within_limit,
+    VisibleLinkedRequest, edit_request_links, ensure_named_requests_within_limit,
 };
 mod lifecycle;
 pub use lifecycle::{

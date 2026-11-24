@@ -145,11 +145,33 @@ pub struct StoredRequestLinks {
     pub requests: Vec<LinkedRequest>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VisibleLinkedRequest {
+    pub request: Request,
+    pub viewer_is_invitee: bool,
+    viewer_reads_change: bool,
+}
+
+impl VisibleLinkedRequest {
+    pub fn readable_change(&self) -> Option<&Request> {
+        self.viewer_reads_change.then_some(&self.request)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RequestLinks {
-    pub resolves: Vec<LinkedRequest>,
-    pub resolved_by: Vec<LinkedRequest>,
-    pub close_named: Option<LinkedRequest>,
+    pub resolves: Vec<VisibleLinkedRequest>,
+    pub resolved_by: Vec<VisibleLinkedRequest>,
+    pub close_named: Option<VisibleLinkedRequest>,
+}
+
+impl RequestLinks {
+    pub fn shown(&self) -> impl Iterator<Item = &VisibleLinkedRequest> {
+        self.resolves
+            .iter()
+            .chain(&self.resolved_by)
+            .chain(&self.close_named)
+    }
 }
 
 impl StoredRequestLinks {
@@ -170,15 +192,16 @@ impl StoredRequestLinks {
                 let policy = request_policy(&linked.request, viewer, views);
                 policy.exact_visible.then(|| {
                     let id = linked.request.id.clone();
-                    let linked = if policy.change_visible {
-                        linked
-                    } else {
-                        LinkedRequest {
-                            request: linked.request.with_change_hidden(),
-                            ..linked
-                        }
+                    let visible = VisibleLinkedRequest {
+                        request: if policy.change_visible {
+                            linked.request
+                        } else {
+                            linked.request.with_change_hidden()
+                        },
+                        viewer_is_invitee: linked.viewer_is_invitee,
+                        viewer_reads_change: policy.change_visible,
                     };
-                    (id, linked)
+                    (id, visible)
                 })
             })
             .collect::<BTreeMap<_, _>>();

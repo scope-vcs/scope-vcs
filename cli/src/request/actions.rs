@@ -61,64 +61,113 @@ pub(super) fn edit_request(
 ) -> anyhow::Result<RequestCommandOutcome> {
     let supplied_description = args.description_file.map(text::read_markdown).transpose()?;
     let (context, request_id, before) = load_exact_request(git_repo, api, args.target)?;
-    let has_attachments = !args.attachments.paths.is_empty();
-    let linked = if args.resolves.is_empty() && args.stop_resolving.is_empty() {
-        None
-    } else {
-        Some(crate::api::edit_request_links(
-            api,
-            api_target(&context, &request_id),
-            crate::api::EditRequestLinksRequest {
-                resolve: args.resolves,
-                stop_resolving: args.stop_resolving,
-            },
-        )?)
+    let target = api_target(&context, &request_id);
+    let links = crate::api::EditRequestLinksRequest {
+        resolve: args.resolves,
+        stop_resolving: args.stop_resolving,
     };
-    let link_lines = linked.as_ref().map(render::links_lines).unwrap_or_default();
-    let (Some(linked), None, None, false) =
-        (linked, &args.title, &supplied_description, has_attachments)
-    else {
-        return edit_request_identity_command(
+    let edits_links = !links.resolve.is_empty() || !links.stop_resolving.is_empty();
+    let edits_identity = args.title.is_some()
+        || supplied_description.is_some()
+        || !args.attachments.paths.is_empty();
+    let (response, attachments, human_lines) = if edits_identity {
+        let (response, attachments, mut human_lines) = edit_request_identity_command(
             api,
-            (context, request_id, before),
+            target,
+            &before,
             args.title,
             supplied_description,
             args.attachments,
-            link_lines,
-        );
+        )?;
+        if edits_links {
+            let retry = links_retry_command(target, &links);
+            let linked = crate::api::edit_request_links(api, target, links)
+                .map_err(|error| links_not_saved(&request_id, retry, error))?;
+            human_lines.extend(render::links_lines(&linked));
+        }
+        (response, attachments, human_lines)
+    } else {
+        let linked = crate::api::edit_request_links(api, target, links)?;
+        let link_lines = render::links_lines(&linked);
+        let response = crate::api::RequestMutationResponse {
+            request: linked.request,
+        };
+        let mut human_lines = request_mutation_receipt_lines("Edited request", &response);
+        human_lines.extend(link_lines);
+        (response, Vec::new(), human_lines)
     };
-    let response = crate::api::RequestMutationResponse {
-        request: linked.request,
-    };
-    let mut human_lines = request_mutation_receipt_lines("Edited request", &response);
-    human_lines.extend(link_lines);
     Ok(RequestCommandOutcome::new(
         "request.edit",
         RequestCommandResult::Mutation(MutationResult {
             repo: context.repo,
             response,
-            attachments: Vec::new(),
+            attachments,
         }),
         human_lines,
     ))
 }
 
+fn links_retry_command(
+    target: RequestTarget<'_>,
+    links: &crate::api::EditRequestLinksRequest,
+) -> Vec<String> {
+    let repository = format!("{}/{}", target.owner, target.repo);
+    [
+        "scope",
+        "--repo",
+        &repository,
+        "request",
+        "edit",
+        "--request",
+    ]
+    .into_iter()
+    .chain([target.request_id])
+    .chain(links.resolve.iter().flat_map(|named| ["--resolves", named]))
+    .chain(
+        links
+            .stop_resolving
+            .iter()
+            .flat_map(|named| ["--stop-resolving", named]),
+    )
+    .map(str::to_string)
+    .collect()
+}
+
+fn links_not_saved(request_id: &str, retry: Vec<String>, cause: anyhow::Error) -> anyhow::Error {
+    crate::error::CliError::partial(
+        format!(
+            "the title, description, and attachments given for request {request_id} were saved, but what it resolves was not changed: {cause:#}. Retry only that part with `{}`",
+            retry.join(" ")
+        ),
+        serde_json::json!({
+            "operation": "request.edit",
+            "request_id": request_id,
+            "identity_saved": true,
+            "failed_step": "edit_links",
+            "retry_command": retry,
+        }),
+    )
+    .into()
+}
+
+type IdentityEdit = (
+    crate::api::RequestMutationResponse,
+    Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
+    Vec<String>,
+);
+
 fn edit_request_identity_command(
     api: ApiSession<'_>,
-    (context, request_id, before): (
-        local::RequestContext,
-        String,
-        crate::api::RequestDetailResponse,
-    ),
+    target: RequestTarget<'_>,
+    before: &crate::api::RequestDetailResponse,
     title: Option<String>,
     supplied_description: Option<String>,
     attachments: args::RequestAttachmentArgs,
-    link_lines: Vec<String>,
-) -> anyhow::Result<RequestCommandOutcome> {
+) -> anyhow::Result<IdentityEdit> {
     let has_attachments = !attachments.paths.is_empty();
     let uploaded = attachments::upload(
         api,
-        api_target(&context, &request_id),
+        target,
         scope_api_contract::attachments::RequestAttachmentTargetInput {
             kind: scope_api_contract::attachments::RequestAttachmentTargetKind::Description,
             discussion_id: None,
@@ -143,35 +192,26 @@ fn edit_request_identity_command(
     };
     let response = edit_request_identity(
         api,
-        api_target(&context, &request_id),
+        target,
         title,
         description,
         has_attachments.then(|| before.request.description_markdown.clone()),
     )?;
     let mut human_lines = request_mutation_receipt_lines("Edited request", &response);
-    human_lines.extend(link_lines);
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
     let attachments = uploaded.complete_saved(
         api,
-        api_target(&context, &request_id),
+        target,
         attachments.wait,
         None,
         serde_json::json!({
             "operation": "request.edit",
             "saved": true,
-            "request_id": &request_id,
+            "request_id": target.request_id,
             "request": &response.request,
         }),
     )?;
-    Ok(RequestCommandOutcome::new(
-        "request.edit",
-        RequestCommandResult::Mutation(MutationResult {
-            repo: context.repo,
-            response,
-            attachments,
-        }),
-        human_lines,
-    ))
+    Ok((response, attachments, human_lines))
 }
 
 pub(super) fn attachment_receipt_lines(

@@ -12,7 +12,7 @@ use scope_domain::{
     github::account::{GitHubAccount, GitHubAccountType},
     requests::{
         CloseRequestInput, OpenRequestFromAskInput, RequestAsk, RequestCloseAs, RequestLinks,
-        StartRequestInput,
+        StartRequestInput, VisibleLinkedRequest,
     },
     views::ViewId,
 };
@@ -73,7 +73,7 @@ async fn links_of_ask(store: &MetadataStore, viewer_user_id: Option<&str>) -> Re
         .seen_by(&ask, &repository.access, viewer_user_id, &repository.views)
 }
 
-fn ids(linked: &[LinkedRequest]) -> Vec<&str> {
+fn ids(linked: &[VisibleLinkedRequest]) -> Vec<&str> {
     linked
         .iter()
         .map(|linked| linked.request.id.as_str())
@@ -196,4 +196,83 @@ async fn links_and_a_named_close_are_stored_for_the_viewers_who_may_see_them() {
     );
     let ask = requests.request_by_id("req_ask").await.unwrap().unwrap();
     assert_eq!(ask.close_named_request_id(), None);
+}
+
+#[tokio::test]
+async fn a_named_request_deleted_after_it_was_checked_is_answered_as_not_found() {
+    let store = postgres_store();
+    let requests = store.requests();
+    start_public_request(&store).await;
+    open_ask(&store, "req_ask", 142).await;
+    let delete = async |request_id: &str| {
+        store
+            .db
+            .execute_unprepared(&format!(
+                "DELETE FROM scope_requests WHERE id = '{request_id}'"
+            ))
+            .await
+            .unwrap();
+    };
+    let not_found = |error: PostgresError| {
+        assert_eq!(
+            (error.kind, error.message.as_str()),
+            (PostgresErrorKind::NotFound, NAMED_REQUEST_NOT_FOUND)
+        );
+    };
+
+    requests
+        .start_request(start("req_2", "probe-timeout", "user_public", 4))
+        .await
+        .unwrap();
+    let tx = requests
+        .begin_request("req_1", "user_public")
+        .await
+        .unwrap();
+    let mutation = edit_request_links(
+        tx.request(),
+        tx.actor(),
+        &[],
+        EditRequestLinksInput {
+            actor_user_id: "user_public".to_string(),
+            resolve: tx.named_requests(&["req_2".to_string()]).await.unwrap(),
+            stop_resolving: Vec::new(),
+            now_unix: 5,
+        },
+    )
+    .unwrap();
+    delete("req_2").await;
+    not_found(tx.save_links(&mutation).await.unwrap_err());
+    drop(tx);
+
+    requests
+        .start_request(start("req_3", "owner-fix", "user_owner", 6))
+        .await
+        .unwrap();
+    let tx = requests
+        .begin_request_close("req_ask", "user_owner")
+        .await
+        .unwrap();
+    let facts = tx.close_facts().await.unwrap();
+    let mutation = scope_domain::requests::close_request(
+        tx.request().clone(),
+        facts.events,
+        facts.revisions,
+        CloseRequestInput {
+            request_id: "req_ask".to_string(),
+            actor_user_id: "user_owner".to_string(),
+            actor_is_maintainer: true,
+            reason: Some(RequestCloseAs::Completed {
+                fixed_by: tx
+                    .named_requests(&["req_3".to_string()])
+                    .await
+                    .unwrap()
+                    .pop(),
+            }),
+            event_id: "event_closed".to_string(),
+            now_unix: 7,
+        },
+    )
+    .unwrap();
+    delete("req_3").await;
+    not_found(tx.save_close(&mutation, None, 7).await.unwrap_err());
 }

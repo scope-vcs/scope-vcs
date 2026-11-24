@@ -17,7 +17,8 @@ use scope_api_contract::{
     EditRequestLinksRequest, LinkedRequestResponse, RequestDetailResponse, RequestLinksResponse,
 };
 use scope_domain::requests::{
-    LinkedRequest, RequestChecksOutcome, RequestReviewsOutcome, RequestViewer, request_mergeability,
+    RequestChecksOutcome, RequestReviewsOutcome, RequestViewer, VisibleLinkedRequest,
+    request_mergeability,
 };
 use scope_postgres::db::RequestStateSnapshot;
 
@@ -63,20 +64,21 @@ pub(crate) async fn response(
 ) -> Result<RequestLinksResponse, ApiError> {
     let links = &snapshot.links;
     let heads = links
-        .resolves
-        .iter()
-        .chain(&links.resolved_by)
-        .chain(&links.close_named)
-        .map(|linked| (&linked.request).into())
+        .shown()
+        .filter_map(VisibleLinkedRequest::readable_change)
+        .map(Into::into)
         .collect::<Vec<_>>();
-    if heads.is_empty() {
-        return Ok(RequestLinksResponse::default());
-    }
     let repo_id = &snapshot.repository.record.id;
     let views = &snapshot.repository.views;
-    let checks = checks_outcomes(state, repo_id, &heads).await?;
-    let reviews = reviews_outcomes(state, repo_id, views, &heads).await?;
-    let linked = |linked: &LinkedRequest| {
+    let (checks, reviews) = if heads.is_empty() {
+        Default::default()
+    } else {
+        (
+            checks_outcomes(state, repo_id, &heads).await?,
+            reviews_outcomes(state, repo_id, views, &heads).await?,
+        )
+    };
+    let linked = |linked: &VisibleLinkedRequest| {
         let request = &linked.request;
         let viewer = RequestViewer::new(
             snapshot.repository.access.clone(),

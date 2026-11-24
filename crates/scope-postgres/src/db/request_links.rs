@@ -9,10 +9,26 @@ use scope_domain::{
     },
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, IntoActiveModel,
-    QueryFilter, QuerySelect,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbErr, EntityTrait, IntoActiveModel,
+    QueryFilter, QuerySelect, SqlErr,
 };
 use std::collections::BTreeSet;
+
+const NAMED_REQUEST_KEYS: [&str; 2] = [
+    "fk_scope_request_links_resolved",
+    "fk_scope_requests_close_named_request",
+];
+
+pub(super) fn named_request_gone(error: DbErr) -> PostgresError {
+    match error.sql_err() {
+        Some(SqlErr::ForeignKeyConstraintViolation(violation))
+            if NAMED_REQUEST_KEYS.iter().any(|key| violation.contains(key)) =>
+        {
+            PostgresError::not_found(NAMED_REQUEST_NOT_FOUND)
+        }
+        _ => PostgresError::internal(error),
+    }
+}
 
 impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "edit_request_links"))]
@@ -128,7 +144,8 @@ pub(super) async fn save_links<C: ConnectionTrait>(
         entities::request_link::Model::from_domain(link)?
             .into_active_model()
             .insert(conn)
-            .await?;
+            .await
+            .map_err(named_request_gone)?;
     }
     Ok(())
 }
