@@ -15,7 +15,7 @@ use scope_domain::{
         RequestChecksOutcome, RequestRevision, request_checks_outcome,
         request_head_awaits_evaluation,
     },
-    views::Views,
+    views::{ViewId, Views},
 };
 use scope_postgres::db::{
     RebuildCheckCommitCommand, RecordRequestChecksCommand, RequestChecksMutation, RequestListRow,
@@ -146,35 +146,63 @@ async fn evaluate_saved_head(
     .map(Some)
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct GatedHead<'a> {
+    pub(crate) request_id: &'a str,
+    pub(crate) view: &'a ViewId,
+    pub(crate) head_oid: &'a str,
+}
+
+impl<'a> From<&'a RequestListRow> for GatedHead<'a> {
+    fn from(row: &'a RequestListRow) -> Self {
+        Self {
+            request_id: &row.id,
+            view: &row.view,
+            head_oid: &row.head_oid,
+        }
+    }
+}
+
+impl<'a> From<&'a Request> for GatedHead<'a> {
+    fn from(request: &'a Request) -> Self {
+        Self {
+            request_id: &request.id,
+            view: &request.view,
+            head_oid: &request.head_oid,
+        }
+    }
+}
+
 #[tracing::instrument(skip_all)]
 pub(crate) async fn checks_outcomes(
     state: &AppState,
     repo_id: &str,
-    requests: &[RequestListRow],
+    heads: &[GatedHead<'_>],
 ) -> Result<HashMap<String, RequestChecksOutcome>, ApiError> {
-    let heads = requests
-        .iter()
-        .map(|request| (request.id.clone(), request.head_oid.clone()))
-        .collect::<Vec<_>>();
     let evaluations = state
         .metadata
         .requests()
-        .request_check_evaluations(&heads)
+        .request_check_evaluations(
+            &heads
+                .iter()
+                .map(|head| (head.request_id.to_string(), head.head_oid.to_string()))
+                .collect::<Vec<_>>(),
+        )
         .await?;
     let results = state
         .metadata
         .requests()
         .request_check_results(repo_id, &evaluations)
         .await?;
-    Ok(requests
+    Ok(heads
         .iter()
-        .map(|row| {
+        .map(|head| {
             let evaluation = evaluations
                 .iter()
-                .find(|evaluation| evaluation.request_id == row.id);
+                .find(|evaluation| evaluation.request_id == head.request_id);
             (
-                row.id.clone(),
-                request_checks_outcome(&row.id, &row.head_oid, evaluation, &results),
+                head.request_id.to_string(),
+                request_checks_outcome(head.request_id, head.head_oid, evaluation, &results),
             )
         })
         .collect())

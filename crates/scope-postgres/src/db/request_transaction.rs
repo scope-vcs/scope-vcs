@@ -24,11 +24,11 @@ use scope_domain::{
     repository::access::RepositoryAccessContext,
     requests::{
         CloseRequestMutation, CreateRequestDiscussionMutation,
-        CreateRequestDiscussionReplyMutation, GitHubPush, Request, RequestActor,
+        CreateRequestDiscussionReplyMutation, GitHubPush, NamedRequest, Request, RequestActor,
         RequestAutoMergeIntent, RequestAutoMergeMutation, RequestDiscussion,
         RequestDiscussionMutation, RequestDiscussionReadState, RequestDiscussionReply,
-        RequestEvent, RequestLifecycleMutation, RequestRevision, RequestTimelineMutation,
-        attachments::RequestAttachmentBindingTarget,
+        RequestEvent, RequestLifecycleMutation, RequestLink, RequestLinksMutation, RequestRevision,
+        RequestTimelineMutation, attachments::RequestAttachmentBindingTarget,
     },
 };
 use sea_orm::{DatabaseTransaction, TransactionTrait};
@@ -202,6 +202,27 @@ impl RequestTransaction {
     ) -> Result<(), PostgresError> {
         save_request_branch_and_author(&self.tx, &mutation.request).await?;
         insert_request_event_row(&self.tx, &mutation.event).await
+    }
+
+    pub async fn named_requests(
+        &self,
+        request_ids: &[String],
+    ) -> Result<Vec<NamedRequest>, PostgresError> {
+        super::request_links::named_requests(
+            &self.tx,
+            &self.repository,
+            request_ids,
+            &self.actor_user_id,
+        )
+        .await
+    }
+
+    pub async fn resolves(&self) -> Result<Vec<RequestLink>, PostgresError> {
+        super::request_links::resolves(&self.tx, &self.request.id).await
+    }
+
+    pub async fn save_links(&self, mutation: &RequestLinksMutation) -> Result<(), PostgresError> {
+        super::request_links::save_links(&self.tx, mutation).await
     }
 
     pub async fn close_facts(&self) -> Result<RequestCloseFacts, PostgresError> {

@@ -21,6 +21,7 @@ pub(crate) mod request_checks;
 pub(crate) mod request_children;
 pub(crate) mod request_discussions;
 pub(crate) mod request_limits;
+pub(crate) mod request_links;
 pub(crate) mod request_queue;
 pub(crate) mod request_ratings;
 pub(crate) mod request_review;

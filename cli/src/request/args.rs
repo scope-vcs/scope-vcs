@@ -20,7 +20,7 @@ pub(super) enum RequestCommand {
     Submit(RequestSubmitArgs),
     #[command(about = "Close a request")]
     Close(RequestCloseArgs),
-    #[command(about = "Edit a request title or description")]
+    #[command(about = "Edit a request title, description, or what it resolves")]
     Edit(RequestEditArgs),
     #[command(about = "Invite a user to push a request branch in the view anyone can read")]
     Invite(RequestInviteArgs),
@@ -86,6 +86,13 @@ pub(super) struct RequestStartArgs {
         help = "Add the branch to an existing request that has no change yet, by request ID or handle such as gh-142"
     )]
     pub(super) for_request: Option<String>,
+    #[arg(
+        long,
+        value_name = "REQUEST",
+        conflicts_with = "for_request",
+        help = "Start a request of your own that resolves another request, by request ID or handle such as gh-142; repeat for several"
+    )]
+    pub(super) resolves: Vec<String>,
 }
 
 #[derive(Parser)]
@@ -155,6 +162,19 @@ pub(super) struct RequestCloseArgs {
         help = "Why a request that was opened from an ask is closed: completed, not-planned, or duplicate"
     )]
     pub(super) reason: Option<RequestCloseReason>,
+    #[arg(
+        long,
+        value_name = "REQUEST",
+        conflicts_with = "fixed_by",
+        help = "With --reason duplicate: the request this one duplicates, by request ID or handle such as gh-142"
+    )]
+    pub(super) duplicate_of: Option<String>,
+    #[arg(
+        long,
+        value_name = "REQUEST",
+        help = "With --reason completed: the request that fixed this one, by request ID or handle such as gh-142"
+    )]
+    pub(super) fixed_by: Option<String>,
 }
 
 fn parse_close_reason(value: &str) -> Result<RequestCloseReason, String> {
@@ -171,11 +191,23 @@ fn parse_close_reason(value: &str) -> Result<RequestCloseReason, String> {
     ArgGroup::new("request_edit")
         .required(true)
         .multiple(true)
-        .args(["title", "description_file", "attach"])
+        .args(["title", "description_file", "attach", "resolves", "stop_resolving"])
 ))]
 pub(super) struct RequestEditArgs {
     #[command(flatten)]
     pub(super) target: RequestTargetArgs,
+    #[arg(
+        long,
+        value_name = "REQUEST",
+        help = "Record that this request resolves another request, by request ID or handle such as gh-142; repeat for several"
+    )]
+    pub(super) resolves: Vec<String>,
+    #[arg(
+        long,
+        value_name = "REQUEST",
+        help = "Remove the record that this request resolves another request; repeat for several"
+    )]
+    pub(super) stop_resolving: Vec<String>,
     #[arg(long, value_name = "TITLE", help = "New display title")]
     pub(super) title: Option<String>,
     #[arg(

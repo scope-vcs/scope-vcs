@@ -81,10 +81,18 @@ impl RequestStore {
         latest_request_events(self.db.as_ref(), request_id, limit).await
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_request"))]
     pub async fn start_request(
         &self,
         input: StartRequestInput,
+    ) -> Result<StartRequestMutation, PostgresError> {
+        self.start_request_resolving(input, &[]).await
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_request"))]
+    pub async fn start_request_resolving(
+        &self,
+        input: StartRequestInput,
+        resolves: &[String],
     ) -> Result<StartRequestMutation, PostgresError> {
         let tx = self.db.begin().await?;
         super::locks::acquire_shared_repository_lock(&tx, &input.repo_id).await?;
@@ -116,6 +124,7 @@ impl RequestStore {
             )
             .await?,
         };
+        let author_user_id = input.author_user_id.clone();
         let mut mutation = start_request(facts, input, &repo.views)?;
         if let Some(parent) = super::request_stack::ancestry(&tx, &mutation.request.base)
             .await?
@@ -135,6 +144,14 @@ impl RequestStore {
         }
         insert_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
+        super::request_links::link_started_request(
+            &tx,
+            &repo,
+            &mutation.request,
+            &author_user_id,
+            resolves,
+        )
+        .await?;
         tx.commit().await?;
         Ok(mutation)
     }

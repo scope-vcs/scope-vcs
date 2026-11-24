@@ -3,11 +3,15 @@ use super::*;
 mod asks;
 mod close;
 mod helpers;
+mod links;
 mod mutation_refresh;
 mod publication;
 mod queue;
 mod ratings;
-pub(super) use helpers::{create_owner_request, create_public_request, start_private_request};
+pub(super) use helpers::{
+    create_owner_request, create_public_request, open_asked_request, start_private_request,
+    start_private_request_resolving,
+};
 
 use scope_postgres::db::AddRequestInviteeCommand;
 

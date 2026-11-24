@@ -7,9 +7,9 @@ use crate::{
     },
     requests::{
         CloseRequestInput, CloseRequestMutation, RecordWorkingRequestUploadInput,
-        RequestChecksOutcome, RequestCloseReason, RequestMergeabilityStatus, RequestReviewsOutcome,
-        RequestState, RequestViewMains, RequestViewer, SubmitRequestInput, close_request,
-        eligible_rating_subject_user_id,
+        RequestChecksOutcome, RequestCloseAs, RequestCloseReason, RequestMergeabilityStatus,
+        RequestReviewsOutcome, RequestState, RequestViewMains, RequestViewer, SubmitRequestInput,
+        close_request, eligible_rating_subject_user_id,
         fixtures::{
             access, actor_views, asked_request, author_actor, owner_actor, working_request,
         },
@@ -475,7 +475,7 @@ fn attaching_a_change_names_the_branch_and_makes_the_caller_its_author() {
             AttachRequestChangeFacts::default(),
             attach("visitor", "login-timeout"),
             DomainErrorKind::Forbidden,
-            "only a maintainer who reads this request can work on it",
+            "only a maintainer who reads this request can work on it; start a request of your own with --resolves instead",
         ),
         (
             request,
@@ -491,7 +491,7 @@ fn attaching_a_change_names_the_branch_and_makes_the_caller_its_author() {
             AttachRequestChangeFacts::default(),
             attach("dana", "other-fix"),
             DomainErrorKind::Conflict,
-            "someone else is working on this request",
+            "someone else is working on this request; start a request of your own with --resolves instead",
         ),
         (
             pushed(with_branch.clone(), &priya, "priya"),
@@ -499,7 +499,7 @@ fn attaching_a_change_names_the_branch_and_makes_the_caller_its_author() {
             AttachRequestChangeFacts::default(),
             attach("priya", "second-name"),
             DomainErrorKind::Conflict,
-            "this request already has a change",
+            "this request already has a change; start a request of your own with --resolves instead",
         ),
     ] {
         let error = attach_request_change(request, actor, facts, input).unwrap_err();
@@ -544,7 +544,7 @@ fn closing_an_asked_request_keeps_it_and_records_the_reason() {
         (
             "visitor",
             false,
-            Some(RequestCloseReason::NotPlanned),
+            Some(RequestCloseAs::NotPlanned),
             DomainErrorKind::Forbidden,
         ),
     ] {
@@ -556,7 +556,7 @@ fn closing_an_asked_request_keeps_it_and_records_the_reason() {
 
     let CloseRequestMutation::Closed {
         request: closed, ..
-    } = close(&request, "dana", true, Some(RequestCloseReason::NotPlanned)).unwrap()
+    } = close(&request, "dana", true, Some(RequestCloseAs::NotPlanned)).unwrap()
     else {
         panic!("a request with an ask is never deleted");
     };
@@ -586,13 +586,7 @@ fn closing_an_asked_request_keeps_it_and_records_the_reason() {
     let CloseRequestMutation::Closed {
         request: closed_draft,
         ..
-    } = close(
-        &drafted,
-        "priya",
-        true,
-        Some(RequestCloseReason::NotPlanned),
-    )
-    .unwrap()
+    } = close(&drafted, "priya", true, Some(RequestCloseAs::NotPlanned)).unwrap()
     else {
         panic!("a request with an ask is never deleted");
     };
@@ -604,7 +598,7 @@ fn closing_an_asked_request_keeps_it_and_records_the_reason() {
     let CloseRequestMutation::Closed {
         request: closed_by_dana,
         ..
-    } = close(&drafted, "dana", true, Some(RequestCloseReason::NotPlanned)).unwrap()
+    } = close(&drafted, "dana", true, Some(RequestCloseAs::NotPlanned)).unwrap()
     else {
         panic!("a request with an ask is never deleted");
     };
@@ -619,7 +613,7 @@ fn closing_an_asked_request_keeps_it_and_records_the_reason() {
         &working_request(),
         "author",
         false,
-        Some(RequestCloseReason::Completed),
+        Some(RequestCloseAs::Completed { fixed_by: None }),
     )
     .unwrap_err();
     assert_eq!(error.kind, DomainErrorKind::InvalidInput);

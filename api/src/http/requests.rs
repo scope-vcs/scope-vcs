@@ -41,7 +41,9 @@ use serde::Deserialize;
 mod summary;
 mod work;
 use summary::request_response_for_viewer;
-pub(crate) use work::{attach_request_change, release_request_work, start_request_work};
+pub(crate) use work::{
+    attach_request_change, referenced_request_ids, release_request_work, start_request_work,
+};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RequestListQuery {
@@ -99,14 +101,14 @@ pub(crate) async fn list_requests(
         .requests()
         .request_view_mains(&repo.record.id)
         .await?;
+    let heads = requests.iter().map(Into::into).collect::<Vec<_>>();
     let checks =
-        crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &requests)
-            .await?;
+        crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &heads).await?;
     let reviews = crate::use_cases::github::review_bot_statuses::reviews_outcomes(
         &state,
         &repo.record.id,
         &repo.views,
-        &requests,
+        &heads,
     )
     .await?;
     let mut parents = state
@@ -185,12 +187,9 @@ pub(crate) async fn get_request(
     .await?;
     let snapshot =
         super::request_state::load(&state, &viewer, &owner, &repo_name, &request_id).await?;
-    let diff_stat = super::request_state::diff_stat(&state, &snapshot).await?;
-    Ok(Json(super::request_state::detail_response(
-        &snapshot,
-        super::request_state::viewer(&snapshot),
-        diff_stat,
-    )?))
+    super::request_state::full_detail_response(&state, &snapshot)
+        .await
+        .map(Json)
 }
 
 pub(crate) async fn submit_request(
@@ -283,6 +282,9 @@ pub(crate) async fn close_request(
         &request,
         &user.id,
         query.reason.map(Into::into),
+        referenced_request_ids(&state, &repo.record.id, query.named_request.as_slice())
+            .await?
+            .pop(),
     )
     .await?;
     match mutation {
@@ -347,9 +349,11 @@ pub(crate) async fn start_request(
     let current_main_oid = current_main_oid_for_context(&state, &repo.context).await?;
     let request_id = crate::persistence_ids::generate_prefixed_id("req")?;
     let now_unix = unix_now()?;
+    let resolves = referenced_request_ids(&state, &repo.context.record.id, &input.resolves).await?;
     let mutation = request_start::start_request(
         &state,
         &repo.context.incarnation(),
+        &resolves,
         StartRequestInput {
             id: request_id.clone(),
             repo_id: repo.context.record.id.clone(),

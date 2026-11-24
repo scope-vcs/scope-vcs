@@ -148,6 +148,11 @@ pub(super) fn write_bodies(params: &BTreeMap<&'static str, String>) -> WriteBodi
         ),
         (
             "POST",
+            format!("{request}/links"),
+            json!({ "resolve": [params["request_id"]], "stop_resolving": [] }),
+        ),
+        (
+            "POST",
             format!("{request}/merge"),
             json!({ "expected_head_oid": params["commit_oid"] }),
         ),

@@ -7,11 +7,12 @@ use scope_domain::{
     requests::{
         AttachRequestChangeFacts, AttachRequestChangeInput, CloseRequestInput,
         CloseRequestMutation, CreateRequestDiscussionInput, CreateRequestDiscussionReplyInput,
-        EditRequestIdentityInput, OpenRequestFromAskFacts, OpenRequestFromAskInput,
-        RecordWorkingRequestUploadInput, Request, RequestActor, RequestAsk, RequestCloseReason,
-        RequestEvent, RequestWorkInput, attach_request_change, close_request,
-        create_request_discussion, create_request_discussion_reply, edit_request_identity,
-        open_request_from_ask, record_working_request_upload, start_request_work,
+        EditRequestIdentityInput, EditRequestLinksInput, NamedRequest, OpenRequestFromAskFacts,
+        OpenRequestFromAskInput, RecordWorkingRequestUploadInput, Request, RequestActor,
+        RequestAsk, RequestCloseAs, RequestEvent, RequestWorkInput, attach_request_change,
+        close_request, create_request_discussion, create_request_discussion_reply,
+        edit_request_identity, edit_request_links, open_request_from_ask,
+        record_working_request_upload, start_request_work,
     },
     views::{ViewId, Views},
 };
@@ -114,7 +115,7 @@ pub(super) fn seed(
             now_unix: 1_790_000_600,
         },
     )?;
-    discussed(catalog, asked, actor, &owner.id)?;
+    discussed(catalog, asked.clone(), actor, &owner.id)?;
     backlog(catalog, repo_id, &facts.public_main_oid)?;
 
     let taken = opened(
@@ -218,17 +219,113 @@ pub(super) fn seed(
             now_unix: 1_790_000_630,
         },
     )?;
+    closed(catalog, declined, &owner.id, RequestCloseAs::NotPlanned)?;
+
+    for resolving_id in ["req_demo_ready", "req_demo_working", "req_demo_accepted"] {
+        resolving(catalog, actor, &owner.id, resolving_id, &asked)?;
+    }
+    let fixed = opened(
+        catalog,
+        repo_id,
+        &facts.public_main_oid,
+        SeedAsk {
+            id: "req_demo_asked_fixed",
+            asker: MAREK,
+            github_issue_number: 88,
+            title: "The docs do not say how to cut a release",
+            text_markdown: "I could not find the release steps anywhere in the docs.",
+            asked_at_unix: 1_776_000_000,
+            now_unix: 1_790_000_700,
+        },
+    )?;
+    let fixed_by = named(catalog, actor, &owner.id, "req_demo_accepted")?;
+    closed(
+        catalog,
+        fixed,
+        &owner.id,
+        RequestCloseAs::Completed {
+            fixed_by: Some(fixed_by),
+        },
+    )?;
+    let duplicate = opened(
+        catalog,
+        repo_id,
+        &facts.public_main_oid,
+        SeedAsk {
+            id: "req_demo_asked_duplicate",
+            asker: INES,
+            github_issue_number: 105,
+            title: "Billing settings stay light in dark mode",
+            text_markdown: "The billing settings ignore the dark theme.",
+            asked_at_unix: 1_780_000_000,
+            now_unix: 1_790_000_710,
+        },
+    )?;
+    let of = named(catalog, actor, &owner.id, "req_demo_backlog_1")?;
+    closed(
+        catalog,
+        duplicate,
+        &owner.id,
+        RequestCloseAs::Duplicate { of },
+    )
+}
+
+fn named(
+    catalog: &CatalogFixture,
+    actor: RequestActor<'_>,
+    owner_id: &str,
+    request_id: &str,
+) -> Result<NamedRequest, ApiError> {
+    let request = catalog
+        .requests
+        .get(request_id)
+        .ok_or_else(|| ApiError::internal_message("a seeded request to name is missing"))?;
+    Ok(NamedRequest::seen_by_actor(request, actor, owner_id)?)
+}
+
+fn resolving(
+    catalog: &mut CatalogFixture,
+    actor: RequestActor<'_>,
+    owner_id: &str,
+    resolving_id: &str,
+    resolved: &Request,
+) -> Result<(), ApiError> {
+    let resolving = catalog
+        .requests
+        .get(resolving_id)
+        .ok_or_else(|| ApiError::internal_message("a seeded resolving request is missing"))?;
+    let mutation = edit_request_links(
+        resolving,
+        actor,
+        &[],
+        EditRequestLinksInput {
+            actor_user_id: owner_id.to_string(),
+            resolve: vec![NamedRequest::seen_by_actor(resolved, actor, owner_id)?],
+            stop_resolving: Vec::new(),
+            now_unix: resolving.created_at_unix,
+        },
+    )?;
+    catalog.request_links.extend(mutation.added);
+    Ok(())
+}
+
+fn closed(
+    catalog: &mut CatalogFixture,
+    request: Request,
+    owner_id: &str,
+    reason: RequestCloseAs,
+) -> Result<(), ApiError> {
     let CloseRequestMutation::Closed { request, event } = close_request(
-        declined,
+        request.clone(),
         Vec::new(),
         Vec::new(),
         CloseRequestInput {
-            request_id: "req_demo_asked_closed".to_string(),
-            actor_user_id: owner.id.clone(),
+            request_id: request.id.clone(),
+            actor_user_id: owner_id.to_string(),
             actor_is_maintainer: true,
-            reason: Some(RequestCloseReason::NotPlanned),
-            event_id: "event_req_demo_asked_closed_closed".to_string(),
-            now_unix: 1_790_000_631,
+            reason: Some(reason),
+            event_id: format!("event_{}_closed", request.id),
+            now_unix: request.created_at_unix + 1,
         },
     )?
     else {

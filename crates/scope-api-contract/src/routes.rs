@@ -114,6 +114,9 @@ routes! {
         REPO_REQUEST_CHANGE = "/v1/repos/{owner}/{repo}/requests/{request_id}/change"
             => "repoRequestChange",
             repo_request_change(owner: &str, repo: &str, request_id: &str);
+        REPO_REQUEST_LINKS = "/v1/repos/{owner}/{repo}/requests/{request_id}/links"
+            => "repoRequestLinks",
+            repo_request_links(owner: &str, repo: &str, request_id: &str);
         REPO_REQUEST_RATINGS = "/v1/repos/{owner}/{repo}/requests/{request_id}/ratings"
             => "repoRequestRatings",
             repo_request_ratings(owner: &str, repo: &str, request_id: &str);

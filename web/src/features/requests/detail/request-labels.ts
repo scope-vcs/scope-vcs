@@ -68,6 +68,13 @@ const CLOSE_REASONS = {
 
 export const REQUEST_CLOSE_REASONS = Object.keys(CLOSE_REASONS) as RequestCloseReason[]
 
+export const REQUEST_LINK_WORDS = {
+  resolves: 'resolves',
+  resolvedBy: 'Resolved by',
+  fixedBy: 'fixed by',
+  duplicateOf: 'duplicate of',
+} as const
+
 export function requestCloseReasonLabel(reason: RequestCloseReason) {
   return CLOSE_REASONS[reason]
 }
@@ -100,8 +107,17 @@ export function eventKindLabel(kind: RequestEventKind) {
   return EVENT_LABELS[kind]
 }
 
+export function requestStatusLabel(status: RequestMergeabilityStatus) {
+  return MERGEABILITY[status].label
+}
+
+export function requestStatusPhrase(status: RequestMergeabilityStatus) {
+  const label = requestStatusLabel(status)
+  return /^[A-Z][a-z]/.test(label) ? label.charAt(0).toLowerCase() + label.slice(1) : label
+}
+
 export function requestMergeabilityLabel(request: RequestLabelSource) {
-  return MERGEABILITY[request.mergeability.status].label
+  return requestStatusLabel(request.mergeability.status)
 }
 
 export function requestMergeabilityTone(request: RequestLabelSource): BadgeVariant {
@@ -126,8 +142,12 @@ const STATE_MARKS = {
   outline: 'idle',
 } as const satisfies Record<BadgeVariant, RequestStateMark>
 
+export function requestStatusMark(status: RequestMergeabilityStatus): RequestStateMark {
+  return requestOutcome(status) ?? STATE_MARKS[MERGEABILITY[status].tone]
+}
+
 export function requestStateMark(request: RequestLabelSource): RequestStateMark {
-  return requestOutcome(request.mergeability.status) ?? STATE_MARKS[requestMergeabilityTone(request)]
+  return requestStatusMark(request.mergeability.status)
 }
 
 export function requestCheckEvaluationNote(checks: RequestChecksResponse) {

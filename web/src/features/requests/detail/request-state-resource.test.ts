@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
-import type { RepoChangeEvent, RequestStateResponse } from '@/api/types.generated'
+import type { RepoChangeEvent, RequestLinksResponse, RequestStackNavigationResponse, RequestStateResponse } from '@/api/types.generated'
 import { invalidateRepoResources, topicsOf } from '../../repo-detail/repo-resource'
 import { resetViewerState } from '../../../lib/viewer-state'
 import { deferred } from '../discussion/request-discussion-test-fixtures'
@@ -8,6 +8,10 @@ import { loadMoreRequestChildren, loadRequestStateValue, reconcileRequestState, 
 
 const identity = requestStateIdentity('viewer-access', 'request')
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
+const NO_LINKS: RequestLinksResponse = { resolves: [], resolved_by: [], close_named: null }
+const NO_STACK: RequestStackNavigationResponse = {
+  parent: null, ancestors: [], ancestors_unavailable: false, children: { requests: [], next_cursor: null },
+}
 test.beforeEach(() => requestStateResource.clear())
 
 test('navigation and reopening share the complete request snapshot in the viewer access scope', async () => {
@@ -49,6 +53,20 @@ test('another request ending refreshes a retained snapshot that shows its author
   assert.equal(requestStateResource.getSnapshot(other).stale, false)
 })
 
+for (const place of ['resolves', 'resolved_by', 'close_named'] as const) {
+  test(`a request shown as a link refreshes the retained snapshot that shows it: ${place}`, () => {
+    const other = requestStateIdentity('viewer-access', 'other')
+    const shown = state()
+    const linked = { id: 'linked', name: 'linked', title: 'Linked', author: null, status: 'ChecksPending' as const }
+    shown.detail.links = { ...shown.detail.links, [place]: place === 'close_named' ? linked : [linked] }
+    requestStateResource.write(identity, { state: shown })
+    requestStateResource.write(other, { state: state() })
+    invalidateRepoResources('viewer-access', topicsOf(event({ RequestStateChanged: { request_id: 'linked', view: 'public' } })))
+    assert.equal(requestStateResource.getSnapshot(identity).stale, true)
+    assert.equal(requestStateResource.getSnapshot(other).stale, false)
+  })
+}
+
 test('a workflow run association arriving after check results refreshes embedded check links', () => {
   requestStateResource.write(identity, { state: state() })
   invalidateRepoResources('viewer-access', topicsOf(event('GitHubWorkflowRunsChanged')))
@@ -80,7 +98,11 @@ test('viewer reset prevents a late navigation response from publishing retained 
 function state(head = 'head'): RequestStateResponse {
   const mergeability = { status: 'ChecksPending' as const, current_main_oid: 'main', request_head_oid: head, reason: 'checks have not finished' }
   return {
-    detail: { request: { id: 'request', head_oid: head, mergeability } },
+    detail: {
+      request: { id: 'request', head_oid: head, mergeability },
+      stack_navigation: NO_STACK,
+      links: NO_LINKS,
+    },
     checks: {
       request_id: 'request', head_oid: head, state: 'started', outcome: 'pending', message: null,
       checks: [{ name: 'checks', status: 'in_progress', conclusion: null, details_url: null, run: null }],

@@ -211,6 +211,7 @@ pub(crate) async fn publish(
             &accepted,
             super::request_state::viewer(&accepted),
             None,
+            Default::default(),
         )?
         .request,
         revision_id: mutation.revision.id,

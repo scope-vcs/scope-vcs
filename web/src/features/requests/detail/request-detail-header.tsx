@@ -8,8 +8,10 @@ import { useState, type ReactNode } from 'react'
 import { requestChecksSummary, requestFailedCheck } from '../checks/request-check-rows'
 import { actorHandle } from './request-actor'
 import { authorRecordSummary } from './request-author-record-model'
+import { FACT_LINK_CLASS, LinkedRequestLink } from './request-fact-link'
 import { RequestAuthorRecordSummary } from './request-author-record'
 import {
+  REQUEST_LINK_WORDS,
   requestCloseReasonLabel,
   requestMergeabilityLabel,
   requestPublicChecksNote,
@@ -18,13 +20,12 @@ import {
 import { RequestStateMark } from './request-state-mark'
 
 const DETAIL_CLASS = 'text-sm leading-6 text-muted-foreground'
-const FACT_LINK_CLASS = 'rounded-sm underline decoration-border-strong underline-offset-[3px] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring'
 
 export function RequestDetailHeader({
   actions,
   backLink,
   checks,
-  detail: { asker, author, author_record: authorRecord, claimer, request },
+  detail: { asker, author, author_record: authorRecord, claimer, links, request },
   params,
   stateActions,
 }: {
@@ -54,9 +55,17 @@ export function RequestDetailHeader({
             {settledAt !== null
               ? request.close_reason
                 ? (
-                  <span className={DETAIL_CLASS}>
-                    {requestCloseReasonLabel(request.close_reason)}{' '}
+                  <span className={`${DETAIL_CLASS} min-w-0 [overflow-wrap:anywhere]`}>
+                    {request.close_reason === 'duplicate' && links.close_named
+                      ? null
+                      : <>{requestCloseReasonLabel(request.close_reason)}{' '}</>}
                     <RelativeTimestamp value={settledAt} />
+                    {links.close_named ? (
+                      <>
+                        , {request.close_reason === 'duplicate' ? REQUEST_LINK_WORDS.duplicateOf : REQUEST_LINK_WORDS.fixedBy}{' '}
+                        <LinkedRequestLink params={params} request={links.close_named} />
+                      </>
+                    ) : null}
                   </span>
                 )
                 : <RelativeTimestamp className={DETAIL_CLASS} value={settledAt} />
@@ -102,6 +111,12 @@ export function RequestDetailHeader({
               ) : null}
             </span>
           )}
+          {links.resolves.map((resolved) => (
+            <span className="flex min-w-0 max-w-full gap-x-1.5" key={resolved.id}>
+              {REQUEST_LINK_WORDS.resolves}
+              <LinkedRequestLink className="request-detail-header-branch truncate" params={params} request={resolved} />
+            </span>
+          ))}
           {request.branch_name ? (
             <span className="request-detail-header-branch truncate font-mono" title={request.branch_name}>{request.branch_name}</span>
           ) : null}

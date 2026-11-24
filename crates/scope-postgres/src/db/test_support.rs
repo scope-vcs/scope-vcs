@@ -598,9 +598,21 @@ async fn seed_catalog_rows(
         CATALOG_SEED_NOW_UNIX,
     )
     .await?;
-    for request in catalog.requests.values() {
+    let (naming, named): (Vec<_>, Vec<_>) = catalog
+        .requests
+        .values()
+        .partition(|request| request.close_named_request_id().is_some());
+    for request in named.into_iter().chain(naming) {
         insert_request_row(tx, request).await?;
     }
+    super::request_links::save_links(
+        tx,
+        &scope_domain::requests::RequestLinksMutation {
+            added: catalog.request_links,
+            removed: Vec::new(),
+        },
+    )
+    .await?;
     for (repo_id, packs) in catalog.git_pool_packs {
         for pack in packs {
             register_git_pool_pack(tx, &repo_id, &pack, CATALOG_SEED_NOW_UNIX).await?;

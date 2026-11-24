@@ -218,6 +218,7 @@ pub fn router(state: AppState) -> Router {
             routes::REPO_REQUEST_CHANGE,
             post(http::requests::attach_request_change),
         )
+        .route(routes::REPO_REQUEST_LINKS, post(http::request_links::edit))
         .route(
             routes::REPO_REQUEST_CHILDREN,
             get(http::request_children::get),

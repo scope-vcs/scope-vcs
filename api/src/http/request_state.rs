@@ -3,7 +3,7 @@ use axum::{
     Json,
     extract::{Path, State},
 };
-use scope_api_contract::{RequestDetailResponse, RequestStateResponse};
+use scope_api_contract::{RequestDetailResponse, RequestLinksResponse, RequestStateResponse};
 use scope_domain::requests::{DiffStat, RequestViewer, request_policy};
 use scope_postgres::db::RequestStateSnapshot;
 
@@ -14,14 +14,13 @@ pub(crate) async fn get(
 ) -> Result<Json<RequestStateResponse>, ApiError> {
     let snapshot = load(&state, &viewer, &owner, &repo_name, &request_id).await?;
     let viewer = self::viewer(&snapshot);
-    let diff_stat = diff_stat(&state, &snapshot).await?;
     Ok(Json(RequestStateResponse {
         viewer: snapshot
             .viewer_user_id
             .as_deref()
             .map(|id| super::responses::request_actor_summary_response(id, &snapshot.users))
             .transpose()?,
-        detail: detail_response(&snapshot, viewer.clone(), diff_stat)?,
+        detail: full_detail_response(&state, &snapshot).await?,
         checks: super::request_checks::snapshot_response(
             &state,
             &snapshot,
@@ -70,6 +69,18 @@ pub(crate) async fn diff_stat(
     )
 }
 
+pub(crate) async fn full_detail_response(
+    state: &AppState,
+    snapshot: &RequestStateSnapshot,
+) -> Result<RequestDetailResponse, ApiError> {
+    detail_response(
+        snapshot,
+        viewer(snapshot),
+        diff_stat(state, snapshot).await?,
+        super::request_links::response(state, snapshot).await?,
+    )
+}
+
 pub(crate) fn viewer(snapshot: &RequestStateSnapshot) -> RequestViewer<'_> {
     RequestViewer::new(
         snapshot.repository.access.clone(),
@@ -82,6 +93,7 @@ pub(crate) fn detail_response(
     snapshot: &RequestStateSnapshot,
     viewer: RequestViewer<'_>,
     diff_stat: Option<DiffStat>,
+    links: RequestLinksResponse,
 ) -> Result<RequestDetailResponse, ApiError> {
     let checks = snapshot.checks_outcome();
     Ok(RequestDetailResponse {
@@ -101,6 +113,7 @@ pub(crate) fn detail_response(
             .as_ref()
             .map(super::responses::github_account_response),
         diff_stat: diff_stat.map(super::responses::diff_stat_response),
+        links,
         stack_navigation: scope_api_contract::RequestStackNavigationResponse {
             parent: snapshot
                 .stack_navigation

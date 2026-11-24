@@ -31,6 +31,10 @@ impl StateRow {
         Ok(self.0.try_get("", "is_invitee")?)
     }
 
+    pub(super) fn names_requests(&self) -> Result<bool, PostgresError> {
+        Ok(self.0.try_get("", "names_requests")?)
+    }
+
     pub(super) fn evaluation(&self) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
         if !joined(&self.0, "e_id")? {
             return Ok(None);
@@ -110,7 +114,11 @@ fn state_sql() -> &'static str {
             "SELECT {}, {}, {}, {}, {}, {}, {}, {}, {}, head.head_oid AS canonical_main_oid,
             claim.claimer_user_id AS claim_claimer_user_id,
             EXISTS (SELECT 1 FROM scope_request_invitees invitee
-                    WHERE invitee.request_id = request.id AND invitee.user_id = $3) AS is_invitee
+                    WHERE invitee.request_id = request.id AND invitee.user_id = $3) AS is_invitee,
+            (request.close_named_request_id IS NOT NULL
+             OR EXISTS (SELECT 1 FROM scope_request_links link
+                        WHERE request.id IN (link.resolving_request_id, link.resolved_request_id))
+            ) AS names_requests
          FROM scope_requests request
          LEFT JOIN scope_request_check_evaluations evaluation
            ON evaluation.id = request.current_check_evaluation_id

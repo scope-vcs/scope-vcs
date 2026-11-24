@@ -1,17 +1,18 @@
 import { createApiClient } from '@/api/client'
 import { requestRoute } from '@/api/paths'
 import type { RequestParams } from '@/api/types'
-import { ApiRouteTemplates, type RequestCloseReason } from '@/api/types.generated'
+import { ApiRouteTemplates } from '@/api/types.generated'
 import {
   LeaveRequestResponseValidator,
   RequestCloseResponseValidator,
   RequestInviteeMutationResponseValidator,
   RequestMutationResponseValidator,
 } from '@/api/validators.generated'
+import type { RequestCloseCommand } from './request-close-model'
 
 export type RequestActionCommand =
   | { action: 'add_invitee'; handle: string }
-  | { action: 'close'; reason?: RequestCloseReason }
+  | ({ action: 'close' } & Partial<RequestCloseCommand>)
   | { action: 'leave' }
   | { action: 'release_work' }
   | { action: 'start_work' }
@@ -49,8 +50,12 @@ export async function performRequestActionForRequest(
       return { deleted: false }
     case 'close': {
       const path = requestRoute(ApiRouteTemplates.repoRequest, input)
+      const query = new URLSearchParams({
+        ...(input.reason ? { reason: input.reason } : {}),
+        ...(input.named_request ? { named_request: input.named_request } : {}),
+      })
       const result = await api.delete(
-        input.reason ? `${path}?${new URLSearchParams({ reason: input.reason })}` : path,
+        query.size > 0 ? `${path}?${query}` : path,
         RequestCloseResponseValidator,
         mutationOptions,
       )

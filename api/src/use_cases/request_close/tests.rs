@@ -22,6 +22,7 @@ async fn a_maintainer_closing_an_open_request_is_recorded_as_its_closer() {
             request_id: "req_1".into(),
             actor_user_id: "user_owner".into(),
             reason: None,
+            named_request_id: None,
             event_id: "event_closed".into(),
             now_unix: 6,
         },

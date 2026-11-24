@@ -271,7 +271,19 @@ async fn deleting_an_account_removes_its_drafts_keeps_the_asks_and_announces_its
             INSERT INTO scope_request_invitees VALUES ('asked', 'owner', 'leaver', 1);
             INSERT INTO scope_git_pool_packs (id, repo_id, request_id, head_oid, prerequisites,
                 sealed_pack, created_at_unix)
-            VALUES ('pack', 'owner/public', 'asked', repeat('b', 40), '{}', '\\x00', 1)",
+            VALUES ('pack', 'owner/public', 'asked', repeat('b', 40), '{}', '\\x00', 1);
+            INSERT INTO scope_requests (id, repo_id, name, author_role, audience, base_kind,
+                review_base_oid, base_version, stack_status, stack_depth, main_ancestor_oid,
+                head_oid, title, description_markdown, activity_version, asker_github_user_id,
+                github_issue_number, ask_source_url, ask_text_markdown, asked_at_unix,
+                closed_at_unix, close_reason, close_named_request_id, created_at_unix,
+                updated_at_unix)
+            VALUES ('duplicate', 'owner/public', 'gh-8', 'Public', 'public', 'Main',
+                repeat('a', 40), 1, 'main', 1, repeat('a', 40), repeat('a', 40), 'Duplicate', '',
+                1, 7, 8, 'https://github.com/octo/public/issues/8', '', 1, 2, 'duplicate',
+                'asked', 1, 2);
+            INSERT INTO scope_request_links VALUES
+                ('asked', 'submitted', 1), ('submitted', 'asked', 1), ('draft', 'asked', 1)",
         )
         .await
         .unwrap();
@@ -302,7 +314,19 @@ async fn deleting_an_account_removes_its_drafts_keeps_the_asks_and_announces_its
                FROM scope_requests"
         )
         .await,
-        json!([["asked", null], ["submitted", null]])
+        json!([["asked", null], ["duplicate", null], ["submitted", null]])
+    );
+    assert_eq!(
+        query_json(
+            &store,
+            "SELECT jsonb_build_array(
+                (SELECT jsonb_agg(jsonb_build_array(resolving_request_id, resolved_request_id)
+                            ORDER BY resolving_request_id)
+                   FROM scope_request_links),
+                (SELECT close_named_request_id FROM scope_requests WHERE id = 'duplicate'))"
+        )
+        .await,
+        json!([[["asked", "submitted"], ["submitted", "asked"]], "asked"])
     );
     assert_eq!(
         query_json(

@@ -3,7 +3,7 @@ import { createRootRoute, createRouter, RouterProvider } from '@tanstack/react-r
 import { useRef, useState } from 'react'
 import { ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { RequestAuthorRecordResponse, RequestChecksResponse, RequestDetailResponse, RequestSummaryResponse } from '@/api/types.generated'
+import type { LinkedRequestResponse, RequestAuthorRecordResponse, RequestChecksResponse, RequestDetailResponse, RequestLinksResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { RequestChecksSection } from '@/features/requests/checks/request-checks-section'
 import { RequestChangeCommand } from '@/features/requests/detail/request-change-command'
 import { RequestDetailHeader } from '@/features/requests/detail/request-detail-header'
@@ -34,6 +34,10 @@ const asked = {
   mergeability: { status: 'NoChangeYet', reason: 'request has no change yet' },
   permissions: { can_close: true, can_view_activity: true, can_start_work: true, can_attach_change: true },
 } as RequestSummaryResponse
+const NO_LINKS: RequestLinksResponse = { resolves: [], resolved_by: [], close_named: null }
+const linked = (id: string, title: string): LinkedRequestResponse => ({
+  id, name: id, title, author: null, status: 'NoChangeYet',
+})
 const check = (conclusion: 'success' | 'failure', name = 'Required PR checks') => ({
   name, status: 'completed', conclusion, details_url: null,
   run: { run_id: '9002', workflow_name: 'PR requirements', job_id: '45' },
@@ -86,7 +90,22 @@ const STATES = {
     checks: baseChecks,
     canEnable: false,
   },
-} satisfies Record<string, { request: RequestSummaryResponse; checks: RequestChecksResponse; canEnable: boolean }>
+  duplicate: {
+    request: {
+      ...asked, state: 'Closed', closed_at_unix: 1793880000, close_reason: 'duplicate',
+      mergeability: { status: 'Closed', reason: null }, permissions: { can_view_activity: true },
+    },
+    checks: baseChecks,
+    canEnable: false,
+    links: { ...NO_LINKS, close_named: linked('req_billing', 'Dark mode for the billing page') },
+  },
+  resolving: {
+    request, checks: baseChecks, canEnable: true,
+    links: { ...NO_LINKS, resolves: [linked('req_asked', asked.title)] },
+  },
+} satisfies Record<string, {
+  request: RequestSummaryResponse; checks: RequestChecksResponse; canEnable: boolean; links?: RequestLinksResponse
+}>
 const activity = { identity: 'header-activity', version: '1', load: async () => ({ events: [], next_cursor: null }) }
 const actions = { error: null, pending: null, run: async () => false }
 const autoMerge = {
@@ -102,7 +121,7 @@ function App() {
   const [stateName, setStateName] = useState<keyof typeof STATES>('findings')
   const [authorRecord, setAuthorRecord] = useState<RequestAuthorRecordResponse | null>(null)
   const more = useRef<HTMLButtonElement | null>(null)
-  const shown = STATES[stateName]
+  const shown: (typeof STATES)[keyof typeof STATES] & { links?: RequestLinksResponse } = STATES[stateName]
   const { ask, permissions } = shown.request
   Object.assign(window, { setBranch: setName, setState: setStateName, setAuthorRecord })
   return <main>
@@ -113,6 +132,7 @@ function App() {
         author: ask && !shown.request.author_user_id ? null : { id: 'author', handle: 'adamblumoff' },
         asker: ask ? { github_user_id: 7, login: 'tomasz-k', account_type: 'user', avatar_url: null } : null,
         author_record: authorRecord, claimer: null,
+        links: shown.links ?? NO_LINKS,
       } as RequestDetailResponse}
       backLink={<a href="#requests">Requests</a>}
       stateActions={
@@ -122,7 +142,7 @@ function App() {
       actions={<>
         {permissions.can_read_change ? <RequestChangesMenu activity={activity} diffStat={{ additions: 5495, deletions: 2578, changed_files: 203 }} params={requestParams} /> : null}
         <Button size="sm" variant="secondary"><SlidersHorizontal />Details<ChevronDown /></Button>
-        <RequestMoreMenu actions={actions} disabled={false} onViewActivity={() => {}} params={params} request={shown.request} triggerRef={more} />
+        <RequestMoreMenu actions={actions} disabled={false} onViewActivity={() => {}} params={params} request={shown.request} resolvedBy={[]} triggerRef={more} />
       </>}
     />
     {ask && permissions.can_attach_change ? <RequestChangeCommand ask={ask} /> : null}

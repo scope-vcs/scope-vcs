@@ -11,7 +11,7 @@ use scope_domain::{
     },
     requests::{
         Request, RequestDiscussion, RequestDiscussionReadState, RequestDiscussionReply,
-        RequestEvent, RequestRevision,
+        RequestEvent, RequestLink, RequestRevision,
     },
     views::ViewId,
 };
@@ -26,6 +26,7 @@ pub struct CatalogFixture {
     pub git_segment_uploads: Vec<GitSegmentUpload>,
     pub git_pool_packs: BTreeMap<String, Vec<GitPoolPack>>,
     pub requests: BTreeMap<String, Request>,
+    pub request_links: Vec<RequestLink>,
     pub request_revisions: BTreeMap<String, RequestRevision>,
     pub request_discussions: BTreeMap<String, RequestDiscussion>,
     pub request_discussion_replies: BTreeMap<String, RequestDiscussionReply>,

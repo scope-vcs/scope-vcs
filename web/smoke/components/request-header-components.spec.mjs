@@ -164,5 +164,17 @@ test('a request with no change names who asked, offers the work action, and show
   await page.evaluate(() => window.setState('declined'))
   await header.getByText('Closed', { exact: true }).waitFor()
   await compareScreenshot(header, 'declined')
+  await page.evaluate(() => window.setState('duplicate'))
+  await header.getByText(/, duplicate of/).waitFor()
+  assert.match(
+    await header.getByRole('link', { name: 'Dark mode for the billing page', exact: true }).getAttribute('href'),
+    /\/requests\/req_billing$/,
+  )
+  await page.evaluate(() => window.setState('resolving'))
+  await header.getByText(/^resolves\s*Login times out/).waitFor()
+  assert.match(
+    await header.getByRole('link', { name: 'Login times out after 30 seconds on slow connections', exact: true }).getAttribute('href'),
+    /\/requests\/req_asked$/,
+  )
   assert.deepEqual(errors, [])
 })

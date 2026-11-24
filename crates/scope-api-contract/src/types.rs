@@ -1,10 +1,12 @@
 mod request_asks;
 mod request_discussion_anchors;
 mod request_discussion_authors;
+mod request_links;
 mod request_stacks;
 pub use request_asks::*;
 pub use request_discussion_anchors::*;
 pub use request_discussion_authors::*;
+pub use request_links::*;
 pub use request_stacks::*;
 
 use crate::{
@@ -229,6 +231,7 @@ pub struct RequestDetailResponse {
     pub claimer: Option<RequestActorSummaryResponse>,
     pub asker: Option<GitHubAccountResponse>,
     pub diff_stat: Option<RequestDiffStatResponse>,
+    pub links: RequestLinksResponse,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -287,13 +290,6 @@ pub struct RequestRatingsResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestMutationResponse {
     pub request: RequestSummaryResponse,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub struct RequestCloseResponse {
-    pub deleted: bool,
-    pub request: Option<RequestSummaryResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -627,6 +623,8 @@ pub struct StartRequestRequest {
     pub name: String,
     pub title: Option<String>,
     pub view: ViewId,
+    #[serde(default)]
+    pub resolves: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

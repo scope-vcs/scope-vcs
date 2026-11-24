@@ -618,6 +618,60 @@ fn request_edit_finds_a_request_by_its_handle_and_reads_description_stdin_outsid
     );
 }
 
+#[test]
+fn request_edit_changes_what_a_request_resolves_last_and_says_what_was_saved_when_that_fails() {
+    let dir = TempDir::new("request-edit-links");
+    let server = FixtureServer::start();
+    let edit = |flags: [&str; 4]| {
+        server
+            .command(dir.path())
+            .args(["--json", "--repo", "owner/repo", "request", "edit"])
+            .args(["--request", "gh-142"])
+            .args(flags)
+            .output()
+            .unwrap()
+    };
+    let links_sent = || {
+        let seen = server.seen.lock().unwrap();
+        seen.iter()
+            .filter(|call| call.starts_with("POST links"))
+            .count()
+    };
+
+    let refused = edit(["--title", "refused", "--resolves", "gh-7"]);
+    assert_eq!(refused.status.code(), Some(2));
+    assert_eq!(links_sent(), 0);
+
+    let partial = edit(["--title", "Renamed", "--resolves", "gh-404"]);
+    assert_eq!(partial.status.code(), Some(5));
+    let stderr = String::from_utf8(partial.stderr).unwrap();
+    let error: Value = serde_json::from_str(stderr.lines().last().unwrap()).unwrap();
+    assert_eq!(server.edited.lock().unwrap()["title"], "Renamed");
+    let message = error["message"].as_str().unwrap();
+    assert!(
+        message.contains("were saved") && message.contains("the request you named was not found"),
+        "{message}"
+    );
+    assert_eq!(error["recovery"]["failed_step"], "edit_links");
+    assert_eq!(
+        error["recovery"]["retry_command"],
+        json!([
+            "scope",
+            "--repo",
+            "owner/repo",
+            "request",
+            "edit",
+            "--request",
+            "req_one",
+            "--resolves",
+            "gh-404"
+        ])
+    );
+
+    success(edit(["--title", "Renamed", "--resolves", "gh-7"]));
+    assert_eq!(links_sent(), 2);
+}
+
 const OID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn success(output: std::process::Output) -> Value {
@@ -681,6 +735,8 @@ impl FixtureServer {
         let aggregate_seen = inspected.clone();
         let attached_seen = inspected.clone();
         let attached_detail = start_detail.clone();
+        let links_seen = inspected.clone();
+        let linked_detail = show_detail.clone();
         let app = Router::new()
                     .route("/v1/session", get(|| async { Json(crate::support::session_response("usr_test", "owner", "test@example.test")) }))
                     .route("/v1/repos/owner/repo", get(move |headers: axum::http::HeaderMap| {
@@ -740,7 +796,8 @@ impl FixtureServer {
                         }
                     }))
                     .route("/v1/repos/owner/repo/requests", get(|Query(query): Query<HashMap<String,String>>| async move { Json(json!({"requests":([list_item("req_one", "fix-one", "Open"), list_item("req_two", "fix-two", "Closed"), list_item("req_three", "fix-three", "Open")].into_iter().filter(|item| query.get("name").is_none_or(|name| item["name"] == name.as_str())).collect::<Vec<_>>()), "next_cursor":null})) }).post(move || { let started=started.clone(); let detail=start_detail.clone(); async move { started.lock().unwrap().push("POST request".to_string()); Json(json!({"request":detail})) } }))
-                    .route("/v1/repos/owner/repo/requests/{reference}", get(move |Path(reference): Path<String>| { let detail=show_detail.clone(); let navigation=navigation.clone(); async move { if reference == "req_one" || reference == "gh-142" { Ok(Json(json!({"request":detail,"stack_navigation":navigation}))) } else { Err(axum::http::StatusCode::NOT_FOUND) } } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { *captured.lock().unwrap()=body; Json(json!({"request":request()})) } }))
+                    .route("/v1/repos/owner/repo/requests/{reference}", get(move |Path(reference): Path<String>| { let detail=show_detail.clone(); let navigation=navigation.clone(); async move { if reference == "req_one" || reference == "gh-142" { Ok(Json(json!({"request":detail,"links":{"resolves":[],"resolved_by":[],"close_named":null},"stack_navigation":navigation}))) } else { Err(axum::http::StatusCode::NOT_FOUND) } } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { if body["title"] == "refused" { return Err(refusal(axum::http::StatusCode::BAD_REQUEST, "title refused")); } *captured.lock().unwrap()=body; Ok(Json(json!({"request":request()}))) } }))
+                    .route("/v1/repos/owner/repo/requests/req_one/links", post(move |Json(body): Json<Value>| { let seen=links_seen.clone(); let detail=linked_detail.clone(); async move { seen.lock().unwrap().push(format!("POST links {body}")); if body["resolve"] == json!(["gh-404"]) { return Err(refusal(axum::http::StatusCode::NOT_FOUND, "the request you named was not found")); } Ok(Json(json!({"request":detail,"links":{"resolves":[],"resolved_by":[],"close_named":null},"stack_navigation":{"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}}}))) } }))
                     .route("/v1/repos/owner/repo/requests/req_one/changes", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=revisions_seen.clone(); let revision_base=revision_base.clone(); let comparison_base=comparison_base.clone(); let comparison_head=comparison_head.clone(); async move { inspected.lock().unwrap().push(uri.to_string());
                     let mode = query.get("comparison").map(String::as_str).unwrap_or(if query.contains_key("commit") { "commit" } else { "request" });
                     (axum::http::StatusCode::OK, Json(json!({"comparison":if mode == "request" || mode == "push" { json!({"revision_id":"rev_old","mode":mode,"base_oid":comparison_base,"head_oid":comparison_head,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public","lines":{"kind":"text","additions":1,"deletions":1}}],"inspection":"Complete"}) } else {Value::Null},"review_revision_id":query.get("revision").map(String::as_str).unwrap_or("rev_old"), "revisions":[{"id":"rev_old","base":revision_base,"base_version":1,"position":1,"actor":{"id":"usr_test","handle":"owner"},"old_head_oid":null,"new_head_oid":OID,"commits":[{"oid":OID,"parent_oids":[],"author":"owner","authored_at_unix":1,"message":"Old revision","change_count":1,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public","lines":{"kind":"text","additions":1,"deletions":1}},{"path":"unselected.txt","kind":"Added","old_mode":null,"new_mode":"100644","old_oid":null,"new_oid":OID,"label":"public","lines":{"kind":"binary"}}],"files_truncated":false}],"inspection":"Complete","created_at_unix":1}],"has_earlier_revisions":false}))) } }))
@@ -844,6 +901,24 @@ done
             .env("SCOPE_TEST_FILE_URL", &self.file_url);
         command
     }
+}
+
+fn refusal(
+    status: axum::http::StatusCode,
+    message: &str,
+) -> (
+    axum::http::StatusCode,
+    Json<scope_api_contract::ErrorResponse>,
+) {
+    let code = if status == axum::http::StatusCode::NOT_FOUND {
+        scope_api_contract::ErrorCode::NotFound
+    } else {
+        scope_api_contract::ErrorCode::BadRequest
+    };
+    (
+        status,
+        Json(scope_api_contract::ErrorResponse::new(code, message)),
+    )
 }
 
 fn repository() -> Value {

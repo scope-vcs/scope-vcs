@@ -35,6 +35,18 @@ fn detail_lines_render_the_request_summary() {
                 deletions: 41,
                 changed_files: 6,
             }),
+            links: serde_json::from_value(json!({
+                "resolves": [{
+                    "id": "req_ask", "name": "gh-142", "title": "Login times out",
+                    "author": null, "status": "NoChangeYet"
+                }],
+                "resolved_by": [{
+                    "id": "req_two", "name": "probe-timeout", "title": "Raise the probe timeout",
+                    "author": {"id": "scope_usr_priya", "handle": "priya"}, "status": "Ready"
+                }],
+                "close_named": null
+            }))
+            .unwrap(),
         },
         &Views::builtin(),
     );
@@ -50,6 +62,8 @@ fn detail_lines_render_the_request_summary() {
             "  review base: main @ aaaaaaa",
             "  description: Atomic updates",
             "  invitees: @devon",
+            "  resolves: Login times out (req_ask) · no change yet",
+            "  resolved by: Raise the probe timeout (req_two) · @priya · ready to merge",
             "  capabilities: edit",
             "  mergeability: draft",
         ]

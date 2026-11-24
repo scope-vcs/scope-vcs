@@ -42,6 +42,7 @@ import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from '../discussion/request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
 import { RequestMoreMenu } from './request-more-menu'
+import { RequestResolvedBy } from './request-resolved-by'
 import { useElementHeight } from './use-element-height'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
@@ -241,6 +242,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 onViewActivity={history.openHistory}
                 params={params}
                 request={request}
+                resolvedBy={state.detail.links.resolved_by}
                 triggerRef={moreActions}
               />
             </>
@@ -279,6 +281,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             {requestActions.error ?? autoMerge.error ?? stateError}
           </p>
         ) : null}
+        <RequestResolvedBy params={params} requests={state.detail.links.resolved_by} />
         <RequestStackContext detail={state.detail} params={params} childrenLoading={childrenLoading} childrenError={childrenError} onLoadChildren={() => { void loadChildren() }} />
         {request.ask && canAttachChange ? <RequestChangeCommand ask={request.ask} /> : null}
         {canReadChange ? (

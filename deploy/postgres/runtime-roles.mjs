@@ -18,7 +18,8 @@ const repositoryTables = names(`file_changes git_compaction_jobs git_fetch_adver
   github_run_imports github_workflow_jobs github_workflow_job_logs github_workflow_job_reads github_workflow_job_log_reads
   github_webhook_deliveries`);
 const collaborationTables = names(`request_discussion_read_states request_discussion_replies
-  request_discussions request_events request_invitees request_ratings request_revisions requests
+  request_discussions request_events request_invitees request_links request_ratings request_revisions
+  requests
   request_claims request_attention_states request_check_evaluations request_auto_merge_intents
   request_revision_context_receipts request_revision_diff_stats request_revision_diff_files
   github_check_runs github_check_refreshes github_accounts github_review_imports

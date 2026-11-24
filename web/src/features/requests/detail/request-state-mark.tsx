@@ -15,12 +15,12 @@ const RINGS = {
   idle: { stroke: 'stroke-muted-foreground', dash: undefined },
 } as const
 
-export function RequestStateMark({ mark }: { mark: Mark }) {
+export function RequestStateMark({ className = 'size-5', mark }: { className?: string; mark: Mark }) {
   if (mark === 'merged' || mark === 'closed') {
-    return <RequestOutcomeIcon className="size-5 shrink-0" data-mark={mark} outcome={mark} />
+    return <RequestOutcomeIcon className={cn('shrink-0', className)} data-mark={mark} outcome={mark} />
   }
   return (
-    <svg aria-hidden="true" className="size-5 shrink-0" data-mark={mark} viewBox="0 0 20 20">
+    <svg aria-hidden="true" className={cn('shrink-0', className)} data-mark={mark} viewBox="0 0 20 20">
       {mark === 'waiting' || mark === 'idle' ? (
         <circle
           className={cn('fill-none stroke-2', RINGS[mark].stroke)}

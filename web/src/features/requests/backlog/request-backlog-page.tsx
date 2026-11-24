@@ -1,7 +1,7 @@
 import type { RequestBacklogQuery } from '@/api/request-backlog-input'
 import { REQUEST_BACKLOG_SORTS, REQUEST_BACKLOG_WORKING } from '@/api/request-backlog-input'
 import type { RepoParams } from '@/api/types'
-import type { RequestBacklogItemResponse, RequestCloseReason } from '@/api/types.generated'
+import type { RequestBacklogItemResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
@@ -17,6 +17,7 @@ import { useRepoLayout } from '../../repo-detail/repo-layout-context'
 import { invalidateRepoResources } from '../../repo-detail/repo-resource'
 import { repoResourceScope } from '../../repo-detail/repo-resource-scope'
 import { useViewingAs } from '../../repo-detail/use-viewing-as'
+import { requestCloseCommand, requestCloseDraft } from '../detail/request-close-model'
 import { RequestCloseReasonField } from '../detail/request-close-reason-field'
 import { RequestConfirmDialog } from '../detail/request-confirm-dialog'
 import { useRequestWorkspace } from '../workspace/request-workspace-context'
@@ -38,6 +39,7 @@ import './request-backlog.css'
 
 const SEARCH_DEBOUNCE_MS = 250
 const NO_PICKS: Picks = { identity: null, ids: new Set(), failures: new Map() }
+const NO_CLOSE_DRAFT = requestCloseDraft([])
 
 type Picks = {
   identity: string | null
@@ -70,7 +72,7 @@ export function RequestBacklogPage({
   const [picks, setPicks] = useState(NO_PICKS)
   const [confirming, setConfirming] = useState(false)
   const [closing, setClosing] = useState(false)
-  const [reason, setReason] = useState<RequestCloseReason | null>(null)
+  const [draft, setDraft] = useState(NO_CLOSE_DRAFT)
   const [loadingMore, setLoadingMore] = useState(false)
   const closeButton = useRef<HTMLButtonElement>(null)
 
@@ -96,12 +98,14 @@ export function RequestBacklogPage({
     pick(next)
   }
 
+  const command = requestCloseCommand(draft, [])
+
   async function closePicked() {
-    if (!reason || !scope) return false
+    if (!command || !scope) return false
     setClosing(true)
     const failures = await closeBacklogRequests(
       picked.map((row) => row.id),
-      (request_id) => runRequestAction({ data: { ...params, request_id, action: 'close', reason } }),
+      (request_id) => runRequestAction({ data: { ...params, request_id, action: 'close', ...command } }),
     )
     setPicks({ identity, ids: new Set(failures.keys()), failures })
     invalidateRepoResources(scope, [{ topic: 'requestList' }])
@@ -173,7 +177,7 @@ export function RequestBacklogPage({
             <Button
               disabled={closing}
               onClick={() => {
-                setReason(null)
+                setDraft(NO_CLOSE_DRAFT)
                 setConfirming(true)
               }}
               ref={closeButton}
@@ -250,7 +254,7 @@ export function RequestBacklogPage({
         </p>
       )}
       <RequestConfirmDialog
-        confirmDisabled={reason === null}
+        confirmDisabled={command === null}
         confirmLabel={`Close ${requestBacklogCountLabel(picked.length)}`}
         destructive
         onConfirm={closePicked}
@@ -266,9 +270,9 @@ export function RequestBacklogPage({
             : 'These requests will close and remain in request history.'}
         </p>
         <RequestCloseReasonField
+          draft={draft}
           legend={picked.length === 1 ? 'Why is it closing?' : 'Why are they closing?'}
-          onChange={setReason}
-          value={reason}
+          onChange={setDraft}
         />
       </RequestConfirmDialog>
     </div>

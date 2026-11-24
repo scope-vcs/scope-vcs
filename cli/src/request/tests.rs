@@ -256,7 +256,7 @@ fn request_summary(
                 "can_manage_invitees":false,"can_leave_request":false,
                 "can_close":false,"can_merge":false});
     let detail: crate::api::RequestDetailResponse = serde_json::from_value(serde_json::json!({
-        "stack_navigation":{"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}},
+        "links":{"resolves":[],"resolved_by":[],"close_named":null},"stack_navigation":{"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}},
         "request": {
             "id":"req_one","name":"change","title":"Change",
             "description_markdown":"","author_user_id":"scope_usr_author",
@@ -393,4 +393,59 @@ fn discussion_start_anchors_whole_request_line_ranges() {
     ] {
         assert!(parse(invalid).is_err(), "{invalid:?}");
     }
+}
+
+#[test]
+fn close_names_a_request_only_with_the_reason_its_flag_belongs_to() {
+    use super::{args::RequestCloseArgs, args::RequestStartArgs, close_query};
+    use crate::api::RequestCloseReason::{Completed, Duplicate, NotPlanned};
+    use clap::Parser;
+    let query = |args: &[&str]| {
+        let args = RequestCloseArgs::try_parse_from(["close"].iter().chain(args))
+            .map_err(|error| error.to_string())?;
+        close_query(args.reason, args.duplicate_of, args.fixed_by)
+            .map(|query| (query.reason, query.named_request))
+            .map_err(|error| error.to_string())
+    };
+    for (args, expected) in [
+        (
+            vec!["--reason", "duplicate", "--duplicate-of", "gh-7"],
+            (Some(Duplicate), Some("gh-7".to_string())),
+        ),
+        (
+            vec!["--reason", "completed", "--fixed-by", "req_fix"],
+            (Some(Completed), Some("req_fix".to_string())),
+        ),
+        (vec!["--reason", "completed"], (Some(Completed), None)),
+        (vec!["--reason", "not-planned"], (Some(NotPlanned), None)),
+        (vec![], (None, None)),
+    ] {
+        assert_eq!(query(&args).unwrap(), expected, "{args:?}");
+    }
+    for args in [
+        vec!["--reason", "completed", "--duplicate-of", "gh-7"],
+        vec!["--reason", "duplicate", "--fixed-by", "req_fix"],
+        vec!["--reason", "not-planned", "--fixed-by", "req_fix"],
+        vec!["--duplicate-of", "gh-7"],
+        vec![
+            "--reason",
+            "duplicate",
+            "--duplicate-of",
+            "gh-7",
+            "--fixed-by",
+            "req_fix",
+        ],
+    ] {
+        assert!(query(&args).is_err(), "{args:?}");
+    }
+
+    let start =
+        |args: &[&str]| RequestStartArgs::try_parse_from(["start", "fix"].iter().chain(args));
+    assert_eq!(
+        start(&["--resolves", "gh-7", "--resolves", "req_other"])
+            .ok()
+            .map(|args| args.resolves),
+        Some(vec!["gh-7".to_string(), "req_other".to_string()])
+    );
+    assert!(start(&["--resolves", "gh-7", "--for", "gh-7"]).is_err());
 }

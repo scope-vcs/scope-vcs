@@ -3,8 +3,8 @@ use super::{
     RequestActor, RequestActorRole, RequestBase, RequestEvent, RequestEventKind,
     RequestEventPayload, RequestStackStatus, RequestTimelineMutation, StartRequestMutation,
     advance_request_activity, ensure_event_id_available, ensure_request_matches,
-    request_actor_role, request_identity_audit_fact, validate_body_size,
-    validate_chosen_request_name, validate_required,
+    links::RESOLVE_INSTEAD_OF_ATTACHING, request_actor_role, request_identity_audit_fact,
+    validate_body_size, validate_chosen_request_name, validate_required,
 };
 use crate::{
     error::DomainError,
@@ -335,24 +335,26 @@ pub fn attach_request_change(
     };
     validate_work_command(&request, facts.event_id_exists, &work)?;
     if request.pushed_at_unix.is_some() {
-        return Err(DomainError::conflict("this request already has a change"));
+        return Err(DomainError::conflict(format!(
+            "this request already has a change; {RESOLVE_INSTEAD_OF_ATTACHING}"
+        )));
     }
     if request
         .author_user_id
         .as_deref()
         .is_some_and(|worker| worker != work.actor_user_id)
     {
-        return Err(DomainError::conflict(
-            "someone else is working on this request",
-        ));
+        return Err(DomainError::conflict(format!(
+            "someone else is working on this request; {RESOLVE_INSTEAD_OF_ATTACHING}"
+        )));
     }
     if !actor
         .permissions(&request, &work.actor_user_id)
         .can_attach_change
     {
-        return Err(DomainError::forbidden(
-            "only a maintainer who reads this request can work on it",
-        ));
+        return Err(DomainError::forbidden(format!(
+            "only a maintainer who reads this request can work on it; {RESOLVE_INSTEAD_OF_ATTACHING}"
+        )));
     }
     if facts.another_request_has_name {
         return Err(DomainError::conflict("request name already exists"));

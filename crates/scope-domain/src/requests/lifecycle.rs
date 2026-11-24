@@ -1,8 +1,9 @@
 use super::{
-    PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request, RequestActor, RequestActorRole,
-    RequestCloseReason, RequestEvent, RequestEventKind, RequestEventPayload, RequestRevision,
-    RequestState, advance_request_activity, ask::reserved_request_name, ensure_event_id_available,
-    ensure_request_matches, request_identity_audit_fact, validate_body_size, validate_required,
+    NamedRequest, PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request, RequestActor,
+    RequestActorRole, RequestCloseReason, RequestEvent, RequestEventKind, RequestEventPayload,
+    RequestRevision, RequestState, advance_request_activity, ask::reserved_request_name,
+    ensure_event_id_available, ensure_request_matches, request_identity_audit_fact,
+    validate_body_size, validate_required,
 };
 use crate::error::DomainError;
 use crate::views::{ViewId, Views};
@@ -90,12 +91,68 @@ pub struct RequestRevisionMutation {
     pub revision: RequestRevision,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RequestCloseAs {
+    Completed { fixed_by: Option<NamedRequest> },
+    NotPlanned,
+    Duplicate { of: NamedRequest },
+}
+
+impl RequestCloseAs {
+    pub fn new(
+        reason: Option<RequestCloseReason>,
+        named: Option<NamedRequest>,
+    ) -> Result<Option<Self>, DomainError> {
+        match (reason, named) {
+            (Some(RequestCloseReason::Completed), fixed_by) => {
+                Ok(Some(Self::Completed { fixed_by }))
+            }
+            (Some(RequestCloseReason::Duplicate), Some(of)) => Ok(Some(Self::Duplicate { of })),
+            (Some(RequestCloseReason::NotPlanned), None) => Ok(Some(Self::NotPlanned)),
+            (None, None) => Ok(None),
+            (Some(RequestCloseReason::Duplicate), None) => Err(DomainError::invalid_input(
+                "closing as a duplicate needs the request it duplicates",
+            )),
+            (Some(RequestCloseReason::NotPlanned) | None, Some(_)) => {
+                Err(DomainError::invalid_input(
+                    "only closing as completed or duplicate names another request",
+                ))
+            }
+        }
+    }
+
+    fn recorded(
+        self,
+        request: &Request,
+    ) -> Result<(RequestCloseReason, Option<String>), DomainError> {
+        let named = |named: NamedRequest, itself| {
+            named
+                .named_by(request, itself)
+                .map(|request_id| Some(request_id.to_string()))
+        };
+        Ok(match self {
+            Self::Completed { fixed_by: None } => (RequestCloseReason::Completed, None),
+            Self::Completed {
+                fixed_by: Some(fixed_by),
+            } => (
+                RequestCloseReason::Completed,
+                named(fixed_by, "a request cannot be fixed by itself")?,
+            ),
+            Self::NotPlanned => (RequestCloseReason::NotPlanned, None),
+            Self::Duplicate { of } => (
+                RequestCloseReason::Duplicate,
+                named(of, "a request cannot be a duplicate of itself")?,
+            ),
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct CloseRequestInput {
     pub request_id: String,
     pub actor_user_id: String,
     pub actor_is_maintainer: bool,
-    pub reason: Option<RequestCloseReason>,
+    pub reason: Option<RequestCloseAs>,
     pub event_id: String,
     pub now_unix: u64,
 }
@@ -346,7 +403,7 @@ pub fn close_request(
     validate_required("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
     ensure_request_close_allowed(&request, &input.actor_user_id, input.actor_is_maintainer)?;
-    match (request.ask.is_some(), input.reason) {
+    let recorded = match (request.ask.is_some(), input.reason) {
         (true, None) => {
             return Err(DomainError::invalid_input(
                 "closing this request needs a reason: completed, not planned, or duplicate",
@@ -357,8 +414,9 @@ pub fn close_request(
                 "only a request opened from an ask takes a close reason",
             ));
         }
-        (true, Some(_)) | (false, None) => {}
-    }
+        (true, Some(reason)) => Some(reason.recorded(&request)?),
+        (false, None) => None,
+    };
     if !request.is_submitted() && request.ask.is_none() {
         let mut removed_events = events
             .into_iter()
@@ -379,7 +437,10 @@ pub fn close_request(
     ensure_event_id_available(events.iter().any(|event| event.id == input.event_id))?;
     request.lifecycle.closed_at_unix = Some(input.now_unix);
     request.lifecycle.closed_by_user_id = Some(input.actor_user_id.clone());
-    request.lifecycle.close_reason = input.reason;
+    if let Some((reason, named_request_id)) = recorded {
+        request.lifecycle.close_reason = Some(reason);
+        request.lifecycle.close_named_request_id = named_request_id;
+    }
     request.updated_at_unix = input.now_unix;
     let position = advance_request_activity(&mut request)?;
     request.validate_facts()?;
