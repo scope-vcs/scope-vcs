@@ -33,11 +33,12 @@ test("pull requests build only the Linux and Windows x64 targets without the shi
 
   assert.deepEqual(
     plan.include.map(({ target }) => target),
-    ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"],
+    ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-pc-windows-msvc"],
   );
-  assert.ok(plan.include.every(({ smoke }) => smoke));
+  assert.ok(plan.include.every(({ smoke, native_runner }) => smoke || native_runner));
   assert.deepEqual(plan.include.map(({ binary }) => binary), [
     "target/x86_64-unknown-linux-gnu/release-check/scope",
+    "target/aarch64-unknown-linux-gnu/release-check/scope",
     "target/x86_64-pc-windows-msvc/release-check/scope.exe",
   ]);
 });
@@ -60,7 +61,7 @@ test("workflow outputs leave native checks empty when no selected target needs t
   assert.match(release[1], /^native_checks=\{"include":\[\{.*"native_runner":"ubuntu-24\.04-arm"/);
 
   const pullRequest = workflowOutputs(configuration, "pull-request").split("\n");
-  assert.equal(pullRequest[1], "native_checks=");
+  assert.match(pullRequest[1], /^native_checks={"include"/);
 });
 
 test("configurations without targets or a known mode fail", () => {
