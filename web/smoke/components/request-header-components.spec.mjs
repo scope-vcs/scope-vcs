@@ -124,3 +124,45 @@ test('request header keeps its state, facts, actions, and checks aligned across 
   await firstTooltip.waitFor({ state: 'hidden' })
   assert.deepEqual(errors, [])
 })
+
+test('a request with no change names who asked, offers the work action, and shows the command', async (t) => {
+  const { base, errors, page } = await openFixture(t, 'request-header', { tailwind: true })
+  await page.clock.setFixedTime(new Date('2026-11-06T12:00:00Z'))
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(async () => {
+    document.documentElement.classList.add('dark')
+    await document.fonts.ready
+    window.setState('asked')
+  })
+  const header = page.locator('main')
+  await header.getByText('No change yet', { exact: true }).waitFor()
+  assert.equal(
+    await header.getByRole('link', { name: 'GitHub #142', exact: true }).getAttribute('href'),
+    'https://github.com/adamblumoff/scope-vcs/issues/142',
+  )
+  assert.equal(await header.getByRole('button', { name: /^Changes/ }).count(), 0)
+  await header.getByText('scope request start login-times-out-after-30-seconds --for gh-142', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'More request actions', exact: true }).click()
+  const more = page.getByRole('dialog', { name: 'More request actions' })
+  assert.equal(await more.getByRole('link', { name: 'Browse code', exact: true }).count(), 0)
+  await more.getByRole('button', { name: 'Close request', exact: true }).click()
+  const closing = page.getByRole('alertdialog', { name: 'Close this request?' })
+  const confirm = closing.getByRole('button', { name: 'Close request', exact: true })
+  assert.equal(await confirm.isDisabled(), true)
+  await closing.getByRole('radio', { name: 'not planned', exact: true }).check()
+  assert.equal(await confirm.isDisabled(), false)
+  await closing.getByRole('button', { name: 'Cancel', exact: true }).click()
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 700 })
+    await compareScreenshot(header, `asked-${width}`)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  }
+  await page.setViewportSize({ width: 1280, height: 700 })
+  await page.evaluate(() => window.setState('working'))
+  await header.getByRole('button', { name: 'Release', exact: true }).waitFor()
+  await compareScreenshot(header, 'working')
+  await page.evaluate(() => window.setState('declined'))
+  await header.getByText('Closed', { exact: true }).waitFor()
+  await compareScreenshot(header, 'declined')
+  assert.deepEqual(errors, [])
+})

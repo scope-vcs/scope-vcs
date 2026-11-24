@@ -1,7 +1,7 @@
 import { createApiClient } from '@/api/client'
 import { requestRoute } from '@/api/paths'
 import type { RequestParams } from '@/api/types'
-import { ApiRouteTemplates } from '@/api/types.generated'
+import { ApiRouteTemplates, type RequestCloseReason } from '@/api/types.generated'
 import {
   LeaveRequestResponseValidator,
   RequestCloseResponseValidator,
@@ -11,8 +11,10 @@ import {
 
 export type RequestActionCommand =
   | { action: 'add_invitee'; handle: string }
-  | { action: 'close' }
+  | { action: 'close'; reason?: RequestCloseReason }
   | { action: 'leave' }
+  | { action: 'release_work' }
+  | { action: 'start_work' }
   | { action: 'merge'; expected_head_oid: string }
   | { action: 'submit' }
   | { action: 'remove_invitee'; handle: string }
@@ -46,13 +48,28 @@ export async function performRequestActionForRequest(
       )
       return { deleted: false }
     case 'close': {
+      const path = requestRoute(ApiRouteTemplates.repoRequest, input)
       const result = await api.delete(
-        requestRoute(ApiRouteTemplates.repoRequest, input),
+        input.reason ? `${path}?${new URLSearchParams({ reason: input.reason })}` : path,
         RequestCloseResponseValidator,
         mutationOptions,
       )
       return { deleted: result.deleted }
     }
+    case 'start_work':
+      await api.post(
+        requestRoute(ApiRouteTemplates.repoRequestWork, input),
+        RequestMutationResponseValidator,
+        mutationOptions,
+      )
+      return { deleted: false }
+    case 'release_work':
+      await api.delete(
+        requestRoute(ApiRouteTemplates.repoRequestWork, input),
+        RequestMutationResponseValidator,
+        mutationOptions,
+      )
+      return { deleted: false }
     case 'add_invitee':
       await api.put(
         requestRoute(ApiRouteTemplates.repoRequestInvitees, input),

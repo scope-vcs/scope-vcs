@@ -1,11 +1,12 @@
 import type { RepoParams } from '@/api/types'
-import type { RequestSummaryResponse } from '@/api/types.generated'
+import type { RequestCloseReason, RequestSummaryResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
 import { Link } from '@tanstack/react-router'
 import { Code, Ellipsis, History } from 'lucide-react'
 import { type RefObject, useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
+import { REQUEST_CLOSE_REASONS, requestCloseReasonLabel } from './request-labels'
 import { RequestOutcomeIcon } from './request-outcome-icon'
 import type { RequestActionController } from './use-request-actions'
 
@@ -30,8 +31,14 @@ export function RequestMoreMenu({
   triggerRef: RefObject<HTMLButtonElement | null>
 }) {
   const [closing, setClosing] = useState(false)
+  const [reason, setReason] = useState<RequestCloseReason | null>(null)
   const [align, setAlign] = useState<'start' | 'end'>('end')
-  const { can_close: canClose, can_view_activity: canViewActivity } = request.permissions
+  const {
+    can_close: canClose,
+    can_read_change: canReadChange,
+    can_view_activity: canViewActivity,
+  } = request.permissions
+  const needsReason = Boolean(request.ask)
 
   return (
     <>
@@ -41,16 +48,18 @@ export function RequestMoreMenu({
         label="More request actions"
         renderPanel={(close) => (
           <>
-            <Link
-              className={ITEM_CLASS}
-              onClick={close}
-              params={params}
-              search={{ request: request.id }}
-              to="/$owner/$repo/code"
-            >
-              <Code aria-hidden="true" />
-              Browse code
-            </Link>
+            {canReadChange ? (
+              <Link
+                className={ITEM_CLASS}
+                onClick={close}
+                params={params}
+                search={{ request: request.id }}
+                to="/$owner/$repo/code"
+              >
+                <Code aria-hidden="true" />
+                Browse code
+              </Link>
+            ) : null}
             {canViewActivity ? (
               <button
                 className={ITEM_CLASS}
@@ -103,16 +112,37 @@ export function RequestMoreMenu({
         )}
       />
       <RequestConfirmDialog
+        confirmDisabled={needsReason && reason === null}
         confirmLabel="Close request"
         destructive
-        onConfirm={() => actions.run({ action: 'close' })}
+        onConfirm={() => actions.run(reason ? { action: 'close', reason } : { action: 'close' })}
         onOpenChange={setClosing}
         open={closing}
         pending={actions.pending === 'close'}
         returnFocus={triggerRef}
         title="Close this request?"
       >
-        {request.submitted_at_unix === null ? (
+        {needsReason ? (
+          <>
+            <p>This request will close and remain in request history.</p>
+            <fieldset className="grid gap-1.5">
+              <legend className="mb-1.5 text-foreground">Why is it closing?</legend>
+              {REQUEST_CLOSE_REASONS.map((option) => (
+                <label className="flex items-center gap-2 text-foreground" key={option}>
+                  <input
+                    checked={reason === option}
+                    className="accent-foreground"
+                    name="close-reason"
+                    onChange={() => setReason(option)}
+                    type="radio"
+                    value={option}
+                  />
+                  <span className="first-letter:uppercase">{requestCloseReasonLabel(option)}</span>
+                </label>
+              ))}
+            </fieldset>
+          </>
+        ) : request.submitted_at_unix === null ? (
           <p>This draft request will be permanently deleted.</p>
         ) : (
           <p>This submitted request will close and remain in request history.</p>

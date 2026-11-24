@@ -59,7 +59,9 @@ function RequestDetails({ actions, loadRatings, onRate, params, ratingDraft, rat
   return (
     <div className="divide-y divide-border text-xs">
       <DetailsGroup>
-        <DetailsRow label="Author">{requestAuthorRoleLabel(request)}</DetailsRow>
+        {!request.ask || request.author_user_id ? (
+          <DetailsRow label="Author">{requestAuthorRoleLabel(request)}</DetailsRow>
+        ) : null}
         <DetailsRow label="View">{requestViewLabel(request, views)}</DetailsRow>
         <DetailsRow label="Submitted"><AbsoluteTimestamp value={request.submitted_at_unix} /></DetailsRow>
         {request.closed_at_unix !== null && (
@@ -76,22 +78,24 @@ function RequestDetails({ actions, loadRatings, onRate, params, ratingDraft, rat
         </DetailsGroup>
       ) : null}
 
-      <DetailsGroup>
-        <DetailsRow action={<CopyButton label="head commit" value={request.head_oid} />} label="Head">
-          <code className="font-mono">{shortOid(request.head_oid)}</code>
-        </DetailsRow>
-        <DetailsRow action={<CopyButton label="review base commit" value={reviewBase} />} label="Review base">
-          <code className="font-mono">{shortOid(reviewBase)}</code>
-        </DetailsRow>
-        <DetailsRow label="Main ancestor">
-          <code className="font-mono">{shortOid(request.main_ancestor_oid)}</code>
-          {request.main_ancestor_oid === reviewBase ? <span className="ml-1.5 text-muted-foreground">same as base</span> : null}
-        </DetailsRow>
-        <div className="mt-1.5 flex min-w-0 items-center gap-1 rounded-md bg-muted py-1 pr-1 pl-2">
-          <code className="min-w-0 flex-1 truncate font-mono" title={checkout}>git switch --track origin/{request.name}</code>
-          <CopyButton label="checkout commands" value={checkout} />
-        </div>
-      </DetailsGroup>
+      {request.permissions.can_read_change ? (
+        <DetailsGroup>
+          <DetailsRow action={<CopyButton label="head commit" value={request.head_oid} />} label="Head">
+            <code className="font-mono">{shortOid(request.head_oid)}</code>
+          </DetailsRow>
+          <DetailsRow action={<CopyButton label="review base commit" value={reviewBase} />} label="Review base">
+            <code className="font-mono">{shortOid(reviewBase)}</code>
+          </DetailsRow>
+          <DetailsRow label="Main ancestor">
+            <code className="font-mono">{shortOid(request.main_ancestor_oid)}</code>
+            {request.main_ancestor_oid === reviewBase ? <span className="ml-1.5 text-muted-foreground">same as base</span> : null}
+          </DetailsRow>
+          <div className="mt-1.5 flex min-w-0 items-center gap-1 rounded-md bg-muted py-1 pr-1 pl-2">
+            <code className="min-w-0 flex-1 truncate font-mono" title={checkout}>git switch --track origin/{request.name}</code>
+            <CopyButton label="checkout commands" value={checkout} />
+          </div>
+        </DetailsGroup>
+      ) : null}
 
       <DetailsGroup>
         {ratings.value ? (

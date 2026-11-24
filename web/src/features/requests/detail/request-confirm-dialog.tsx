@@ -13,6 +13,7 @@ import type { SubmitEvent, ReactNode, RefObject } from 'react'
 
 export function RequestConfirmDialog({
   children,
+  confirmDisabled = false,
   confirmLabel,
   destructive = false,
   onConfirm,
@@ -23,6 +24,7 @@ export function RequestConfirmDialog({
   title,
 }: {
   children: ReactNode
+  confirmDisabled?: boolean
   confirmLabel: string
   destructive?: boolean
   onConfirm: () => Promise<boolean>
@@ -34,7 +36,7 @@ export function RequestConfirmDialog({
 }) {
   async function confirm(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!pending && await onConfirm()) onOpenChange(false)
+    if (!pending && !confirmDisabled && await onConfirm()) onOpenChange(false)
   }
 
   return (
@@ -64,7 +66,7 @@ export function RequestConfirmDialog({
               Cancel
             </AlertDialogCancel>
             <Button
-              disabled={pending}
+              disabled={pending || confirmDisabled}
               size="sm"
               type="submit"
               variant={destructive ? 'destructive' : 'default'}

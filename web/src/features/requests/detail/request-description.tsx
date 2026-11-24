@@ -3,12 +3,15 @@ import { Check, Pencil } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { RequestAttachmentEditor } from '../attachments/request-attachment-editor'
 import { RequestDiscussionMarkdown } from '../discussion/request-discussion-markdown'
+import { RequestOriginalAsk } from './request-original-ask'
 
 export function RequestDescription({
+  ask,
   canEdit,
   description,
   onSave,
 }: {
+  ask: { login: string; text: string } | null
   canEdit: boolean
   description: string
   onSave: (description: string, expectedDescription: string) => Promise<boolean>
@@ -68,6 +71,8 @@ export function RequestDescription({
         <div className={canEdit ? 'pr-9' : undefined} ref={renderedRef}>
           {description ? (
             <RequestDiscussionMarkdown source={description} />
+          ) : ask ? (
+            <RequestDiscussionMarkdown source={ask.text} />
           ) : (
             <p className="text-sm leading-6 text-muted-foreground">
               No description yet.
@@ -75,6 +80,7 @@ export function RequestDescription({
           )}
         </div>
       )}
+      {ask && (description || editing) ? <RequestOriginalAsk login={ask.login} text={ask.text} /> : null}
     </section>
   )
 }
