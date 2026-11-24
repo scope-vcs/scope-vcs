@@ -38,6 +38,10 @@ test('a close names a request only when its reason takes one', () => {
   assert.deepEqual(requestCloseCommand({ ...draft, reason: 'completed', fixedBy: ANOTHER_REQUEST }, resolvedBy), {
     reason: 'completed', named_request: 'gh-142',
   })
+  assert.equal(
+    requestCloseCommand({ ...draft, reason: 'completed', fixedBy: ANOTHER_REQUEST, reference: ' ' }, resolvedBy),
+    null,
+  )
   assert.deepEqual(requestCloseCommand({ ...draft, reason: 'completed', fixedBy: NO_REQUEST }, []), {
     reason: 'completed', named_request: 'gh-142',
   })

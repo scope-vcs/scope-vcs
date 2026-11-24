@@ -38,7 +38,8 @@ export function requestCloseCommand(
         return { reason: draft.reason, named_request: draft.fixedBy }
       }
       if (resolvedBy.length > 0 && draft.fixedBy !== ANOTHER_REQUEST) return { reason: draft.reason }
-      return reference ? { reason: draft.reason, named_request: reference } : { reason: draft.reason }
+      if (reference) return { reason: draft.reason, named_request: reference }
+      return draft.fixedBy === ANOTHER_REQUEST ? null : { reason: draft.reason }
     }
   }
 }
