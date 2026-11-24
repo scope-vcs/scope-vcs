@@ -1,6 +1,7 @@
 pub(crate) mod check_results;
 pub(crate) mod checks;
 pub(crate) mod connection_test;
+pub(crate) mod issue_imports;
 pub(crate) mod job_logs;
 pub(crate) mod pull_requests;
 pub(crate) mod pushes;

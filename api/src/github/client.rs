@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
-const PAGE_SIZE: usize = 100;
+pub(super) const PAGE_SIZE: usize = 100;
 const MAX_LIST_PAGES: usize = 10;
 const APP_JWT_BACKDATE_SECS: u64 = 60;
 const APP_JWT_LIFETIME_SECS: u64 = 9 * 60;

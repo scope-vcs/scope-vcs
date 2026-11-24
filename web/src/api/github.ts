@@ -13,6 +13,7 @@ import type {
   SetRepoGitHubReviewBotPullRequestsInput,
   SetRepoGitHubReviewRequestCommentInput,
   SetRepoGitHubRunImportCountInput,
+  StartRepoGitHubIssueImportInput,
 } from './types'
 import type {
   GitHubAuthorizeResponse,
@@ -162,6 +163,10 @@ export async function setRepoGitHubReviewRequestCommentForRequest(
 
 export async function startRepoGitHubRunImportForRequest(data: RepoParams) {
   return changeRepoGitHub('post', ApiRouteTemplates.repoGitHubRunImport, data)
+}
+
+export async function startRepoGitHubIssueImportForRequest(data: StartRepoGitHubIssueImportInput) {
+  return changeRepoGitHub('post', ApiRouteTemplates.repoGitHubIssueImport, data, { view: data.view })
 }
 
 export async function loadRepoGitHubWorkflowRunsForRequest(

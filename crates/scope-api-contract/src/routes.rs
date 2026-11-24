@@ -68,6 +68,8 @@ routes! {
             => "repoGitHubWorkflowJobLog";
         REPO_GITHUB_RUN_IMPORT = "/v1/repos/{owner}/{repo}/github/run-import"
             => "repoGitHubRunImport";
+        REPO_GITHUB_ISSUE_IMPORT = "/v1/repos/{owner}/{repo}/github/issue-import"
+            => "repoGitHubIssueImport";
         GITHUB_SETUP = "/v1/github/setup" => "githubSetup";
         REPO_DEPENDENCIES = "/v1/repos/{owner}/{repo}/dependencies"
             => "repoDependencies",

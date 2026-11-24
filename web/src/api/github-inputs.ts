@@ -11,8 +11,10 @@ import type {
   SetRepoGitHubReviewBotPullRequestsInput,
   SetRepoGitHubReviewRequestCommentInput,
   SetRepoGitHubRunImportCountInput,
+  StartRepoGitHubIssueImportInput,
 } from './types'
 import { parseRepoParams } from './repo-params'
+import { parseViewId } from './repo-views'
 
 export const GITHUB_RUN_IMPORT_MAX_COUNT = 1000
 export const REVIEW_REQUEST_COMMENT_MAX_CHARS = 500
@@ -51,6 +53,13 @@ export function parseConnectRepoGitHubInput(input: unknown): ConnectRepoGitHubIn
 export function parseSetRepoGitHubRunImportCountInput(input: unknown): SetRepoGitHubRunImportCountInput {
   const params = parseRepoParams(input)
   return { ...params, count: runImportCount((input as Partial<SetRepoGitHubRunImportCountInput>).count) }
+}
+
+export function parseStartRepoGitHubIssueImportInput(input: unknown): StartRepoGitHubIssueImportInput {
+  const params = parseRepoParams(input)
+  const view = (input as Partial<StartRepoGitHubIssueImportInput>).view
+  if (typeof view !== 'string' || !view) throw new Error('Choose a view for the imported issues.')
+  return { ...params, view: parseViewId(view) }
 }
 
 export function parseSetRepoGitHubReviewBotPullRequestsInput(

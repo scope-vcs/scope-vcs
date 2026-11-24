@@ -4,6 +4,7 @@ import type {
   GitHubConnectionResponse,
   GitHubConnectionTestResponse,
   GitHubReviewBotRequest,
+  ViewId,
 } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
@@ -20,6 +21,7 @@ import { RepoGitHubMainPublication } from './repo-github-main-publication'
 import { RepoGitHubReviewBots } from './repo-github-review-bots'
 import { RepoGitHubRunImport } from './repo-github-run-import'
 import { RepoGitHubConnectionTest } from './repo-github-connection-test'
+import { RepoGitHubIssueImport } from './repo-github-issue-import'
 import { RepoGitHubWorkflows } from './repo-github-workflows'
 import { RepoRequiredChecks } from './repo-required-checks'
 import { RepoReviewBots } from './repo-review-bots'
@@ -38,6 +40,7 @@ export function RepoCiSection({
   setReviewRequestComment,
   setRunImportCount,
   startAuthorization,
+  startIssueImport,
   startRunImport,
   testConnection,
 }: {
@@ -52,11 +55,13 @@ export function RepoCiSection({
   setReviewRequestComment: (comment: string) => Promise<GitHubConnectionResponse>
   setRunImportCount: (count: number) => Promise<GitHubConnectionResponse>
   startAuthorization: () => Promise<GitHubAuthorizeResponse>
+  startIssueImport: (view: ViewId) => Promise<GitHubConnectionResponse>
   startRunImport: () => Promise<GitHubConnectionResponse>
   testConnection: () => Promise<GitHubConnectionTestResponse>
 }) {
   const { act, errorAlert, pending } = useSettingsAction<'connect' | 'disconnect' | 'confirm'>()
-  const withheldRequests = githubWithheldRequestsText(useRepoViews())
+  const views = useRepoViews()
+  const withheldRequests = githubWithheldRequestsText(views)
   const connect = () =>
     act('connect', 'GitHub could not be opened', () => openGitHubAuthorization(startAuthorization), true)
 
@@ -185,6 +190,15 @@ export function RepoCiSection({
             importNow={startRunImport}
             key={github.run_import_count}
             saveCount={setRunImportCount}
+          />
+        )}
+
+        {view.kind === 'connected' && github.issue_import_default_view && (
+          <RepoGitHubIssueImport
+            defaultView={github.issue_import_default_view}
+            importInto={startIssueImport}
+            issueImport={github.issue_import}
+            views={views}
           />
         )}
 

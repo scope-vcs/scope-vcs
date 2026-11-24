@@ -202,7 +202,7 @@ export type RepositoryInviteViewerResponse = "ready" | "signed_out" | "wrong_acc
 
 export type AcceptRepositoryInviteResponse = { repo: RepoSummaryResponse, member: RepositoryMemberResponse, };
 
-export type GitHubConnectionResponse = { configured: boolean, connection: GitHubConnectionDetailsResponse | null, required_checks: Array<string>, review_bots: Array<GitHubReviewBotResponse>, unlisted_review_bots: Array<GitHubUnlistedReviewBotResponse>, can_confirm_public: boolean, can_publish_main: boolean, run_import_count: number, run_import: GitHubRunImportResponse | null, };
+export type GitHubConnectionResponse = { configured: boolean, connection: GitHubConnectionDetailsResponse | null, required_checks: Array<string>, review_bots: Array<GitHubReviewBotResponse>, unlisted_review_bots: Array<GitHubUnlistedReviewBotResponse>, can_confirm_public: boolean, can_publish_main: boolean, run_import_count: number, run_import: GitHubRunImportResponse | null, issue_import_default_view: string | null, issue_import: GitHubIssueImportResponse | null, };
 
 export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, connected_by: RequestActorSummaryResponse | null, connected_at_unix: number, disconnected: GitHubDisconnectionResponse | null, public_on_github: boolean, public_confirmed: boolean, open_review_bot_pull_requests: boolean, review_request_comment: string | null, main_publication: GitHubMainPublicationResponse, };
 
@@ -246,9 +246,13 @@ export type SetGitHubReviewRequestCommentRequest = { comment: string, };
 
 export type SetGitHubRunImportCountRequest = { count: number, };
 
-export type GitHubRunImportStateResponse = "queued" | "running" | "succeeded" | "failed";
+export type GitHubImportStateResponse = "queued" | "running" | "succeeded" | "failed";
 
-export type GitHubRunImportResponse = { state: GitHubRunImportStateResponse, run_count: number, imported_count: number, error: string | null, queued_at_unix: number, finished_at_unix: number | null, };
+export type GitHubRunImportResponse = { state: GitHubImportStateResponse, run_count: number, imported_count: number, error: string | null, queued_at_unix: number, finished_at_unix: number | null, };
+
+export type StartGitHubIssueImportRequest = { view: string, };
+
+export type GitHubIssueImportResponse = { state: GitHubImportStateResponse, view: string, imported_count: number, already_imported_count: number, skipped_issue_numbers: Array<number>, error: string | null, queued_at_unix: number, finished_at_unix: number | null, };
 
 export type GitHubConnectionTestStepResponse = "installation" | "repository" | "permissions";
 
@@ -572,6 +576,7 @@ export const ApiRouteTemplates = {
   repoGitHubWorkflowRun: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}",
   repoGitHubWorkflowJobLog: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}/jobs/{job_id}/log",
   repoGitHubRunImport: "/v1/repos/{owner}/{repo}/github/run-import",
+  repoGitHubIssueImport: "/v1/repos/{owner}/{repo}/github/issue-import",
   githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoPushIntents: "/v1/repos/{owner}/{repo}/push-intents",

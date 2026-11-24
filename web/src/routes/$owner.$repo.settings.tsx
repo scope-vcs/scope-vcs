@@ -25,6 +25,7 @@ import {
   setRepoGitHubReviewBotPullRequestsForRequest,
   setRepoGitHubReviewRequestCommentForRequest,
   setRepoGitHubRunImportCountForRequest,
+  startRepoGitHubIssueImportForRequest,
   startRepoGitHubRunImportForRequest,
   testRepoGitHubConnectionForRequest,
 } from '@/api/github'
@@ -35,6 +36,7 @@ import {
   parseSetRepoGitHubReviewBotPullRequestsInput,
   parseSetRepoGitHubReviewRequestCommentInput,
   parseSetRepoGitHubRunImportCountInput,
+  parseStartRepoGitHubIssueImportInput,
 } from '@/api/github-inputs'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { VisibilityLogSection } from '@/features/repo-detail/visibility-log-section'
@@ -101,6 +103,10 @@ const setRepoGitHubReviewRequestComment = createServerFn({ method: 'POST' })
 const startRepoGitHubRunImport = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
   .handler(({ data }) => startRepoGitHubRunImportForRequest(data))
+
+const startRepoGitHubIssueImport = createServerFn({ method: 'POST' })
+  .validator(parseStartRepoGitHubIssueImportInput)
+  .handler(({ data }) => startRepoGitHubIssueImportForRequest(data))
 
 const deleteRepo = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -259,6 +265,11 @@ function RepoSettingsRoute() {
               return github
             }}
             startGitHubAuthorization={startRepoGitHubAuthorization}
+            startGitHubIssueImport={async (data) => {
+              const github = await startRepoGitHubIssueImport({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
             startGitHubRunImport={async (data) => {
               const github = await startRepoGitHubRunImport({ data })
               if (scope) retainGitHubConnection(scope, github)

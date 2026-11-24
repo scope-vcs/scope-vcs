@@ -11,7 +11,7 @@ const notConnected: GitHubConnectionResponse = {
   can_publish_main: false,
  
   run_import_count: 50,
-  run_import: null,
+  run_import: null, issue_import_default_view: null, issue_import: null,
 }
 
 const offer = (patch: Partial<Parameters<typeof runsCiOffer>[0]> = {}) => runsCiOffer({

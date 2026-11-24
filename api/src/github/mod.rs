@@ -1,6 +1,7 @@
 mod check_sources;
 mod client;
 pub(crate) mod config;
+mod issues;
 mod jobs;
 pub(crate) mod pull_requests;
 pub(crate) mod push;

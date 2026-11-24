@@ -121,6 +121,7 @@ pub use git_segments::{ListedMainPoolPack, PooledRequest, PooledRequestPack};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github::check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github::connections::GitHubConnectionRead;
+pub use github::issue_imports::ImportGitHubIssueCommand;
 pub use github::pull_requests::{GitHubMergeCheckedAgainstMain, GitHubPullRequestFinish};
 pub use github::pushes::GitHubPushStanding;
 pub use github::read_queue::GitHubJobOutcome;

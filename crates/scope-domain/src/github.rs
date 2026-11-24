@@ -2,6 +2,8 @@ pub mod account;
 pub mod check_catalog;
 pub mod connection;
 pub mod connection_test;
+pub mod import;
+pub mod issue_import;
 pub mod review_bots;
 pub mod run_import;
 pub mod webhook_delivery;

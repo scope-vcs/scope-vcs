@@ -79,7 +79,7 @@ test('repository components retain drafts, previews and pending actions across r
   await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
   await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
   await page.evaluate(() => window.calls.splice(0))
-  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: [], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null }
+  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: [], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null, issue_import_default_view: null, issue_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
   await checks.getByText('This GitHub repository became public, so Scope stopped sending requests outside the Public view there.', { exact: false }).waitFor()
   const blockedSwitch = checks.getByRole('switch', { name: 'Publish main to GitHub', exact: false })
@@ -92,7 +92,7 @@ test('repository components retain drafts, previews and pending actions across r
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },
   ])
-  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: ['ci / test'], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null }
+  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: ['ci / test'], review_bots: [], unlisted_review_bots: [], can_confirm_public: true, can_publish_main: true, run_import_count: 50, run_import: null, issue_import_default_view: 'private', issue_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), github)
   await checks.getByText('ci / test', { exact: true }).waitFor()
   const publishMain = checks.getByRole('switch', { name: 'Publish main to GitHub', exact: false })
@@ -386,6 +386,44 @@ test('repository components retain drafts, previews and pending actions across r
     { setGitHubRunImportCount: 200 },
     { startGitHubRunImport: { owner: 'owner', repo: 'demo' } },
   ])
+
+  const issueView = checks.getByRole('combobox', { name: 'View', exact: true })
+  const importIssues = checks.getByRole('button', { name: 'Import open issues', exact: true })
+  assert.equal(await issueView.inputValue(), 'private')
+  await issueView.selectOption('public')
+  await importIssues.click()
+  assert.equal(await importIssues.isDisabled(), true)
+  await page.evaluate(() => window.finishAction('issue-import'))
+  await checks.getByText('Waiting to import open issues into the Public view.', { exact: true }).waitFor()
+  assert.equal(await importIssues.isDisabled(), true)
+  const issuesImported = (issueImport) => page.evaluate((issueImport) => {
+    const github = window.fixtureGitHub()
+    window.setFixtureGitHub({ ...github, issue_import: { ...github.issue_import, ...issueImport } })
+  }, issueImport)
+  await issuesImported({ state: 'running', imported_count: 12, already_imported_count: 30 })
+  await checks.getByText('12 issues imported. 30 issues already had a request.').waitFor()
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await importIssues.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.issue-import-running.png` })
+  }
+  await issuesImported({
+    state: 'failed',
+    error: "The Scope GitHub App is missing issues (read). Accept its requested permissions in GitHub's installation settings. Then import again.",
+    finished_at_unix: 4,
+  })
+  await checks.getByText('Import failed: The Scope GitHub App is missing issues (read).', { exact: false }).waitFor()
+  assert.equal(await importIssues.isDisabled(), false)
+  for (const [width, name] of [[1280, 'desktop'], [390, 'phone']]) {
+    await page.setViewportSize({ width, height: 900 })
+    const bounds = await checks.last().boundingBox()
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `${name} issue import fits`)
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await importIssues.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.issue-import-failed-${name}.png` })
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [{ startGitHubIssueImport: 'public' }])
 
   const reviewBots = checks.getByRole('switch', { name: 'Open pull requests for review bots' })
   assert.equal(await reviewBots.isChecked(), false)

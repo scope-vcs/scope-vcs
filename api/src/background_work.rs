@@ -15,6 +15,7 @@ pub(crate) struct BackgroundWakeups {
     pub(crate) github_pull_requests: Notify,
     pub(crate) github_pushes: Notify,
     pub(crate) github_review_bot_statuses: Notify,
+    pub(crate) github_issue_imports: Notify,
     pub(crate) github_review_imports: Notify,
     pub(crate) github_run_imports: Notify,
     pub(crate) github_webhook_deliveries: Notify,
@@ -79,6 +80,7 @@ impl AppState {
         work.start_github_pushes();
         work.start_github_pull_requests();
         work.start_github_run_imports();
+        work.start_github_issue_imports();
         work.start_github_review_imports();
         work.start_github_review_bot_statuses();
         work.start_github_job_reads();

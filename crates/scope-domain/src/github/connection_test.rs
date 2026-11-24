@@ -148,7 +148,21 @@ fn repository_result(
 
 fn permissions_result(granted: &[(String, GitHubPermissionLevel)]) -> GitHubConnectionTestResult {
     let step = GitHubConnectionTestStep::Permissions;
-    let missing = REQUIRED_PERMISSIONS
+    match missing_permissions_message(granted, &REQUIRED_PERMISSIONS) {
+        None => passed(
+            step,
+            "The app can push branches, open pull requests, and read workflow runs and checks."
+                .to_string(),
+        ),
+        Some(missing) => failed(step, missing),
+    }
+}
+
+pub fn missing_permissions_message(
+    granted: &[(String, GitHubPermissionLevel)],
+    required: &[(&str, GitHubPermissionLevel)],
+) -> Option<String> {
+    let missing = required
         .iter()
         .filter(|(name, needed)| {
             !granted
@@ -157,22 +171,13 @@ fn permissions_result(granted: &[(String, GitHubPermissionLevel)]) -> GitHubConn
         })
         .map(|(name, needed)| format!("{} ({})", name.replace('_', " "), needed.label()))
         .collect::<Vec<_>>();
-    if missing.is_empty() {
-        passed(
-            step,
-            "The app can push branches, open pull requests, and read workflow runs and checks."
-                .to_string(),
+    (!missing.is_empty()).then(|| {
+        format!(
+            "The Scope GitHub App is missing {}. Accept its requested permissions in GitHub's \
+             installation settings.",
+            missing.join(", ")
         )
-    } else {
-        failed(
-            step,
-            format!(
-                "The Scope GitHub App is missing {}. Accept its requested permissions in GitHub's \
-                 installation settings.",
-                missing.join(", ")
-            ),
-        )
-    }
+    })
 }
 
 fn passed(step: GitHubConnectionTestStep, message: String) -> GitHubConnectionTestResult {

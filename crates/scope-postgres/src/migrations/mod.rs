@@ -73,6 +73,8 @@ mod m0118_github_discussion_resolution_applied;
 mod m0119_request_asks;
 #[expect(unreachable_pub)]
 mod m0121_request_links;
+#[expect(unreachable_pub)]
+mod m0122_github_issue_imports;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -147,6 +149,7 @@ fn migration_registry() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m0118_github_discussion_resolution_applied::Migration),
         Box::new(m0119_request_asks::Migration),
         Box::new(m0121_request_links::Migration),
+        Box::new(m0122_github_issue_imports::Migration),
     ]
 }
 
