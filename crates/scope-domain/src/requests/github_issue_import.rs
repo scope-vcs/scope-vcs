@@ -1,15 +1,17 @@
 use super::{
     OpenRequestFromAskFacts, OpenRequestFromAskInput, REQUEST_ASK_TEXT_MAX_BYTES,
     REQUEST_DISCUSSION_BODY_MAX_BYTES, REQUEST_TITLE_MAX_BYTES, Request, RequestAsk,
-    RequestDiscussion, RequestEvent, StartRequestMutation,
+    RequestDiscussion, RequestEvent, StartRequestMutation, github_issue_request_name,
     github_review_import::{ImportGitHubDiscussionInput, github_discussion},
     open_request_from_ask,
 };
 use crate::{
-    error::DomainError,
+    error::{DomainError, DomainErrorKind},
     github::{
         account::GitHubAccount,
-        issue_import::{GitHubIssueImportStep, GitHubIssuePosition},
+        issue_import::{
+            GitHubIssueImportStep, GitHubIssuePosition, github_issue_import_view_refusal,
+        },
     },
     views::{ViewId, Views},
 };
@@ -53,6 +55,15 @@ pub struct GitHubIssueComment {
     pub created_at_unix: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitHubIssueComments {
+    Read {
+        comments: Vec<GitHubIssueComment>,
+        later_comments_unread: bool,
+    },
+    IssueGone,
+}
+
 #[derive(Clone, Debug)]
 pub struct ImportGitHubIssueInput {
     pub request_id: String,
@@ -77,14 +88,24 @@ pub enum GitHubIssueImportResult {
     Imported(Box<ImportedGitHubIssue>),
     AlreadyImported,
     Skipped { reason: String },
+    Refused { reason: String },
 }
 
 impl GitHubIssueImportResult {
-    pub fn step(&self) -> GitHubIssueImportStep {
+    pub fn step(&self) -> Result<GitHubIssueImportStep, String> {
         match self {
-            Self::Imported(_) => GitHubIssueImportStep::Imported,
-            Self::AlreadyImported => GitHubIssueImportStep::AlreadyImported,
-            Self::Skipped { .. } => GitHubIssueImportStep::Skipped,
+            Self::Imported(_) => Ok(GitHubIssueImportStep::Imported),
+            Self::AlreadyImported => Ok(GitHubIssueImportStep::AlreadyImported),
+            Self::Skipped { reason } => Ok(GitHubIssueImportStep::Skipped {
+                reason: reason.clone(),
+            }),
+            Self::Refused { reason } => Err(reason.clone()),
+        }
+    }
+
+    fn skipped(reason: impl Into<String>) -> Self {
+        Self::Skipped {
+            reason: reason.into(),
         }
     }
 }
@@ -92,33 +113,67 @@ impl GitHubIssueImportResult {
 pub fn import_github_issue(
     facts: OpenRequestFromAskFacts,
     issue: GitHubIssue,
-    comments: Vec<GitHubIssueComment>,
+    comments: GitHubIssueComments,
     input: ImportGitHubIssueInput,
     views: &Views,
-) -> GitHubIssueImportResult {
-    if facts.github_issue_has_request {
-        return GitHubIssueImportResult::AlreadyImported;
+) -> Result<GitHubIssueImportResult, DomainError> {
+    if let Some(reason) = github_issue_import_view_refusal(views, &input.view) {
+        return Ok(GitHubIssueImportResult::Refused { reason });
     }
-    match request_from_issue(facts, issue, comments, input, views) {
-        Ok(imported) => GitHubIssueImportResult::Imported(Box::new(imported)),
-        Err(error) => GitHubIssueImportResult::Skipped {
-            reason: error.message,
-        },
+    if facts.github_issue_has_request {
+        return Ok(GitHubIssueImportResult::AlreadyImported);
+    }
+    let GitHubIssueComments::Read {
+        comments,
+        later_comments_unread,
+    } = comments
+    else {
+        return Ok(GitHubIssueImportResult::skipped(
+            "GitHub no longer has this issue.",
+        ));
+    };
+    if facts.request_name_exists {
+        return Ok(GitHubIssueImportResult::skipped(format!(
+            "A request named {} already exists.",
+            github_issue_request_name(issue.number)
+        )));
+    }
+    let Some(asked_at_unix) = issue.created_at_unix else {
+        return Ok(GitHubIssueImportResult::skipped(
+            "GitHub did not say when this issue was opened.",
+        ));
+    };
+    match request_from_issue(
+        facts,
+        issue,
+        asked_at_unix,
+        comments,
+        later_comments_unread,
+        input,
+        views,
+    ) {
+        Ok(imported) => Ok(GitHubIssueImportResult::Imported(Box::new(imported))),
+        Err(error) if error.kind == DomainErrorKind::InvalidInput => {
+            Ok(GitHubIssueImportResult::skipped(format!(
+                "Scope cannot hold this issue: {}.",
+                error.message
+            )))
+        }
+        Err(error) => Err(error),
     }
 }
 
 fn request_from_issue(
     facts: OpenRequestFromAskFacts,
     issue: GitHubIssue,
+    asked_at_unix: u64,
     mut comments: Vec<GitHubIssueComment>,
+    later_comments_unread: bool,
     input: ImportGitHubIssueInput,
     views: &Views,
 ) -> Result<ImportedGitHubIssue, DomainError> {
     let now_unix = input.now_unix;
-    let asked_at_unix = issue
-        .created_at_unix
-        .ok_or_else(|| DomainError::invalid_input("GitHub did not say when this issue was opened"))?
-        .min(now_unix);
+    let issue_url = issue.source_url.clone();
     let StartRequestMutation {
         mut request,
         event: started,
@@ -137,7 +192,7 @@ fn request_from_issue(
                     REQUEST_ASK_TEXT_MAX_BYTES,
                 ),
                 source_url: issue.source_url,
-                asked_at_unix,
+                asked_at_unix: asked_at_unix.min(now_unix),
             },
             view: input.view,
             main_oid: input.main_oid,
@@ -156,7 +211,7 @@ fn request_from_issue(
             continue;
         }
         let id = discussion_ids.next().ok_or_else(|| {
-            DomainError::invalid_input("each imported comment needs a discussion id")
+            DomainError::invariant_violation("each imported comment needs a discussion id")
         })?;
         discussions.push(github_discussion(
             &mut request,
@@ -176,6 +231,15 @@ fn request_from_issue(
             },
         )?);
         accounts.insert(comment.author.id, comment.author);
+    }
+    if later_comments_unread && let Some(last) = discussions.last_mut() {
+        last.body_markdown = with_import_notice(
+            &last.body_markdown,
+            &format!(
+                "\n\n_Later comments were not imported. [Read the rest on GitHub]({issue_url})._"
+            ),
+            REQUEST_DISCUSSION_BODY_MAX_BYTES,
+        );
     }
     Ok(ImportedGitHubIssue {
         request,
@@ -198,7 +262,14 @@ fn imported_github_text(text: &str, source_url: &str, max_bytes: usize) -> Strin
     if text.len() <= max_bytes {
         return text.to_string();
     }
-    let notice = format!("\n\n_Truncated on import. [Read the original on GitHub]({source_url})._");
+    with_import_notice(
+        text,
+        &format!("\n\n_Truncated on import. [Read the original on GitHub]({source_url})._"),
+        max_bytes,
+    )
+}
+
+fn with_import_notice(text: &str, notice: &str, max_bytes: usize) -> String {
     let end = text.floor_char_boundary(max_bytes.saturating_sub(notice.len()));
     format!("{}{notice}", &text[..end])
 }

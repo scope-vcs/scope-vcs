@@ -2,7 +2,7 @@ use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness}
 use crate::{
     auth::tokens::random_token,
     error::ApiError,
-    github::GitHubApp,
+    github::{GitHubApp, GitHubIssuePage},
     persistence::unix_now,
     persistence_ids::generate_prefixed_id,
     state::AppState,
@@ -13,8 +13,11 @@ use crate::{
     },
 };
 use scope_domain::{
-    github::{connection::GitHubConnection, issue_import::GitHubIssueImport},
-    requests::{GitHubIssue, GitHubIssueImportResult},
+    github::{
+        connection::GitHubConnection,
+        issue_import::{GitHubIssueImport, GitHubIssueImportStep},
+    },
+    requests::{GitHubIssue, GitHubIssueComments},
 };
 use scope_postgres::db::ImportGitHubIssueCommand;
 use std::time::Duration;
@@ -22,6 +25,8 @@ use std::time::Duration;
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 const LEASE_SECS: u64 = 10 * 60;
 const ISSUES_PER_ANNOUNCEMENT: usize = 25;
+const REPOSITORY_UNREACHABLE: &str =
+    "The Scope GitHub App can no longer reach this GitHub repository.";
 
 pub(crate) async fn import_due_github_issues(
     state: &AppState,
@@ -105,27 +110,28 @@ async fn import_issues(
         claim_token,
         main_oid: &main_oid,
     };
+    let mut progress = import.progress.clone();
     let mut read = 0;
     let mut page = 1;
+    let mut listed = open_issues(app, &connection, page).await?;
     loop {
-        let Some(listed) = app
-            .open_issues(
-                connection.installation_id,
-                &connection.github_full_name,
-                page,
+        if !repositories
+            .renew_github_issue_import_lease(
+                repo_id,
+                claim_token,
+                unix_now()?.saturating_add(LEASE_SECS),
             )
-            .await
-            .map_err(github_failure)?
-        else {
-            return Err(JobFailure::GiveUp(
-                "The Scope GitHub App can no longer reach this GitHub repository.".to_string(),
-            ));
-        };
+            .await?
+        {
+            return Err(JobFailure::Stale);
+        }
         for issue in listed.issues {
-            if import.progress.has_read(issue.position()) {
+            let (number, position) = (issue.number, issue.position());
+            if progress.has_read(position) {
                 continue;
             }
-            import_issue(state, app, &target, issue).await?;
+            let step = import_issue(state, app, &target, issue).await?;
+            progress.record(number, position, step);
             read += 1;
             if read % ISSUES_PER_ANNOUNCEMENT == 0 {
                 announce_import_change(state, repo_id).await;
@@ -134,7 +140,13 @@ async fn import_issues(
         if !listed.more {
             return Ok(());
         }
-        page += 1;
+        let reread = open_issues(app, &connection, page).await?;
+        if reread.last_listed_number == listed.last_listed_number {
+            page += 1;
+            listed = open_issues(app, &connection, page).await?;
+        } else {
+            listed = reread;
+        }
     }
 }
 
@@ -144,12 +156,27 @@ struct ImportTarget<'a> {
     main_oid: &'a str,
 }
 
+async fn open_issues(
+    app: &GitHubApp,
+    connection: &GitHubConnection,
+    page: usize,
+) -> Result<GitHubIssuePage, JobFailure> {
+    app.open_issues(
+        connection.installation_id,
+        &connection.github_full_name,
+        page,
+    )
+    .await
+    .map_err(github_failure)?
+    .ok_or_else(|| JobFailure::GiveUp(REPOSITORY_UNREACHABLE.to_string()))
+}
+
 async fn import_issue(
     state: &AppState,
     app: &GitHubApp,
     target: &ImportTarget<'_>,
     issue: GitHubIssue,
-) -> Result<(), JobFailure> {
+) -> Result<GitHubIssueImportStep, JobFailure> {
     let ImportTarget {
         connection,
         claim_token,
@@ -163,9 +190,12 @@ async fn import_issue(
         .await?
         .is_some()
     {
-        Vec::new()
+        GitHubIssueComments::Read {
+            comments: Vec::new(),
+            later_comments_unread: false,
+        }
     } else {
-        let Some(comments) = app
+        match app
             .issue_comments(
                 connection.installation_id,
                 &connection.github_full_name,
@@ -173,10 +203,13 @@ async fn import_issue(
             )
             .await
             .map_err(github_failure)?
-        else {
-            return Ok(());
-        };
-        comments
+        {
+            Some(comments) => comments,
+            None => {
+                open_issues(app, connection, 1).await?;
+                GitHubIssueComments::IssueGone
+            }
+        }
     };
     let now_unix = unix_now()?;
     let Some(result) = requests
@@ -195,7 +228,8 @@ async fn import_issue(
     else {
         return Err(JobFailure::Stale);
     };
-    if let GitHubIssueImportResult::Skipped { reason } = result {
+    let step = result.step().map_err(JobFailure::GiveUp)?;
+    if let GitHubIssueImportStep::Skipped { reason } = &step {
         tracing::warn!(
             repo_id,
             issue_number,
@@ -203,7 +237,7 @@ async fn import_issue(
             "skipping a GitHub issue Scope cannot import"
         );
     }
-    Ok(())
+    Ok(step)
 }
 
 fn github_failure(error: ApiError) -> JobFailure {

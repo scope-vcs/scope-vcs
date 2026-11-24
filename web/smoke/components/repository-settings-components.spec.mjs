@@ -390,6 +390,15 @@ test('repository components retain drafts, previews and pending actions across r
   const issueView = checks.getByRole('combobox', { name: 'View', exact: true })
   const importIssues = checks.getByRole('button', { name: 'Import open issues', exact: true })
   assert.equal(await issueView.inputValue(), 'private')
+  for (const defaultView of ['public', 'private']) {
+    await page.evaluate((defaultView) => {
+      window.setFixtureGitHub({ ...window.fixtureGitHub(), issue_import_default_view: defaultView })
+    }, defaultView)
+    for (let waited = 0; await issueView.inputValue() !== defaultView; waited += 20) {
+      assert(waited < 2000, `the picker follows the default view to ${defaultView}`)
+      await page.waitForTimeout(20)
+    }
+  }
   await issueView.selectOption('public')
   await importIssues.click()
   assert.equal(await importIssues.isDisabled(), true)
@@ -423,6 +432,20 @@ test('repository components retain drafts, previews and pending actions across r
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 })
+  await issuesImported({
+    state: 'succeeded',
+    imported_count: 12,
+    skipped_issues: [
+      { number: 142, reason: 'A request named gh-142 already exists.' },
+      { number: 150, reason: 'GitHub no longer has this issue.' },
+    ],
+    error: null,
+  })
+  await checks.getByText('12 issues imported. 30 issues already had a request. 2 issues could not be imported:').waitFor()
+  assert.deepEqual(await checks.getByRole('listitem').filter({ hasText: /^#1\d\d/ }).allTextContents(), [
+    '#142A request named gh-142 already exists.',
+    '#150GitHub no longer has this issue.',
+  ])
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [{ startGitHubIssueImport: 'public' }])
 
   const reviewBots = checks.getByRole('switch', { name: 'Open pull requests for review bots' })

@@ -28,15 +28,27 @@ fn comment(id: u64, author: GitHubAccount, body: &str, created_at_unix: u64) -> 
     }
 }
 
-fn import(issue: GitHubIssue, comments: Vec<GitHubIssueComment>) -> GitHubIssueImportResult {
+fn read(comments: Vec<GitHubIssueComment>) -> GitHubIssueComments {
+    GitHubIssueComments::Read {
+        comments,
+        later_comments_unread: false,
+    }
+}
+
+fn import_into(
+    view: &str,
+    facts: OpenRequestFromAskFacts,
+    issue: GitHubIssue,
+    comments: GitHubIssueComments,
+) -> Result<GitHubIssueImportResult, DomainError> {
     import_github_issue(
-        OpenRequestFromAskFacts::default(),
+        facts,
         issue,
         comments,
         ImportGitHubIssueInput {
             request_id: "req_1".to_string(),
             repo_id: "owner/repo".to_string(),
-            view: ViewId::private(),
+            view: ViewId::parse(view).unwrap(),
             main_oid: "main".to_string(),
             started_event_id: "event_started".to_string(),
             discussion_ids: (1..=4).map(|index| format!("discussion_{index}")).collect(),
@@ -44,6 +56,16 @@ fn import(issue: GitHubIssue, comments: Vec<GitHubIssueComment>) -> GitHubIssueI
         },
         &Views::builtin(),
     )
+}
+
+fn import(issue: GitHubIssue, comments: Vec<GitHubIssueComment>) -> GitHubIssueImportResult {
+    import_into(
+        "private",
+        OpenRequestFromAskFacts::default(),
+        issue,
+        read(comments),
+    )
+    .unwrap()
 }
 
 fn imported(result: GitHubIssueImportResult) -> ImportedGitHubIssue {
@@ -138,29 +160,22 @@ fn an_issue_becomes_a_request_asked_by_its_author_with_its_comments_oldest_first
 
 #[test]
 fn an_issue_that_already_has_a_request_is_left_alone() {
-    let result = import_github_issue(
+    let result = import_into(
+        "private",
         OpenRequestFromAskFacts {
             github_issue_has_request: true,
+            request_name_exists: true,
             ..OpenRequestFromAskFacts::default()
         },
         GitHubIssue {
             title: String::new(),
             ..issue()
         },
-        Vec::new(),
-        ImportGitHubIssueInput {
-            request_id: "req_2".to_string(),
-            repo_id: "owner/repo".to_string(),
-            view: ViewId::private(),
-            main_oid: "main".to_string(),
-            started_event_id: "event_started".to_string(),
-            discussion_ids: Vec::new(),
-            now_unix: 500,
-        },
-        &Views::builtin(),
-    );
+        read(Vec::new()),
+    )
+    .unwrap();
     assert_eq!(result, GitHubIssueImportResult::AlreadyImported);
-    assert_eq!(result.step(), GitHubIssueImportStep::AlreadyImported);
+    assert_eq!(result.step(), Ok(GitHubIssueImportStep::AlreadyImported));
 }
 
 #[test]
@@ -234,26 +249,141 @@ fn text_over_a_cap_is_cut_and_ends_with_a_line_linking_the_original() {
 }
 
 #[test]
-fn an_issue_scope_cannot_hold_is_skipped_with_its_reason() {
-    for unimportable in [
-        GitHubIssue {
-            title: " \n".to_string(),
-            ..issue()
-        },
-        GitHubIssue {
-            created_at_unix: None,
-            ..issue()
-        },
-        GitHubIssue {
-            source_url: String::new(),
-            ..issue()
+fn an_issue_scope_cannot_hold_is_skipped_with_a_reason_to_show() {
+    let name_taken = OpenRequestFromAskFacts {
+        request_name_exists: true,
+        ..OpenRequestFromAskFacts::default()
+    };
+    let none = OpenRequestFromAskFacts::default();
+    for (facts, unimportable, comments, expected) in [
+        (
+            none,
+            GitHubIssue {
+                title: " \n".to_string(),
+                ..issue()
+            },
+            read(Vec::new()),
+            "Scope cannot hold this issue: title is required.",
+        ),
+        (
+            none,
+            GitHubIssue {
+                created_at_unix: None,
+                ..issue()
+            },
+            read(Vec::new()),
+            "GitHub did not say when this issue was opened.",
+        ),
+        (
+            none,
+            GitHubIssue {
+                source_url: "http://github.com/octo/app/issues/142".to_string(),
+                ..issue()
+            },
+            read(Vec::new()),
+            "Scope cannot hold this issue: an ask's source must be an https URL.",
+        ),
+        (
+            name_taken,
+            issue(),
+            read(Vec::new()),
+            "A request named gh-142 already exists.",
+        ),
+        (
+            none,
+            issue(),
+            GitHubIssueComments::IssueGone,
+            "GitHub no longer has this issue.",
+        ),
+    ] {
+        let result = import_into("private", facts, unimportable, comments).unwrap();
+        assert_eq!(
+            result,
+            GitHubIssueImportResult::Skipped {
+                reason: expected.to_string()
+            }
+        );
+        assert_eq!(
+            result.step(),
+            Ok(GitHubIssueImportStep::Skipped {
+                reason: expected.to_string()
+            })
+        );
+    }
+}
+
+#[test]
+fn a_view_the_repository_no_longer_has_refuses_the_import_instead_of_skipping_the_issue() {
+    for facts in [
+        OpenRequestFromAskFacts::default(),
+        OpenRequestFromAskFacts {
+            github_issue_has_request: true,
+            ..OpenRequestFromAskFacts::default()
         },
     ] {
-        let result = import(unimportable.clone(), Vec::new());
-        assert!(
-            matches!(&result, GitHubIssueImportResult::Skipped { reason } if !reason.is_empty()),
-            "{unimportable:?} gave {result:?}"
+        let refusal = "This repository no longer has the partners view. Choose another view and \
+                       import again.";
+        let result = import_into("partners", facts, issue(), read(Vec::new())).unwrap();
+        assert_eq!(
+            result,
+            GitHubIssueImportResult::Refused {
+                reason: refusal.to_string()
+            }
         );
-        assert_eq!(result.step(), GitHubIssueImportStep::Skipped);
+        assert_eq!(result.step(), Err(refusal.to_string()));
     }
+}
+
+#[test]
+fn a_failure_that_is_not_about_the_issue_fails_the_import() {
+    let error = import_into(
+        "private",
+        OpenRequestFromAskFacts {
+            request_id_exists: true,
+            ..OpenRequestFromAskFacts::default()
+        },
+        issue(),
+        read(Vec::new()),
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, DomainErrorKind::Conflict);
+}
+
+#[test]
+fn comments_github_has_past_the_ones_read_leave_a_line_on_the_last_one_linking_the_issue() {
+    let comments = vec![
+        comment(31, account(9, "ines-r"), "Which version?", 200),
+        comment(
+            32,
+            account(7, "tomasz-k"),
+            &"x".repeat(REQUEST_DISCUSSION_BODY_MAX_BYTES),
+            300,
+        ),
+        comment(33, account(9, "ines-r"), " ", 400),
+    ];
+    let notice =
+        format!("\n\n_Later comments were not imported. [Read the rest on GitHub]({ISSUE_URL})._");
+
+    let cut_off = imported(
+        import_into(
+            "private",
+            OpenRequestFromAskFacts::default(),
+            issue(),
+            GitHubIssueComments::Read {
+                comments: comments.clone(),
+                later_comments_unread: true,
+            },
+        )
+        .unwrap(),
+    );
+    assert_eq!(cut_off.discussions[0].body_markdown, "Which version?");
+    let last = &cut_off.discussions[1].body_markdown;
+    assert_eq!(last.len(), REQUEST_DISCUSSION_BODY_MAX_BYTES);
+    assert!(last.ends_with(&notice), "{}", &last[last.len() - 120..]);
+
+    let complete = imported(import(issue(), comments));
+    assert_eq!(
+        complete.discussions[1].body_markdown,
+        "x".repeat(REQUEST_DISCUSSION_BODY_MAX_BYTES)
+    );
 }

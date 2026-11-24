@@ -32,8 +32,14 @@ pub struct GitHubIssueImport {
 pub struct GitHubIssueImportProgress {
     pub imported_count: u32,
     pub already_imported_count: u32,
-    pub skipped_issue_numbers: Vec<u64>,
+    pub skipped: Vec<GitHubSkippedIssue>,
     pub read_through: GitHubIssuePosition,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubSkippedIssue {
+    pub number: u64,
+    pub reason: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -42,11 +48,11 @@ pub struct GitHubIssuePosition {
     pub number: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubIssueImportStep {
     Imported,
     AlreadyImported,
-    Skipped,
+    Skipped { reason: String },
 }
 
 impl GitHubIssueImportProgress {
@@ -67,9 +73,16 @@ impl GitHubIssueImportProgress {
             GitHubIssueImportStep::AlreadyImported => {
                 self.already_imported_count = self.already_imported_count.saturating_add(1);
             }
-            GitHubIssueImportStep::Skipped => {
-                if !self.skipped_issue_numbers.contains(&issue_number) {
-                    self.skipped_issue_numbers.push(issue_number);
+            GitHubIssueImportStep::Skipped { reason } => {
+                if !self
+                    .skipped
+                    .iter()
+                    .any(|skipped| skipped.number == issue_number)
+                {
+                    self.skipped.push(GitHubSkippedIssue {
+                        number: issue_number,
+                        reason,
+                    });
                 }
             }
         }
@@ -77,6 +90,14 @@ impl GitHubIssueImportProgress {
             self.read_through = self.read_through.max(issue);
         }
     }
+}
+
+pub fn github_issue_import_view_refusal(views: &Views, view: &ViewId) -> Option<String> {
+    views.get(view).is_none().then(|| {
+        format!(
+            "This repository no longer has the {view} view. Choose another view and import again."
+        )
+    })
 }
 
 pub fn default_github_issue_import_view(connection: &GitHubConnection, views: &Views) -> ViewId {
@@ -140,11 +161,8 @@ impl GitHubIssueImport {
     }
 
     pub fn refusal(&self, views: &Views, installation: &GitHubInstallationFacts) -> Option<String> {
-        if views.get(&self.view).is_none() {
-            return Some(format!(
-                "This repository no longer has the {} view. Choose another view and import again.",
-                self.view
-            ));
+        if let Some(refusal) = github_issue_import_view_refusal(views, &self.view) {
+            return Some(refusal);
         }
         if installation.state != GitHubInstallationState::Active {
             return Some(

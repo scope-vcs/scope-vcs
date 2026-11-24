@@ -7,6 +7,8 @@ type GitHubIssueImportView = {
   failed: boolean
   status: string
   read: string
+  skipped: Array<{ issue: string, reason: string }>
+  unlistedSkipped: number
 }
 
 export function githubIssueImportView(
@@ -15,7 +17,13 @@ export function githubIssueImportView(
 ): GitHubIssueImportView | null {
   if (!issueImport) return null
   const error = issueImport.error?.trim().replace(/\.$/, '') ?? null
-  const read = readSoFar(issueImport)
+  const read = {
+    read: readSoFar(issueImport),
+    skipped: issueImport.skipped_issues
+      .slice(0, LISTED_SKIPPED_ISSUES)
+      .map(({ number, reason }) => ({ issue: `#${number}`, reason })),
+    unlistedSkipped: Math.max(0, issueImport.skipped_issues.length - LISTED_SKIPPED_ISSUES),
+  }
   switch (issueImport.state) {
     case 'queued':
     case 'running':
@@ -24,7 +32,7 @@ export function githubIssueImportView(
           working: issueImport.state === 'running',
           failed: true,
           status: `Import failed: ${error}. Retrying.`,
-          read,
+          ...read,
         }
       }
       return {
@@ -33,37 +41,34 @@ export function githubIssueImportView(
         status: issueImport.state === 'queued'
           ? `Waiting to import open issues into the ${viewName} view.`
           : `Importing open issues into the ${viewName} view.`,
-        read,
+        ...read,
       }
     case 'succeeded':
       return {
         working: false,
         failed: false,
-        status: read
+        status: read.read
           ? `Import into the ${viewName} view finished.`
           : 'GitHub had no open issues to import.',
-        read,
+        ...read,
       }
     case 'failed':
       return {
         working: false,
         failed: true,
         status: `Import failed: ${error ?? 'GitHub did not answer'}.`,
-        read,
+        ...read,
       }
   }
 }
 
 function readSoFar(issueImport: GitHubIssueImportResponse) {
-  const skipped = issueImport.skipped_issue_numbers
-  const listed = skipped.slice(0, LISTED_SKIPPED_ISSUES).map((number) => `#${number}`).join(', ')
-  const unlisted = skipped.length - LISTED_SKIPPED_ISSUES
+  const skipped = issueImport.skipped_issues.length
   return [
     issueImport.imported_count > 0 && `${issues(issueImport.imported_count)} imported.`,
     issueImport.already_imported_count > 0
       && `${issues(issueImport.already_imported_count)} already had a request.`,
-    skipped.length > 0
-      && `${issues(skipped.length)} could not be imported: ${listed}${unlisted > 0 ? ` and ${unlisted} more` : ''}.`,
+    skipped > 0 && `${issues(skipped)} could not be imported:`,
   ].filter(Boolean).join(' ')
 }
 

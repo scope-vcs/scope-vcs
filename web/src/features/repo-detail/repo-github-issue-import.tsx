@@ -57,10 +57,25 @@ export function RepoGitHubIssueImport({
         </Button>
       </form>
       {status && (
-        <p aria-live="polite" className="break-words leading-5 text-muted-foreground">
-          <span className={cn(status.failed && 'text-danger-strong')}>{status.status}</span>
-          {status.read && ` ${status.read}`}
-        </p>
+        <div aria-live="polite" className="break-words leading-5 text-muted-foreground">
+          <p>
+            <span className={cn(status.failed && 'text-danger-strong')}>{status.status}</span>
+            {status.read && ` ${status.read}`}
+          </p>
+          {status.skipped.length > 0 && (
+            <ul className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2">
+              {status.skipped.map(({ issue, reason }) => (
+                <li className="col-span-2 grid grid-cols-subgrid" key={issue}>
+                  <span className="tabular-nums text-foreground">{issue}</span>
+                  <span>{reason}</span>
+                </li>
+              ))}
+              {status.unlistedSkipped > 0 && (
+                <li className="col-span-2">{status.unlistedSkipped} more are not listed.</li>
+              )}
+            </ul>
+          )}
+        </div>
       )}
       {errorAlert}
     </div>

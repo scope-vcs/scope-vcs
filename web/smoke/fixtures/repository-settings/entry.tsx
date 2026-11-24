@@ -207,7 +207,7 @@ function App() {
             ...repoSettingsResource.peek(settingsScope)!.github!,
             issue_import: {
               state: 'queued' as const, view: input.view, imported_count: 0, already_imported_count: 0,
-              skipped_issue_numbers: [], error: null, queued_at_unix: 3, finished_at_unix: null,
+              skipped_issues: [], error: null, queued_at_unix: 3, finished_at_unix: null,
             },
           }
           retainGitHubConnection(settingsScope, github)

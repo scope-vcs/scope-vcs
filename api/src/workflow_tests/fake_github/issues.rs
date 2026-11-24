@@ -10,9 +10,10 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
+use tokio::sync::Notify;
 
 #[derive(Default)]
 pub(in crate::workflow_tests) struct FakeIssues {
@@ -22,6 +23,15 @@ pub(in crate::workflow_tests) struct FakeIssues {
     pub(in crate::workflow_tests) comment_reads: AtomicUsize,
     pub(in crate::workflow_tests) list_rate_limited_until: Mutex<Option<u64>>,
     pub(in crate::workflow_tests) comments_unavailable_for: Mutex<Option<u64>>,
+    pub(in crate::workflow_tests) comments_missing_for: Mutex<Option<u64>>,
+    pub(in crate::workflow_tests) repository_gone: AtomicBool,
+    held_comment_read: Mutex<Option<(u64, Arc<HeldRead>)>>,
+}
+
+#[derive(Default)]
+pub(in crate::workflow_tests) struct HeldRead {
+    pub(in crate::workflow_tests) arrived: Notify,
+    pub(in crate::workflow_tests) released: Notify,
 }
 
 pub(in crate::workflow_tests) fn github_user(id: u64, login: &str) -> serde_json::Value {
@@ -82,6 +92,20 @@ impl FakeIssues {
             .collect();
         self.comments.lock().unwrap().insert(issue_number, comments);
     }
+
+    pub(in crate::workflow_tests) fn hold_comments_of(&self, issue_number: u64) -> Arc<HeldRead> {
+        let held = Arc::new(HeldRead::default());
+        *self.held_comment_read.lock().unwrap() = Some((issue_number, Arc::clone(&held)));
+        held
+    }
+}
+
+fn not_found() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({ "message": "Not Found" })),
+    )
+        .into_response()
 }
 
 fn page<T: Clone>(items: &[T], query: &HashMap<String, String>) -> Vec<T> {
@@ -110,6 +134,9 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                     ("open", "created", "asc")
                 );
                 fake.issues.list_reads.fetch_add(1, Ordering::SeqCst);
+                if fake.issues.repository_gone.load(Ordering::SeqCst) {
+                    return not_found();
+                }
                 if let Some(reset) = *fake.issues.list_rate_limited_until.lock().unwrap() {
                     return (
                         StatusCode::FORBIDDEN,
@@ -129,7 +156,7 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
     )
 }
 
-pub(super) fn comments_answer(
+pub(super) async fn comments_answer(
     fake: &FakeGitHub,
     number: u64,
     query: &HashMap<String, String>,
@@ -145,6 +172,21 @@ pub(super) fn comments_answer(
         return None;
     }
     fake.issues.comment_reads.fetch_add(1, Ordering::SeqCst);
+    let held = fake
+        .issues
+        .held_comment_read
+        .lock()
+        .unwrap()
+        .take_if(|(held, _)| *held == number);
+    if let Some((_, held)) = held {
+        held.arrived.notify_one();
+        held.released.notified().await;
+    }
+    if fake.issues.repository_gone.load(Ordering::SeqCst)
+        || *fake.issues.comments_missing_for.lock().unwrap() == Some(number)
+    {
+        return Some(not_found());
+    }
     if *fake.issues.comments_unavailable_for.lock().unwrap() == Some(number) {
         return Some(
             (

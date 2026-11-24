@@ -13,6 +13,7 @@ pub(crate) mod webhook;
 
 pub(crate) use client::{GitHubRepository, RATE_LIMIT_MESSAGE};
 use config::GitHubAppConfig;
+pub(crate) use issues::GitHubIssuePage;
 use jsonwebtoken::EncodingKey;
 pub(crate) use push::GitHubPublishFailure;
 pub(crate) use reviews::{GitHubPermissionAnswer, GitHubPullReview, GitHubPullReviewComment};

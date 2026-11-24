@@ -110,8 +110,9 @@ pub use github_review_import::{
 };
 mod github_issue_import;
 pub use github_issue_import::{
-    GitHubIssue, GitHubIssueComment, GitHubIssueImportResult, ImportGitHubIssueInput,
-    ImportedGitHubIssue, github_issue_comment_client_id, import_github_issue,
+    GitHubIssue, GitHubIssueComment, GitHubIssueComments, GitHubIssueImportResult,
+    ImportGitHubIssueInput, ImportedGitHubIssue, github_issue_comment_client_id,
+    import_github_issue,
 };
 mod discussions;
 pub use discussions::{

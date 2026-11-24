@@ -1,8 +1,8 @@
 use super::GitHubApp;
-use super::client::{PAGE_SIZE, parse_time};
+use super::client::{MAX_LIST_PAGES, PAGE_SIZE, parse_time};
 use super::reviews::{GitHubUser, github_account};
 use crate::error::ApiError;
-use scope_domain::requests::{GitHubIssue, GitHubIssueComment};
+use scope_domain::requests::{GitHubIssue, GitHubIssueComment, GitHubIssueComments};
 use serde::{Deserialize, de::IgnoredAny};
 
 #[derive(Deserialize)]
@@ -27,6 +27,7 @@ struct IssueComment {
 
 pub(crate) struct GitHubIssuePage {
     pub(crate) issues: Vec<GitHubIssue>,
+    pub(crate) last_listed_number: Option<u64>,
     pub(crate) more: bool,
 }
 
@@ -49,6 +50,7 @@ impl GitHubApp {
             .await?
             .map(|listed| GitHubIssuePage {
                 more: listed.len() == PAGE_SIZE,
+                last_listed_number: listed.last().map(|issue| issue.number),
                 issues: listed
                     .into_iter()
                     .filter(|issue| issue.pull_request.is_none())
@@ -69,7 +71,7 @@ impl GitHubApp {
         installation_id: u64,
         full_name: &str,
         issue_number: u64,
-    ) -> Result<Option<Vec<GitHubIssueComment>>, ApiError> {
+    ) -> Result<Option<GitHubIssueComments>, ApiError> {
         Ok(self
             .installation_pages::<Vec<IssueComment>, _>(
                 installation_id,
@@ -78,8 +80,9 @@ impl GitHubApp {
                 |page| page,
             )
             .await?
-            .map(|comments| {
-                comments
+            .map(|comments| GitHubIssueComments::Read {
+                later_comments_unread: comments.len() == MAX_LIST_PAGES * PAGE_SIZE,
+                comments: comments
                     .into_iter()
                     .map(|comment| GitHubIssueComment {
                         id: comment.id,
@@ -88,7 +91,7 @@ impl GitHubApp {
                         source_url: comment.html_url,
                         created_at_unix: parse_time(&comment.created_at),
                     })
-                    .collect()
+                    .collect(),
             }))
     }
 }

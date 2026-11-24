@@ -198,6 +198,7 @@ export function RepoCiSection({
             defaultView={github.issue_import_default_view}
             importInto={startIssueImport}
             issueImport={github.issue_import}
+            key={github.issue_import_default_view}
             views={views}
           />
         )}

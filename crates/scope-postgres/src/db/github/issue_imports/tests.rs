@@ -1,12 +1,15 @@
 use super::*;
-use crate::db::{MetadataStore, requests::tests::postgres_store};
+use crate::db::{
+    MetadataStore,
+    requests::tests::{postgres_store, public_start_input},
+};
 use crate::error::PostgresErrorKind;
 use scope_domain::{
     github::account::{GitHubAccount, GitHubAccountType},
     github::connection::ConnectGitHubRepository,
     github::import::GitHubImportState,
     github::issue_import::GitHubIssueImportStep,
-    requests::RequestDiscussionAuthor,
+    requests::{GitHubIssueComment, RequestDiscussionAuthor},
 };
 
 const REPO: &str = "owner/repo";
@@ -84,7 +87,10 @@ fn command(
         request_id: format!("req_issue_{}_{}", issue.number, issue.title.len()),
         started_event_id: format!("event_issue_{}_{}", issue.number, issue.title.len()),
         issue,
-        comments,
+        comments: GitHubIssueComments::Read {
+            comments,
+            later_comments_unread: false,
+        },
         now_unix: t,
         lease_until_unix: t + LEASE_SECS,
     }
@@ -170,13 +176,42 @@ async fn an_issue_is_stored_once_with_its_comments_and_every_issue_read_is_count
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(again.step(), GitHubIssueImportStep::AlreadyImported);
-    let skipped = requests
-        .import_github_issue(command("claim_1", issue(143, " ", 300), Vec::new()))
+    assert_eq!(again.step(), Ok(GitHubIssueImportStep::AlreadyImported));
+    requests.start_request(public_start_input()).await.unwrap();
+    store
+        .db
+        .execute_unprepared("UPDATE scope_requests SET name = 'gh-143' WHERE name = 'fix-parser'")
+        .await
+        .unwrap();
+    let name_taken = requests
+        .import_github_issue(command(
+            "claim_1",
+            issue(143, "Export fails", 300),
+            Vec::new(),
+        ))
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(skipped.step(), GitHubIssueImportStep::Skipped);
+    assert_eq!(
+        name_taken,
+        GitHubIssueImportResult::Skipped {
+            reason: "A request named gh-143 already exists.".into()
+        }
+    );
+    let gone = requests
+        .import_github_issue(ImportGitHubIssueCommand {
+            comments: GitHubIssueComments::IssueGone,
+            ..command("claim_1", issue(144, "Deleted since", 250), Vec::new())
+        })
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        gone,
+        GitHubIssueImportResult::Skipped {
+            reason: "GitHub no longer has this issue.".into()
+        }
+    );
 
     assert_eq!(
         requests
@@ -186,19 +221,30 @@ async fn an_issue_is_stored_once_with_its_comments_and_every_issue_read_is_count
             .unwrap(),
         stored
     );
-    assert_eq!(
-        requests
-            .request_by_github_issue_number(REPO, 143)
-            .await
-            .unwrap(),
-        None
-    );
+    for skipped in [143, 144] {
+        assert_eq!(
+            requests
+                .request_by_github_issue_number(REPO, skipped)
+                .await
+                .unwrap(),
+            None
+        );
+    }
     assert_eq!(
         progress(&store).await,
         GitHubIssueImportProgress {
             imported_count: 1,
             already_imported_count: 1,
-            skipped_issue_numbers: vec![143],
+            skipped: vec![
+                GitHubSkippedIssue {
+                    number: 143,
+                    reason: "A request named gh-143 already exists.".into(),
+                },
+                GitHubSkippedIssue {
+                    number: 144,
+                    reason: "GitHub no longer has this issue.".into(),
+                },
+            ],
             read_through: GitHubIssuePosition {
                 created_at_unix: 300,
                 number: 143,
@@ -336,5 +382,96 @@ async fn an_issue_is_stored_only_while_its_claim_holds_and_the_repository_stays_
             .await
             .unwrap(),
         None
+    );
+}
+
+#[tokio::test]
+async fn an_import_into_a_view_the_repository_lost_is_refused_and_records_nothing() {
+    let store = postgres_store();
+    let requests = store.requests();
+    connect(&store).await;
+    claimed(&store, "claim_1", ViewId::private()).await;
+    store
+        .db
+        .execute_unprepared("UPDATE scope_github_issue_imports SET view_id = 'partners'")
+        .await
+        .unwrap();
+
+    let refused = requests
+        .import_github_issue(command("claim_1", issue(1, "First", 100), Vec::new()))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        refused,
+        GitHubIssueImportResult::Refused {
+            reason: "This repository no longer has the partners view. Choose another view and \
+                     import again."
+                .into()
+        }
+    );
+    assert_eq!(
+        requests
+            .request_by_github_issue_number(REPO, 1)
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(progress(&store).await, GitHubIssueImportProgress::default());
+}
+
+#[tokio::test]
+async fn only_the_worker_holding_the_claim_extends_its_lease() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    connect(&store).await;
+    let t = claimed(&store, "claim_1", ViewId::private()).await;
+    let lapsed = t + LEASE_SECS;
+
+    assert!(
+        !repositories
+            .renew_github_issue_import_lease(REPO, "claim_0", lapsed + LEASE_SECS)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        repositories
+            .claim_due_github_issue_imports("claim_2", lapsed - 1, lapsed + LEASE_SECS, 5)
+            .await
+            .unwrap(),
+        []
+    );
+    assert!(
+        repositories
+            .renew_github_issue_import_lease(REPO, "claim_1", lapsed + LEASE_SECS)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        repositories
+            .claim_due_github_issue_imports("claim_2", lapsed, lapsed + LEASE_SECS, 5)
+            .await
+            .unwrap(),
+        [],
+        "the renewed lease outlives the first one"
+    );
+    assert_eq!(
+        repositories
+            .claim_due_github_issue_imports(
+                "claim_2",
+                lapsed + LEASE_SECS,
+                lapsed + 2 * LEASE_SECS,
+                5
+            )
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        !repositories
+            .renew_github_issue_import_lease(REPO, "claim_1", lapsed + 3 * LEASE_SECS)
+            .await
+            .unwrap()
     );
 }

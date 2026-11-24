@@ -25,7 +25,7 @@ impl MigrationTrait for Migration {
                     attempts integer NOT NULL,
                     imported_count integer NOT NULL,
                     already_imported_count integer NOT NULL,
-                    skipped_issue_numbers jsonb NOT NULL,
+                    skipped_issues jsonb NOT NULL,
                     read_through_created_at_unix bigint NOT NULL,
                     read_through_issue_number bigint NOT NULL,
                     last_error text,
@@ -46,7 +46,7 @@ impl MigrationTrait for Migration {
                         AND attempts >= 0
                         AND imported_count >= 0
                         AND already_imported_count >= 0
-                        AND jsonb_typeof(skipped_issue_numbers) = 'array'
+                        AND jsonb_typeof(skipped_issues) = 'array'
                         AND read_through_created_at_unix >= 0
                         AND read_through_issue_number >= 0
                         AND next_attempt_at_unix >= 0

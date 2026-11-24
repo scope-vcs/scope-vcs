@@ -105,19 +105,22 @@ async fn a_maintainer_imports_open_issues_once_as_requests_with_their_comments()
 
     assert_eq!(import_pass(&state, unix_now()).await, 1);
     let imported = issue_import(&state).await;
+    let blank_title_skipped = serde_json::json!([
+        { "number": 4, "reason": "Scope cannot hold this issue: title is required." }
+    ]);
     assert_eq!(
         (
             &imported["state"],
             &imported["imported_count"],
             &imported["already_imported_count"],
-            &imported["skipped_issue_numbers"],
+            &imported["skipped_issues"],
             &imported["error"],
         ),
         (
             &"succeeded".into(),
             &1.into(),
             &0.into(),
-            &serde_json::json!([4]),
+            &blank_title_skipped,
             &serde_json::Value::Null,
         )
     );
@@ -191,13 +194,13 @@ async fn a_maintainer_imports_open_issues_once_as_requests_with_their_comments()
             &again["state"],
             &again["imported_count"],
             &again["already_imported_count"],
-            &again["skipped_issue_numbers"],
+            &again["skipped_issues"],
         ),
         (
             &"succeeded".into(),
             &1.into(),
             &1.into(),
-            &serde_json::json!([4]),
+            &blank_title_skipped,
         )
     );
     assert_eq!(
@@ -288,7 +291,8 @@ async fn issues_are_read_page_by_page_and_a_rate_limit_waits_for_its_reset() {
     assert_eq!(import_pass(&state, reset).await, 1);
     assert_eq!(
         fake.issues.list_reads.load(Ordering::SeqCst),
-        list_reads + 2
+        list_reads + 3,
+        "the first page is read again before the second, to notice issues that moved"
     );
     let finished = issue_import(&state).await;
     assert_eq!(
@@ -327,4 +331,234 @@ async fn an_installation_that_cannot_read_issues_fails_the_import_with_what_to_g
     assert_eq!(started(&state).await["state"], "queued");
     assert_eq!(import_pass(&state, unix_now()).await, 1);
     assert_eq!(issue_import(&state).await["imported_count"], 1);
+}
+
+fn issues(numbers: std::ops::RangeInclusive<u64>) -> Vec<serde_json::Value> {
+    numbers
+        .map(|number| {
+            issue(
+                number,
+                "An issue",
+                github_user(7, "tomasz-k"),
+                CREATED + number,
+            )
+        })
+        .collect()
+}
+
+async fn import_pass_changed_at_issue(
+    state: &AppState,
+    fake: &fake_github::FakeGitHub,
+    issue_number: u64,
+    change: impl AsyncFnOnce(),
+) {
+    let held = fake.issues.hold_comments_of(issue_number);
+    let pass = tokio::spawn({
+        let state = state.clone();
+        async move { import_pass(&state, unix_now()).await }
+    });
+    held.arrived.notified().await;
+    change().await;
+    held.released.notify_one();
+    assert_eq!(pass.await.unwrap(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_issue_github_no_longer_has_is_listed_as_skipped_and_the_rest_are_imported() {
+    let (state, fake) = connected_state().await;
+    *fake.issues.open.lock().unwrap() = issues(1..=3);
+    *fake.issues.comments_missing_for.lock().unwrap() = Some(2);
+    started(&state).await;
+
+    assert_eq!(import_pass(&state, unix_now()).await, 1);
+    let finished = issue_import(&state).await;
+    assert_eq!(
+        (
+            &finished["state"],
+            &finished["imported_count"],
+            &finished["skipped_issues"],
+        ),
+        (
+            &"succeeded".into(),
+            &2.into(),
+            &serde_json::json!([
+                { "number": 2, "reason": "GitHub no longer has this issue." }
+            ]),
+        )
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn losing_the_github_repository_part_way_fails_the_import_instead_of_finishing_short() {
+    let (state, fake) = connected_state().await;
+    *fake.issues.open.lock().unwrap() = issues(1..=3);
+    started(&state).await;
+
+    import_pass_changed_at_issue(&state, &fake, 2, async || {
+        fake.issues.repository_gone.store(true, Ordering::SeqCst);
+    })
+    .await;
+    let failed = issue_import(&state).await;
+    assert_eq!(
+        (
+            &failed["state"],
+            &failed["error"],
+            &failed["imported_count"],
+            &failed["skipped_issues"],
+        ),
+        (
+            &"failed".into(),
+            &"The Scope GitHub App can no longer reach this GitHub repository.".into(),
+            &1.into(),
+            &serde_json::json!([]),
+        )
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_the_chosen_view_part_way_fails_the_import_and_asks_for_another_view() {
+    let (mut state, head, _source) =
+        super::custom_views::fixture("issue-import-view-removed").await;
+    let fake = fake_github::FakeGitHub::install(&mut state).await;
+    connect_test_repository(&state, GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME, 0).await;
+    *fake.issues.open.lock().unwrap() = issues(1..=2);
+    let queued = expect_json(
+        start(&state, &bearer_header(), "agent").await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(queued["issue_import"]["view"], "agent");
+    let reassigned = api_request(
+        router(state.clone()),
+        "PATCH",
+        &format!(
+            "/v1/repos/owner/repo/members/{}",
+            super::custom_views::member_id()
+        ),
+        Some(&bearer_header()),
+        Some(r#"{"permissions":{"can_push":false,"can_change_file_visibility":false,"view":"public"}}"#),
+    )
+    .await;
+    expect_json(reassigned, StatusCode::OK).await;
+    let unlabelled = super::custom_views::config_with(
+        vec![super::custom_views::custom_view(
+            "agent",
+            "Agent",
+            &["public"],
+        )],
+        &[],
+    );
+    expect_json(
+        super::custom_views::push_config(&state, &head, &unlabelled).await,
+        StatusCode::OK,
+    )
+    .await;
+
+    import_pass_changed_at_issue(&state, &fake, 1, async || {
+        let without_agent = super::custom_views::config_with(Vec::new(), &[]);
+        expect_json(
+            super::custom_views::push_config(&state, &head, &without_agent).await,
+            StatusCode::OK,
+        )
+        .await;
+    })
+    .await;
+    let failed = issue_import(&state).await;
+    assert_eq!(
+        (
+            &failed["state"],
+            &failed["error"],
+            &failed["imported_count"],
+            &failed["skipped_issues"],
+        ),
+        (
+            &"failed".into(),
+            &"This repository no longer has the agent view. Choose another view and import again."
+                .into(),
+            &0.into(),
+            &serde_json::json!([]),
+        )
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn comments_past_the_ones_read_leave_a_line_on_the_last_one_imported() {
+    let (state, fake) = connected_state().await;
+    *fake.issues.open.lock().unwrap() = issues(1..=1);
+    fake.issues.report_comments(
+        1,
+        (1..=1000)
+            .map(|id| {
+                let body = match id {
+                    1 => "Which version?",
+                    999 => "Still broken on 2.14.1.",
+                    _ => " ",
+                };
+                (id, github_user(9, "ines-r"), body, CREATED + id)
+            })
+            .collect(),
+    );
+    started(&state).await;
+
+    assert_eq!(import_pass(&state, unix_now()).await, 1);
+    assert_eq!(issue_import(&state).await["imported_count"], 1);
+    let timeline = request_json(&state, 1, "timeline").await;
+    let mut comments = timeline["discussions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|discussion| {
+            (
+                discussion["opened_position"].as_u64().unwrap(),
+                discussion["body_markdown"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    comments.sort();
+    assert_eq!(
+        comments.iter().map(|(_, body)| *body).collect::<Vec<_>>(),
+        [
+            "Which version?".to_string(),
+            format!(
+                "Still broken on 2.14.1.\n\n_Later comments were not imported. [Read the rest on \
+                 GitHub](https://github.com/{GITHUB_FULL_NAME}/issues/1)._"
+            ),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_issue_that_moves_to_an_earlier_page_when_another_closes_is_still_imported() {
+    let (state, fake) = connected_state().await;
+    *fake.issues.open.lock().unwrap() = (1..=99)
+        .map(|number| pull_request(number, CREATED + number))
+        .chain(issues(100..=102))
+        .collect();
+    started(&state).await;
+
+    import_pass_changed_at_issue(&state, &fake, 100, async || {
+        fake.issues.open.lock().unwrap().remove(0);
+    })
+    .await;
+    let finished = issue_import(&state).await;
+    assert_eq!(
+        (
+            &finished["state"],
+            &finished["imported_count"],
+            &finished["already_imported_count"],
+        ),
+        (&"succeeded".into(), &3.into(), &0.into())
+    );
+    for imported in 100..=102 {
+        assert!(
+            state
+                .metadata
+                .requests()
+                .request_by_github_issue_number(TEST_REPO_ID, imported)
+                .await
+                .unwrap()
+                .is_some(),
+            "issue {imported}"
+        );
+    }
 }

@@ -431,7 +431,9 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  AxumPath((_, _, number)): AxumPath<(String, String, u64)>,
                  AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
-                    if let Some(answer) = super::issues::comments_answer(&fake, number, &query) {
+                    if let Some(answer) =
+                        super::issues::comments_answer(&fake, number, &query).await
+                    {
                         return answer;
                     }
                     if let Some(refused) = fake.pulls.refused() {

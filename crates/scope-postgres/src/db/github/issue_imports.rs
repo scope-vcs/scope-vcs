@@ -19,17 +19,18 @@ use super::super::{
 use crate::error::PostgresError;
 use scope_domain::{
     github::issue_import::{
-        GitHubIssueImport, GitHubIssueImportProgress, GitHubIssuePosition,
+        GitHubIssueImport, GitHubIssueImportProgress, GitHubIssuePosition, GitHubSkippedIssue,
         start_github_issue_import,
     },
     repository::RepositoryIncarnation,
     requests::{
-        GitHubIssue, GitHubIssueComment, GitHubIssueImportResult, ImportGitHubIssueInput,
+        GitHubIssue, GitHubIssueComments, GitHubIssueImportResult, ImportGitHubIssueInput,
         OpenRequestFromAskFacts, github_issue_request_name, import_github_issue,
     },
     views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
+use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 mod tests;
@@ -37,7 +38,7 @@ mod tests;
 const ISSUE_IMPORTS: GitHubImportQueue = GitHubImportQueue {
     table: "scope_github_issue_imports",
     columns: "repo_id, github_repository_id, view_id, state, attempts, imported_count, \
-        already_imported_count, skipped_issue_numbers, read_through_created_at_unix, \
+        already_imported_count, skipped_issues, read_through_created_at_unix, \
         read_through_issue_number, last_error, queued_at_unix, finished_at_unix",
     label: "GitHub issue import",
 };
@@ -51,7 +52,7 @@ struct ImportRow {
     attempts: i32,
     imported_count: i32,
     already_imported_count: i32,
-    skipped_issue_numbers: serde_json::Value,
+    skipped_issues: serde_json::Value,
     read_through_created_at_unix: i64,
     read_through_issue_number: i64,
     last_error: Option<String>,
@@ -59,12 +60,18 @@ struct ImportRow {
     finished_at_unix: Option<i64>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct SkippedIssueRow {
+    number: u64,
+    reason: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct ImportGitHubIssueCommand {
     pub repo_id: String,
     pub claim_token: String,
     pub issue: GitHubIssue,
-    pub comments: Vec<GitHubIssueComment>,
+    pub comments: GitHubIssueComments,
     pub main_oid: String,
     pub request_id: String,
     pub started_event_id: String,
@@ -102,7 +109,7 @@ impl RepositoryStore {
             DatabaseBackend::Postgres,
             "INSERT INTO scope_github_issue_imports (repo_id, github_repository_id, view_id,
                 state, attempts, imported_count, already_imported_count,
-                skipped_issue_numbers, read_through_created_at_unix,
+                skipped_issues, read_through_created_at_unix,
                 read_through_issue_number, last_error, next_attempt_at_unix, lease_until_unix,
                 claim_token, queued_at_unix, finished_at_unix)
              VALUES ($1, $2, $3, 'queued', 0, 0, 0, '[]', 0, 0, NULL, $4, NULL, NULL, $4, NULL)
@@ -111,7 +118,7 @@ impl RepositoryStore {
                 view_id = EXCLUDED.view_id, state = EXCLUDED.state,
                 attempts = EXCLUDED.attempts, imported_count = EXCLUDED.imported_count,
                 already_imported_count = EXCLUDED.already_imported_count,
-                skipped_issue_numbers = EXCLUDED.skipped_issue_numbers,
+                skipped_issues = EXCLUDED.skipped_issues,
                 read_through_created_at_unix = EXCLUDED.read_through_created_at_unix,
                 read_through_issue_number = EXCLUDED.read_through_issue_number,
                 last_error = EXCLUDED.last_error,
@@ -159,6 +166,18 @@ impl RepositoryStore {
             .into_iter()
             .map(ImportRow::into_domain)
             .collect()
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "renew_github_issue_import_lease"))]
+    pub async fn renew_github_issue_import_lease(
+        &self,
+        repo_id: &str,
+        claim_token: &str,
+        lease_until_unix: u64,
+    ) -> Result<bool, PostgresError> {
+        ISSUE_IMPORTS
+            .renew_lease(self.db.as_ref(), repo_id, claim_token, lease_until_unix)
+            .await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_issue_import"))]
@@ -211,9 +230,11 @@ impl RequestStore {
                 .await?
                 .is_some(),
         };
-        let discussion_ids = command
-            .comments
-            .iter()
+        let comment_count = match &command.comments {
+            GitHubIssueComments::Read { comments, .. } => comments.len(),
+            GitHubIssueComments::IssueGone => 0,
+        };
+        let discussion_ids = (0..comment_count)
             .map(|_| generate_id(GeneratedIdKind::RequestDiscussion))
             .collect::<Result<_, _>>()?;
         let result = import_github_issue(
@@ -230,7 +251,10 @@ impl RequestStore {
                 now_unix: command.now_unix,
             },
             &repo.views,
-        );
+        )?;
+        let Ok(step) = result.step() else {
+            return Ok(Some(result));
+        };
         if let GitHubIssueImportResult::Imported(imported) = &result {
             save_github_accounts(&tx, &imported.accounts, command.now_unix).await?;
             insert_request_row(&tx, &imported.request).await?;
@@ -242,7 +266,7 @@ impl RequestStore {
             }
         }
         let mut progress = import.progress;
-        progress.record(issue_number, issue_position, result.step());
+        progress.record(issue_number, issue_position, step);
         save_progress(&tx, repo_id, &progress, command.lease_until_unix).await?;
         tx.commit().await?;
         Ok(Some(result))
@@ -266,7 +290,7 @@ async fn save_progress<C: ConnectionTrait>(
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_github_issue_imports
-            SET imported_count = $2, already_imported_count = $3, skipped_issue_numbers = $4,
+            SET imported_count = $2, already_imported_count = $3, skipped_issues = $4,
                 read_through_created_at_unix = $5, read_through_issue_number = $6,
                 lease_until_unix = greatest(lease_until_unix, $7),
                 next_attempt_at_unix = greatest(next_attempt_at_unix, $7)
@@ -275,7 +299,17 @@ async fn save_progress<C: ConnectionTrait>(
             repo_id.into(),
             u32_to_i32(progress.imported_count, "GitHub issue import count")?.into(),
             u32_to_i32(progress.already_imported_count, "GitHub issue import count")?.into(),
-            serde_json::json!(progress.skipped_issue_numbers).into(),
+            serde_json::json!(
+                progress
+                    .skipped
+                    .iter()
+                    .map(|skipped| SkippedIssueRow {
+                        number: skipped.number,
+                        reason: skipped.reason.clone(),
+                    })
+                    .collect::<Vec<_>>()
+            )
+            .into(),
             u64_to_i64(
                 progress.read_through.created_at_unix,
                 "GitHub issue creation time",
@@ -314,8 +348,14 @@ impl ImportRow {
                     self.already_imported_count,
                     "GitHub issue import count",
                 )?,
-                skipped_issue_numbers: serde_json::from_value(self.skipped_issue_numbers)
-                    .map_err(PostgresError::internal)?,
+                skipped: serde_json::from_value::<Vec<SkippedIssueRow>>(self.skipped_issues)
+                    .map_err(PostgresError::internal)?
+                    .into_iter()
+                    .map(|skipped| GitHubSkippedIssue {
+                        number: skipped.number,
+                        reason: skipped.reason,
+                    })
+                    .collect(),
                 read_through: GitHubIssuePosition {
                     created_at_unix: i64_to_u64(
                         self.read_through_created_at_unix,

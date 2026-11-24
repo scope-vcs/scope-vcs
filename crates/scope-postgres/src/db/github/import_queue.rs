@@ -95,6 +95,33 @@ impl GitHubImportQueue {
         .await?)
     }
 
+    pub(in crate::db) async fn renew_lease(
+        &self,
+        conn: &impl ConnectionTrait,
+        repo_id: &str,
+        claim_token: &str,
+        lease_until_unix: u64,
+    ) -> Result<bool, PostgresError> {
+        let Self { table, label, .. } = self;
+        let result = conn
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                format!(
+                    "UPDATE {table}
+                        SET lease_until_unix = greatest(lease_until_unix, $3),
+                            next_attempt_at_unix = greatest(next_attempt_at_unix, $3)
+                      WHERE repo_id = $1 AND claim_token = $2 AND state = 'running'"
+                ),
+                [
+                    repo_id.into(),
+                    claim_token.into(),
+                    u64_to_i64(lease_until_unix, &format!("{label} lease"))?.into(),
+                ],
+            ))
+            .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     pub(in crate::db) async fn finish<T>(
         &self,
         conn: &impl ConnectionTrait,

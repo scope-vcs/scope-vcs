@@ -69,12 +69,19 @@ pub(crate) struct GitHubConnectionResponse {
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubSkippedIssueResponse {
+    pub(crate) number: u64,
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubIssueImportResponse {
     pub(crate) state: GitHubImportStateResponse,
     pub(crate) view: String,
     pub(crate) imported_count: u32,
     pub(crate) already_imported_count: u32,
-    pub(crate) skipped_issue_numbers: Vec<u64>,
+    pub(crate) skipped_issues: Vec<GitHubSkippedIssueResponse>,
     pub(crate) error: Option<String>,
     pub(crate) queued_at_unix: u64,
     pub(crate) finished_at_unix: Option<u64>,
@@ -611,7 +618,15 @@ fn github_issue_import_response(import: GitHubIssueImport) -> GitHubIssueImportR
         view: import.view.into(),
         imported_count: import.progress.imported_count,
         already_imported_count: import.progress.already_imported_count,
-        skipped_issue_numbers: import.progress.skipped_issue_numbers,
+        skipped_issues: import
+            .progress
+            .skipped
+            .into_iter()
+            .map(|skipped| GitHubSkippedIssueResponse {
+                number: skipped.number,
+                reason: skipped.reason,
+            })
+            .collect(),
         error: import.last_error,
         queued_at_unix: import.queued_at_unix,
         finished_at_unix: import.finished_at_unix,

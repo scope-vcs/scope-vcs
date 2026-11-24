@@ -11,7 +11,7 @@ use scope_domain::{
     github::import::GitHubImportState,
     github::issue_import::{
         GitHubIssueImport, GitHubIssueImportProgress, GitHubIssueImportStep, GitHubIssuePosition,
-        default_github_issue_import_view, start_github_issue_import,
+        GitHubSkippedIssue, default_github_issue_import_view, start_github_issue_import,
     },
     repository::access::RepositoryAccess,
     views::{ViewDefinition, ViewId, ViewIncludes, ViewReaders, Views},
@@ -187,15 +187,31 @@ fn progress_counts_each_issue_once_and_resumes_after_the_newest_issue_it_read() 
     assert!(!progress.has_read(at(0, 1)));
     progress.record(1, at(100, 1), GitHubIssueImportStep::Imported);
     progress.record(9, at(300, 9), GitHubIssueImportStep::AlreadyImported);
-    progress.record(3, at(200, 3), GitHubIssueImportStep::Skipped);
-    progress.record(3, at(200, 3), GitHubIssueImportStep::Skipped);
-    progress.record(4, None, GitHubIssueImportStep::Skipped);
+    let skipped = |reason: &str| GitHubIssueImportStep::Skipped {
+        reason: reason.into(),
+    };
+    progress.record(3, at(200, 3), skipped("GitHub no longer has this issue."));
+    progress.record(3, at(200, 3), skipped("Read twice."));
+    progress.record(
+        4,
+        None,
+        skipped("GitHub did not say when this issue was opened."),
+    );
     assert_eq!(
         progress,
         GitHubIssueImportProgress {
             imported_count: 1,
             already_imported_count: 1,
-            skipped_issue_numbers: vec![3, 4],
+            skipped: vec![
+                GitHubSkippedIssue {
+                    number: 3,
+                    reason: "GitHub no longer has this issue.".into(),
+                },
+                GitHubSkippedIssue {
+                    number: 4,
+                    reason: "GitHub did not say when this issue was opened.".into(),
+                },
+            ],
             read_through: GitHubIssuePosition {
                 created_at_unix: 300,
                 number: 9,

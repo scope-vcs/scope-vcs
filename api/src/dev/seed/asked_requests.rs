@@ -8,11 +8,11 @@ use scope_domain::{
         AttachRequestChangeFacts, AttachRequestChangeInput, CloseRequestInput,
         CloseRequestMutation, CreateRequestDiscussionInput, CreateRequestDiscussionReplyInput,
         EditRequestIdentityInput, EditRequestLinksInput, GitHubIssue, GitHubIssueComment,
-        GitHubIssueImportResult, ImportGitHubIssueInput, NamedRequest, OpenRequestFromAskFacts,
-        RecordWorkingRequestUploadInput, Request, RequestActor, RequestCloseAs, RequestEvent,
-        RequestWorkInput, attach_request_change, close_request, create_request_discussion,
-        create_request_discussion_reply, edit_request_identity, edit_request_links,
-        import_github_issue, record_working_request_upload, start_request_work,
+        GitHubIssueComments, GitHubIssueImportResult, ImportGitHubIssueInput, NamedRequest,
+        OpenRequestFromAskFacts, RecordWorkingRequestUploadInput, Request, RequestActor,
+        RequestCloseAs, RequestEvent, RequestWorkInput, attach_request_change, close_request,
+        create_request_discussion, create_request_discussion_reply, edit_request_identity,
+        edit_request_links, import_github_issue, record_working_request_upload, start_request_work,
     },
     views::{ViewId, Views},
 };
@@ -460,18 +460,22 @@ fn opened(
             source_url: source_url.clone(),
             created_at_unix: Some(ask.asked_at_unix),
         },
-        ask.comments
-            .iter()
-            .map(|comment| {
-                Ok(GitHubIssueComment {
-                    id: comment.id,
-                    author: account(comment.author)?,
-                    body: comment.body.to_string(),
-                    source_url: format!("{source_url}#issuecomment-{}", comment.id),
-                    created_at_unix: Some(comment.created_at_unix),
+        GitHubIssueComments::Read {
+            comments: ask
+                .comments
+                .iter()
+                .map(|comment| {
+                    Ok(GitHubIssueComment {
+                        id: comment.id,
+                        author: account(comment.author)?,
+                        body: comment.body.to_string(),
+                        source_url: format!("{source_url}#issuecomment-{}", comment.id),
+                        created_at_unix: Some(comment.created_at_unix),
+                    })
                 })
-            })
-            .collect::<Result<_, ApiError>>()?,
+                .collect::<Result<_, ApiError>>()?,
+            later_comments_unread: false,
+        },
         ImportGitHubIssueInput {
             request_id: ask.id.to_string(),
             repo_id: repo_id.to_string(),
@@ -486,7 +490,7 @@ fn opened(
             now_unix: ask.now_unix,
         },
         &Views::builtin(),
-    );
+    )?;
     let GitHubIssueImportResult::Imported(imported) = result else {
         return Err(ApiError::internal_message(format!(
             "seeded issue {} was not imported: {result:?}",

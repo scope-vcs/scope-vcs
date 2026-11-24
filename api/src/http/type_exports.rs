@@ -217,6 +217,7 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         GitHubImportStateResponse,
         GitHubRunImportResponse,
         StartGitHubIssueImportRequest,
+        GitHubSkippedIssueResponse,
         GitHubIssueImportResponse,
         GitHubConnectionTestStepResponse,
         GitHubConnectionTestResponse,

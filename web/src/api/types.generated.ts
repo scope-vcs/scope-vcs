@@ -252,7 +252,9 @@ export type GitHubRunImportResponse = { state: GitHubImportStateResponse, run_co
 
 export type StartGitHubIssueImportRequest = { view: string, };
 
-export type GitHubIssueImportResponse = { state: GitHubImportStateResponse, view: string, imported_count: number, already_imported_count: number, skipped_issue_numbers: Array<number>, error: string | null, queued_at_unix: number, finished_at_unix: number | null, };
+export type GitHubSkippedIssueResponse = { number: number, reason: string, };
+
+export type GitHubIssueImportResponse = { state: GitHubImportStateResponse, view: string, imported_count: number, already_imported_count: number, skipped_issues: Array<GitHubSkippedIssueResponse>, error: string | null, queued_at_unix: number, finished_at_unix: number | null, };
 
 export type GitHubConnectionTestStepResponse = "installation" | "repository" | "permissions";
 

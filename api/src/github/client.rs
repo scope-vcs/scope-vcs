@@ -16,7 +16,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 pub(super) const PAGE_SIZE: usize = 100;
-const MAX_LIST_PAGES: usize = 10;
+pub(super) const MAX_LIST_PAGES: usize = 10;
 const APP_JWT_BACKDATE_SECS: u64 = 60;
 const APP_JWT_LIFETIME_SECS: u64 = 9 * 60;
 const INSTALLATION_TOKEN_MARGIN_SECS: u64 = 5 * 60;
