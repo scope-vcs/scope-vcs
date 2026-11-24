@@ -1,6 +1,6 @@
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 
-export const CHECKS_SECTION_CLASS = 'px-(--app-inset) py-2'
+export const CHECKS_SECTION_CLASS = 'request-checks px-(--app-inset) py-2'
 
 export function RequestChecksPending() {
   return (

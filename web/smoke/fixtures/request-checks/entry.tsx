@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useParams } from '@tanstack/react-router'
 import { RequestCiApproval } from '@/features/requests/checks/request-ci-approval'
 import { RequestChecksSection } from '@/features/requests/checks/request-checks-section'
+import { RequestChangeCommand } from '@/features/requests/detail/request-change-command'
 import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
 import '../shared/styles.css'
 
@@ -46,7 +47,9 @@ const failing: RequestChecksResponse = {
 function Request() {
   const { owner, repo } = useParams({ strict: false })
   const [checks, setChecks] = useState(running)
+  const [band, setBand] = useState(false)
   Object.assign(window, {
+    showBand: setBand,
     showFailing: () => setChecks(failing),
     showPassed: () => setChecks({
       ...failing, checks: failing.checks.slice(1), private_request_on_public_github: true,
@@ -78,15 +81,18 @@ function Request() {
   })
   return (
     <main className="mx-auto max-w-3xl">
-      <RequestCiApproval
-        controller={{
-          checks, approving: false, error: null,
-          approve: async (head) => {
-            Object.assign(window, { approvedHead: head })
-            return true
-          },
-        }}
-      />
+      <header className="request-detail-header">
+        <RequestCiApproval
+          controller={{
+            checks, approving: false, error: null,
+            approve: async (head) => {
+              Object.assign(window, { approvedHead: head })
+              return true
+            },
+          }}
+        />
+      </header>
+      {band ? <RequestChangeCommand ask={{ handle: 'octo/demo#7', github_issue_number: 7, source_url: 'https://github.com/octo/demo/issues/7', text_markdown: 'Ask', asked_at_unix: 1, suggested_branch_name: 'ask-7' }} /> : null}
       <RequestChecksSection checks={checks} error={null} params={{ owner: owner!, repo: repo! }} />
     </main>
   )

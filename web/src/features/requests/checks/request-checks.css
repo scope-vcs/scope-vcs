@@ -1,3 +1,7 @@
+.request-detail-header + .request-checks > .request-checks-line {
+  border-top: 1px solid var(--border);
+}
+
 .request-checks-line {
   display: flex;
   flex-wrap: wrap;
