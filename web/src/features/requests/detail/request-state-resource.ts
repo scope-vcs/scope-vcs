@@ -1,4 +1,4 @@
-import type { RequestChildrenPageResponse, RequestStateResponse } from '../../../api/types.generated'
+import type { RequestChildrenPageResponse, RequestDetailResponse, RequestStateResponse } from '../../../api/types.generated'
 import { createRepoResource, repoResourceKey } from '../../repo-detail/repo-resource'
 import { resourceErrorMessage } from '../../../lib/use-cached-resource'
 
@@ -7,17 +7,25 @@ export type RequestStateValue = { state: RequestStateResponse | null; childrenPa
 export const requestStateResource = createRepoResource<RequestStateValue>({
   invalidatedBy: ['request', 'requestTimeline', 'checks'],
   affectedBy: ({ requestId }, key, { snapshot }) => {
-    if (requestId === undefined || key[0] === requestId || snapshot.value?.state?.detail.author_record) return true
-    const navigation = snapshot.value?.state?.detail.stack_navigation
-    return snapshot.pending || Boolean(navigation && (
-      navigation.ancestors.some((node) => node.id === requestId) ||
-      navigation.children.requests.some((node) => node.id === requestId)))
+    const detail = snapshot.value?.state?.detail
+    if (requestId === undefined || key[0] === requestId || detail?.author_record || snapshot.pending) return true
+    return Boolean(detail && requestsShownWith(detail).some((shown) => shown?.id === requestId))
   },
   maxEntries: 16,
   maxWeight: 2 * 1024 * 1024,
   weightOf: ({ state }) => JSON.stringify(state).length * 2,
   coalesceInvalidations: true,
 })
+
+function requestsShownWith({ links, stack_navigation: navigation }: RequestDetailResponse) {
+  return [
+    ...navigation.ancestors,
+    ...navigation.children.requests,
+    ...links.resolves,
+    ...links.resolved_by,
+    links.close_named,
+  ]
+}
 
 export function requestStateIdentity(scope: string, requestId: string) {
   return repoResourceKey(scope, requestId)
