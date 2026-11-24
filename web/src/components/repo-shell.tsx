@@ -19,8 +19,6 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
-const HALF_REQUEST_COUNT_SPACE = 'w-[calc((1ch_-_0.375rem)/2)] shrink-0 text-xs'
-
 export function RepoShell({
   children,
   params,
@@ -50,6 +48,9 @@ export function RepoShell({
     (section) => ({
       active: active === section.key,
       label: section.label,
+      outsidePill: section.key === 'requests' && openRequestCount === 0
+        ? <span aria-hidden="true" className="w-[calc(0.375rem_+_1ch)] shrink-0 text-xs" />
+        : null,
       node: (
         <>
           <Link
@@ -62,15 +63,12 @@ export function RepoShell({
             search={section.key === 'requests' && returnToRequest ? returnToRequest.search : {}}
             hash={section.key === 'requests' && returnToRequest ? returnToRequest.hash : ''}
           >
-            {section.key === 'requests' && openRequestCount === 0 && <span aria-hidden="true" className={HALF_REQUEST_COUNT_SPACE} />}
             {section.label}
-            {section.key === 'requests' && (openRequestCount > 0
-              ? (
-                  <span aria-hidden="true" className="min-w-[1ch] text-xs tabular-nums text-muted-foreground">
-                    {openRequestCount}
-                  </span>
-                )
-              : <span aria-hidden="true" className={HALF_REQUEST_COUNT_SPACE} />)}
+            {section.key === 'requests' && openRequestCount > 0 && (
+              <span aria-hidden="true" className="min-w-[1ch] text-xs tabular-nums text-muted-foreground">
+                {openRequestCount}
+              </span>
+            )}
           </Link>
           {section.key === 'requests' && openRequestCount > 0 && (
             <span hidden id="repo-open-requests">{openRequestCount} open requests</span>

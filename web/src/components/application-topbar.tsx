@@ -9,6 +9,7 @@ export type TopbarItem = {
   active?: boolean
   label: string
   node: ReactNode
+  outsidePill?: ReactNode
 }
 
 type TopbarFact = {
@@ -69,16 +70,18 @@ export function ApplicationTopbar({
             className="scrollbar-none order-last -mx-(--app-inset) flex h-11 w-[calc(100%+2*var(--app-inset))] items-center gap-5 overflow-x-auto border-t border-border px-(--app-inset) text-[13px] font-medium md:order-none md:mx-0 md:ml-auto md:h-auto md:w-auto md:gap-1 md:overflow-visible md:border-t-0 md:px-0"
           >
             {items.map((item) => (
-              <div
-                className={cn(
-                  'relative flex h-full shrink-0 items-center transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full md:h-8 md:rounded-md md:after:hidden',
-                  item.active
-                    ? 'text-foreground after:bg-foreground md:bg-accent'
-                    : 'text-muted-foreground after:bg-transparent hover:text-foreground md:hover:bg-accent/60',
-                )}
-                key={item.label}
-              >
-                {item.node}
+              <div className="flex h-full shrink-0 items-center" key={item.label}>
+                <div
+                  className={cn(
+                    'relative flex h-full shrink-0 items-center transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full md:h-8 md:rounded-md md:after:hidden',
+                    item.active
+                      ? 'text-foreground after:bg-foreground md:bg-accent'
+                      : 'text-muted-foreground after:bg-transparent hover:text-foreground md:hover:bg-accent/60',
+                  )}
+                >
+                  {item.node}
+                </div>
+                {item.outsidePill}
               </div>
             ))}
           </nav>
