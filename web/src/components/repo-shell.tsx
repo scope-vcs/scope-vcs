@@ -48,16 +48,13 @@ export function RepoShell({
     (section) => ({
       active: active === section.key,
       label: section.label,
-      outsidePill: section.key === 'requests' && openRequestCount === 0
-        ? <span aria-hidden="true" className="w-[calc(0.375rem_+_1ch)] shrink-0 text-xs" />
-        : null,
       node: (
         <>
           <Link
             activeOptions={{ exact: section.key === 'home' }}
             aria-current={active === section.key ? 'page' : undefined}
             aria-describedby={section.key === 'requests' && openRequestCount > 0 ? 'repo-open-requests' : undefined}
-            className="flex h-full items-center gap-1.5 px-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:px-3"
+            className="flex h-full items-center px-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:px-3"
             params={params}
             to={section.key === 'requests' && returnToRequest ? returnToRequest.pathname : section.to}
             search={section.key === 'requests' && returnToRequest ? returnToRequest.search : {}}
@@ -65,7 +62,7 @@ export function RepoShell({
           >
             {section.label}
             {section.key === 'requests' && openRequestCount > 0 && (
-              <span aria-hidden="true" className="min-w-[1ch] text-xs tabular-nums text-muted-foreground">
+              <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0.5 z-10 flex translate-x-1/2 h-3.5 min-w-3.5 items-center justify-center rounded-full bg-muted px-[3px] text-[10px] leading-none tabular-nums text-muted-foreground ring-2 ring-card md:-top-1.5 md:translate-x-0">
                 {openRequestCount}
               </span>
             )}

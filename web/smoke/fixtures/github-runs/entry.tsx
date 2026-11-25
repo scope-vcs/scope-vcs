@@ -48,8 +48,8 @@ let nextRuns = initialRuns
 const resolvers: (() => void)[] = []
 const loads: string[] = []
 const authorizeCalls: RepoParams[] = []
-const repoSummary = (actor: string) => ({
-  id: 'octo/demo', owner_handle: 'octo', name: 'demo', lifecycle_state: 'Ready', open_request_count: 0,
+const repoSummary = (actor: string, openRequests = 0) => ({
+  id: 'octo/demo', owner_handle: 'octo', name: 'demo', lifecycle_state: 'Ready', open_request_count: openRequests,
   views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' as const }, { id: 'private', name: 'Private', includes: 'all' as const, readers: 'assigned' as const }],
   access: { actor, view: 'private' },
 }) as RepoLiveState['repo']
@@ -221,8 +221,9 @@ async function startAuthorization(params: RepoParams) {
 function Repository() {
   const { owner, repo } = useParams({ strict: false })
   const [actor, setActor] = useState('Owner')
-  Object.assign(window, { setActor })
-  const state = { ...live, repo: repoSummary(actor) }
+  const [openRequests, setOpenRequests] = useState(0)
+  Object.assign(window, { setActor, setOpenRequests })
+  const state = { ...live, repo: repoSummary(actor, openRequests) }
   return <RepoLayoutProvider live={state} subscribe={subscribe} summaryIdentity="fixture">
     <RepoShell params={{ owner: owner!, repo: repo! }} repo={state.repo}><Outlet /></RepoShell>
   </RepoLayoutProvider>

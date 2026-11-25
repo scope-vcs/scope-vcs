@@ -53,6 +53,23 @@ test('GitHub workflow runs open on Scope, keep their list across navigation and 
       return (tab.right - text.right) - (text.left - tab.left)
     })
   assert.ok(Math.abs(requestsLabelOffset) <= 1, `Requests with no open requests is off center by ${requestsLabelOffset}px`)
+  const tabLayout = () => page.getByRole('navigation', { name: 'Primary' }).evaluate((nav) => {
+    const links = [...nav.querySelectorAll('a')]
+    const labels = links.map((link) => {
+      const label = document.createRange()
+      label.selectNode([...link.childNodes].find((node) => node.nodeType === Node.TEXT_NODE))
+      return label.getBoundingClientRect().left
+    })
+    const tabs = links.map((link) => link.parentElement.getBoundingClientRect())
+    return { gaps: tabs.slice(1).map((tab, index) => Math.round(tab.left - tabs[index].right)), labels }
+  })
+  const withoutCount = await tabLayout()
+  assert.equal(new Set(withoutCount.gaps).size, 1, `tab gaps differ with no open requests: ${withoutCount.gaps}`)
+  await page.evaluate(() => window.setOpenRequests(12))
+  await page.locator('#repo-open-requests').waitFor({ state: 'attached' })
+  const withCount = await tabLayout()
+  assert.deepEqual(withCount, withoutCount, 'showing the open request count moves the tabs')
+  await page.evaluate(() => window.setOpenRequests(0))
 
   await rows.first().getByRole('link', { name: 'scope/requests/req_1', exact: true }).click()
   await page.getByRole('heading', { name: 'Request req_1' }).waitFor()
