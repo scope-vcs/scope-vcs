@@ -133,7 +133,17 @@ async fn create_canonical_push_intent(
     let base_head_oid = repo.git_head.as_ref().map(|head| head.head_oid.clone());
     let base_git_frontier = repo.git_head.as_ref().map(|head| head.frontier());
     let config_changed = repo.repo_config != input_config;
-    let applies_config_now = config_changed && base_head_oid.as_deref() == Some(head_oid.as_str());
+    let same_head = base_head_oid.as_deref() == Some(head_oid.as_str());
+    let labels_drifted = if !config_changed && same_head && repo.repo_config.has_file_rules() {
+        state
+            .metadata
+            .repositories()
+            .has_drifted_visibility_labels(&repo.repo_id, &repo.repo_config)
+            .await?
+    } else {
+        false
+    };
+    let applies_config_now = same_head && (config_changed || labels_drifted);
     if applies_config_now {
         apply_reviewed_config_before_push(
             state,

@@ -3,8 +3,8 @@ use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities, repository_access::load_repo_record,
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, IdenStatic, QueryResult,
-    Statement,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, IdenStatic,
+    QueryFilter, QueryResult, QuerySelect, Statement,
 };
 use std::sync::OnceLock;
 use {
@@ -50,6 +50,28 @@ impl RepositoryStore {
         git_push_state_for_id(self.db.as_ref(), &id, user_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "has_drifted_visibility_labels"))]
+    pub async fn has_drifted_visibility_labels(
+        &self,
+        repo_id: &str,
+        config: &RepoConfig,
+    ) -> Result<bool, PostgresError> {
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let Some(policy_json) = entities::repository::Entity::find_by_id(repo_id.to_string())
+            .select_only()
+            .column(entities::repository::Column::Policy)
+            .into_tuple::<serde_json::Value>()
+            .one(&tx)
+            .await?
+        else {
+            tx.commit().await?;
+            return Ok(false);
+        };
+        let drifted = live_file_labels_drifted(&tx, repo_id, &policy_json, config).await?;
+        tx.commit().await?;
+        Ok(drifted)
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_push_credentials"))]
     pub async fn git_push_credentials(
         &self,
@@ -80,6 +102,47 @@ impl RepositoryStore {
             git_push_token,
         }))
     }
+}
+
+pub(super) async fn live_file_labels_drifted<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    stored_policy_json: &serde_json::Value,
+    config: &RepoConfig,
+) -> Result<bool, PostgresError> {
+    let stored_policy: scope_domain::policy::Policy =
+        serde_json::from_value(stored_policy_json.clone()).map_err(PostgresError::internal)?;
+    let rows = entities::live_file::Entity::find()
+        .select_only()
+        .columns([
+            entities::live_file::Column::Path,
+            entities::live_file::Column::View,
+        ])
+        .filter(entities::live_file::Column::RepoId.eq(repo_id))
+        .into_tuple::<(String, Option<String>)>()
+        .all(conn)
+        .await?;
+    let mut paths = Vec::with_capacity(rows.len());
+    let mut rules = Vec::new();
+    for (path, view) in rows {
+        let parsed_path =
+            scope_domain::policy::ScopePath::parse(path).map_err(PostgresError::internal)?;
+        if let Some(view) = view {
+            rules.push(scope_domain::policy::LabelRule {
+                path: parsed_path.clone(),
+                view: scope_domain::views::ViewId::parse(&view).map_err(PostgresError::internal)?,
+            });
+        }
+        paths.push(parsed_path);
+    }
+    let policy = stored_policy.join_rules(rules);
+    Ok(
+        !scope_domain::reviewed_updates::policy::policy_matches_config(
+            &policy,
+            config,
+            paths.iter(),
+        ),
+    )
 }
 
 pub(super) async fn git_push_state_for_id<C: ConnectionTrait>(

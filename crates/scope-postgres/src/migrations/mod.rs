@@ -75,6 +75,8 @@ mod m0119_request_asks;
 mod m0121_request_links;
 #[expect(unreachable_pub)]
 mod m0122_github_issue_imports;
+#[expect(unreachable_pub)]
+mod m0123_reconcile_visibility_labels;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -150,6 +152,7 @@ fn migration_registry() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m0119_request_asks::Migration),
         Box::new(m0121_request_links::Migration),
         Box::new(m0122_github_issue_imports::Migration),
+        Box::new(m0123_reconcile_visibility_labels::Migration),
     ]
 }
 

@@ -59,7 +59,7 @@ mod repo_lifecycle;
 mod repo_mutation;
 mod repo_reads;
 mod repository_access;
-mod repository_rows;
+pub(crate) mod repository_rows;
 mod request_access;
 mod request_asks;
 pub use request_asks::OpenRequestFromAskCommand;

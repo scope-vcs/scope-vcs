@@ -1,7 +1,7 @@
 use super::{
     error::{ReviewedUpdateError, ReviewedUpdateResult},
     history_rewrite::{HistoryRewriteInput, apply_history_rewrites},
-    policy::policy_from_config_for_tree,
+    policy::{policy_from_config_for_tree, policy_matches_config},
     views::views_transition,
 };
 use crate::views::ViewId;
@@ -128,6 +128,7 @@ pub fn apply_reviewed_update_to_repo(
             .previous_config
             .as_ref()
             .is_some_and(|previous| previous == &repo.repo_config)
+        && policy_matches_config(&repo.policy, &update.config, repo.live_files.keys())
     {
         return apply_content_only_update(repo, update);
     }
@@ -258,7 +259,8 @@ fn apply_content_only_update(
     repo: &mut Repository,
     update: ReviewedUpdateInput,
 ) -> ReviewedUpdateResult<GitPoolPack> {
-    let accepted = accept_content_push(
+    let source_head_oid = update.git_head.head_oid.clone();
+    let accepted = accept_content_update(
         ContentPushState {
             change_version: repo.record.change_version,
             content_version: repo.record.content_version,
@@ -268,6 +270,9 @@ fn apply_content_only_update(
             git_head: repo.git_head.clone(),
         },
         update,
+        false,
+        LogicalCommitOrigin::CanonicalPush { source_head_oid },
+        PolicyCheck::Verified,
     )?;
     Ok(apply_accepted_content_push(repo, accepted))
 }
@@ -326,6 +331,7 @@ pub fn accept_content_push(
         update,
         false,
         LogicalCommitOrigin::CanonicalPush { source_head_oid },
+        PolicyCheck::Verify,
     )
 }
 
@@ -334,7 +340,19 @@ pub fn accept_request_merge(
     update: ReviewedUpdateInput,
     origin: RequestMergeOrigin,
 ) -> ReviewedUpdateResult<AcceptedContentPush> {
-    accept_content_update(state, update, true, origin.into_logical_origin())
+    accept_content_update(
+        state,
+        update,
+        true,
+        origin.into_logical_origin(),
+        PolicyCheck::Verify,
+    )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PolicyCheck {
+    Verify,
+    Verified,
 }
 
 fn accept_content_update(
@@ -342,6 +360,7 @@ fn accept_content_update(
     mut update: ReviewedUpdateInput,
     allow_unchanged_tree: bool,
     origin: LogicalCommitOrigin,
+    policy_check: PolicyCheck,
 ) -> ReviewedUpdateResult<AcceptedContentPush> {
     validate_main_pack_advance(state.git_head.as_ref(), &update.git_head, &update.main_pack)
         .map_err(main_pack_conflict)?;
@@ -354,6 +373,11 @@ fn accept_content_update(
         return Err(ReviewedUpdateError::Conflict(
             "repo config changed since review; rerun scope push --main",
         ));
+    }
+    if policy_check == PolicyCheck::Verify
+        && !policy_matches_config(&state.policy, &update.config, state.live_files.keys())
+    {
+        return Err(ReviewedUpdateError::PolicyDrift);
     }
     let file_changes = build_file_changes(
         &state.live_files,

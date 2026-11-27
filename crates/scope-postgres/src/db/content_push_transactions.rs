@@ -26,9 +26,12 @@ use {
         repo_config::RepoConfig,
         repository::git::GitHead,
         repository::updates::RequestMergeOrigin,
-        reviewed_updates::content::{
-            AcceptedContentPush, ContentPushState, ReviewedUpdateInput, accept_content_push,
-            accept_request_merge,
+        reviewed_updates::{
+            content::{
+                AcceptedContentPush, ContentPushState, ReviewedUpdateInput, accept_content_push,
+                accept_request_merge,
+            },
+            error::ReviewedUpdateError,
         },
     },
 };
@@ -39,7 +42,7 @@ pub(super) async fn accept_and_persist_content_push(
     update: ReviewedUpdateInput,
     landing_file_mutation: RepositoryLandingFileMutation,
     now_unix: u64,
-) -> Result<PersistedMainChange, PostgresError> {
+) -> Result<Option<PersistedMainChange>, PostgresError> {
     accept_and_persist_content_update(
         tx,
         repo_row,
@@ -67,7 +70,12 @@ pub(super) async fn accept_and_persist_request_merge(
         ContentUpdateKind::RequestMerge(origin),
         now_unix,
     )
-    .await
+    .await?
+    .ok_or_else(|| {
+        PostgresError::from(reviewed_update_domain_error(
+            ReviewedUpdateError::PolicyDrift,
+        ))
+    })
 }
 
 pub(super) struct PersistedMainChange {
@@ -88,7 +96,7 @@ async fn accept_and_persist_content_update(
     landing_file_mutation: RepositoryLandingFileMutation,
     kind: ContentUpdateKind,
     now_unix: u64,
-) -> Result<PersistedMainChange, PostgresError> {
+) -> Result<Option<PersistedMainChange>, PostgresError> {
     let repo_id = repo_row.id.clone();
     let repo_incarnation_id = repo_row.incarnation_id.clone();
     let LiveFiles {
@@ -132,11 +140,19 @@ async fn accept_and_persist_content_update(
             git_head: previous_git_head.clone(),
         };
         match kind {
-            ContentUpdateKind::MainPush => accept_content_push(state, update),
-            ContentUpdateKind::RequestMerge(origin) => accept_request_merge(state, update, origin),
+            ContentUpdateKind::MainPush => match accept_content_push(state, update) {
+                Ok(accepted) => Ok(Some(accepted)),
+                Err(ReviewedUpdateError::PolicyDrift) => Ok(None),
+                Err(error) => Err(error),
+            },
+            ContentUpdateKind::RequestMerge(origin) => {
+                accept_request_merge(state, update, origin).map(Some)
+            }
         }
     };
-    let accepted = accepted.map_err(reviewed_update_domain_error)?;
+    let Some(accepted) = accepted.map_err(reviewed_update_domain_error)? else {
+        return Ok(None);
+    };
     let AcceptedContentPush {
         change_version,
         content_version,
@@ -199,8 +215,8 @@ async fn accept_and_persist_content_update(
     fold_live_projection_read_models(tx, &repo_id, content_version).await?;
     let queued_main_publication =
         queue_main_publication(tx, &repo_id, &git_head.head_oid, now_unix).await?;
-    Ok(PersistedMainChange {
+    Ok(Some(PersistedMainChange {
         git_head,
         queued_main_publication,
-    })
+    }))
 }

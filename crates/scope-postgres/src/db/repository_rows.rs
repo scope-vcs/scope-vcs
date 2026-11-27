@@ -295,3 +295,48 @@ where
     let collaboration = load_repository_collaboration(conn, &repo_id).await?;
     repository.try_into_domain(facts, collaboration, history)
 }
+
+pub(crate) async fn reconcile_drifted_visibility_labels<C>(
+    conn: &C,
+    now_unix: i64,
+) -> Result<(), PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let candidates = entities::repository::Entity::find()
+        .filter(sea_orm::sea_query::Expr::cust(
+            "jsonb_typeof(repo_config->'files'->'rules') = 'array' AND jsonb_array_length(repo_config->'files'->'rules') > 0",
+        ))
+        .order_by_asc(entities::repository::Column::Id)
+        .all(conn)
+        .await?;
+    let now_u64 = u64::try_from(now_unix)
+        .map_err(|_| PostgresError::internal_message("migration timestamp cannot be negative"))?;
+    for row in candidates {
+        let config: scope_domain::repo_config::RepoConfig =
+            serde_json::from_value(row.repo_config.clone()).map_err(PostgresError::internal)?;
+        config.validate().map_err(PostgresError::internal)?;
+        if !super::git_push_reads::live_file_labels_drifted(conn, &row.id, &row.policy, &config)
+            .await?
+        {
+            continue;
+        }
+        let mut repo = repository_from_model(conn, row).await?;
+        let before = repo.clone();
+        let author_id = repo.record.owner_user_id.clone();
+        let changed = scope_domain::reviewed_updates::config::apply_reviewed_config_to_repo(
+            &mut repo,
+            scope_domain::reviewed_updates::config::ReviewedConfigUpdateInput {
+                occurred_at_unix: now_unix,
+                author_id,
+                config,
+                open_requests_by_view: BTreeMap::new(),
+            },
+        )
+        .map_err(scope_domain::repo_actions::reviewed_update_domain_error)?;
+        if changed {
+            save_repository_delta(conn, &before, &repo, now_u64).await?;
+        }
+    }
+    Ok(())
+}

@@ -6,6 +6,7 @@ pub type ReviewedUpdateResult<T> = Result<T, ReviewedUpdateError>;
 pub enum ReviewedUpdateError {
     BadRequest(&'static str),
     Conflict(&'static str),
+    PolicyDrift,
     InvalidPolicy(PolicyError),
     Domain(DomainError),
 }

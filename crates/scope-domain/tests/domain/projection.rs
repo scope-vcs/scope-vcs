@@ -560,8 +560,13 @@ fn content_only_updates_keep_policy_and_commit_identity_in_sync() {
 }
 
 #[test]
-fn content_only_update_preserves_existing_visibility_override() {
+fn content_only_update_preserves_matching_visibility_rule_without_change_set() {
     let mut repo = published_repo_with_public_file("initial", "/README.md", "hello");
+    repo.repo_config = config(
+        ViewId::public(),
+        Some(("/README.md", ViewId::private())),
+        None,
+    );
     repo.policy
         .add_rule(LabelRule::private(path("/README.md")))
         .unwrap();
