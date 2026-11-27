@@ -1,7 +1,7 @@
 use super::{
     error::{ReviewedUpdateError, ReviewedUpdateResult},
     history_rewrite::{HistoryRewriteInput, apply_history_rewrites},
-    policy::policy_from_config_for_tree,
+    policy::{policy_from_config_for_tree, policy_matches_config},
     views::views_transition,
 };
 use crate::{
@@ -24,7 +24,9 @@ pub fn apply_reviewed_config_to_repo(
     repo: &mut Repository,
     update: ReviewedConfigUpdateInput,
 ) -> ReviewedUpdateResult<bool> {
-    if repo.repo_config == update.config {
+    if repo.repo_config == update.config
+        && policy_matches_config(&repo.policy, &update.config, repo.live_files.keys())
+    {
         return Ok(false);
     }
     let views = views_transition(repo, &update.config, &update.open_requests_by_view)

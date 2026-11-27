@@ -122,3 +122,88 @@ async fn push_only_member_cannot_restore_stale_public_config_after_visibility_ch
         ViewId::private()
     );
 }
+
+#[tokio::test]
+async fn content_push_with_unchanged_config_falls_back_and_reconciles_drifted_labels() {
+    let state = test_state_with_repo();
+    let mut repo = repo_with_readme(&state);
+    let secret_path = ScopePath::parse("/Secrets/key.txt").unwrap();
+    let blob = source_blob(&state, "old-secret");
+    repo.live_files.insert(secret_path.clone(), blob.clone());
+    repo.policy
+        .add_rule(LabelRule::public(secret_path.clone()))
+        .unwrap();
+    repo.graph
+        .commits
+        .last_mut()
+        .unwrap()
+        .changes
+        .push(scope_domain::projection::FileChange {
+            path: secret_path.clone(),
+            old_content: None,
+            new_content: Some(blob),
+            label: ViewId::public(),
+        });
+    repo.repo_config = config_with_rules(ViewId::public(), &[("/secrets/**", ViewId::private())]);
+    replace_test_repo(&state, repo).await;
+
+    let stored_repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert!(
+        state
+            .metadata
+            .repositories()
+            .has_drifted_visibility_labels(&stored_repo.record.id, &stored_repo.repo_config)
+            .await
+            .unwrap()
+    );
+
+    let mut update = receive_pack_update(&state, vec![("/Secrets/key.txt", Some("new-secret"))]);
+    let stored_config = stored_repo.repo_config;
+    update.previous_config = Some(stored_config.clone());
+    update.base_config_hash = repo_config_fingerprint(&stored_config).unwrap();
+    update.config = stored_config;
+    persist_and_promote_test_update(&state, update, &test_owner_id())
+        .await
+        .unwrap();
+
+    let updated = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert_eq!(
+        updated
+            .policy
+            .label(&secret_path, updated.repo_config.views()),
+        ViewId::private()
+    );
+    assert_eq!(
+        updated
+            .graph
+            .commits
+            .last()
+            .unwrap()
+            .changes
+            .iter()
+            .find(|change| change.path == secret_path)
+            .unwrap()
+            .label,
+        ViewId::private()
+    );
+    assert_eq!(
+        updated.visibility_change_sets.last().unwrap().changes[0].path,
+        secret_path
+    );
+    assert_eq!(
+        updated.visibility_change_sets.last().unwrap().changes[0].new_label,
+        ViewId::private()
+    );
+    assert!(
+        !state
+            .metadata
+            .repositories()
+            .has_drifted_visibility_labels(&updated.record.id, &updated.repo_config)
+            .await
+            .unwrap()
+    );
+}

@@ -20,6 +20,7 @@ mod main_pool_packs;
 mod maintenance_cutover;
 mod native_run_removal;
 mod public_check_commits;
+mod reconcile_visibility_labels;
 mod repository_invite_emails;
 mod repository_landing_files;
 mod request_review_bases;

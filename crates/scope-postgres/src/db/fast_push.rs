@@ -116,9 +116,12 @@ impl RepositoryStore {
             current_config: &current_config,
             proposed_config: &update.config,
         })?;
-        let persisted =
+        let Some(persisted) =
             accept_and_persist_content_push(&tx, repo_row, update, landing_file_mutation, now_unix)
-                .await?;
+                .await?
+        else {
+            return Ok(None);
+        };
         let completed_landed_requests = complete_main_push(
             &tx,
             &repo_id,

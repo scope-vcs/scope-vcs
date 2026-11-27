@@ -86,6 +86,9 @@ pub fn reviewed_update_domain_error(error: ReviewedUpdateError) -> DomainError {
     match error {
         ReviewedUpdateError::BadRequest(message) => DomainError::invalid_input(message),
         ReviewedUpdateError::Conflict(message) => DomainError::conflict(message),
+        ReviewedUpdateError::PolicyDrift => DomainError::conflict(
+            "stored file visibility labels do not match repo config; reconcile repository visibility before continuing",
+        ),
         ReviewedUpdateError::InvalidPolicy(error) => DomainError::invalid_input(error),
         ReviewedUpdateError::Domain(error) => error,
     }

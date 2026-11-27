@@ -1,7 +1,7 @@
 use super::{
     policy::ScopePath,
     repo_config::{
-        RepoConfig, RepoConfigFileRule, pattern_base_path, pattern_matches_path, pattern_weight,
+        RepoConfig, RepoConfigFileRule, has_differently_spelled_ancestor, pattern_base_path,
     },
     repo_control::is_repo_control_pattern,
     views::ViewId,
@@ -204,8 +204,18 @@ fn rule_is_redundant(config: &RepoConfig, index: usize, rule: &RepoConfigFileRul
             .map(|path| config.label_for_path_skipping_rule(&path, Some(index)))
             .unwrap_or(config.files.default.clone())
     };
+    let decides_another_spelling = !rule.view.is_public()
+        && has_differently_spelled_ancestor(
+            &rule.path,
+            config
+                .files
+                .rules
+                .iter()
+                .enumerate()
+                .filter_map(|(other, ancestor)| (other != index).then_some(ancestor.path.as_str())),
+        );
     let base = pattern_base_path(&rule.path);
-    if without_rule(base) != rule.view {
+    if decides_another_spelling || without_rule(base) != rule.view {
         return false;
     }
 
@@ -350,12 +360,8 @@ fn matching_visibility_rule<'a>(
     config: &'a RepoConfig,
     path: &str,
 ) -> Option<&'a RepoConfigFileRule> {
-    config
-        .files
-        .rules
-        .iter()
-        .filter(|rule| pattern_matches_path(&rule.path, path))
-        .max_by_key(|rule| pattern_weight(&rule.path))
+    let scope_path = ScopePath::parse(path).ok()?;
+    config.resolve_path_label(&scope_path, None).1
 }
 
 fn folder_rule_path(path: &str) -> String {

@@ -3,9 +3,12 @@ use super::{
     repo_control::{is_private_control_path, is_repo_control_pattern, is_repo_rules_path},
     views::{ViewId, Views},
 };
+use icu_normalizer::DecomposingNormalizerBorrowed;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::{borrow::Cow, collections::HashSet};
 use thiserror::Error;
+use unicase::UniCase;
 
 pub const REPO_CONFIG_KIND: &str = "scope.repo-config";
 pub const REPO_CONFIG_VERSION: u64 = 3;
@@ -104,6 +107,10 @@ impl RepoConfig {
         &self.files
     }
 
+    pub fn has_file_rules(&self) -> bool {
+        !self.files.rules.is_empty()
+    }
+
     pub fn label_for_path(&self, path: &ScopePath) -> ViewId {
         self.label_for_path_skipping_rule(path, None)
     }
@@ -113,26 +120,78 @@ impl RepoConfig {
         path: &ScopePath,
         skipped_rule: Option<usize>,
     ) -> ViewId {
+        self.resolve_path_label(path, skipped_rule).0
+    }
+
+    pub(crate) fn resolve_path_label<'a>(
+        &'a self,
+        path: &ScopePath,
+        skipped_rule: Option<usize>,
+    ) -> (ViewId, Option<&'a RepoConfigFileRule>) {
         if is_repo_rules_path(path) {
-            return ViewId::public();
+            return (ViewId::public(), None);
         }
         if is_private_control_path(path) {
-            return self.views.full().clone();
+            return (self.views.full().clone(), None);
         }
 
-        let mut selected = (0usize, self.files.default_view());
-        for (index, rule) in self.files.rules.iter().enumerate() {
-            if skipped_rule == Some(index) {
-                continue;
-            }
-            if pattern_matches_path(&rule.path, path.as_str()) {
-                let weight = pattern_weight(&rule.path);
-                if weight >= selected.0 {
-                    selected = (weight, rule.view.clone());
+        let active_rules = self.active_rules_skipping(skipped_rule);
+        let mut exact_match: Option<(usize, &'a RepoConfigFileRule)> = None;
+        for rule in &active_rules {
+            if exact_pattern_matches_path(&rule.path, path.as_str()) {
+                let specificity = caseless_normalized(pattern_base_path(&rule.path)).len();
+                if exact_match.is_none_or(|(best, _)| specificity >= best) {
+                    exact_match = Some((specificity, *rule));
                 }
             }
         }
-        selected.1
+
+        let exact_specificity = exact_match.map_or(0, |(specificity, _)| specificity);
+        let exact_view =
+            exact_match.map_or_else(|| self.files.default_view(), |(_, rule)| rule.view.clone());
+
+        let caseless_path = caseless_normalized(path.as_str());
+        let mut cross_spelling_matches = Vec::new();
+        let mut selected_view = exact_view.clone();
+        for rule in &active_rules {
+            if rule.view.is_public() || exact_pattern_matches_path(&rule.path, path.as_str()) {
+                continue;
+            }
+            let Some(specificity) =
+                caseless_pattern_specificity(&rule.path, caseless_path.as_ref())
+            else {
+                continue;
+            };
+            if specificity <= exact_specificity {
+                continue;
+            }
+            selected_view = narrow_view(&self.views, &selected_view, &rule.view);
+            cross_spelling_matches.push((specificity, *rule));
+        }
+
+        let selected_rule = if selected_view == exact_view {
+            exact_match.map(|(_, rule)| rule)
+        } else {
+            cross_spelling_matches
+                .into_iter()
+                .filter(|(_, rule)| rule.view == selected_view)
+                .max_by_key(|(specificity, _)| *specificity)
+                .map(|(_, rule)| rule)
+        };
+        (selected_view, selected_rule)
+    }
+
+    fn active_rules_skipping(&self, skipped_rule: Option<usize>) -> Vec<&RepoConfigFileRule> {
+        let mut seen = HashSet::with_capacity(self.files.rules.len());
+        let mut active = Vec::with_capacity(self.files.rules.len());
+        for (index, rule) in self.files.rules.iter().enumerate().rev() {
+            if skipped_rule == Some(index) || !seen.insert(rule.path.as_str()) {
+                continue;
+            }
+            active.push(rule);
+        }
+        active.reverse();
+        active
     }
 
     pub fn history_rewrites_added_since(
@@ -224,17 +283,83 @@ fn validate_config_pattern(pattern: &str) -> Result<(), RepoConfigError> {
 }
 
 pub(crate) fn pattern_matches_path(pattern: &str, path: &str) -> bool {
-    if let Some(base) = pattern.strip_suffix("/**") {
-        return path == base
-            || path
-                .strip_prefix(base)
-                .is_some_and(|tail| tail.starts_with('/'));
-    }
-    path == pattern
+    let caseless_path = caseless_normalized(path);
+    caseless_pattern_specificity(pattern, caseless_path.as_ref()).is_some()
 }
 
-pub(crate) fn pattern_weight(pattern: &str) -> usize {
-    pattern_base_path(pattern).len()
+pub(crate) fn has_differently_spelled_ancestor<'a>(
+    pattern: &str,
+    candidates: impl IntoIterator<Item = &'a str>,
+) -> bool {
+    let base = pattern_base_path(pattern);
+    let caseless_base = caseless_normalized(base);
+    candidates.into_iter().any(|ancestor| {
+        let ancestor_base = pattern_base_path(ancestor);
+        !is_at_or_below(base, ancestor_base)
+            && is_at_or_below(
+                caseless_base.as_ref(),
+                caseless_normalized(ancestor_base).as_ref(),
+            )
+    })
+}
+
+fn exact_pattern_matches_path(pattern: &str, path: &str) -> bool {
+    let base = pattern_base_path(pattern);
+    if pattern.ends_with("/**") {
+        is_at_or_below(path, base)
+    } else {
+        path == base
+    }
+}
+
+fn caseless_pattern_specificity(pattern: &str, caseless_path: &str) -> Option<usize> {
+    let caseless_base = caseless_normalized(pattern_base_path(pattern));
+    let matches = if pattern.ends_with("/**") {
+        is_at_or_below(caseless_path, caseless_base.as_ref())
+    } else {
+        caseless_path == caseless_base.as_ref()
+    };
+    matches.then_some(caseless_base.len())
+}
+
+fn is_at_or_below(path: &str, base: &str) -> bool {
+    path == base
+        || path
+            .strip_prefix(base)
+            .is_some_and(|tail| tail.starts_with('/'))
+}
+
+fn caseless_normalized(value: &str) -> Cow<'_, str> {
+    if value.is_ascii() {
+        return if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
+            Cow::Owned(value.to_ascii_lowercase())
+        } else {
+            Cow::Borrowed(value)
+        };
+    }
+    let decomposing = DecomposingNormalizerBorrowed::new_nfd();
+    let decomposed: String = decomposing.normalize_iter(value.chars()).collect();
+    let folded = UniCase::unicode(decomposed.as_str()).to_folded_case();
+    Cow::Owned(decomposing.normalize_iter(folded.chars()).collect())
+}
+
+fn narrow_view(views: &Views, left: &ViewId, right: &ViewId) -> ViewId {
+    if left == right {
+        return left.clone();
+    }
+    let right_narrows_left = readers_include(views, right, left);
+    let left_narrows_right = readers_include(views, left, right);
+    match (right_narrows_left, left_narrows_right) {
+        (true, false) => right.clone(),
+        (false, true) => left.clone(),
+        (true, true) | (false, false) => views.full().clone(),
+    }
+}
+
+fn readers_include(views: &Views, subset_label: &ViewId, superset_label: &ViewId) -> bool {
+    views.iter().all(|view| {
+        !views.may_read(&view.id, subset_label) || views.may_read(&view.id, superset_label)
+    })
 }
 
 pub(crate) fn pattern_base_path(pattern: &str) -> &str {
@@ -246,173 +371,5 @@ fn default_private_view() -> ViewId {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn version_one_config_is_rejected() {
-        let mut json =
-            serde_json::to_value(RepoConfig::with_default_view(ViewId::private())).unwrap();
-        json["version"] = serde_json::json!(1);
-        assert!(matches!(
-            RepoConfig::parse_json(&serde_json::to_vec(&json).unwrap()),
-            Err(RepoConfigError::InvalidVersion)
-        ));
-    }
-
-    #[test]
-    fn config_default_and_rules_determine_visibility() {
-        let config = RepoConfig::parse_json(
-            br#"{
-                "kind": "scope.repo-config",
-                "version": 3,
-                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
-                "files": {
-                    "default": "private",
-                    "rules": [
-                        { "path": "/README.md", "view": "public" },
-                        { "path": "/src/**", "view": "public" },
-                        { "path": "/src/secrets/**", "view": "private" }
-                    ]
-                }
-            }"#,
-        )
-        .unwrap();
-
-        for (path, expected) in [
-            ("/README.md", ViewId::public()),
-            ("/src/lib.rs", ViewId::public()),
-            ("/src/secrets/key.txt", ViewId::private()),
-            ("/notes.txt", ViewId::private()),
-        ] {
-            assert_eq!(
-                config.label_for_path(&ScopePath::parse(path).unwrap()),
-                expected
-            );
-        }
-    }
-
-    #[test]
-    fn scope_controls_are_private_except_for_canonical_rules() {
-        let config = RepoConfig::parse_json(
-            br#"{
-                "kind": "scope.repo-config",
-                "version": 3,
-                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
-                "files": {
-                    "default": "public",
-                    "rules": []
-                }
-            }"#,
-        )
-        .unwrap();
-
-        for path in ["/.scope/repo.json", "/.scope/runs/test.yml", "/.scope"] {
-            assert_eq!(
-                config.label_for_path(&ScopePath::parse(path).unwrap()),
-                ViewId::private()
-            );
-        }
-        assert_eq!(
-            config.label_for_path(&ScopePath::parse("/.scope/RULES.md").unwrap()),
-            ViewId::public()
-        );
-
-        let mut private_config = RepoConfig::with_default_view(ViewId::private());
-        private_config.files.rules.push(RepoConfigFileRule {
-            path: "/.scope/RULES.md".to_string(),
-            view: ViewId::private(),
-        });
-        assert_eq!(
-            private_config.label_for_path(&ScopePath::parse("/.scope/RULES.md").unwrap()),
-            ViewId::public()
-        );
-    }
-
-    #[test]
-    fn scope_control_rules_and_rewrites_are_rejected() {
-        for (path, visibility) in [
-            ("/.scope/**", "public"),
-            ("/.scope/runs/test.yml", "private"),
-            ("/.scope/RULES.md", "private"),
-        ] {
-            let views_json = serde_json::to_string(&Views::builtin()).unwrap();
-            let json = format!(
-                r#"{{
-                    "kind": "scope.repo-config",
-                    "version": 3,
-                    "views":{views_json},
-                    "files": {{
-                        "default": "private",
-                        "rules": [{{ "path": "{path}", "view": "{visibility}" }}]
-                    }}
-                }}"#
-            );
-            let error = RepoConfig::parse_json(json.as_bytes()).unwrap_err();
-            assert!(matches!(error, RepoConfigError::ReservedControlPath(_)));
-        }
-        let error = RepoConfig::parse_json(
-            br#"{
-                "kind":"scope.repo-config","version":3,"views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
-                "files":{"default":"private","rules":[]},
-                "history":{"rewrites":[{"path":"/.scope/RULES.md","action":"redact-public-history"}]}
-            }"#,
-        )
-        .unwrap_err();
-        assert!(matches!(error, RepoConfigError::ReservedControlPath(_)));
-    }
-
-    #[test]
-    fn non_canonical_paths_are_rejected_in_rules_and_rewrites() {
-        for path in ["/secrets//**", "/secrets/** ", "/README.md "] {
-            for section in [
-                format!(r#""rules":[{{"path":"{path}","view":"private"}}]"#),
-                format!(
-                    r#""rules":[]}},"history":{{"rewrites":[{{"path":"{path}","action":"redact-public-history"}}]"#
-                ),
-            ] {
-                let views_json = serde_json::to_string(&Views::builtin()).unwrap();
-                let json = format!(
-                    r#"{{"kind":"scope.repo-config","version":3,"views":{views_json},"files":{{"default":"public",{section}}}}}"#
-                );
-                let error = RepoConfig::parse_json(json.as_bytes()).unwrap_err();
-                assert!(
-                    matches!(
-                        error,
-                        RepoConfigError::InvalidSegment | RepoConfigError::RelativePath
-                    ),
-                    "{path} should be rejected, got {error:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn history_rewrites_are_accepted_for_supported_actions() {
-        let config = RepoConfig::parse_json(
-            br#"{
-                "kind": "scope.repo-config",
-                "version": 3,
-                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
-                "files": {
-                    "default": "private",
-                    "rules": []
-                },
-                "history": {
-                    "rewrites": [
-                        {
-                            "path": "/secret.md",
-                            "action": "redact-public-history"
-                        }
-                    ]
-                }
-            }"#,
-        )
-        .unwrap();
-
-        let rewrite = &config.history.rewrites[0];
-        assert_eq!(rewrite.action, HistoryRewriteAction::RedactPublicHistory);
-        assert!(rewrite.matches_path(&ScopePath::parse("/secret.md").unwrap()));
-        assert!(!rewrite.matches_path(&ScopePath::parse("/public.md").unwrap()));
-    }
-}
+#[path = "repo_config_tests.rs"]
+mod tests;
