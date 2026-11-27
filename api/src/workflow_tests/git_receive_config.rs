@@ -159,7 +159,7 @@ async fn content_push_with_unchanged_config_falls_back_and_reconciles_drifted_la
             .unwrap()
     );
 
-    let mut update = receive_pack_update(&state, vec![("/README.md", Some("updated readme"))]);
+    let mut update = receive_pack_update(&state, vec![("/Secrets/key.txt", Some("new-secret"))]);
     let stored_config = stored_repo.repo_config;
     update.previous_config = Some(stored_config.clone());
     update.base_config_hash = repo_config_fingerprint(&stored_config).unwrap();
@@ -175,6 +175,19 @@ async fn content_push_with_unchanged_config_falls_back_and_reconciles_drifted_la
         updated
             .policy
             .label(&secret_path, updated.repo_config.views()),
+        ViewId::private()
+    );
+    assert_eq!(
+        updated
+            .graph
+            .commits
+            .last()
+            .unwrap()
+            .changes
+            .iter()
+            .find(|change| change.path == secret_path)
+            .unwrap()
+            .label,
         ViewId::private()
     );
     assert_eq!(

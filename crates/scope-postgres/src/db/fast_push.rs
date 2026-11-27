@@ -2,7 +2,6 @@ use super::{
     RepositoryMutationResult, RepositoryStore, acquire_aggregate_lock,
     content_push_transactions::accept_and_persist_content_push,
     entities,
-    git_push_reads::live_file_labels_drifted,
     request_merge::{LandedRequestCandidate, LandedRequestCompletion, complete_main_push},
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
@@ -117,11 +116,6 @@ impl RepositoryStore {
             current_config: &current_config,
             proposed_config: &update.config,
         })?;
-        if current_config.has_file_rules()
-            && live_file_labels_drifted(&tx, &repo_id, &repo_row.policy, &current_config).await?
-        {
-            return Ok(None);
-        }
         let Some(persisted) =
             accept_and_persist_content_push(&tx, repo_row, update, landing_file_mutation, now_unix)
                 .await?
